@@ -8,7 +8,9 @@ const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 // Configurar logs
 autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = "info";
-log.info("App iniciando. Versão:", app.getVersion());
+log.info("=== APP INICIADO. Versão:", app.getVersion(), "===");
+log.info("=== isPackaged:", app.isPackaged, "===");
+log.info("=== isDev:", isDev, "===");
 
 let mainWindow;
 
@@ -64,16 +66,17 @@ function checkForUpdates() {
 }
 
 autoUpdater.on("checking-for-update", () => {
-  log.info("Verificando atualizações...");
+  log.info("=== VERIFICANDO ATUALIZAÇÕES ===");
+  mainWindow.webContents.send("update-status", "Verificando atualizações...");
 });
 
 autoUpdater.on("update-available", (info) => {
-  log.info("Atualização disponível:", info.version);
+  log.info("=== ATUALIZAÇÃO DISPONÍVEL:", info.version, "===");
   mainWindow.webContents.send("update-available", info.version);
 });
 
-autoUpdater.on("update-not-available", () => {
-  log.info("App já está na versão mais recente.");
+autoUpdater.on("update-not-available", (info) => {
+  log.info("=== SEM ATUALIZAÇÃO. Versão atual:", info.version, "===");
 });
 
 autoUpdater.on("download-progress", (progress) => {
@@ -86,7 +89,8 @@ autoUpdater.on("update-downloaded", (info) => {
 });
 
 autoUpdater.on("error", (err) => {
-  log.error("Erro no auto-update:", err);
+  log.error("=== ERRO NO AUTO-UPDATE:", err.message, "===");
+  mainWindow.webContents.send("update-error", err.message);
 });
 
 // IPC: instalar atualização ao comando do usuário
