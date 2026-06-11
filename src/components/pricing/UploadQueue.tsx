@@ -39,12 +39,17 @@ interface QueueItem {
   // Conteúdo parseado pendente de commit:
   realPayload?: ParsedCsv;
   budgetPayload?: ParsedBudget;
+  originalFile?: File;
 }
 
 let _idSeq = 0;
 const nextId = () => `q_${Date.now()}_${++_idSeq}`;
 
-export function UploadQueue() {
+export function UploadQueue({
+  onAfterApply,
+}: {
+  onAfterApply?: (applied: { tipo: "ke30" | "budget"; file: File }[]) => void;
+} = {}) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -101,6 +106,7 @@ export function UploadQueue() {
                       months: parsed.file.months,
                       duplicateMonths: dup,
                       realPayload: parsed,
+                      originalFile: file,
                     }
                   : it,
               ),
@@ -126,6 +132,7 @@ export function UploadQueue() {
                       months: parsed.file.months,
                       duplicateMonths: dup,
                       budgetPayload: parsed,
+                      originalFile: file,
                     }
                   : it,
               ),
@@ -175,6 +182,7 @@ export function UploadQueue() {
       if (!confirmReplace) return;
     }
     setApplying(true);
+    const successfullyApplied: { tipo: "ke30" | "budget"; file: File }[] = [];
     try {
       for (const it of readyItems) {
         if (it.kind === "real" && it.realPayload) {
@@ -184,12 +192,14 @@ export function UploadQueue() {
             it.duplicateMonths.length > 0 ? confirmReplace : false,
             it.realPayload.missing,
           );
+          if (it.originalFile) successfullyApplied.push({ tipo: "ke30", file: it.originalFile });
         } else if (it.kind === "budget" && it.budgetPayload) {
           addBudget(
             it.budgetPayload.rows,
             it.budgetPayload.file,
             it.duplicateMonths.length > 0 ? confirmReplace : false,
           );
+          if (it.originalFile) successfullyApplied.push({ tipo: "budget", file: it.originalFile });
         }
       }
       const counts = readyItems.reduce(
@@ -208,6 +218,9 @@ export function UploadQueue() {
           it.status === "ready" ? { ...it, status: "applied" } : it,
         ),
       );
+      if (onAfterApply && successfullyApplied.length > 0) {
+        onAfterApply(successfullyApplied);
+      }
     } finally {
       setApplying(false);
     }

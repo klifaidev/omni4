@@ -8,16 +8,29 @@ import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
 import { useBudget, getBudgetMonthsInfo } from "@/store/budget";
 import { useMonthsInfo } from "@/store/selectors";
-import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2 } from "lucide-react";
+import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock } from "lucide-react";
 import { monthLabel } from "@/lib/format";
 import { getFreshness, type FreshnessStatus } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generateDemoData } from "@/lib/demoData";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useUploadGuard } from "@/store/uploadGuard";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { parseCsvFile } from "@/lib/csv";
+import { parseBudgetFile } from "@/lib/budget";
+import { useBasesLocais, type TipoBase } from "@/hooks/use-bases-locais";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const EXPECTED_COLS = [
   "Periodo (ex.: 005.2025)",
@@ -118,6 +131,14 @@ function StatusHeroCard({
   );
 }
 
+const TIPO_LABELS: Record<string, string> = { ke30: "KE30 (Real)", budget: "Budget", demanda: "Demanda" };
+
+function formatFileSize(bytes: number) {
+  return bytes >= 1024 * 1024
+    ? (bytes / (1024 * 1024)).toFixed(1) + " MB"
+    : (bytes / 1024).toFixed(1) + " KB";
+}
+
 export default function Upload() {
   usePageTitle("Upload / Bases");
   const files = usePricing((s) => s.files);
@@ -136,8 +157,95 @@ export default function Upload() {
   const addBudget = useBudget((s) => s.addBudget);
   const budgetMonths = useMemo(() => getBudgetMonthsInfo(budgetRows), [budgetRows]);
 
+  const setParsingStart = usePricing((s) => s.setParsingStart);
+  const setParsingEnd = usePricing((s) => s.setParsingEnd);
+
   const realFreshness = useMemo(() => getFreshness(months), [months]);
   const budgetFreshness = useMemo(() => getFreshness(budgetMonths), [budgetMonths]);
+
+  const basesLocais = useBasesLocais();
+  const autoLoadedRef = useRef(false);
+  const [infoSalvas, setInfoSalvas] = useState<Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>>({});
+  const [pendingSave, setPendingSave] = useState<{ tipo: TipoBase; file: File; dataExistente: string } | null>(null);
+  const [deletePending, setDeletePending] = useState<TipoBase | null>(null);
+
+  const refreshInfoSalvas = useCallback(async () => {
+    if (!basesLocais.isElectron) return;
+    const info = await basesLocais.infoBasesSalvas();
+    setInfoSalvas(info as Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>);
+  }, [basesLocais.isElectron, basesLocais.infoBasesSalvas]);
+
+  useEffect(() => { refreshInfoSalvas(); }, [refreshInfoSalvas]);
+
+  useEffect(() => {
+    if (!basesLocais.isElectron || autoLoadedRef.current) return;
+    autoLoadedRef.current = true;
+    async function autoLoad() {
+      const info = await basesLocais.infoBasesSalvas();
+      if (files.length === 0 && info.ke30) {
+        toast.info("Carregando base KE30 salva...");
+        try {
+          setParsingStart();
+          const file = await basesLocais.carregarBase("ke30");
+          if (file) {
+            const parsed = await parseCsvFile(file);
+            if (parsed.rows.length > 0) {
+              addParsed(parsed.rows, parsed.file, false, parsed.missing);
+              toast.success(`Base KE30 carregada: ${parsed.rows.length.toLocaleString("pt-BR")} linhas`);
+            }
+          }
+        } catch { toast.error("Erro ao carregar base KE30 salva."); }
+        finally { setParsingEnd(); }
+      }
+      if (budgetRows.length === 0 && info.budget) {
+        toast.info("Carregando base Budget salva...");
+        try {
+          setParsingStart();
+          const file = await basesLocais.carregarBase("budget");
+          if (file) {
+            const parsed = await parseBudgetFile(file);
+            if (parsed.rows.length > 0) {
+              addBudget(parsed.rows, parsed.file, false);
+              toast.success(`Base Budget carregada: ${parsed.rows.length.toLocaleString("pt-BR")} linhas`);
+            }
+          }
+        } catch { toast.error("Erro ao carregar base Budget salva."); }
+        finally { setParsingEnd(); }
+      }
+      await refreshInfoSalvas();
+    }
+    autoLoad();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleAfterApply = useCallback(
+    async (applied: { tipo: "ke30" | "budget"; file: File }[]) => {
+      for (const { tipo, file } of applied) {
+        const info = await basesLocais.infoBasesSalvas();
+        if (info[tipo]) {
+          setPendingSave({
+            tipo,
+            file,
+            dataExistente: new Date(info[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
+          });
+        } else {
+          await basesLocais.salvarBase(tipo, file);
+          toast.success("Base salva localmente para uso futuro.");
+          await refreshInfoSalvas();
+        }
+      }
+    },
+    [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
+  );
+
+  const handleDeleteBase = useCallback(
+    async (tipo: TipoBase) => {
+      await basesLocais.deletarBase(tipo);
+      toast.success("Base local removida.");
+      setDeletePending(null);
+      await refreshInfoSalvas();
+    },
+    [basesLocais.deletarBase, refreshInfoSalvas],
+  );
 
   const handleLoadDemo = () => {
     clearAll();
@@ -299,7 +407,7 @@ export default function Upload() {
               <Badge variant="secondary" className="text-[10px]">.xlsx (Budget)</Badge>
             </div>
           </header>
-          <UploadQueue />
+          <UploadQueue onAfterApply={basesLocais.isElectron ? handleAfterApply : undefined} />
           {parsing && (
             <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/70 backdrop-blur-sm">
               <Loader2 className="h-7 w-7 animate-spin text-primary" />
@@ -424,6 +532,43 @@ export default function Upload() {
 
         <ExportDeparasCard />
 
+        {basesLocais.isElectron && Object.keys(infoSalvas).length > 0 && (
+          <GlassCard>
+            <header className="mb-4 flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-medium">Bases salvas localmente</h3>
+            </header>
+            <div className="space-y-2">
+              {(["ke30", "budget", "demanda"] as const).map((tipo) => {
+                const info = infoSalvas[tipo];
+                if (!info) return null;
+                return (
+                  <div key={tipo} className="flex items-center justify-between rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{TIPO_LABELS[tipo]}</span>
+                        <span className="truncate text-[10px] text-muted-foreground">{info.nomeArquivo}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {new Date(info.ultimaModificacao).toLocaleString("pt-BR")} · {formatFileSize(info.tamanho)}
+                      </div>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeletePending(tipo)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </GlassCard>
+        )}
+
         <GlassCard>
           <h3 className="mb-3 text-sm font-medium">Colunas esperadas no CSV (Real)</h3>
           <ul className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground md:grid-cols-2">
@@ -440,6 +585,55 @@ export default function Upload() {
           </p>
         </GlassCard>
       </div>
+
+      {/* Dialog: confirmar substituição de base salva */}
+      <AlertDialog open={pendingSave !== null} onOpenChange={(open) => { if (!open) setPendingSave(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Substituir base salva?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Já existe uma base {pendingSave ? TIPO_LABELS[pendingSave.tipo] : ""} salva de{" "}
+              {pendingSave?.dataExistente}. Deseja substituí-la?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingSave(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingSave) return;
+                await basesLocais.salvarBase(pendingSave.tipo, pendingSave.file);
+                toast.success("Base substituída e salva localmente.");
+                setPendingSave(null);
+                await refreshInfoSalvas();
+              }}
+            >
+              Substituir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog: confirmar exclusão de base salva */}
+      <AlertDialog open={deletePending !== null} onOpenChange={(open) => { if (!open) setDeletePending(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover base salva?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A base {deletePending ? TIPO_LABELS[deletePending] : ""} salva localmente será removida.
+              O arquivo original não será afetado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletePending(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deletePending && handleDeleteBase(deletePending)}
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

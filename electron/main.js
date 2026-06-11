@@ -128,6 +128,81 @@ ipcMain.on("check-for-updates", () => {
   if (!isDev) checkForUpdates();
 });
 
+// Bases locais: armazenamento de arquivos de dados
+function getBasesDir() {
+  return path.join(app.getPath("userData"), "bases");
+}
+
+function ensureBasesDir() {
+  const dir = getBasesDir();
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
+  try {
+    const dir = ensureBasesDir();
+    const extensao = path.extname(nomeArquivo) || ".xlsx";
+    const destino = path.join(dir, tipo + extensao);
+    fs.writeFileSync(destino, Buffer.from(conteudoBase64, "base64"));
+    log.info("Base salva:", destino);
+    return { ok: true };
+  } catch (err) {
+    log.error("Erro ao salvar base:", err);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:load", async (event, { tipo }) => {
+  try {
+    const dir = getBasesDir();
+    const arquivos = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith(tipo)) : [];
+    if (arquivos.length === 0) return { ok: false, motivo: "nenhum_arquivo" };
+    const caminho = path.join(dir, arquivos[0]);
+    const stats = fs.statSync(caminho);
+    return {
+      ok: true,
+      nomeArquivo: arquivos[0],
+      conteudoBase64: fs.readFileSync(caminho).toString("base64"),
+      tamanho: stats.size,
+      ultimaModificacao: stats.mtime.toISOString(),
+    };
+  } catch (err) {
+    log.error("Erro ao carregar base:", err);
+    return { ok: false, motivo: "erro", erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:info", async () => {
+  try {
+    const dir = getBasesDir();
+    if (!fs.existsSync(dir)) return { ok: true, bases: {} };
+    const bases = {};
+    for (const tipo of ["ke30", "budget", "demanda"]) {
+      const arquivos = fs.readdirSync(dir).filter(f => f.startsWith(tipo));
+      if (arquivos.length > 0) {
+        const stats = fs.statSync(path.join(dir, arquivos[0]));
+        bases[tipo] = { nomeArquivo: arquivos[0], tamanho: stats.size, ultimaModificacao: stats.mtime.toISOString() };
+      }
+    }
+    return { ok: true, bases };
+  } catch (err) {
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:delete", async (event, { tipo }) => {
+  try {
+    const dir = getBasesDir();
+    const arquivos = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith(tipo)) : [];
+    for (const arquivo of arquivos) fs.unlinkSync(path.join(dir, arquivo));
+    log.info("Base deletada:", tipo);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, erro: err.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

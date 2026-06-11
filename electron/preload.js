@@ -7,6 +7,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onUpdateDownloaded: (callback) => ipcRenderer.on("update-downloaded", (_, version) => callback(version)),
   installUpdate: () => ipcRenderer.send("install-update"),
   checkForUpdates: () => ipcRenderer.send("check-for-updates"),
+  // Bases locais
+  bases: {
+    salvar: (tipo, nomeArquivo, conteudoBase64) =>
+      ipcRenderer.invoke("bases:save", { tipo, nomeArquivo, conteudoBase64 }),
+    carregar: (tipo) =>
+      ipcRenderer.invoke("bases:load", { tipo }),
+    info: () =>
+      ipcRenderer.invoke("bases:info"),
+    deletar: (tipo) =>
+      ipcRenderer.invoke("bases:delete", { tipo }),
+  },
   // Utilitários
   isElectron: true,
 });

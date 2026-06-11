@@ -13,6 +13,7 @@ import {
   ArrowDown,
   AlertTriangle,
   TrendingUp,
+  HardDrive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Topbar } from "@/components/pricing/Topbar";
@@ -53,6 +54,7 @@ import { exportDemandaXlsx } from "@/lib/exportDemanda";
 import { useDemanda } from "@/store/demanda";
 import { usePricing } from "@/store/pricing";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { useBasesLocais } from "@/hooks/use-bases-locais";
 import type { MetodoSugestao } from "@/lib/demanda";
 import { cn } from "@/lib/utils";
 
@@ -185,6 +187,10 @@ export default function Demanda() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [gridVisible, setGridVisible] = useState(true);
   const originalFileRef = useRef<File | null>(null);
+
+  const basesLocais = useBasesLocais();
+  const autoLoadedRef = useRef(false);
+  const [savedDemandaBanner, setSavedDemandaBanner] = useState<{ nomeArquivo: string; data: string } | null>(null);
 
   // Canal fade animation on canal change
   useEffect(() => {
@@ -340,6 +346,35 @@ export default function Demanda() {
   }, [deck, canalAtivo, edits, summary]);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!basesLocais.isElectron || deck !== null || autoLoadedRef.current) return;
+    autoLoadedRef.current = true;
+    basesLocais.infoBasesSalvas().then((info) => {
+      if (info.demanda) {
+        setSavedDemandaBanner({
+          nomeArquivo: info.demanda.nomeArquivo,
+          data: new Date(info.demanda.ultimaModificacao).toLocaleDateString("pt-BR"),
+        });
+      }
+    });
+  }, [deck, basesLocais.isElectron, basesLocais.infoBasesSalvas]);
+
+  const handleLoadSavedDemanda = useCallback(async () => {
+    setSavedDemandaBanner(null);
+    toast.info("Carregando base de Demanda salva...");
+    try {
+      const file = await basesLocais.carregarBase("demanda");
+      if (file) {
+        const parsed = await parseDemandaXlsx(file);
+        originalFileRef.current = file;
+        loadDeck(parsed);
+        toast.success(`${parsed.rows.length} SKUs carregados de ${parsed.nomeArquivo}`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar base de Demanda salva.");
+    }
+  }, [basesLocais.carregarBase, loadDeck]);
+
   const handleFileDrop = useCallback(
     async (file: File) => {
       originalFileRef.current = file;
@@ -347,11 +382,14 @@ export default function Demanda() {
         const parsed = await parseDemandaXlsx(file);
         loadDeck(parsed);
         toast.success(`${parsed.rows.length} SKUs carregados de ${parsed.nomeArquivo}`);
+        if (basesLocais.isElectron) {
+          await basesLocais.salvarBase("demanda", file);
+        }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Erro ao processar o arquivo.");
       }
     },
-    [loadDeck],
+    [loadDeck, basesLocais.isElectron, basesLocais.salvarBase],
   );
 
   const handleZeroSkuFuture = useCallback(
@@ -445,6 +483,25 @@ export default function Demanda() {
     return (
       <div className="flex flex-1 flex-col">
         <Topbar title="Demanda" />
+        {savedDemandaBanner && (
+          <div className="mx-8 mt-4 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/8 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm">
+              <HardDrive className="h-4 w-4 shrink-0 text-primary" />
+              <span>
+                Base de Demanda salva encontrada:{" "}
+                <strong>{savedDemandaBanner.nomeArquivo}</strong> · {savedDemandaBanner.data}
+              </span>
+            </div>
+            <div className="ml-4 flex shrink-0 items-center gap-2">
+              <Button size="sm" onClick={handleLoadSavedDemanda}>
+                Carregar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSavedDemandaBanner(null)}>
+                Ignorar
+              </Button>
+            </div>
+          </div>
+        )}
         <DemandaUploadWithRef onFile={handleFileDrop} />
       </div>
     );
