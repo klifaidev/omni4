@@ -131,12 +131,11 @@
         "to": "app-update.yml"
       }
     ],
+    "buildDependenciesFromSource": false,
+    "nodeGypRebuild": false,
     "files": [
       "dist/**/*",
-      "electron/**/*",
-      "node_modules/electron-updater/**/*",
-      "node_modules/electron-log/**/*",
-      "!node_modules/**"
+      "electron/**/*"
     ],
     "win": {
       "target": [
