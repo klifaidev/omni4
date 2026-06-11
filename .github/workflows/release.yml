@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -25,4 +27,6 @@ jobs:
       - name: Build e publicar
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          EP_DRAFT: false
+          EP_PRE_RELEASE: false
         run: npm run electron:publish
