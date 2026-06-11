@@ -5,12 +5,19 @@ const path = require("path");
 const fs = require("fs");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
-// Configurar logs
-autoUpdater.logger = log;
-autoUpdater.logger.transports.file.level = "info";
+// Configurar electron-log
+log.transports.file.resolvePath = () => {
+  return path.join(app.getPath("userData"), "logs", "main.log");
+};
+log.transports.file.level = "info";
+log.info("=== OMNI4 INICIADO ===");
 log.info("=== APP INICIADO. Versão:", app.getVersion(), "===");
 log.info("=== isPackaged:", app.isPackaged, "===");
 log.info("=== isDev:", isDev, "===");
+
+// Configurar autoUpdater logger
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = "info";
 
 let mainWindow;
 
@@ -62,7 +69,20 @@ function createWindow() {
 
 // Auto-update
 function checkForUpdates() {
-  autoUpdater.checkForUpdatesAndNotify();
+  try {
+    log.info("=== INICIANDO CHECK FOR UPDATES ===");
+    log.info("Versão atual:", app.getVersion());
+    log.info("isPackaged:", app.isPackaged);
+    autoUpdater.setFeedURL({
+      provider: "github",
+      owner: "klifaidev",
+      repo: "omni4",
+      private: false,
+    });
+    autoUpdater.checkForUpdatesAndNotify();
+  } catch (err) {
+    log.error("Erro ao verificar atualizações:", err);
+  }
 }
 
 autoUpdater.on("checking-for-update", () => {

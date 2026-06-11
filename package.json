@@ -125,6 +125,12 @@
     "directories": {
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "electron/app-update.yml",
+        "to": "app-update.yml"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
