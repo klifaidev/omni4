@@ -72,16 +72,21 @@ function checkForUpdates() {
   try {
     log.info("=== INICIANDO CHECK FOR UPDATES ===");
     log.info("Versão atual:", app.getVersion());
-    log.info("isPackaged:", app.isPackaged);
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
     autoUpdater.setFeedURL({
       provider: "github",
       owner: "klifaidev",
       repo: "omni4",
-      private: false,
+      releaseType: "release",
     });
+
+    log.info("Feed URL configurado para klifaidev/omni4");
     autoUpdater.checkForUpdatesAndNotify();
   } catch (err) {
-    log.error("Erro ao verificar atualizações:", err);
+    log.error("=== ERRO NO CHECK FOR UPDATES:", err.message, "===");
   }
 }
 
