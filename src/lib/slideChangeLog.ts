@@ -1,0 +1,98 @@
+// Log de alterações da sala de colaboração — persistência local + descrição
+// legível para cada CollabEvent recebido.
+import type { CollabEvent } from "@/lib/collaboration";
+import type { SlideItem } from "@/lib/slidesFlow";
+import { metaOf } from "@/lib/slidesFlow";
+import { useSlidesFlow } from "@/store/slidesFlow";
+
+export interface ChangeLogEntry {
+  eventId: string;
+  type: string;
+  userId: string;
+  userName: string;
+  userColor?: string;
+  ts: number;
+  description: string;
+}
+
+const STORAGE_KEY = "slides-change-log-v1";
+const MAX_ENTRIES = 100;
+
+const listeners = new Set<() => void>();
+
+export function readLog(): ChangeLogEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as ChangeLogEntry[];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function write(entries: ChangeLogEntry[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_ENTRIES)));
+  } catch {
+    /* noop */
+  }
+  for (const l of listeners) l();
+}
+
+export function clearLog(): void {
+  write([]);
+}
+
+export function subscribeLog(handler: () => void): () => void {
+  listeners.add(handler);
+  return () => { listeners.delete(handler); };
+}
+
+function describe(event: CollabEvent, userName: string): string {
+  switch (event.type) {
+    case "add_item": {
+      const item = event.payload as SlideItem;
+      const label = item?.label ?? (item?.kind ? metaOf(item.kind).title : "slide");
+      return `${userName} adicionou ${label}`;
+    }
+    case "remove_item": {
+      const p = event.payload as { id: string };
+      const items = useSlidesFlow.getState().items;
+      const idx = items.findIndex((i) => i.id === p.id);
+      return `${userName} removeu slide ${idx >= 0 ? idx + 1 : ""}`.trim();
+    }
+    case "update_item":
+      return `${userName} editou um slide`;
+    case "reorder":
+      return `${userName} reordenou slides`;
+    case "update_transition": {
+      const p = event.payload as { transition: string };
+      return `${userName} mudou transição para ${p.transition}`;
+    }
+    default:
+      return `${userName} fez uma alteração`;
+  }
+}
+
+export function recordEvent(
+  event: CollabEvent,
+  userName: string,
+  userColor?: string,
+): void {
+  const eventId = `${event.userId}-${event.ts}-${event.type}`;
+  const entries = readLog();
+  if (entries.some((e) => e.eventId === eventId)) return; // dedupe
+  const entry: ChangeLogEntry = {
+    eventId,
+    type: event.type,
+    userId: event.userId,
+    userName,
+    userColor,
+    ts: event.ts,
+    description: describe(event, userName),
+  };
+  write([...entries, entry]);
+}

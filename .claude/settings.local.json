@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Pichau\\\\Downloads\\\\omni4\\\\omni4\\\\src\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Pichau\\\\Downloads\\\\omni4\\\\omni4\" -Recurse -Directory)",
+      "PowerShell(head *)",
+      "Bash(npx vite *)",
+      "Bash(python *)",
+      "Bash(Get-ChildItem -Recurse -Name -Path . -Include \"*demanda*\" -File)",
+      "Bash(xargs grep -l -i \"demanda\")",
+      "Bash(npm install *)",
+      "Bash(npx electron-builder *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Pichau\\\\Downloads\\\\omni4\\\\omni4\\\\release\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object Name, @{N=\"Tamanho\";E={[math]::Round\\($_.Length/1MB, 2\\).ToString\\(\\) + \" MB\"}})",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ]
+  }
+}

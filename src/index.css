@@ -1,0 +1,290 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Pricing Analytics — Harald: Dark Glassmorphism Design System
+   All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Dark glass theme (default) */
+    --background: 240 30% 6%;
+    --foreground: 220 20% 96%;
+
+    --card: 240 25% 9%;
+    --card-foreground: 220 20% 96%;
+
+    --popover: 240 30% 8%;
+    --popover-foreground: 220 20% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --primary-glow: 217 91% 70%;
+
+    --secondary: 240 20% 14%;
+    --secondary-foreground: 220 20% 96%;
+
+    --muted: 240 18% 14%;
+    --muted-foreground: 220 12% 65%;
+
+    --accent: 263 70% 65%;
+    --accent-foreground: 220 20% 96%;
+
+    --destructive: 0 84% 65%;
+    --destructive-foreground: 220 20% 96%;
+
+    --success: 158 64% 52%;
+    --success-foreground: 220 20% 96%;
+
+    --warning: 38 92% 60%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 240 15% 20%;
+    --input: 240 18% 14%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.875rem;
+
+    /* Glass tokens */
+    --glass-bg: 240 25% 11%;
+    --glass-border: 220 30% 100%;
+    --glass-border-opacity: 0.08;
+
+    /* PVM accent palette */
+    --pvm-volume: 217 91% 60%;
+    --pvm-price: 200 90% 55%;
+    --pvm-cost: 220 80% 50%;
+    --pvm-freight: 0 84% 65%;
+    --pvm-commission: 195 70% 60%;
+    --pvm-others: 220 12% 70%;
+    --pvm-mix: 38 92% 60%;
+    --pvm-base: 0 0% 8%;
+
+    /* Gradients */
+    --gradient-bg: radial-gradient(ellipse at top left, hsl(240 40% 12%) 0%, hsl(240 30% 6%) 60%);
+    --gradient-glow-blue: radial-gradient(circle at center, hsl(217 91% 60% / 0.18), transparent 70%);
+    --gradient-glow-green: radial-gradient(circle at center, hsl(158 64% 52% / 0.18), transparent 70%);
+    --gradient-glow-red: radial-gradient(circle at center, hsl(0 84% 65% / 0.18), transparent 70%);
+    --gradient-card: linear-gradient(135deg, hsl(240 30% 12% / 0.7), hsl(240 25% 8% / 0.5));
+
+    /* Shadows */
+    --shadow-glass: 0 8px 32px -4px hsl(240 60% 2% / 0.6), inset 0 1px 0 0 hsl(220 30% 100% / 0.06);
+    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.25);
+    --shadow-elegant: 0 20px 60px -20px hsl(240 60% 2% / 0.8);
+
+    --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 240 30% 7%;
+    --sidebar-foreground: 220 20% 90%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 220 20% 96%;
+    --sidebar-accent: 240 20% 13%;
+    --sidebar-accent-foreground: 220 20% 96%;
+    --sidebar-border: 240 15% 18%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  /* ====== Light mode ====== */
+  .light {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 50%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 217 91% 60%;
+
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 263 70% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 158 64% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 220 13% 88%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 50%;
+
+    --glass-bg: 0 0% 100%;
+    --glass-border: 220 20% 10%;
+    --glass-border-opacity: 0.12;
+
+    --gradient-bg: linear-gradient(135deg, hsl(220 30% 97%), hsl(220 20% 94%));
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 100% / 0.85), hsl(220 20% 98% / 0.7));
+    --gradient-glow-blue: radial-gradient(circle at center, hsl(217 91% 50% / 0.14), transparent 70%);
+    --gradient-glow-green: radial-gradient(circle at center, hsl(158 64% 42% / 0.14), transparent 70%);
+    --gradient-glow-red: radial-gradient(circle at center, hsl(0 84% 55% / 0.14), transparent 70%);
+
+    --shadow-glass: 0 4px 16px -4px hsl(220 20% 10% / 0.1), inset 0 1px 0 0 hsl(0 0% 100% / 0.8);
+    --shadow-glow: 0 0 40px hsl(217 91% 50% / 0.18);
+    --shadow-elegant: 0 20px 60px -20px hsl(220 20% 10% / 0.18);
+
+    --sidebar-background: 220 14% 96%;
+    --sidebar-foreground: 222 47% 20%;
+    --sidebar-primary: 217 91% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 90%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 85%;
+    --sidebar-ring: 217 91% 50%;
+  }
+
+  /* ====== Modo Inovação ======
+     Ativado por <html data-mode="inovacao">. Apenas tokens de accent/primary
+     são reescritos: paleta violeta-magenta, mantendo legibilidade e estrutura.
+     Tudo o que usar hsl(var(--primary)) / accent / ring se transforma. */
+  :root[data-mode="inovacao"] {
+    --primary: 280 90% 65%;
+    --primary-glow: 295 95% 72%;
+    --primary-foreground: 240 30% 8%;
+    --accent: 295 85% 65%;
+    --ring: 280 90% 65%;
+    --sidebar-primary: 280 90% 65%;
+    --sidebar-ring: 280 90% 65%;
+
+    --gradient-bg: radial-gradient(ellipse at top left, hsl(280 50% 14%) 0%, hsl(245 35% 7%) 60%);
+    --shadow-glow: 0 0 40px hsl(280 90% 65% / 0.32);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body, #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply text-foreground antialiased;
+    background: var(--gradient-bg);
+    background-attachment: fixed;
+    font-feature-settings: "cv11", "ss01";
+    font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "Inter", sans-serif;
+    letter-spacing: -0.011em;
+    transition: background 700ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Aurora — overlay sutil ativo no Modo Inovação. Não captura clique. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -20%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    background:
+      radial-gradient(40% 35% at 18% 22%, hsl(280 95% 62% / 0.28), transparent 60%),
+      radial-gradient(45% 40% at 82% 30%, hsl(195 95% 60% / 0.22), transparent 65%),
+      radial-gradient(50% 40% at 50% 90%, hsl(310 90% 60% / 0.20), transparent 60%);
+    filter: blur(60px) saturate(140%);
+    transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1);
+    animation: aurora-drift 18s ease-in-out infinite alternate;
+  }
+  :root[data-mode="inovacao"] body::before {
+    opacity: 1;
+  }
+  /* garante que o conteúdo fique acima da aurora */
+  #root { position: relative; z-index: 1; }
+
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.025em;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(240 15% 22%);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(240 15% 30%); background-clip: padding-box; border: 2px solid transparent; }
+}
+
+@layer components {
+  .glass {
+    background: var(--gradient-card);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid hsl(var(--glass-border) / var(--glass-border-opacity));
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-hover {
+    transition: all 0.3s var(--transition-smooth);
+  }
+  .glass-hover:hover {
+    border-color: hsl(var(--glass-border) / 0.16);
+    transform: translateY(-1px);
+  }
+
+  .text-gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--muted-foreground)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glow-blue { box-shadow: 0 0 60px hsl(217 91% 60% / 0.18); }
+  .glow-green { box-shadow: 0 0 60px hsl(158 64% 52% / 0.18); }
+  .glow-red { box-shadow: 0 0 60px hsl(0 84% 65% / 0.18); }
+}
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fade-up 0.25s ease-out both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.2s ease-out both;
+  }
+  .animate-slide-in-right {
+    animation: slide-in-right 0.2s ease-out both;
+  }
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-150 { animation-delay: 150ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes aurora-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(2%, -1.5%, 0) scale(1.05); }
+  100% { transform: translate3d(-2%, 1.5%, 0) scale(1.02); }
+}
+
+/* Utilitário: esconde scrollbar mantendo o scroll funcional */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }

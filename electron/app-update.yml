@@ -1,0 +1,4 @@
+provider: github
+owner: klifaidev
+repo: omni4
+updaterCacheDirName: omni4-updater
