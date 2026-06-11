@@ -1,8 +1,13 @@
+// Diagnóstico: escrever no Desktop antes de qualquer outro require
+const fs = require("fs");
+const os = require("os");
+const startupLogPath = os.homedir() + "\\Desktop\\omni4-startup.txt";
+fs.writeFileSync(startupLogPath, "OMNI4 MAIN.JS CARREGADO - " + new Date().toISOString());
+
 const { app, BrowserWindow, ipcMain } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 const path = require("path");
-const fs = require("fs");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 // Configurar electron-log
