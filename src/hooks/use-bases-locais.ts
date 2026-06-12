@@ -21,18 +21,16 @@ declare global {
   }
 }
 
-function fileToBase64(file: File): Promise<string> {
+function fileToDataUrlBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const buffer = reader.result as ArrayBuffer;
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), ""),
-      );
-      resolve(base64);
+      // result = "data:<mime>;base64,<dados>" — extrair apenas os dados
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.split(",")[1]);
     };
     reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
   });
 }
 
@@ -46,11 +44,10 @@ function base64ToFile(base64: string, nomeArquivo: string): File {
 export function useBasesLocais() {
   const isElectron = !!(window.electronAPI?.bases);
 
-  const salvarBase = useCallback(async (tipo: TipoBase, file: File): Promise<boolean> => {
-    if (!window.electronAPI?.bases) return false;
-    const conteudoBase64 = await fileToBase64(file);
-    const result = await window.electronAPI.bases.salvar(tipo, file.name, conteudoBase64);
-    return result.ok;
+  const salvarBase = useCallback(async (tipo: TipoBase, file: File): Promise<{ ok: boolean; erro?: string }> => {
+    if (!window.electronAPI?.bases) return { ok: false };
+    const conteudoBase64 = await fileToDataUrlBase64(file);
+    return window.electronAPI.bases.salvar(tipo, file.name, conteudoBase64);
   }, []);
 
   const carregarBase = useCallback(async (tipo: TipoBase): Promise<File | null> => {

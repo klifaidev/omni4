@@ -221,23 +221,31 @@ export default function Upload() {
 
   const handleAfterApply = useCallback(
     async (applied: { tipo: "ke30" | "budget"; file: File }[]) => {
-      const info = await basesLocais.infoBasesSalvas();
       const toConfirm: Array<{ tipo: TipoBase; file: File; dataExistente: string }> = [];
-      let salvou = false;
       for (const { tipo, file } of applied) {
-        if (info[tipo]) {
-          toConfirm.push({
-            tipo,
-            file,
-            dataExistente: new Date(info[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
-          });
-        } else {
-          await basesLocais.salvarBase(tipo, file);
-          toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
-          salvou = true;
+        try {
+          const infoAtual = await basesLocais.infoBasesSalvas();
+          if (infoAtual[tipo]) {
+            toConfirm.push({
+              tipo,
+              file,
+              dataExistente: new Date(infoAtual[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
+            });
+          } else {
+            const resultado = await basesLocais.salvarBase(tipo, file);
+            if (resultado?.ok) {
+              toast.success(`Base ${tipo.toUpperCase()} salva localmente.`);
+            } else {
+              toast.error(`Falha ao salvar base ${tipo.toUpperCase()} localmente.`);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "erro desconhecido";
+          console.error(`Erro ao salvar base ${tipo}:`, err);
+          toast.error(`Erro ao salvar base ${tipo.toUpperCase()}: ${msg}`);
         }
       }
-      if (salvou) await refreshInfoSalvas();
+      await refreshInfoSalvas();
       if (toConfirm.length > 0) setPendingSaveQueue(toConfirm);
     },
     [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
@@ -267,9 +275,13 @@ export default function Upload() {
           },
         ]);
       } else {
-        await basesLocais.salvarBase(tipo as TipoBase, file);
-        toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
-        await refreshInfoSalvas();
+        const resultado = await basesLocais.salvarBase(tipo as TipoBase, file);
+        if (resultado?.ok) {
+          toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
+          await refreshInfoSalvas();
+        } else {
+          toast.error(`Falha ao salvar base ${TIPO_LABELS[tipo]} localmente.`);
+        }
       }
     },
     [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
@@ -652,8 +664,12 @@ export default function Upload() {
               onClick={async () => {
                 const current = pendingSaveQueue[0];
                 if (!current) return;
-                await basesLocais.salvarBase(current.tipo, current.file);
-                toast.success(`Base ${TIPO_LABELS[current.tipo]} substituída e salva localmente.`);
+                const resultado = await basesLocais.salvarBase(current.tipo, current.file);
+                if (resultado?.ok) {
+                  toast.success(`Base ${TIPO_LABELS[current.tipo]} substituída e salva localmente.`);
+                } else {
+                  toast.error(`Falha ao substituir base ${TIPO_LABELS[current.tipo]}.`);
+                }
                 setPendingSaveQueue((prev) => prev.slice(1));
                 await refreshInfoSalvas();
               }}
