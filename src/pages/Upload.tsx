@@ -20,7 +20,7 @@ import { useUploadGuard } from "@/store/uploadGuard";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { parseCsvFile } from "@/lib/csv";
 import { parseBudgetFile } from "@/lib/budget";
-import { useBasesLocais, type TipoBase } from "@/hooks/use-bases-locais";
+import { useBasesLocais, type TipoBase, type InfoBase } from "@/hooks/use-bases-locais";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -165,15 +165,15 @@ export default function Upload() {
 
   const basesLocais = useBasesLocais();
   const autoLoadedRef = useRef(false);
-  const [infoSalvas, setInfoSalvas] = useState<Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>>({});
+  const [infoSalvas, setInfoSalvas] = useState<Record<string, InfoBase>>({});
   const [pendingSaveQueue, setPendingSaveQueue] = useState<Array<{ tipo: TipoBase; file: File; dataExistente: string }>>([]);
   const [basesSalvas, setBasesSalvas] = useState<Record<string, boolean>>({});
-  const [deletePending, setDeletePending] = useState<TipoBase | null>(null);
+  const [deletePending, setDeletePending] = useState<{ tipo: TipoBase; nomeArquivo?: string } | null>(null);
 
   const refreshInfoSalvas = useCallback(async () => {
     if (!basesLocais.isElectron) return;
     const info = await basesLocais.infoBasesSalvas();
-    setInfoSalvas(info as Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>);
+    setInfoSalvas(info as Record<string, InfoBase>);
     setBasesSalvas({ ke30: !!info.ke30, budget: !!info.budget, demanda: !!info.demanda });
   }, [basesLocais.isElectron, basesLocais.infoBasesSalvas]);
 
@@ -188,14 +188,14 @@ export default function Upload() {
         toast.info("Carregando base KE30 salva...");
         try {
           setParsingStart();
-          const file = await basesLocais.carregarBase("ke30");
-          if (file) {
+          const savedFiles = await basesLocais.carregarBase("ke30");
+          for (const file of savedFiles) {
             const parsed = await parseCsvFile(file);
             if (parsed.rows.length > 0) {
               addParsed(parsed.rows, parsed.file, false, parsed.missing);
-              toast.success(`Base KE30 carregada: ${parsed.rows.length.toLocaleString("pt-BR")} linhas`);
             }
           }
+          if (savedFiles.length > 0) toast.success(`Base KE30 carregada: ${savedFiles.length} arquivo(s)`);
         } catch { toast.error("Erro ao carregar base KE30 salva."); }
         finally { setParsingEnd(); }
       }
@@ -203,14 +203,14 @@ export default function Upload() {
         toast.info("Carregando base Budget salva...");
         try {
           setParsingStart();
-          const file = await basesLocais.carregarBase("budget");
-          if (file) {
+          const savedFiles = await basesLocais.carregarBase("budget");
+          for (const file of savedFiles) {
             const parsed = await parseBudgetFile(file);
             if (parsed.rows.length > 0) {
               addBudget(parsed.rows, parsed.file, false);
-              toast.success(`Base Budget carregada: ${parsed.rows.length.toLocaleString("pt-BR")} linhas`);
             }
           }
+          if (savedFiles.length > 0) toast.success(`Base Budget carregada: ${savedFiles.length} arquivo(s)`);
         } catch { toast.error("Erro ao carregar base Budget salva."); }
         finally { setParsingEnd(); }
       }
@@ -225,7 +225,8 @@ export default function Upload() {
       for (const { tipo, file } of applied) {
         try {
           const infoAtual = await basesLocais.infoBasesSalvas();
-          if (infoAtual[tipo]) {
+          const jaExiste = infoAtual[tipo]?.nomeArquivos?.includes(file.name);
+          if (jaExiste) {
             toConfirm.push({
               tipo,
               file,
@@ -252,11 +253,10 @@ export default function Upload() {
   );
 
   const handleDeleteBase = useCallback(
-    async (tipo: TipoBase) => {
-      await basesLocais.deletarBase(tipo);
-      toast.success("Base local removida.");
+    async (tipo: TipoBase, nomeArquivo?: string) => {
+      await basesLocais.deletarBase(tipo, nomeArquivo);
+      toast.success(nomeArquivo ? `Arquivo "${nomeArquivo}" removido.` : "Base local removida.");
       setDeletePending(null);
-      setBasesSalvas((prev) => ({ ...prev, [tipo]: false }));
       await refreshInfoSalvas();
     },
     [basesLocais.deletarBase, refreshInfoSalvas],
@@ -265,7 +265,8 @@ export default function Upload() {
   const handleSaveFileFromQueue = useCallback(
     async (tipo: "ke30" | "budget", file: File) => {
       const info = await basesLocais.infoBasesSalvas();
-      if (info[tipo]) {
+      const jaExiste = info[tipo]?.nomeArquivos?.includes(file.name);
+      if (jaExiste) {
         setPendingSaveQueue((prev) => [
           ...prev,
           {
@@ -456,7 +457,7 @@ export default function Upload() {
             onAfterApply={basesLocais.isElectron ? handleAfterApply : undefined}
             savedTypes={basesLocais.isElectron ? savedTypesSet : undefined}
             onSaveFile={basesLocais.isElectron ? handleSaveFileFromQueue : undefined}
-            onDeleteFile={basesLocais.isElectron ? (t) => setDeletePending(t as TipoBase) : undefined}
+            onDeleteFile={basesLocais.isElectron ? (t) => setDeletePending({ tipo: t as TipoBase }) : undefined}
             isElectron={basesLocais.isElectron}
           />
           {parsing && (
@@ -594,25 +595,28 @@ export default function Upload() {
                 const info = infoSalvas[tipo];
                 if (!info) return null;
                 return (
-                  <div key={tipo} className="flex items-center justify-between rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{TIPO_LABELS[tipo]}</span>
-                        <span className="truncate text-[10px] text-muted-foreground">{info.nomeArquivo}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <div key={tipo} className="space-y-1">
+                    <div className="flex items-center gap-2 px-1 pb-0.5">
+                      <span className="text-sm font-medium">{TIPO_LABELS[tipo]}</span>
+                      <Badge variant="secondary" className="text-[10px]">{info.quantidade} arquivo(s)</Badge>
+                      <span className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        {new Date(info.ultimaModificacao).toLocaleString("pt-BR")} · {formatFileSize(info.tamanho)}
-                      </div>
+                        {new Date(info.ultimaModificacao).toLocaleString("pt-BR")} · {formatFileSize(info.tamanhoTotal)}
+                      </span>
                     </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeletePending(tipo)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {info.nomeArquivos.map((nome) => (
+                      <div key={nome} className="flex items-center justify-between rounded-lg border border-border/40 bg-secondary/30 px-3 py-2">
+                        <span className="truncate text-sm">{nome}</span>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setDeletePending({ tipo, nomeArquivo: nome })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 );
               })}
@@ -644,11 +648,11 @@ export default function Upload() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Substituir base salva?</AlertDialogTitle>
+            <AlertDialogTitle>Substituir arquivo salvo?</AlertDialogTitle>
             <AlertDialogDescription>
-              Já existe uma base{" "}
-              {pendingSaveQueue[0] ? TIPO_LABELS[pendingSaveQueue[0].tipo] : ""} salva de{" "}
-              {pendingSaveQueue[0]?.dataExistente}. Deseja substituí-la?
+              O arquivo{" "}
+              <span className="font-medium">{pendingSaveQueue[0]?.file.name}</span> já está salvo na base{" "}
+              {pendingSaveQueue[0] ? TIPO_LABELS[pendingSaveQueue[0].tipo] : ""}. Deseja substituí-lo?
               {pendingSaveQueue.length > 1 && (
                 <span className="ml-1 text-muted-foreground">
                   ({pendingSaveQueue.length - 1} mais na fila)
@@ -684,17 +688,19 @@ export default function Upload() {
       <AlertDialog open={deletePending !== null} onOpenChange={(open) => { if (!open) setDeletePending(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover base salva?</AlertDialogTitle>
+            <AlertDialogTitle>Remover arquivo salvo?</AlertDialogTitle>
             <AlertDialogDescription>
-              Remover a base {deletePending ? TIPO_LABELS[deletePending] : ""} salva localmente?
-              Os dados desta sessão não serão afetados.
+              {deletePending?.nomeArquivo
+                ? <>Remover o arquivo <span className="font-medium">"{deletePending.nomeArquivo}"</span> da base {TIPO_LABELS[deletePending.tipo]}?</>
+                : <>Remover a base {deletePending ? TIPO_LABELS[deletePending.tipo] : ""} salva localmente?</>}
+              {" "}Os dados desta sessão não serão afetados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeletePending(null)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletePending && handleDeleteBase(deletePending)}
+              onClick={() => deletePending && handleDeleteBase(deletePending.tipo, deletePending.nomeArquivo)}
             >
               Remover
             </AlertDialogAction>

@@ -3,8 +3,9 @@ import { useCallback } from "react";
 export type TipoBase = "ke30" | "budget" | "demanda";
 
 export interface InfoBase {
-  nomeArquivo: string;
-  tamanho: number;
+  quantidade: number;
+  nomeArquivos: string[];
+  tamanhoTotal: number;
   ultimaModificacao: string;
 }
 
@@ -13,9 +14,9 @@ declare global {
     electronAPI?: {
       bases?: {
         salvar: (tipo: string, nomeArquivo: string, conteudoBase64: string) => Promise<{ ok: boolean; erro?: string }>;
-        carregar: (tipo: string) => Promise<{ ok: boolean; nomeArquivo?: string; conteudoBase64?: string; tamanho?: number; ultimaModificacao?: string; motivo?: string }>;
+        carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: Array<{ nomeArquivo: string; conteudoBase64: string; tamanho: number; ultimaModificacao: string }>; motivo?: string; erro?: string }>;
         info: () => Promise<{ ok: boolean; bases?: Record<string, InfoBase>; erro?: string }>;
-        deletar: (tipo: string) => Promise<{ ok: boolean; erro?: string }>;
+        deletar: (tipo: string, nomeArquivo?: string) => Promise<{ ok: boolean; erro?: string }>;
       };
     };
   }
@@ -50,11 +51,18 @@ export function useBasesLocais() {
     return window.electronAPI.bases.salvar(tipo, file.name, conteudoBase64);
   }, []);
 
-  const carregarBase = useCallback(async (tipo: TipoBase): Promise<File | null> => {
-    if (!window.electronAPI?.bases) return null;
+  const carregarBase = useCallback(async (tipo: TipoBase): Promise<File[]> => {
+    if (!window.electronAPI?.bases) return [];
     const result = await window.electronAPI.bases.carregar(tipo);
-    if (!result.ok || !result.conteudoBase64 || !result.nomeArquivo) return null;
-    return base64ToFile(result.conteudoBase64, result.nomeArquivo);
+    if (!result.ok || !result.arquivos) return [];
+    return result.arquivos.map(({ nomeArquivo, conteudoBase64, ultimaModificacao }) => {
+      const binary = atob(conteudoBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const ext = nomeArquivo.split(".").pop() ?? "csv";
+      const mime = ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      return new File([bytes], nomeArquivo, { type: mime, lastModified: new Date(ultimaModificacao).getTime() });
+    });
   }, []);
 
   const infoBasesSalvas = useCallback(async (): Promise<Record<TipoBase, InfoBase | undefined>> => {
@@ -64,9 +72,9 @@ export function useBasesLocais() {
     return result.bases as Record<TipoBase, InfoBase | undefined>;
   }, []);
 
-  const deletarBase = useCallback(async (tipo: TipoBase): Promise<boolean> => {
+  const deletarBase = useCallback(async (tipo: TipoBase, nomeArquivo?: string): Promise<boolean> => {
     if (!window.electronAPI?.bases) return false;
-    const result = await window.electronAPI.bases.deletar(tipo);
+    const result = await window.electronAPI.bases.deletar(tipo, nomeArquivo);
     return result.ok;
   }, []);
 

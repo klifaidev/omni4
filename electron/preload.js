@@ -15,8 +15,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("bases:load", { tipo }),
     info: () =>
       ipcRenderer.invoke("bases:info"),
-    deletar: (tipo) =>
-      ipcRenderer.invoke("bases:delete", { tipo }),
+    deletar: (tipo, nomeArquivo) =>
+      ipcRenderer.invoke("bases:delete", { tipo, nomeArquivo }),
   },
   // Utilitários
   isElectron: true,

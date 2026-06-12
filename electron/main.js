@@ -142,11 +142,12 @@ function ensureBasesDir() {
 ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
   try {
     const dir = ensureBasesDir();
-    const extensao = path.extname(nomeArquivo) || ".xlsx";
-    const destino = path.join(dir, tipo + extensao);
+    const subDir = path.join(dir, tipo);
+    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+    const destino = path.join(subDir, nomeArquivo);
     fs.writeFileSync(destino, Buffer.from(conteudoBase64, "base64"));
     log.info("Base salva:", destino);
-    return { ok: true };
+    return { ok: true, caminho: destino };
   } catch (err) {
     log.error("Erro ao salvar base:", err);
     return { ok: false, erro: err.message };
@@ -155,20 +156,24 @@ ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }
 
 ipcMain.handle("bases:load", async (event, { tipo }) => {
   try {
-    const dir = getBasesDir();
-    const arquivos = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith(tipo)) : [];
+    const subDir = path.join(getBasesDir(), tipo);
+    if (!fs.existsSync(subDir)) return { ok: false, motivo: "nenhum_arquivo" };
+    const arquivos = fs.readdirSync(subDir);
     if (arquivos.length === 0) return { ok: false, motivo: "nenhum_arquivo" };
-    const caminho = path.join(dir, arquivos[0]);
-    const stats = fs.statSync(caminho);
-    return {
-      ok: true,
-      nomeArquivo: arquivos[0],
-      conteudoBase64: fs.readFileSync(caminho).toString("base64"),
-      tamanho: stats.size,
-      ultimaModificacao: stats.mtime.toISOString(),
-    };
+    const resultado = arquivos.map(nomeArquivo => {
+      const caminho = path.join(subDir, nomeArquivo);
+      const stats = fs.statSync(caminho);
+      return {
+        nomeArquivo,
+        conteudoBase64: fs.readFileSync(caminho).toString("base64"),
+        tamanho: stats.size,
+        ultimaModificacao: stats.mtime.toISOString(),
+      };
+    });
+    log.info(`Carregados ${resultado.length} arquivos de ${tipo}`);
+    return { ok: true, arquivos: resultado };
   } catch (err) {
-    log.error("Erro ao carregar base:", err);
+    log.error("Erro ao carregar bases:", err);
     return { ok: false, motivo: "erro", erro: err.message };
   }
 });
@@ -179,10 +184,17 @@ ipcMain.handle("bases:info", async () => {
     if (!fs.existsSync(dir)) return { ok: true, bases: {} };
     const bases = {};
     for (const tipo of ["ke30", "budget", "demanda"]) {
-      const arquivos = fs.readdirSync(dir).filter(f => f.startsWith(tipo));
+      const subDir = path.join(dir, tipo);
+      if (!fs.existsSync(subDir)) continue;
+      const arquivos = fs.readdirSync(subDir);
       if (arquivos.length > 0) {
-        const stats = fs.statSync(path.join(dir, arquivos[0]));
-        bases[tipo] = { nomeArquivo: arquivos[0], tamanho: stats.size, ultimaModificacao: stats.mtime.toISOString() };
+        const stats = arquivos.map(f => fs.statSync(path.join(subDir, f)));
+        bases[tipo] = {
+          quantidade: arquivos.length,
+          nomeArquivos: arquivos,
+          tamanhoTotal: stats.reduce((s, st) => s + st.size, 0),
+          ultimaModificacao: new Date(Math.max(...stats.map(st => st.mtime.getTime()))).toISOString(),
+        };
       }
     }
     return { ok: true, bases };
@@ -191,12 +203,19 @@ ipcMain.handle("bases:info", async () => {
   }
 });
 
-ipcMain.handle("bases:delete", async (event, { tipo }) => {
+ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
   try {
-    const dir = getBasesDir();
-    const arquivos = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.startsWith(tipo)) : [];
-    for (const arquivo of arquivos) fs.unlinkSync(path.join(dir, arquivo));
-    log.info("Base deletada:", tipo);
+    const subDir = path.join(getBasesDir(), tipo);
+    if (!fs.existsSync(subDir)) return { ok: true };
+    if (nomeArquivo) {
+      const caminho = path.join(subDir, nomeArquivo);
+      if (fs.existsSync(caminho)) fs.unlinkSync(caminho);
+    } else {
+      for (const f of fs.readdirSync(subDir)) {
+        fs.unlinkSync(path.join(subDir, f));
+      }
+    }
+    log.info("Base deletada:", tipo, nomeArquivo ?? "(todos)");
     return { ok: true };
   } catch (err) {
     return { ok: false, erro: err.message };
