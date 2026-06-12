@@ -18,7 +18,8 @@ export type CustomBlockKind =
   | "bridge"
   | "table"
   | "chart"
-  | "topSku";
+  | "topSku"
+  | "dre";
 
 export type BlockEnterAnimation = "none" | "fade" | "slide-up" | "pop";
 
@@ -367,9 +368,31 @@ export interface TopSkuBlock extends BaseBlock {
   dataSource?: BlockDataSource;
 }
 
+export interface DreBlock extends BaseBlock {
+  kind: "dre";
+  /** Períodos a exibir. null = últimos 6 meses disponíveis. */
+  periodos: string[] | null;
+  /** Modo de período. Default "month". */
+  periodMode: "month" | "fy";
+  /** Linhas a exibir (IDs de DreLine). null = todas. */
+  linhas: string[] | null;
+  /** Mostrar colunas de Budget quando disponíveis. Default false. */
+  showBudget: boolean;
+  /** Tamanho da fonte. Default 11. */
+  fontSize: number;
+  /** Cor do header. Default "#C8102E". */
+  headerColor: string;
+  /** Cor do texto. Default "#1C2430". */
+  textColor: string;
+  /** Mostrar linha de totais. Default true. */
+  showTotal: boolean;
+  /** Fonte de dados. Default "real". */
+  dataSource: "real" | "budget";
+}
+
 export type CustomBlock =
   | TitleBlock | TextBlock | KpiBlock | ImageBlock
-  | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock;
+  | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock | DreBlock;
 
 export interface CustomSlideConfig {
   blocks: CustomBlock[];
@@ -469,6 +492,20 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         autoFit: true, showOthers: false, exportNote: false,
         dataSource: "ke30",
       };
+    case "dre":
+      return {
+        id, kind, z,
+        x: 60, y: 180, w: 1200, h: 400,
+        periodos: null,
+        periodMode: "month",
+        linhas: null,
+        showBudget: false,
+        fontSize: 11,
+        headerColor: "#C8102E",
+        textColor: "#1C2430",
+        showTotal: true,
+        dataSource: "real",
+      } as DreBlock;
   }
 }
 
@@ -523,6 +560,7 @@ export const BLOCK_LABELS: Record<CustomBlockKind, string> = {
   table: "Tabela",
   chart: "Gráfico",
   topSku: "Top Ranking",
+  dre: "DRE",
 };
 
 // ---------------------------------------------------------------------------

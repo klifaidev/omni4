@@ -49,10 +49,13 @@ import {
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
-  type TitleBlock, type TextBlock,
+  type TitleBlock, type TextBlock, type DreBlock,
   isLineFamily,
   type ConditionalFormatMode, type ConditionalFormatRule,
 } from "@/lib/customSlide";
+import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
+import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented } from "./chart/Inspector";
+import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
 import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
@@ -148,6 +151,7 @@ const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon:
   { id: "image",  kind: "image",  label: "Imagem",      icon: ImageIcon },
   { id: "shape",  kind: "shape",  label: "Forma",       icon: Square },
   { id: "topSku", kind: "topSku", label: "Top Ranking", icon: Trophy },
+  { id: "dre",    kind: "dre",    label: "DRE",         icon: TableIcon },
 ];
 
 interface Props {
@@ -1356,6 +1360,7 @@ function blockIcon(blk: CustomBlock) {
     case "image":  return <ImageIcon className={cls} />;
     case "shape":  return <Square className={cls} />;
     case "table":  return <TableIcon className={cls} />;
+    case "dre":    return <TableIcon className={cls} />;
     case "kpi":    return <Hash className={cls} />;
     case "topSku": return <Trophy className={cls} />;
     case "bridge": return <GitBranch className={cls} />;
@@ -1583,6 +1588,9 @@ function BlockSpecificEditor({ block, onChange }: {
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
       />;
+
+    case "dre":
+      return <DreBlockInspector block={block} onChange={onChange as (patch: Partial<DreBlock>) => void} />;
   }
 }
 
@@ -2280,6 +2288,86 @@ function TopSkuBlockEditor({ block, onChange }: {
         onChange={(v) => onChange({ topN: Math.max(1, Math.min(50, v)) } as never)} />
       <ToggleRow label="Mostrar % do total" value={block.showShare}
         onChange={(v) => onChange({ showShare: v } as never)} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DRE block inspector
+// ---------------------------------------------------------------------------
+function DreBlockInspector({ block, onChange }: {
+  block: DreBlock;
+  onChange: (patch: Partial<DreBlock>) => void;
+}) {
+  const months = useMonthsInfo();
+  const allMonths = [...months].sort((a, b) =>
+    a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+  );
+
+  return (
+    <div className="space-y-2">
+      <Section title="Períodos" defaultOpen>
+        <Row label="Modo">
+          <Segmented
+            value={block.periodMode}
+            onChange={(v) => onChange({ periodMode: v as "month" | "fy" })}
+            options={[{ value: "month", label: "Mês" }, { value: "fy", label: "Ano" }]}
+          />
+        </Row>
+        <Row label="Períodos">
+          <MultiSelectFilter
+            options={allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
+            selected={block.periodos ?? []}
+            onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
+            placeholder="Últimos 6 meses"
+          />
+        </Row>
+      </Section>
+
+      <Section title="Linhas exibidas" defaultOpen>
+        <div className="space-y-0.5">
+          {DRE_LINES.map((line) => (
+            <div key={line.id} className="flex items-center justify-between py-0.5">
+              <span className="text-[11px] text-muted-foreground">{line.label}</span>
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={block.linhas === null || block.linhas.includes(line.id)}
+                onChange={(e) => {
+                  const current = block.linhas ?? DRE_LINES.map((l) => l.id);
+                  const next = e.target.checked
+                    ? [...current.filter((id) => id !== line.id), line.id]
+                    : current.filter((id) => id !== line.id);
+                  onChange({ linhas: next.length === DRE_LINES.length ? null : next });
+                }}
+              />
+            </div>
+          ))}
+          <button
+            className="mt-1 text-[10px] text-primary hover:underline"
+            onClick={() => onChange({ linhas: null })}
+          >
+            Mostrar todas
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Aparência" defaultOpen>
+        <Row label="Fonte (px)">
+          <NumberStepper value={block.fontSize} min={8} max={18}
+            onChange={(v) => onChange({ fontSize: v })} />
+        </Row>
+        <Row label="Cor header">
+          <ColorField value={block.headerColor}
+            onChange={(c) => onChange({ headerColor: c })} />
+        </Row>
+        <Row label="Cor texto">
+          <ColorField value={block.textColor}
+            onChange={(c) => onChange({ textColor: c })} />
+        </Row>
+        <ToggleField label="Mostrar Budget" value={block.showBudget}
+          onChange={(v) => onChange({ showBudget: v })} />
+      </Section>
     </div>
   );
 }

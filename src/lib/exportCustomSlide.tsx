@@ -327,6 +327,7 @@ export async function addCustomSlide(
         case "topSku":
         case "chart":
         case "bridge":
+        case "dre":
           await renderBlockAsImage(slide, blk, opts?.slideId);
           break;
       }

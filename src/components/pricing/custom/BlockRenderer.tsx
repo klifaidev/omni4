@@ -3,8 +3,10 @@
 import { useMemo } from "react";
 import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
-  ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock,
+  ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
 } from "@/lib/customSlide";
+import { aggregate, LINES, fmt } from "../DreTable";
+import { useMonthsInfo } from "@/store/selectors";
 import { applyFilters, calcPVM } from "@/lib/analytics";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
@@ -55,6 +57,7 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
     case "table":  return <TableRender block={block} />;
     case "chart":  return <ChartRender block={block} />;
     case "topSku": return <TopSkuRender block={block} />;
+    case "dre":    return <DreRender block={block} />;
   }
 }
 
@@ -579,6 +582,121 @@ const cellVal: React.CSSProperties = {
   padding: "5px 8px", textAlign: "right", color: "#1C2430",
   borderBottom: "1px solid #E2E8F0", background: "#fff",
 };
+
+// ---------------------------------------------------------------------------
+// DRE — tabela DRE compacta usando os mesmos dados do KE30
+// ---------------------------------------------------------------------------
+function DreRender({ block: blk }: { block: DreBlock }) {
+  const pricingRows = usePricing((s) => s.rows);
+  const months = useMonthsInfo();
+
+  const cols = useMemo(() => {
+    const allMonths = [...months].sort((a, b) =>
+      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+    );
+    if (!blk.periodos || blk.periodos.length === 0) return allMonths.slice(-6);
+    return allMonths.filter((m) => blk.periodos!.includes(m.periodo));
+  }, [months, blk.periodos]);
+
+  const aggsByCol = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof aggregate>>();
+    for (const col of cols) {
+      const rs = pricingRows.filter((r) => r.periodo === col.periodo);
+      map.set(col.periodo, aggregate(rs));
+    }
+    return map;
+  }, [pricingRows, cols]);
+
+  const visibleLines = useMemo(() => {
+    if (!blk.linhas) return LINES;
+    return LINES.filter((l) => blk.linhas!.includes(l.id));
+  }, [blk.linhas]);
+
+  if (cols.length === 0) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: "100%", height: "100%", color: "#94A3B8",
+        fontSize: blk.fontSize, fontFamily: "Calibri, Arial, sans-serif",
+      }}>
+        Configure os períodos para exibir o DRE
+      </div>
+    );
+  }
+
+  const fs = blk.fontSize;
+  const pad = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.55)}px`;
+  const padVal = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.36)}px`;
+
+  return (
+    <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri, Arial, sans-serif" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: fs, color: blk.textColor, tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "30%" }} />
+          {cols.map((c) => <col key={c.periodo} style={{ width: `${70 / cols.length}%` }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{
+              background: blk.headerColor, color: "#FFFFFF",
+              padding: pad, textAlign: "left", fontWeight: 600,
+              fontSize: fs + 1, whiteSpace: "nowrap",
+            }}>
+              Indicador
+            </th>
+            {cols.map((col) => (
+              <th key={col.periodo} style={{
+                background: blk.headerColor, color: "#FFFFFF",
+                padding: padVal, textAlign: "right", fontWeight: 600,
+                fontSize: fs + 1,
+              }}>
+                {col.mes}/{String(col.ano).slice(2)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {visibleLines.map((line, idx) => {
+            const isEven = idx % 2 === 0;
+            return (
+              <tr key={line.id} style={{ background: isEven ? "#F8FAFC" : "#FFFFFF" }}>
+                <td style={{
+                  padding: pad,
+                  fontWeight: line.bold ? 600 : 400,
+                  color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
+                    ? blk.headerColor : blk.textColor,
+                  borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  fontSize: fs,
+                }}>
+                  {line.label}
+                </td>
+                {cols.map((col) => {
+                  const agg = aggsByCol.get(col.periodo);
+                  const val = agg ? line.get(agg) : null;
+                  const isNeg = val !== null && val < 0;
+                  return (
+                    <td key={col.periodo} style={{
+                      padding: padVal, textAlign: "right",
+                      fontWeight: line.bold ? 600 : 400,
+                      color: isNeg ? "#DC2626"
+                        : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
+                        : blk.textColor,
+                      borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+                      fontSize: fs,
+                    }}>
+                      {val === null ? "—" : fmt(val, line.kind)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function labelOfDim(id: string): string {
   return ALL_DIMENSIONS.find((d) => d.id === id)?.label ?? id;

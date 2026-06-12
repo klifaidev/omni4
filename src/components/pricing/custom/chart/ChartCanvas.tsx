@@ -1805,9 +1805,9 @@ function WaterfallChart({
         const yMin = style.yAxis.min ?? Math.min(0, ...allEnds);
         const yMax = style.yAxis.max ?? Math.max(0, ...allEnds);
 
-        // Fluid margins — scale modestly with size so labels never get cropped
-        const labelFs = Math.max(9, Math.min(14, Math.round(Math.min(W, H) / 28)));
-        const dlFs = Math.max(9, Math.min(style.dataLabels.size, Math.round(H / 22)));
+        // Use user-configured font sizes directly so labels stay visually fixed
+        const labelFs = style.xAxis.labelSize;
+        const dlFs = style.dataLabels.size;
         const m = {
           top: Math.max(20, H * 0.08),
           right: Math.max(16, W * 0.025),
@@ -1836,7 +1836,7 @@ function WaterfallChart({
             {style.xAxis.show && <line x1={m.left} y1={zeroY} x2={W - m.right} y2={zeroY} stroke={style.xAxis.lineColor} strokeWidth={style.xAxis.lineWidth} />}
             {style.yAxis.show && <line x1={m.left} y1={m.top} x2={m.left} y2={m.top + plotH} stroke={style.yAxis.lineColor} strokeWidth={style.yAxis.lineWidth} />}
             {style.yAxis.show && [yMin, (yMin + yMax) / 2, yMax].map((v) => (
-              <text key={v} x={m.left - 8} y={yOf(v) + 4} textAnchor="end" fontSize={Math.max(9, Math.min(style.yAxis.labelSize, labelFs))} fill={style.yAxis.labelColor}>{formatValue(v, measureFmt, "rol")}</text>
+              <text key={v} x={m.left - 8} y={yOf(v) + 4} textAnchor="end" fontSize={style.yAxis.labelSize} fill={style.yAxis.labelColor}>{formatValue(v, measureFmt, "rol")}</text>
             ))}
             {style.waterfall.connectors && wfRows.slice(0, -1).map((r, i) => {
               const x1 = m.left + slot * i + slot / 2 + barW / 2;
