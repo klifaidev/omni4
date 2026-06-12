@@ -33,7 +33,11 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, StickyNote,
+  Eye, EyeOff, GripVertical, Minus, Plus,
 } from "lucide-react";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -41,7 +45,7 @@ import { toast } from "sonner";
 
 import {
   CANVAS_W, CANVAS_H, FOOTER_H,
-  newBlock, newChartBlock, BLOCK_LABELS, KPI_MEASURES,
+  newBlock, newChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
@@ -96,7 +100,7 @@ import {
   insertBlockAction,
   type AlignKind,
 } from "./editorStore";
-import { useEditorPrefs, snapToGrid, type GridSize } from "./editorPrefs";
+import { useEditorPrefs, snapToGrid, type GridSize, setEditorPrefs, getEditorPrefs } from "./editorPrefs";
 import { getTheme, type SlideTheme } from "@/lib/slideThemes";
 import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
@@ -167,10 +171,9 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const copiedStyle = useCopiedStyle();
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [showLayers, setShowLayers] = useState(false);
 
   const [fitScale, setFitScale] = useState(1);
-  const [zoomMode, setZoomMode] = useState<"fit" | "manual">("fit");
-  const [manualScale, setManualScale] = useState(1);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -211,12 +214,22 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     return () => registerCustomCanvas(slideId, null);
   }, [slideId]);
 
-  const scale = zoomMode === "fit" ? fitScale : manualScale;
+  // Ctrl+scroll to zoom canvas (reads/writes module-level prefs to avoid stale closure)
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setEditorPrefs({ zoom: Math.min(1.5, Math.max(0.5, getEditorPrefs().zoom + delta)) });
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
+  const scale = fitScale * prefs.zoom;
   scaleRef.current = scale;
-  const setZoom = (s: number) => {
-    setZoomMode("manual");
-    setManualScale(Math.max(0.1, Math.min(3, s)));
-  };
 
   const selected = selectedIds.length === 1
     ? (config.blocks.find((b) => b.id === selectedIds[0]) ?? null)
@@ -420,6 +433,25 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     return snap;
   }, [config.blocks]);
 
+  // Layers panel data
+  const layersSorted = useMemo(
+    () => [...config.blocks].sort((a, b) => b.z - a.z),
+    [config.blocks],
+  );
+  const hiddenCount = config.blocks.filter((b) => b.hidden).length;
+  const handleLayerDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = layersSorted.findIndex((b) => b.id === active.id);
+    const newIndex = layersSorted.findIndex((b) => b.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(layersSorted, oldIndex, newIndex);
+    patchBlocksAction(
+      reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
+      "Reordenar camadas",
+    );
+  }, [layersSorted]);
+
   // Templates
   const [tplOpen, setTplOpen] = useState(false);
   const [saveTplOpen, setSaveTplOpen] = useState(false);
@@ -429,7 +461,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className="grid h-full min-h-0 grid-cols-[180px_minmax(0,1fr)_380px] gap-3">
+    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[180px_160px_minmax(0,1fr)_380px]" : "grid-cols-[180px_minmax(0,1fr)_380px]")}>
       {/* ====== Paleta ====== */}
       <ScrollArea className="rounded-lg border border-border/40 bg-card/40">
         <div className="flex flex-col gap-1 p-2">
@@ -493,6 +525,43 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           </p>
         </div>
       </ScrollArea>
+
+      {/* ====== Layers Panel ====== */}
+      {showLayers && (
+        <div className="flex min-h-0 flex-col rounded-lg border border-border/40 bg-card/40">
+          <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-2 py-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Camadas</span>
+            {hiddenCount > 0 && (
+              <Badge variant="secondary" className="text-[9px] uppercase">
+                {hiddenCount} oculto{hiddenCount > 1 ? "s" : ""}
+              </Badge>
+            )}
+          </div>
+          <ScrollArea className="flex-1">
+            <div className="space-y-0.5 p-1">
+              <DndContext collisionDetection={closestCenter} onDragEnd={handleLayerDragEnd}>
+                <SortableContext items={layersSorted.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                  {layersSorted.map((blk) => (
+                    <SortableLayerItem
+                      key={blk.id}
+                      blk={blk}
+                      isSelected={selectedIds.includes(blk.id)}
+                      onSelect={() => setSelection([blk.id])}
+                      onToggleHidden={() =>
+                        patchBlockAction(
+                          blk.id,
+                          { hidden: !blk.hidden } as Partial<CustomBlock>,
+                          blk.hidden ? "Mostrar bloco" : "Ocultar bloco",
+                        )
+                      }
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* ====== Canvas ====== */}
       <div className="flex min-h-0 min-w-0 flex-col gap-2">
@@ -774,6 +843,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
                         width: "100%", height: "100%",
                         pointerEvents: blk.kind === "chart" ? "auto" : "none",
+                        visibility: blk.hidden ? "hidden" : "visible",
                       }}>
                         <BlockRenderer block={blk} isEditing={isEditing} />
                       </div>
@@ -1033,28 +1103,24 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           />
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => setZoom(scale - 0.1)} title="Diminuir zoom">
-            <ZoomOut className="h-3.5 w-3.5" />
-          </Button>
-          <input
-            type="range" min={10} max={300} step={5}
-            value={Math.round(scale * 100)}
-            onChange={(e) => setZoom(parseInt(e.target.value, 10) / 100)}
-            className="h-1 w-40 cursor-pointer accent-primary"
-          />
-          <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => setZoom(scale + 0.1)} title="Aumentar zoom">
-            <ZoomIn className="h-3.5 w-3.5" />
+            onClick={() => prefs.setZoom(prefs.zoom - 0.1)}
+            title="Diminuir zoom (Ctrl+Scroll ↓)">
+            <Minus className="h-3.5 w-3.5" />
           </Button>
           <button
-            className="ml-1 min-w-[48px] rounded px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground hover:bg-secondary"
-            onClick={() => { setZoomMode("manual"); setManualScale(1); }}
-            title="100%"
+            className="min-w-[36px] cursor-pointer rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:text-primary"
+            onClick={() => prefs.setZoom(1.0)}
+            title="Clique para redefinir zoom para 100%"
           >
-            {Math.round(scale * 100)}%
+            {Math.round(prefs.zoom * 100)}%
           </button>
+          <Button size="icon" variant="ghost" className="h-7 w-7"
+            onClick={() => prefs.setZoom(prefs.zoom + 0.1)}
+            title="Aumentar zoom (Ctrl+Scroll ↑)">
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
           <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]"
-            onClick={() => setZoomMode("fit")} title="Ajustar à tela">
+            onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela">
             <Maximize2 className="h-3 w-3" /> Ajustar
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
@@ -1083,6 +1149,21 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             <Play className="h-3 w-3" /> Apresentar
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
+          <Button
+            size="icon"
+            variant={showLayers ? "default" : "ghost"}
+            className="relative h-7 w-7"
+            onClick={() => setShowLayers((s) => !s)}
+            title="Painel de camadas"
+          >
+            <LayersIcon className="h-3.5 w-3.5" />
+            {hiddenCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white leading-none">
+                {hiddenCount}
+              </span>
+            )}
+          </Button>
+          <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => setShortcutsOpen(true)}
             title="Atalhos de teclado (?)">
@@ -1097,7 +1178,35 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       </div>
 
       {/* ====== Inspector ====== */}
-      <div className="min-w-0 overflow-y-auto overflow-x-hidden rounded-lg border border-border/40 bg-card/40">
+      <div className="min-w-0 flex flex-col rounded-lg border border-border/40 bg-card/40">
+        {/* Contextual header — shows which block is being edited */}
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/30 px-3">
+          {(selected || multiSelected.length >= 2) ? (
+            <>
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary/10 text-muted-foreground">
+                {multiSelected.length >= 2
+                  ? <GroupIcon className="h-3 w-3" />
+                  : blockIcon(selected!)}
+              </div>
+              <span className="flex-1 truncate text-[12px] font-medium">
+                {multiSelected.length >= 2
+                  ? `${multiSelected.length} blocos selecionados`
+                  : BLOCK_LABELS[selected!.kind]}
+              </span>
+              <button
+                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                onClick={() => clearSelection()}
+                title="Fechar seleção"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">Nenhum bloco selecionado</span>
+          )}
+        </div>
+        {/* Scrollable content */}
+        <ScrollArea className="flex-1">
         <div className="min-w-0 space-y-3 p-3">
           {multiSelected.length >= 2 ? (
             <MultiSelectInspector
@@ -1163,6 +1272,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             </>
           )}
         </div>
+        </ScrollArea>
       </div>
 
       {/* Asset library */}
@@ -1232,6 +1342,78 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     )}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </SlideFilterProvider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Layers panel helpers
+
+function blockIcon(blk: CustomBlock) {
+  const cls = "h-3 w-3 shrink-0";
+  switch (blk.kind) {
+    case "title":  return <TypeIcon className={cls} />;
+    case "text":   return <AlignLeft className={cls} />;
+    case "image":  return <ImageIcon className={cls} />;
+    case "shape":  return <Square className={cls} />;
+    case "table":  return <TableIcon className={cls} />;
+    case "kpi":    return <Hash className={cls} />;
+    case "topSku": return <Trophy className={cls} />;
+    case "bridge": return <GitBranch className={cls} />;
+    default:       return <BarChart3 className={cls} />;
+  }
+}
+
+function blockLayerName(blk: CustomBlock): string {
+  if (blk.kind === "title" || blk.kind === "text") {
+    const t = (blk as { text: string }).text;
+    return t ? t.slice(0, 20) + (t.length > 20 ? "…" : "") : BLOCK_LABELS[blk.kind];
+  }
+  if (blk.kind === "chart") {
+    const cb = blk as ChartBlock;
+    return cb.title || CHART_TYPE_LABELS[cb.chartType] || "Gráfico";
+  }
+  return BLOCK_LABELS[blk.kind];
+}
+
+function SortableLayerItem({
+  blk, isSelected, onSelect, onToggleHidden,
+}: {
+  blk: CustomBlock;
+  isSelected: boolean;
+  onSelect: () => void;
+  onToggleHidden: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: blk.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className={cn(
+        "flex items-center gap-1 rounded px-1 py-1 text-[10px] cursor-pointer select-none",
+        isSelected ? "bg-secondary" : "hover:bg-secondary/60",
+        blk.hidden && "opacity-50",
+      )}
+      onClick={onSelect}
+    >
+      <span
+        {...attributes}
+        {...listeners}
+        className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-3 w-3" />
+      </span>
+      <span className="shrink-0 text-muted-foreground">{blockIcon(blk)}</span>
+      <span className="min-w-0 flex-1 truncate text-foreground">{blockLayerName(blk)}</span>
+      <button
+        type="button"
+        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+        onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
+        title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
+      >
+        {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+      </button>
+    </div>
   );
 }
 

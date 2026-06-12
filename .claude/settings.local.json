@@ -16,7 +16,22 @@
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\Pichau\\\\Downloads\\\\omni4\\\\omni4\\\\release\" -Recurse | Where-Object { !$_.PSIsContainer } | Select-Object Name, @{N=\"Tamanho\";E={[math]::Round\\($_.Length/1MB, 2\\).ToString\\(\\) + \" MB\"}})",
       "Bash(git init *)",
       "Bash(git remote *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(git rm *)",
+      "Bash(gh run *)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('versão:', p.version\\)\")",
+      "PowerShell(gh run *)",
+      "Bash(node -e \"const pkg = require\\('./package.json'\\); console.log\\(JSON.stringify\\(pkg.build, null, 2\\)\\)\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('versão:', p.version, '\\\\nmain:', p.main, '\\\\nbuild.files:', JSON.stringify\\(p.build.files, null, 2\\)\\)\")",
+      "Bash(node *)",
+      "Bash(cmd.exe *)",
+      "Bash(cmd /c dir /b \"%APPDATA%\\\\OMNI4 Pricing Analytics\\\\bases\")",
+      "PowerShell($basesPath = \"$env:APPDATA\\\\OMNI4 Pricing Analytics\\\\bases\"; if \\(Test-Path $basesPath\\) { Get-ChildItem $basesPath | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize } else { Write-Output \"PASTA NAO ENCONTRADA: $basesPath\" })",
+      "PowerShell(Get-ChildItem *)"
     ]
   }
 }

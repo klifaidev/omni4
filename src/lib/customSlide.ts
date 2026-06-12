@@ -33,6 +33,8 @@ export interface BaseBlock {
   groupId?: string;
   /** Animação de entrada no modo apresentação. Default "none". */
   enterAnimation?: BlockEnterAnimation;
+  /** Oculto visualmente no canvas (não exportado). Default false. */
+  hidden?: boolean;
 }
 
 /** Group of blocks that move/resize as a unit. Bounding box is derived from members. */

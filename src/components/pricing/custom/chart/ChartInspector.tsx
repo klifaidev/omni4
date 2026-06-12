@@ -104,7 +104,7 @@ const ALL_TYPES: { value: ChartBlock["chartType"]; label: string }[] = [
   { value: "line", label: "Linha" },
   { value: "area", label: "Área" },
   { value: "stackedArea", label: "Área empilhada" },
-  { value: "bar", label: "Coluna (vertical)" },
+  { value: "bar", label: "Coluna" },
   { value: "column", label: "Coluna agrupada" },
   { value: "stackedColumn", label: "Coluna empilhada" },
   { value: "hbar", label: "Barra horizontal" },
@@ -129,7 +129,7 @@ function sectionsFor(ct: ChartBlock["chartType"]) {
   const isBarFamily = ["bar", "column", "hbar", "stackedColumn", "stackedBar"].includes(ct);
   const isAreaFamily = ct === "area" || ct === "stackedArea";
   const isComboLineFamily = ct === "line" || ct === "combo";
-  const showAxes = !isPie && !isRadar && !["funnel", "treemap"].includes(ct);
+  const showAxes = !["pie", "donut", "funnel", "treemap", "radar", "histogram", "boxplot"].includes(ct);
   const showGrid = showAxes && ct !== "histogram"
     && !["funnel", "treemap", "boxplot"].includes(ct) ? true : false;
   const showSeries = !["pie", "donut", "bubble", "scatter", "waterfall", "funnel", "treemap", "histogram"].includes(ct);
@@ -225,18 +225,26 @@ export function ChartInspector({
             }))} />
         </Row>
         {S.isCombo && (
-          <Row label="Medida da linha">
-            <SelectField value={(style.measureLine ?? "__none__") as string}
-              onChange={(v) => updStyle({ measureLine: v === "__none__" ? undefined : v as KpiMeasureId })}
-              options={[
-                { value: "__none__", label: "— Nenhuma —" },
-                ...KPI_MEASURES.map((m) => ({
-                  value: m.id, label: m.label,
-                  disabled: block.dataSource === "budget"
-                    && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
-                })),
-              ]} />
-          </Row>
+          <>
+            <Row label="Medida da linha">
+              <SelectField value={(style.measureLine ?? "__none__") as string}
+                onChange={(v) => updStyle({ measureLine: v === "__none__" ? undefined : v as KpiMeasureId })}
+                options={[
+                  { value: "__none__", label: "— Nenhuma —" },
+                  ...KPI_MEASURES.map((m) => ({
+                    value: m.id, label: m.label,
+                    disabled: block.dataSource === "budget"
+                      && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
+                  })),
+                ]} />
+            </Row>
+            {(style.measureLine === undefined || (style.measureLine as string) === "__none__") && (
+              <p className="text-[10px] text-amber-500 leading-snug">
+                Selecione uma medida diferente para a linha para ativar o gráfico combo.
+                Sem ela, o gráfico exibe apenas colunas.
+              </p>
+            )}
+          </>
         )}
         {(ct === "bubble" || ct === "scatter") && (
           <>
@@ -269,6 +277,12 @@ export function ChartInspector({
                 A medida principal acima define o <b>tamanho</b> das bolhas.
               </p>
             )}
+            {(style.measureX !== undefined || style.measureY !== undefined) && (
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                Com Eixo X/Y configurados, a cor é definida automaticamente por índice.
+                Remova os eixos para usar cor por dimensão.
+              </p>
+            )}
           </>
         )}
         {block.dataSource === "budget" && (
@@ -276,21 +290,51 @@ export function ChartInspector({
             {BUDGET_UNAVAILABLE_HINT}
           </p>
         )}
-        <Row label="Quebrar por">
-          <SelectField value={block.breakdown ?? "__none__"}
-            onChange={(v) => {
-              clearFilter(block.id);
-              onChange({ breakdown: v === "__none__" ? null : v });
-            }}
-            options={[
-              { value: "__none__", label: "— Série única —" },
-              { value: "marca", label: "Marca" },
-              { value: "canalAjustado", label: "Canal" },
-              { value: "categoria", label: "Categoria" },
-              { value: "mercado", label: "Mercado" },
-              { value: "inovacao", label: "Inovação" },
-            ]} />
-        </Row>
+        {(ct !== "waterfall" || (style.waterfall.mode ?? "pvm") === "manual") && (
+          <Row label="Quebrar por">
+            <SelectField value={block.breakdown ?? "__none__"}
+              onChange={(v) => {
+                clearFilter(block.id);
+                onChange({ breakdown: v === "__none__" ? null : v });
+              }}
+              options={[
+                { value: "__none__", label: "— Série única —" },
+                { value: "marca", label: "Marca" },
+                { value: "canalAjustado", label: "Canal" },
+                { value: "categoria", label: "Categoria" },
+                { value: "mercado", label: "Mercado" },
+                { value: "inovacao", label: "Inovação" },
+              ]} />
+          </Row>
+        )}
+        {ct === "waterfall" && (style.waterfall.mode ?? "pvm") === "pvm" && (
+          <>
+            <Row label="Decomposição">
+              <SelectField
+                value={style.waterfall.pvm?.decomposition ?? "effects"}
+                onChange={(v) => updPath("waterfall", {
+                  pvm: { ...(style.waterfall.pvm ?? {}), decomposition: v }
+                })}
+                options={[
+                  { value: "effects", label: "Efeitos (Volume / Preço / Custo)" },
+                  { value: "marca", label: "Marca" },
+                  { value: "canalAjustado", label: "Canal" },
+                  { value: "categoria", label: "Categoria" },
+                  { value: "mercado", label: "Mercado" },
+                ]} />
+            </Row>
+            {(style.waterfall.pvm?.decomposition ?? "effects") !== "effects" && (
+              <Row label="Top N itens">
+                <NumberStepper
+                  value={style.waterfall.pvm?.topN ?? 6}
+                  min={3} max={20}
+                  onChange={(v) => updPath("waterfall", {
+                    pvm: { ...(style.waterfall.pvm ?? {}), topN: v }
+                  })} />
+              </Row>
+            )}
+          </>
+        )}
 
         {/* B.1 — Field well: Eixo X */}
         {["line", "area", "stackedArea", "bar", "column", "hbar",
@@ -315,23 +359,25 @@ export function ChartInspector({
         {["line", "area", "stackedArea", "bar", "column", "hbar",
           "stackedColumn", "stackedBar", "combo", "scatter", "bubble"].includes(ct) && (
           <>
-            <Row label="Cor / Legenda">
-              <SelectField value={block.fieldWells?.colorDim ?? "__none__"}
-                onChange={(v) => {
-                  clearFilter(block.id);
-                  onChange({
-                    fieldWells: { ...(block.fieldWells ?? {}), colorDim: v === "__none__" ? null : v },
-                  });
-                }}
-                options={[
-                  { value: "__none__", label: "— Nenhum —" },
-                  { value: "marca", label: "Marca" },
-                  { value: "canalAjustado", label: "Canal" },
-                  { value: "categoria", label: "Categoria" },
-                  { value: "mercado", label: "Mercado" },
-                  { value: "inovacao", label: "Inovação" },
-                ]} />
-            </Row>
+            {(!(ct === "scatter" || ct === "bubble") || (!style.measureX && !style.measureY)) && (
+              <Row label="Cor / Legenda">
+                <SelectField value={block.fieldWells?.colorDim ?? "__none__"}
+                  onChange={(v) => {
+                    clearFilter(block.id);
+                    onChange({
+                      fieldWells: { ...(block.fieldWells ?? {}), colorDim: v === "__none__" ? null : v },
+                    });
+                  }}
+                  options={[
+                    { value: "__none__", label: "— Nenhum —" },
+                    { value: "marca", label: "Marca" },
+                    { value: "canalAjustado", label: "Canal" },
+                    { value: "categoria", label: "Categoria" },
+                    { value: "mercado", label: "Mercado" },
+                    { value: "inovacao", label: "Inovação" },
+                  ]} />
+              </Row>
+            )}
             <Row label="Tooltip extra">
               <SelectField value={(block.fieldWells?.tooltipMeasure ?? "__none__") as string}
                 onChange={(v) => onChange({
@@ -369,7 +415,7 @@ export function ChartInspector({
               sortConfig: { field: v as never, dir: block.sortConfig?.dir ?? "asc" },
             })}
             options={[
-              ...(["pie", "donut", "funnel", "treemap"].includes(ct)
+              ...(["pie", "donut", "funnel", "treemap", "scatter", "bubble", "histogram", "boxplot", "radar"].includes(ct)
                 ? [] : [{ value: "period", label: "Período" }]),
               { value: "value", label: "Valor" },
               { value: "name", label: "Nome" },
@@ -388,10 +434,34 @@ export function ChartInspector({
 
         {/* B.4 — Bridge column builder (apenas no modo manual) */}
         {ct === "waterfall" && (style.waterfall.mode ?? "pvm") === "manual" && (
-          <BridgeColumnBuilder block={block} onChange={onChange}
-            dsRows={dsRows}
-            value={style.waterfall.columns ?? []}
-            setValue={(cols) => updPath("waterfall", { columns: cols })} />
+          <>
+            {(style.waterfall.columns ?? []).length === 0 && (
+              <div className="rounded-lg border border-dashed border-border/50 bg-card/30 p-3 text-center">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Adicione colunas para construir o waterfall manualmente.
+                  Cada coluna pode ser um valor de medida ou um valor fixo.
+                </p>
+                <button
+                  className="mt-2 text-[11px] text-primary hover:underline"
+                  onClick={() => {
+                    const defaultCols = [
+                      { id: rid(), label: "Início", type: "start" as const },
+                      { id: rid(), label: "Coluna A", type: "positive" as const },
+                      { id: rid(), label: "Coluna B", type: "negative" as const },
+                      { id: rid(), label: "Total", type: "total" as const },
+                    ];
+                    updPath("waterfall", { columns: defaultCols });
+                  }}
+                >
+                  + Usar template padrão
+                </button>
+              </div>
+            )}
+            <BridgeColumnBuilder block={block} onChange={onChange}
+              dsRows={dsRows}
+              value={style.waterfall.columns ?? []}
+              setValue={(cols) => updPath("waterfall", { columns: cols })} />
+          </>
         )}
       </Section>
 
@@ -1023,6 +1093,26 @@ export function ChartInspector({
               onReset={() => resetPath("yAxis2")} />
           )}
         </>
+      )}
+      {S.isRadar && (
+        <Section title="Grade radar" onReset={() => resetPath("radar")}>
+          <Row label="Forma da grade">
+            <Segmented value={style.radar.gridShape}
+              onChange={(v) => updPath("radar", { gridShape: v as never })}
+              options={[
+                { value: "polygon", label: "Polígono" },
+                { value: "circle", label: "Círculo" },
+              ]} />
+          </Row>
+          <Row label="Cor grade">
+            <ColorField value={style.radar.gridColor}
+              onChange={(c) => updPath("radar", { gridColor: c })} />
+          </Row>
+          <Row label="Tam. rótulo eixo">
+            <NumberStepper value={style.radar.axisLabelSize} min={6} max={24}
+              onChange={(v) => updPath("radar", { axisLabelSize: v })} suffix="pt" />
+          </Row>
+        </Section>
       )}
 
         </TabsContent>

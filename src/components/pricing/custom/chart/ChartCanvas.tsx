@@ -70,6 +70,8 @@ function makeLabelContent(opts: {
   customFmt?: (v: number | string) => string;
   anchor?: "middle" | "start" | "end";
   seriesColor?: string;
+  /** Hide label when bar/slice pixel size is below this threshold. */
+  minSlicePx?: number;
 }) {
   const { style: cs, measureFmt, seriesName, categories, customFmt, anchor = "middle", seriesColor } = opts;
   const dl = cs.dataLabels;
@@ -117,6 +119,10 @@ function makeLabelContent(opts: {
     const w = Number(vb.width ?? props.width ?? 0);
     const h = Number(vb.height ?? props.height ?? 0);
     const off = props.offset ?? 5;
+    if (opts.minSlicePx !== undefined) {
+      const sliceSize = Math.max(Math.abs(h), Math.abs(w));
+      if (sliceSize > 0 && sliceSize < opts.minSlicePx) return null;
+    }
     const pos = props.position ?? "top";
     const verticalSign = h >= 0 ? 1 : -1;
     const horizontalSign = w >= 0 ? 1 : -1;
@@ -772,6 +778,10 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     );
   } else if (ct === "bar" || ct === "column" || ct === "stackedColumn") {
     const stacked = forceStack || style.bar.mode === "stacked" || style.bar.mode === "stacked100";
+    const estBarWidthPx = rows.length > 0
+      ? (block.w * 0.70) / (rows.length * (stacked ? 1 : Math.max(1, data.series.length))) : 999;
+    const showDlBar = dlOn && estBarWidthPx >= dlSize + 4;
+    const minSlicePxBar = stacked ? dlSize * 2.5 : undefined;
     chart = (
       <BarChart data={rows} layout="horizontal" onClick={chartOnClick} margin={chartMargin}
         barCategoryGap={`${style.bar.gapPct}%`}>
@@ -794,11 +804,12 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
                   : color;
                 return <Cell key={`${s.name}-${ri}`} fill={baseFill} fillOpacity={cellFillOpacity(String(r.__period ?? ""))} />;
               })}
-              {style.dataLabels.show && (
+              {showDlBar && (
                 <LabelList dataKey={s.name} position={mapPos("bar-vertical", dlPos) as never}
                   content={makeLabelContent({
                     style, measureFmt, seriesName: s.name, categories: cats,
                     customFmt: isStack100 ? stack100Fmt : undefined, seriesColor: color,
+                    minSlicePx: minSlicePxBar,
                   }) as never} />
               )}
             </Bar>
@@ -808,6 +819,9 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     );
   } else if (ct === "hbar" || ct === "stackedBar") {
     const stacked = forceStack || style.bar.mode === "stacked" || style.bar.mode === "stacked100";
+    const estBarHeightPx = rows.length > 0 ? (block.h * 0.72) / rows.length : 999;
+    const showDlHBar = dlOn && estBarHeightPx >= dlSize + 4;
+    const minSlicePxHBar = stacked ? dlSize * 2.5 : undefined;
     chart = (
       <BarChart data={rows} layout="vertical" onClick={chartOnClick} margin={hbarMargin}
         barCategoryGap={`${style.bar.gapPct}%`}>
@@ -839,11 +853,12 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
                   : color;
                 return <Cell key={`${s.name}-${ri}`} fill={baseFill} fillOpacity={cellFillOpacity(String(r.__period ?? ""))} />;
               })}
-              {style.dataLabels.show && (
+              {showDlHBar && (
                 <LabelList dataKey={s.name} position={mapPos("bar-horizontal", dlPos) as never}
                   content={makeLabelContent({
                     style, measureFmt, seriesName: s.name, categories: cats,
                     customFmt: isStack100 ? stack100Fmt : undefined, anchor: "start", seriesColor: color,
+                    minSlicePx: minSlicePxHBar,
                   }) as never} />
               )}
             </Bar>
