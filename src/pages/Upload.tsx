@@ -166,13 +166,15 @@ export default function Upload() {
   const basesLocais = useBasesLocais();
   const autoLoadedRef = useRef(false);
   const [infoSalvas, setInfoSalvas] = useState<Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>>({});
-  const [pendingSave, setPendingSave] = useState<{ tipo: TipoBase; file: File; dataExistente: string } | null>(null);
+  const [pendingSaveQueue, setPendingSaveQueue] = useState<Array<{ tipo: TipoBase; file: File; dataExistente: string }>>([]);
+  const [basesSalvas, setBasesSalvas] = useState<Record<string, boolean>>({});
   const [deletePending, setDeletePending] = useState<TipoBase | null>(null);
 
   const refreshInfoSalvas = useCallback(async () => {
     if (!basesLocais.isElectron) return;
     const info = await basesLocais.infoBasesSalvas();
     setInfoSalvas(info as Record<string, { nomeArquivo: string; tamanho: number; ultimaModificacao: string }>);
+    setBasesSalvas({ ke30: !!info.ke30, budget: !!info.budget, demanda: !!info.demanda });
   }, [basesLocais.isElectron, basesLocais.infoBasesSalvas]);
 
   useEffect(() => { refreshInfoSalvas(); }, [refreshInfoSalvas]);
@@ -219,20 +221,24 @@ export default function Upload() {
 
   const handleAfterApply = useCallback(
     async (applied: { tipo: "ke30" | "budget"; file: File }[]) => {
+      const info = await basesLocais.infoBasesSalvas();
+      const toConfirm: Array<{ tipo: TipoBase; file: File; dataExistente: string }> = [];
+      let salvou = false;
       for (const { tipo, file } of applied) {
-        const info = await basesLocais.infoBasesSalvas();
         if (info[tipo]) {
-          setPendingSave({
+          toConfirm.push({
             tipo,
             file,
             dataExistente: new Date(info[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
           });
         } else {
           await basesLocais.salvarBase(tipo, file);
-          toast.success("Base salva localmente para uso futuro.");
-          await refreshInfoSalvas();
+          toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
+          salvou = true;
         }
       }
+      if (salvou) await refreshInfoSalvas();
+      if (toConfirm.length > 0) setPendingSaveQueue(toConfirm);
     },
     [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
   );
@@ -242,9 +248,36 @@ export default function Upload() {
       await basesLocais.deletarBase(tipo);
       toast.success("Base local removida.");
       setDeletePending(null);
+      setBasesSalvas((prev) => ({ ...prev, [tipo]: false }));
       await refreshInfoSalvas();
     },
     [basesLocais.deletarBase, refreshInfoSalvas],
+  );
+
+  const handleSaveFileFromQueue = useCallback(
+    async (tipo: "ke30" | "budget", file: File) => {
+      const info = await basesLocais.infoBasesSalvas();
+      if (info[tipo]) {
+        setPendingSaveQueue((prev) => [
+          ...prev,
+          {
+            tipo: tipo as TipoBase,
+            file,
+            dataExistente: new Date(info[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
+          },
+        ]);
+      } else {
+        await basesLocais.salvarBase(tipo as TipoBase, file);
+        toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
+        await refreshInfoSalvas();
+      }
+    },
+    [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
+  );
+
+  const savedTypesSet = useMemo(
+    () => new Set(Object.entries(basesSalvas).filter(([, v]) => v).map(([k]) => k)),
+    [basesSalvas],
   );
 
   const handleLoadDemo = () => {
@@ -407,7 +440,13 @@ export default function Upload() {
               <Badge variant="secondary" className="text-[10px]">.xlsx (Budget)</Badge>
             </div>
           </header>
-          <UploadQueue onAfterApply={basesLocais.isElectron ? handleAfterApply : undefined} />
+          <UploadQueue
+            onAfterApply={basesLocais.isElectron ? handleAfterApply : undefined}
+            savedTypes={basesLocais.isElectron ? savedTypesSet : undefined}
+            onSaveFile={basesLocais.isElectron ? handleSaveFileFromQueue : undefined}
+            onDeleteFile={basesLocais.isElectron ? (t) => setDeletePending(t as TipoBase) : undefined}
+            isElectron={basesLocais.isElectron}
+          />
           {parsing && (
             <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/70 backdrop-blur-sm">
               <Loader2 className="h-7 w-7 animate-spin text-primary" />
@@ -586,24 +625,36 @@ export default function Upload() {
         </GlassCard>
       </div>
 
-      {/* Dialog: confirmar substituição de base salva */}
-      <AlertDialog open={pendingSave !== null} onOpenChange={(open) => { if (!open) setPendingSave(null); }}>
+      {/* Dialog: confirmar substituição de base salva (processa fila) */}
+      <AlertDialog
+        open={pendingSaveQueue.length > 0}
+        onOpenChange={(open) => { if (!open) setPendingSaveQueue((prev) => prev.slice(1)); }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Substituir base salva?</AlertDialogTitle>
             <AlertDialogDescription>
-              Já existe uma base {pendingSave ? TIPO_LABELS[pendingSave.tipo] : ""} salva de{" "}
-              {pendingSave?.dataExistente}. Deseja substituí-la?
+              Já existe uma base{" "}
+              {pendingSaveQueue[0] ? TIPO_LABELS[pendingSaveQueue[0].tipo] : ""} salva de{" "}
+              {pendingSaveQueue[0]?.dataExistente}. Deseja substituí-la?
+              {pendingSaveQueue.length > 1 && (
+                <span className="ml-1 text-muted-foreground">
+                  ({pendingSaveQueue.length - 1} mais na fila)
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingSave(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setPendingSaveQueue((prev) => prev.slice(1))}>
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
-                if (!pendingSave) return;
-                await basesLocais.salvarBase(pendingSave.tipo, pendingSave.file);
-                toast.success("Base substituída e salva localmente.");
-                setPendingSave(null);
+                const current = pendingSaveQueue[0];
+                if (!current) return;
+                await basesLocais.salvarBase(current.tipo, current.file);
+                toast.success(`Base ${TIPO_LABELS[current.tipo]} substituída e salva localmente.`);
+                setPendingSaveQueue((prev) => prev.slice(1));
                 await refreshInfoSalvas();
               }}
             >
@@ -619,8 +670,8 @@ export default function Upload() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remover base salva?</AlertDialogTitle>
             <AlertDialogDescription>
-              A base {deletePending ? TIPO_LABELS[deletePending] : ""} salva localmente será removida.
-              O arquivo original não será afetado.
+              Remover a base {deletePending ? TIPO_LABELS[deletePending] : ""} salva localmente?
+              Os dados desta sessão não serão afetados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -11,6 +11,8 @@ import {
   Target,
   Play,
   Trash2,
+  HardDrive,
+  Check,
 } from "lucide-react";
 import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
 import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
@@ -47,8 +49,16 @@ const nextId = () => `q_${Date.now()}_${++_idSeq}`;
 
 export function UploadQueue({
   onAfterApply,
+  savedTypes,
+  onSaveFile,
+  onDeleteFile,
+  isElectron,
 }: {
   onAfterApply?: (applied: { tipo: "ke30" | "budget"; file: File }[]) => void;
+  savedTypes?: Set<string>;
+  onSaveFile?: (tipo: "ke30" | "budget", file: File) => void;
+  onDeleteFile?: (tipo: "ke30" | "budget") => void;
+  isElectron?: boolean;
 } = {}) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -324,7 +334,15 @@ export function UploadQueue({
 
           <ul className="space-y-2">
             {items.map((it) => (
-              <QueueRow key={it.id} item={it} onRemove={() => removeItem(it.id)} />
+              <QueueRow
+                key={it.id}
+                item={it}
+                onRemove={() => removeItem(it.id)}
+                isElectron={isElectron}
+                savedTypes={savedTypes}
+                onSaveFile={onSaveFile}
+                onDeleteFile={onDeleteFile}
+              />
             ))}
           </ul>
         </div>
@@ -410,7 +428,24 @@ function DropZone({
   );
 }
 
-function QueueRow({ item, onRemove }: { item: QueueItem; onRemove: () => void }) {
+function QueueRow({
+  item,
+  onRemove,
+  isElectron,
+  savedTypes,
+  onSaveFile,
+  onDeleteFile,
+}: {
+  item: QueueItem;
+  onRemove: () => void;
+  isElectron?: boolean;
+  savedTypes?: Set<string>;
+  onSaveFile?: (tipo: "ke30" | "budget", file: File) => void;
+  onDeleteFile?: (tipo: "ke30" | "budget") => void;
+}) {
+  const tipo = item.kind === "real" ? "ke30" : "budget";
+  const isSaved = savedTypes?.has(tipo) ?? false;
+
   const Icon =
     item.status === "parsing" ? Loader2
     : item.status === "ready" ? FileSpreadsheet
@@ -482,6 +517,35 @@ function QueueRow({ item, onRemove }: { item: QueueItem; onRemove: () => void })
             </ul>
           )}
         </div>
+        {item.status === "applied" && isElectron && item.originalFile && (
+          isSaved ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <span className="flex items-center gap-1 text-[11px] text-emerald-500">
+                <Check className="h-3 w-3" />
+                Salvo
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                title="Remover base salva localmente"
+                onClick={() => onDeleteFile?.(tipo)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 shrink-0 gap-1 text-xs"
+              onClick={() => item.originalFile && onSaveFile?.(tipo, item.originalFile)}
+            >
+              <HardDrive className="h-3 w-3" />
+              Salvar localmente
+            </Button>
+          )
+        )}
         <Button
           size="icon"
           variant="ghost"
