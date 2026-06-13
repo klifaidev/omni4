@@ -1,7 +1,7 @@
 {
   "name": "omni4",
   "private": true,
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "OMNI4 Pricing Analytics — Ferramenta de pricing e lucratividade B2B",
   "author": "Harald",
   "type": "module",
