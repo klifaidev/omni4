@@ -99,11 +99,15 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
         const localDx = (dx * cos + dy * sin) / scale;
         const localDy = (-dx * sin + dy * cos) / scale;
 
-        let nx = origX, ny = origY, nw = origW, nh = origH;
+        const centerX = origX + origW / 2;
+        const centerY = origY + origH / 2;
+        let nw = origW, nh = origH;
         if (dir.includes("e")) nw = Math.max(50, origW + localDx);
         if (dir.includes("s")) nh = Math.max(30, origH + localDy);
-        if (dir.includes("w")) { nw = Math.max(50, origW - localDx); nx = origX + (origW - nw); }
-        if (dir.includes("n")) { nh = Math.max(30, origH - localDy); ny = origY + (origH - nh); }
+        if (dir.includes("w")) nw = Math.max(50, origW - localDx);
+        if (dir.includes("n")) nh = Math.max(30, origH - localDy);
+        const nx = centerX - nw / 2;
+        const ny = centerY - nh / 2;
 
         scheduleUpdate(() => {
           onResize(Math.round(nx), Math.round(ny), Math.round(nw), Math.round(nh));

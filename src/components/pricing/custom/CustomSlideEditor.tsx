@@ -67,6 +67,7 @@ import { saveUserTemplate } from "@/lib/customTemplates";
 import { TemplatePicker } from "./templates/TemplatePicker";
 import { ShapeInspector } from "./ShapeInspector";
 import { RotatableBlock } from "./RotatableBlock";
+import { Slider as UiSlider } from "@/components/ui/slider";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { newId } from "@/lib/slidesFlow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -2341,34 +2342,46 @@ function SliderWithInput({
   useEffect(() => { setInputVal(fmt(value)); }, [value]);
 
   return (
-    <div className="flex items-center gap-2 w-full">
-      <div className="flex-1 min-w-0">
-        <Slider min={min} max={max} step={step} value={value} onChange={onChange} />
-      </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <input
-          type="number"
+    <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <UiSlider
           min={min} max={max} step={step}
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          onBlur={() => {
-            const v = parseFloat(inputVal);
-            if (!isNaN(v)) {
-              const clamped = Math.min(max, Math.max(min, v));
-              onChange(clamped);
-              setInputVal(fmt(clamped));
-            } else {
-              setInputVal(fmt(value));
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") { setInputVal(fmt(value)); e.currentTarget.blur(); }
-          }}
-          className="w-14 h-6 rounded border border-border/40 bg-background text-right text-[11px] px-1.5 focus:outline-none focus:ring-1 focus:ring-primary/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          value={[value]}
+          onValueChange={([v]) => onChange(v)}
         />
-        {unit && <span className="text-[10px] text-muted-foreground w-4 text-left">{unit}</span>}
       </div>
+      <input
+        type="number"
+        min={min} max={max} step={step}
+        value={inputVal}
+        onChange={(e) => setInputVal(e.target.value)}
+        onBlur={() => {
+          const v = parseFloat(inputVal);
+          if (!isNaN(v)) {
+            const clamped = Math.min(max, Math.max(min, v));
+            onChange(clamped);
+            setInputVal(fmt(clamped));
+          } else {
+            setInputVal(fmt(value));
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") { setInputVal(fmt(value)); e.currentTarget.blur(); }
+        }}
+        style={{
+          width: 44, height: 24, flexShrink: 0,
+          textAlign: "right", fontSize: 11, padding: "0 4px",
+          border: "1px solid hsl(var(--border))", borderRadius: 4,
+          background: "hsl(var(--background))", color: "hsl(var(--foreground))",
+          outline: "none",
+        }}
+      />
+      {unit && (
+        <span style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", flexShrink: 0, width: 12 }}>
+          {unit}
+        </span>
+      )}
     </div>
   );
 }
