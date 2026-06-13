@@ -860,14 +860,16 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       }}>
                         <BlockRenderer block={blk} isEditing={isEditing} />
                       </div>
-                      {/* Rotated selection border — shown instead of the axis-aligned outline */}
-                      {isSelected && isRotatable && rotation !== 0 && (
+                      {/* Rotated border — always visible when rotated, color changes with selection */}
+                      {isRotatable && rotation !== 0 && (
                         <div
                           data-export-hide="true"
                           style={{
                             position: "absolute",
-                            inset: -2,
-                            border: "2px solid hsl(var(--primary))",
+                            inset: isSelected ? -2 : 0,
+                            border: isSelected
+                              ? "2px solid hsl(var(--primary))"
+                              : "1px solid hsl(var(--border) / 0.5)",
                             transform: `rotate(${rotation}deg)`,
                             transformOrigin: "50% 50%",
                             pointerEvents: "none",
