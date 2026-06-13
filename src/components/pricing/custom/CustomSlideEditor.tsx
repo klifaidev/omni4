@@ -836,7 +836,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           enterGroupEdit(blk.id);
                         }
                       }}
-                      style={{ zIndex: isEditing ? 9999998 : blk.z }}
+                      style={{
+                        zIndex: isEditing ? 9999998 : blk.z,
+                        ...((blk.kind === "title" || blk.kind === "text") && (blk as TitleBlock | TextBlock).rotation
+                          ? {
+                            transform: `rotate(${(blk as TitleBlock | TextBlock).rotation}deg)`,
+                            transformOrigin: "center center",
+                          }
+                          : {}),
+                      }}
                       className={cn(
                         "group/block",
                         isSelected
@@ -1204,7 +1212,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       </div>
 
       {/* ====== Inspector ====== */}
-      <div className="min-w-0 flex flex-col rounded-lg border border-border/40 bg-card/40">
+      <div className="min-w-0 min-h-0 flex flex-col rounded-lg border border-border/40 bg-card/40">
         {/* Contextual header — shows which block is being edited */}
         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/30 px-3">
           {(selected || multiSelected.length >= 2) ? (

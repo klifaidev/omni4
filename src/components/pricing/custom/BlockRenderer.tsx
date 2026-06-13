@@ -62,7 +62,6 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
 }
 
 function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: boolean }) {
-  const rot = b.rotation ?? 0;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
@@ -83,8 +82,6 @@ function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: b
         ? `#${b.backgroundColor}` : undefined,
       borderRadius: b.borderRadius ?? undefined,
       overflow: "hidden",
-      transform: rot !== 0 ? `rotate(${rot}deg)` : undefined,
-      transformOrigin: "center center",
       visibility: isEditing ? "hidden" : "visible",
     }}>
       {b.text}
@@ -93,7 +90,6 @@ function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: b
 }
 
 function TextRender({ block: b, isEditing }: { block: TextBlock; isEditing?: boolean }) {
-  const rot = b.rotation ?? 0;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
@@ -113,8 +109,6 @@ function TextRender({ block: b, isEditing }: { block: TextBlock; isEditing?: boo
       backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
         ? `#${b.backgroundColor}` : undefined,
       borderRadius: b.borderRadius ?? undefined,
-      transform: rot !== 0 ? `rotate(${rot}deg)` : undefined,
-      transformOrigin: "center center",
       visibility: isEditing ? "hidden" : "visible",
     }}>
       {b.text}
