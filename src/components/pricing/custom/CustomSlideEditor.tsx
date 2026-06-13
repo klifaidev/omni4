@@ -836,15 +836,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           enterGroupEdit(blk.id);
                         }
                       }}
-                      style={{
-                        zIndex: isEditing ? 9999998 : blk.z,
-                        ...((blk.kind === "title" || blk.kind === "text") && (blk as TitleBlock | TextBlock).rotation
-                          ? {
-                            transform: `rotate(${(blk as TitleBlock | TextBlock).rotation}deg)`,
-                            transformOrigin: "center center",
-                          }
-                          : {}),
-                      }}
+                      style={{ zIndex: isEditing ? 9999998 : blk.z }}
                       className={cn(
                         "group/block",
                         isSelected
@@ -856,6 +848,12 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         width: "100%", height: "100%",
                         pointerEvents: blk.kind === "chart" ? "auto" : "none",
                         visibility: blk.hidden ? "hidden" : "visible",
+                        ...((blk.kind === "title" || blk.kind === "text") && (blk as TitleBlock | TextBlock).rotation
+                          ? {
+                              transform: `rotate(${(blk as TitleBlock | TextBlock).rotation}deg)`,
+                              transformOrigin: "center center",
+                            }
+                          : {}),
                       }}>
                         <BlockRenderer block={blk} isEditing={isEditing} />
                       </div>
