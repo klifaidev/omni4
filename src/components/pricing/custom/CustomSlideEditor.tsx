@@ -54,7 +54,7 @@ import {
   type ConditionalFormatMode, type ConditionalFormatRule,
 } from "@/lib/customSlide";
 import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
-import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented } from "./chart/Inspector";
+import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider } from "./chart/Inspector";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
 import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "./BlockRenderer";
@@ -980,6 +980,28 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     scale={scale} canvasEl={canvasRef.current} />
                 ))}
 
+              {/* Rotation handle for selected title/text blocks. */}
+              {(() => {
+                if (selectedIds.length !== 1) return null;
+                const blk = config.blocks.find((b) => b.id === selectedIds[0]);
+                if (!blk || (blk.kind !== "title" && blk.kind !== "text") || blk.locked) return null;
+                const ttBlk = blk as TitleBlock | TextBlock;
+                const cx = ttBlk.x + ttBlk.w / 2;
+                const HANDLE_OFFSET = 28;
+                const STEM_H = 14;
+                return (
+                  <RotationHandleOverlay
+                    key={`rot-${ttBlk.id}`}
+                    block={ttBlk}
+                    cx={cx}
+                    cy={ttBlk.y - HANDLE_OFFSET}
+                    stemH={STEM_H}
+                    scale={scale}
+                    canvasEl={canvasRef.current}
+                  />
+                );
+              })()}
+
               {/* Group outlines + resize handles. */}
               {(config.groups ?? []).map((g) => {
                 const members = g.memberIds
@@ -1448,71 +1470,8 @@ function BlockSpecificEditor({ block, onChange }: {
 }) {
   switch (block.kind) {
     case "title":
-    case "text": {
-      const isTitle = block.kind === "title";
-      return (
-        <div className="space-y-2">
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Conteúdo</Label>
-            <Textarea
-              rows={isTitle ? 2 : 4}
-              value={block.text}
-              onChange={(e) => onChange({ text: e.target.value } as never)}
-              className="text-xs"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Tamanho</Label>
-              <Input type="number" className="h-7 text-xs"
-                value={block.size}
-                onChange={(e) => onChange({ size: parseInt(e.target.value, 10) || 14 } as never)}
-              />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Cor (hex)</Label>
-              <Input className="h-7 text-xs" value={block.color}
-                onChange={(e) => onChange({ color: e.target.value.replace("#", "") } as never)}
-              />
-            </div>
-          </div>
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Alinhamento</Label>
-            <Select value={block.align}
-              onValueChange={(v) => onChange({ align: v as "left"|"center"|"right" } as never)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="left">Esquerda</SelectItem>
-                <SelectItem value="center">Centro</SelectItem>
-                <SelectItem value="right">Direita</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {isTitle && (
-            <div className="flex items-center justify-between">
-              <Label className="text-[10px] uppercase text-muted-foreground">Negrito</Label>
-              <Switch checked={(block as { bold: boolean }).bold}
-                onCheckedChange={(v) => onChange({ bold: v } as never)} />
-            </div>
-          )}
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Animação de entrada</Label>
-            <Select
-              value={(block as { enterAnimation?: string }).enterAnimation ?? "none"}
-              onValueChange={(v) => onChange({ enterAnimation: v } as never)}
-            >
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Nenhuma</SelectItem>
-                <SelectItem value="fade">Fade</SelectItem>
-                <SelectItem value="slide-up">Subir</SelectItem>
-                <SelectItem value="pop">Pop</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      );
-    }
+    case "text":
+      return <TextTitleInspector block={block as TitleBlock | TextBlock} onChange={onChange as (p: Partial<TitleBlock | TextBlock>) => void} />;
 
     case "kpi":
       return <FilteredInspector
@@ -2295,6 +2254,145 @@ function TopSkuBlockEditor({ block, onChange }: {
 // ---------------------------------------------------------------------------
 // DRE block inspector
 // ---------------------------------------------------------------------------
+// Shared inspector for TitleBlock + TextBlock
+// ---------------------------------------------------------------------------
+const FONT_FAMILIES = [
+  { value: "Calibri, sans-serif", label: "Calibri" },
+  { value: "Arial, sans-serif", label: "Arial" },
+  { value: "Georgia, serif", label: "Georgia" },
+  { value: "Verdana, sans-serif", label: "Verdana" },
+  { value: "Tahoma, sans-serif", label: "Tahoma" },
+  { value: "Times New Roman, serif", label: "Times New Roman" },
+  { value: "'Courier New', monospace", label: "Courier New" },
+];
+
+function TextTitleInspector({ block, onChange }: {
+  block: TitleBlock | TextBlock;
+  onChange: (patch: Partial<TitleBlock | TextBlock>) => void;
+}) {
+  const isTitle = block.kind === "title";
+  return (
+    <div className="space-y-2">
+      <Section title="Conteúdo" defaultOpen>
+        <Textarea
+          rows={isTitle ? 2 : 4}
+          value={block.text}
+          onChange={(e) => onChange({ text: e.target.value })}
+          className="text-xs"
+        />
+      </Section>
+
+      <Section title="Tipografia" defaultOpen>
+        <Row label="Fonte">
+          <Select value={block.fontFamily ?? "Calibri, sans-serif"}
+            onValueChange={(v) => onChange({ fontFamily: v })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {FONT_FAMILIES.map((f) => (
+                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row label="Tamanho (px)">
+          <NumberStepper value={block.size} min={8} max={200}
+            onChange={(v) => onChange({ size: v })} />
+        </Row>
+        <Row label="Cor">
+          <ColorField value={`#${block.color}`} onChange={(c) => onChange({ color: c.replace("#", "") })} />
+        </Row>
+        <Row label="Alinhamento">
+          <Segmented
+            value={block.align}
+            onChange={(v) => onChange({ align: v as "left" | "center" | "right" })}
+            options={[{ value: "left", label: "Esq" }, { value: "center", label: "Centro" }, { value: "right", label: "Dir" }]}
+          />
+        </Row>
+        {isTitle && (
+          <ToggleField label="Negrito" value={(block as TitleBlock).bold}
+            onChange={(v) => onChange({ bold: v } as Partial<TitleBlock>)} />
+        )}
+        <ToggleField label="Itálico" value={block.italic ?? false}
+          onChange={(v) => onChange({ italic: v })} />
+        <Row label="Transform">
+          <Segmented
+            value={block.textTransform ?? "none"}
+            onChange={(v) => onChange({ textTransform: v as TitleBlock["textTransform"] })}
+            options={[
+              { value: "none", label: "Aa" },
+              { value: "uppercase", label: "AA" },
+              { value: "lowercase", label: "aa" },
+              { value: "capitalize", label: "Ab" },
+            ]}
+          />
+        </Row>
+        <Row label="Espaç. letras">
+          <Slider value={block.letterSpacing ?? 0} min={-0.1} max={0.5} step={0.01} suffix="em"
+            onChange={(v) => onChange({ letterSpacing: v })} />
+        </Row>
+        <Row label="Altura linha">
+          <Slider value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} suffix="×"
+            onChange={(v) => onChange({ lineHeight: v })} />
+        </Row>
+      </Section>
+
+      <Section title="Rotação" defaultOpen={false}>
+        <Row label="Ângulo (°)">
+          <Slider value={block.rotation ?? 0} min={-180} max={180} step={1} suffix="°"
+            onChange={(v) => onChange({ rotation: v })} />
+        </Row>
+        <Row label="">
+          <button className="text-[10px] text-muted-foreground hover:text-foreground"
+            onClick={() => onChange({ rotation: 0 })}>Zerar rotação</button>
+        </Row>
+      </Section>
+
+      <Section title="Aparência" defaultOpen={false}>
+        <Row label="Opacidade">
+          <Slider value={block.opacity ?? 100} min={10} max={100} step={1} suffix="%"
+            onChange={(v) => onChange({ opacity: v })} />
+        </Row>
+        <Row label="Sombra texto">
+          <Input className="h-7 text-xs" placeholder="2px 2px 4px #000000"
+            value={block.textShadow ?? ""}
+            onChange={(e) => onChange({ textShadow: e.target.value })} />
+        </Row>
+        <Row label="Padding (px)">
+          <NumberStepper value={block.padding ?? 0} min={0} max={60}
+            onChange={(v) => onChange({ padding: v })} />
+        </Row>
+        <Row label="Fundo (hex)">
+          <Input className="h-7 text-xs" placeholder="transparent"
+            value={block.backgroundColor ?? ""}
+            onChange={(e) => onChange({ backgroundColor: e.target.value.replace("#", "") || undefined })} />
+        </Row>
+        <Row label="Borda arred.">
+          <NumberStepper value={block.borderRadius ?? 0} min={0} max={40}
+            onChange={(v) => onChange({ borderRadius: v })} />
+        </Row>
+      </Section>
+
+      <Section title="Animação" defaultOpen={false}>
+        <Row label="Entrada">
+          <Select
+            value={(block as { enterAnimation?: string }).enterAnimation ?? "none"}
+            onValueChange={(v) => onChange({ enterAnimation: v } as never)}
+          >
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhuma</SelectItem>
+              <SelectItem value="fade">Fade</SelectItem>
+              <SelectItem value="slide-up">Subir</SelectItem>
+              <SelectItem value="pop">Pop</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 function DreBlockInspector({ block, onChange }: {
   block: DreBlock;
   onChange: (patch: Partial<DreBlock>) => void;
@@ -2367,6 +2465,61 @@ function DreBlockInspector({ block, onChange }: {
         </Row>
         <ToggleField label="Mostrar Budget" value={block.showBudget}
           onChange={(v) => onChange({ showBudget: v })} />
+      </Section>
+
+      <Section title="Formatação Condicional" defaultOpen={false}>
+        {(() => {
+          const cf = block.conditionalFormat ?? {
+            enabled: false, scope: "row" as const, colorMin: "#DC2626",
+            colorMid: "#FFFFFF", colorMax: "#16A34A",
+            applyTo: "cell" as const, linhasAtivas: [],
+          };
+          const upd = (patch: Partial<NonNullable<DreBlock["conditionalFormat"]>>) =>
+            onChange({ conditionalFormat: { ...cf, ...patch } });
+          return (
+            <>
+              <ToggleField label="Ativar" value={cf.enabled}
+                onChange={(v) => upd({ enabled: v })} />
+              {cf.enabled && (
+                <>
+                  <Row label="Escopo">
+                    <Segmented value={cf.scope} onChange={(v) => upd({ scope: v as "row" | "table" })}
+                      options={[{ value: "row", label: "Linha" }, { value: "table", label: "Tabela" }]} />
+                  </Row>
+                  <Row label="Aplicar em">
+                    <Segmented value={cf.applyTo} onChange={(v) => upd({ applyTo: v as "cell" | "text" })}
+                      options={[{ value: "cell", label: "Fundo" }, { value: "text", label: "Texto" }]} />
+                  </Row>
+                  <Row label="Cor mín">
+                    <ColorField value={cf.colorMin} onChange={(c) => upd({ colorMin: c })} />
+                  </Row>
+                  <Row label="Cor meio">
+                    <ColorField value={cf.colorMid} onChange={(c) => upd({ colorMid: c })} />
+                  </Row>
+                  <Row label="Cor máx">
+                    <ColorField value={cf.colorMax} onChange={(c) => upd({ colorMax: c })} />
+                  </Row>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] uppercase text-muted-foreground">Linhas ativas</span>
+                    {DRE_LINES.map((line) => (
+                      <div key={line.id} className="flex items-center justify-between py-0.5">
+                        <span className="text-[11px] text-muted-foreground">{line.label}</span>
+                        <input type="checkbox" className="h-3.5 w-3.5"
+                          checked={cf.linhasAtivas.includes(line.id)}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...cf.linhasAtivas, line.id]
+                              : cf.linhasAtivas.filter((id) => id !== line.id);
+                            upd({ linhasAtivas: next });
+                          }} />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
       </Section>
     </div>
   );
@@ -2498,6 +2651,93 @@ function ClearFiltersToolbar() {
 }
 
 // Convert client mouse coords to canvas-space coords (accounting for scale).
+// ---------------------------------------------------------------------------
+// Rotation handle overlay for title/text blocks
+// ---------------------------------------------------------------------------
+function RotationHandleOverlay({ block, cx, cy, stemH, scale, canvasEl }: {
+  block: TitleBlock | TextBlock;
+  cx: number; cy: number; stemH: number;
+  scale: number; canvasEl: HTMLDivElement | null;
+}) {
+  const dragging = useRef(false);
+  const startAngleRef = useRef(0);
+  const startRotRef = useRef(0);
+
+  const HANDLE_R = 8;
+  const blockCx = block.x + block.w / 2;
+  const blockCy = block.y + block.h / 2;
+
+  const clientToCanvasLocal = (clientX: number, clientY: number) => {
+    if (!canvasEl) return { x: clientX, y: clientY };
+    const r = canvasEl.getBoundingClientRect();
+    return { x: (clientX - r.left) / scale, y: (clientY - r.top) / scale };
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragging.current = true;
+    const pos = clientToCanvasLocal(e.clientX, e.clientY);
+    startAngleRef.current = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
+    startRotRef.current = block.rotation ?? 0;
+    (e.target as Element).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const pos = clientToCanvasLocal(e.clientX, e.clientY);
+    const angle = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
+    let delta = angle - startAngleRef.current;
+    let newRot = startRotRef.current + delta;
+    // Snap to 15°
+    if (e.shiftKey) newRot = Math.round(newRot / 15) * 15;
+    newRot = ((newRot % 360) + 360) % 360;
+    if (newRot > 180) newRot -= 360;
+    patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+  };
+
+  const onPointerUp = () => { dragging.current = false; };
+
+  return (
+    <svg
+      data-export-hide="true"
+      style={{
+        position: "absolute",
+        left: cx - HANDLE_R,
+        top: cy - HANDLE_R,
+        width: HANDLE_R * 2,
+        height: HANDLE_R * 2 + stemH,
+        overflow: "visible",
+        pointerEvents: "none",
+        zIndex: 999995,
+      }}
+    >
+      <line
+        x1={HANDLE_R} y1={HANDLE_R * 2}
+        x2={HANDLE_R} y2={HANDLE_R * 2 + stemH}
+        stroke="hsl(var(--primary))" strokeWidth={1.5}
+      />
+      <circle
+        cx={HANDLE_R} cy={HANDLE_R} r={HANDLE_R - 1}
+        fill="hsl(var(--background))"
+        stroke="hsl(var(--primary))" strokeWidth={1.5}
+        style={{ cursor: "grab", pointerEvents: "all" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      />
+      {/* Rotation arrow symbol */}
+      <path
+        d="M5,8 A4,4 0 1,1 11,8"
+        fill="none" stroke="hsl(var(--primary))" strokeWidth={1.2}
+        strokeLinecap="round" style={{ pointerEvents: "none" }}
+      />
+      <polyline points="11,8 11,5 14,8" fill="hsl(var(--primary))"
+        stroke="none" style={{ pointerEvents: "none" }} />
+    </svg>
+  );
+}
+
 function clientToCanvas(
   canvasEl: HTMLDivElement | null,
   clientX: number,

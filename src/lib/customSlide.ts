@@ -52,6 +52,16 @@ export interface TitleBlock extends BaseBlock {
   italic?: boolean;
   color: string;
   align: "left" | "center" | "right";
+  fontFamily?: string;
+  letterSpacing?: number;
+  lineHeight?: number;
+  rotation?: number;
+  textShadow?: string;
+  opacity?: number;
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  padding?: number;
+  backgroundColor?: string;
+  borderRadius?: number;
 }
 
 export interface TextBlock extends BaseBlock {
@@ -61,6 +71,16 @@ export interface TextBlock extends BaseBlock {
   italic?: boolean;
   color: string;
   align: "left" | "center" | "right";
+  fontFamily?: string;
+  letterSpacing?: number;
+  lineHeight?: number;
+  rotation?: number;
+  textShadow?: string;
+  opacity?: number;
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  padding?: number;
+  backgroundColor?: string;
+  borderRadius?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +408,15 @@ export interface DreBlock extends BaseBlock {
   showTotal: boolean;
   /** Fonte de dados. Default "real". */
   dataSource: "real" | "budget";
+  conditionalFormat?: {
+    enabled: boolean;
+    scope: "row" | "table";
+    colorMin: string;
+    colorMid: string;
+    colorMax: string;
+    applyTo: "cell" | "text";
+    linhasAtivas: string[];
+  };
 }
 
 export type CustomBlock =

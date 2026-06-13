@@ -31,7 +31,9 @@
       "Bash(cmd.exe *)",
       "Bash(cmd /c dir /b \"%APPDATA%\\\\OMNI4 Pricing Analytics\\\\bases\")",
       "PowerShell($basesPath = \"$env:APPDATA\\\\OMNI4 Pricing Analytics\\\\bases\"; if \\(Test-Path $basesPath\\) { Get-ChildItem $basesPath | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize } else { Write-Output \"PASTA NAO ENCONTRADA: $basesPath\" })",
-      "PowerShell(Get-ChildItem *)"
+      "PowerShell(Get-ChildItem *)",
+      "Bash(Get-ChildItem src/components/pricing/custom/ -Recurse)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

@@ -62,15 +62,29 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
 }
 
 function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: boolean }) {
+  const rot = b.rotation ?? 0;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
       alignItems: "center", justifyContent: justifyMap[b.align] ?? "flex-start",
-      fontFamily: "Calibri, sans-serif", fontSize: b.size,
-      fontWeight: b.bold ? 700 : 400, fontStyle: b.italic ? "italic" : "normal",
+      fontFamily: b.fontFamily ?? "Calibri, sans-serif",
+      fontSize: b.size,
+      fontWeight: b.bold ? 700 : 400,
+      fontStyle: b.italic ? "italic" : "normal",
       color: `#${b.color}`,
-      lineHeight: 1.1, textAlign: b.align,
-      padding: 0, overflow: "hidden",
+      lineHeight: b.lineHeight ?? 1.1,
+      textAlign: b.align,
+      letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
+      textShadow: b.textShadow || undefined,
+      opacity: b.opacity != null ? b.opacity / 100 : undefined,
+      textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
+      padding: b.padding ?? 0,
+      backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
+        ? `#${b.backgroundColor}` : undefined,
+      borderRadius: b.borderRadius ?? undefined,
+      overflow: "hidden",
+      transform: rot !== 0 ? `rotate(${rot}deg)` : undefined,
+      transformOrigin: "center center",
       visibility: isEditing ? "hidden" : "visible",
     }}>
       {b.text}
@@ -79,14 +93,28 @@ function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: b
 }
 
 function TextRender({ block: b, isEditing }: { block: TextBlock; isEditing?: boolean }) {
+  const rot = b.rotation ?? 0;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
       alignItems: "flex-start", justifyContent: b.align,
-      fontFamily: "Calibri, sans-serif", fontSize: b.size,
+      fontFamily: b.fontFamily ?? "Calibri, sans-serif",
+      fontSize: b.size,
       fontStyle: b.italic ? "italic" : "normal",
-      color: `#${b.color}`, textAlign: b.align,
-      whiteSpace: "pre-wrap", overflow: "hidden", lineHeight: 1.3,
+      color: `#${b.color}`,
+      textAlign: b.align,
+      whiteSpace: "pre-wrap", overflow: "hidden",
+      lineHeight: b.lineHeight ?? 1.3,
+      letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
+      textShadow: b.textShadow || undefined,
+      opacity: b.opacity != null ? b.opacity / 100 : undefined,
+      textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
+      padding: b.padding ?? 0,
+      backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
+        ? `#${b.backgroundColor}` : undefined,
+      borderRadius: b.borderRadius ?? undefined,
+      transform: rot !== 0 ? `rotate(${rot}deg)` : undefined,
+      transformOrigin: "center center",
       visibility: isEditing ? "hidden" : "visible",
     }}>
       {b.text}
@@ -586,6 +614,25 @@ const cellVal: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 // DRE — tabela DRE compacta usando os mesmos dados do KE30
 // ---------------------------------------------------------------------------
+function lerpColor(a: string, b: string, t: number): string {
+  const pa = a.replace("#", ""), pb = b.replace("#", "");
+  const ri = (h: string, o: number) => parseInt(h.slice(o, o + 2), 16);
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
+  const r = lerp(ri(pa, 0), ri(pb, 0));
+  const g = lerp(ri(pa, 2), ri(pb, 2));
+  const bv = lerp(ri(pa, 4), ri(pb, 4));
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bv.toString(16).padStart(2, "0")}`;
+}
+
+function conditionalColor(
+  val: number, min: number, max: number,
+  colorMin: string, colorMid: string, colorMax: string,
+): string {
+  if (max === min) return colorMid;
+  const t = Math.max(0, Math.min(1, (val - min) / (max - min)));
+  return t <= 0.5 ? lerpColor(colorMin, colorMid, t * 2) : lerpColor(colorMid, colorMax, (t - 0.5) * 2);
+}
+
 function DreRender({ block: blk }: { block: DreBlock }) {
   const pricingRows = usePricing((s) => s.rows);
   const months = useMonthsInfo();
@@ -611,6 +658,31 @@ function DreRender({ block: blk }: { block: DreBlock }) {
     if (!blk.linhas) return LINES;
     return LINES.filter((l) => blk.linhas!.includes(l.id));
   }, [blk.linhas]);
+
+  const conditionalMeta = useMemo(() => {
+    const cf = blk.conditionalFormat;
+    if (!cf?.enabled || cf.linhasAtivas.length === 0 || cols.length === 0) return null;
+    const activeLines = LINES.filter((l) => cf.linhasAtivas.includes(l.id));
+    const rowMinMax = new Map<string, { min: number; max: number }>();
+    let tableMin = Infinity, tableMax = -Infinity;
+    for (const line of activeLines) {
+      const vals = cols.map((col) => {
+        const agg = aggsByCol.get(col.periodo);
+        return agg ? line.get(agg) : null;
+      }).filter((v): v is number => v !== null);
+      if (vals.length === 0) continue;
+      const mn = Math.min(...vals), mx = Math.max(...vals);
+      rowMinMax.set(line.id, { min: mn, max: mx });
+      tableMin = Math.min(tableMin, mn);
+      tableMax = Math.max(tableMax, mx);
+    }
+    return {
+      cf,
+      rowMinMax,
+      tableMin: isFinite(tableMin) ? tableMin : 0,
+      tableMax: isFinite(tableMax) ? tableMax : 0,
+    };
+  }, [blk.conditionalFormat, cols, aggsByCol]);
 
   if (cols.length === 0) {
     return (
@@ -675,13 +747,26 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   const agg = aggsByCol.get(col.periodo);
                   const val = agg ? line.get(agg) : null;
                   const isNeg = val !== null && val < 0;
+                  const cf = conditionalMeta?.cf;
+                  const cfActive = cf?.enabled && cf.linhasAtivas.includes(line.id) && val !== null;
+                  let cfBg: string | undefined;
+                  let cfColor: string | undefined;
+                  if (cfActive && conditionalMeta && val !== null) {
+                    const { min, max } = cf.scope === "row"
+                      ? (conditionalMeta.rowMinMax.get(line.id) ?? { min: val, max: val })
+                      : { min: conditionalMeta.tableMin, max: conditionalMeta.tableMax };
+                    const cc = conditionalColor(val, min, max, cf.colorMin, cf.colorMid, cf.colorMax);
+                    if (cf.applyTo === "cell") cfBg = cc;
+                    else cfColor = cc;
+                  }
                   return (
                     <td key={col.periodo} style={{
                       padding: padVal, textAlign: "right",
                       fontWeight: line.bold ? 600 : 400,
-                      color: isNeg ? "#DC2626"
+                      color: cfColor ?? (isNeg ? "#DC2626"
                         : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
-                        : blk.textColor,
+                        : blk.textColor),
+                      background: cfBg,
                       borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
                       fontSize: fs,
                     }}>
