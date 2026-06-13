@@ -756,6 +756,9 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         isLocked={!!blk.locked}
                         isEditing={isEditing}
                         onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
+                        onResize={(nx, ny, nw, nh) =>
+                          updateBlock(blk.id, { x: nx, y: ny, w: nw, h: nh })
+                        }
                         onSelect={(additive) => {
                           selectBlock(blk.id, { additive: !!additive });
                           if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
@@ -2395,13 +2398,34 @@ function TextTitleInspector({ block, onChange }: {
       </Section>
 
       <Section title="Rotação" defaultOpen={false}>
-        <Row label="Ângulo (°)">
-          <Slider value={block.rotation ?? 0} min={-180} max={180} step={1} suffix="°"
-            onChange={(v) => onChange({ rotation: v })} />
-        </Row>
-        <Row label="">
-          <button className="text-[10px] text-muted-foreground hover:text-foreground"
-            onClick={() => onChange({ rotation: 0 })}>Zerar rotação</button>
+        <Row label="Girar">
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <Slider value={block.rotation ?? 0} min={-180} max={180} step={1}
+                onChange={(v) => onChange({ rotation: v })} />
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={-180}
+                max={180}
+                value={block.rotation ?? 0}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= -180 && v <= 180) onChange({ rotation: v });
+                }}
+                className="w-14 h-6 rounded border border-border/40 bg-background text-center text-[11px] px-1 focus:outline-none focus:ring-1 focus:ring-primary/60"
+              />
+              <span className="text-[10px] text-muted-foreground">°</span>
+            </div>
+            <button
+              className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+              onClick={() => onChange({ rotation: 0 })}
+              title="Resetar rotação"
+            >
+              ↺
+            </button>
+          </div>
         </Row>
       </Section>
 
