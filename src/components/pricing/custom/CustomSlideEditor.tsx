@@ -109,7 +109,7 @@ import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, RotateCw } from "lucide-react";
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -558,6 +558,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           blk.hidden ? "Mostrar bloco" : "Ocultar bloco",
                         )
                       }
+                      onDelete={() => deleteBlockAction(blk.id)}
                     />
                   ))}
                 </SortableContext>
@@ -714,6 +715,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 const isInlineEditable =
                   (blk.kind === "title" || blk.kind === "text") && !blk.locked;
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
+                const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
+                const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
                 // Shape-specific Rnd config — contextual handles override.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked;
                 let shapeDisableDrag = !!blk.locked;
@@ -838,27 +841,41 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       }}
                       style={{
                         zIndex: isEditing ? 9999998 : blk.z,
-                        ...(
-                          (blk.kind === "title" || blk.kind === "text" || blk.kind === "image") &&
-                          (blk as TitleBlock | TextBlock | ImageBlock).rotation
-                            ? { rotate: `${(blk as TitleBlock | TextBlock | ImageBlock).rotation}deg` }
-                            : {}
-                        ),
                       }}
                       className={cn(
                         "group/block",
                         isSelected
-                          ? "outline outline-2 outline-offset-1 outline-primary"
+                          ? (rotation !== 0
+                              ? "outline outline-2 outline-offset-1 outline-transparent"
+                              : "outline outline-2 outline-offset-1 outline-primary")
                           : "outline outline-1 outline-transparent hover:outline-primary/40",
                       )}
                     >
                       <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
                         width: "100%", height: "100%",
+                        transform: (isRotatable && rotation !== 0) ? `rotate(${rotation}deg)` : undefined,
+                        transformOrigin: "50% 50%",
                         pointerEvents: blk.kind === "chart" ? "auto" : "none",
                         visibility: blk.hidden ? "hidden" : "visible",
                       }}>
                         <BlockRenderer block={blk} isEditing={isEditing} />
                       </div>
+                      {/* Rotated selection border — shown instead of the axis-aligned outline */}
+                      {isSelected && isRotatable && rotation !== 0 && (
+                        <div
+                          data-export-hide="true"
+                          style={{
+                            position: "absolute",
+                            inset: -2,
+                            border: "2px solid hsl(var(--primary))",
+                            transform: `rotate(${rotation}deg)`,
+                            transformOrigin: "50% 50%",
+                            pointerEvents: "none",
+                            borderRadius: 1,
+                            zIndex: 10,
+                          }}
+                        />
+                      )}
                       {isEditing && (
                         <InlineTextEditor
                           block={blk as TitleBlock | TextBlock}
@@ -902,13 +919,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           <Lock className="h-3 w-3 text-muted-foreground" />
                         </div>
                       )}
-                      {/* Rotation handle — inside Rnd so rotates with block */}
-                      {isSelected && !blk.locked && !isEditing &&
-                        (blk.kind === "title" || blk.kind === "text" || blk.kind === "image") && (
+                      {/* Rotation handle — inside Rnd, not rotated with content */}
+                      {isSelected && !blk.locked && !isEditing && isRotatable && (
                         <BlockRotationHandle
                           block={blk as TitleBlock | TextBlock | ImageBlock}
-                          scale={scale}
-                          canvasEl={canvasRef.current}
                         />
                       )}
                     </Rnd>
@@ -1398,12 +1412,13 @@ function blockLayerName(blk: CustomBlock): string {
 }
 
 function SortableLayerItem({
-  blk, isSelected, onSelect, onToggleHidden,
+  blk, isSelected, onSelect, onToggleHidden, onDelete,
 }: {
   blk: CustomBlock;
   isSelected: boolean;
   onSelect: () => void;
   onToggleHidden: () => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: blk.id });
   return (
@@ -1411,7 +1426,7 @@ function SortableLayerItem({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       className={cn(
-        "flex items-center gap-1 rounded px-1 py-1 text-[10px] cursor-pointer select-none",
+        "group flex items-center gap-1 rounded px-1 py-1 text-[10px] cursor-pointer select-none",
         isSelected ? "bg-secondary" : "hover:bg-secondary/60",
         blk.hidden && "opacity-50",
       )}
@@ -1434,6 +1449,14 @@ function SortableLayerItem({
         title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
       >
         {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+      </button>
+      <button
+        type="button"
+        className="shrink-0 ml-0.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/20 transition-colors opacity-0 group-hover:opacity-100"
+        title="Excluir bloco"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+      >
+        <Trash2 className="h-3 w-3" />
       </button>
     </div>
   );
@@ -2646,83 +2669,60 @@ function ClearFiltersToolbar() {
 }
 
 // ---------------------------------------------------------------------------
-// Rotation handle — child of Rnd, rotates with the block
+// Rotation handle — child of Rnd, NOT inside the rotated content div
 // ---------------------------------------------------------------------------
-function BlockRotationHandle({ block, scale, canvasEl }: {
-  block: TitleBlock | TextBlock | ImageBlock;
-  scale: number;
-  canvasEl: HTMLDivElement | null;
-}) {
-  const dragging = useRef(false);
-  const startAngleRef = useRef(0);
-  const startRotRef = useRef(0);
-  const blockCx = block.x + block.w / 2;
-  const blockCy = block.y + block.h / 2;
-
-  const toCanvas = (clientX: number, clientY: number) => {
-    if (!canvasEl) return { x: clientX, y: clientY };
-    const r = canvasEl.getBoundingClientRect();
-    return { x: (clientX - r.left) / scale, y: (clientY - r.top) / scale };
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
+function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageBlock }) {
+  const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    dragging.current = true;
-    const pos = toCanvas(e.clientX, e.clientY);
-    startAngleRef.current = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
-    startRotRef.current = block.rotation ?? 0;
-    (e.target as Element).setPointerCapture(e.pointerId);
-  };
+    const rndEl = (e.currentTarget as HTMLElement).parentElement;
+    if (!rndEl) return;
+    const rect = rndEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const startRot = block.rotation ?? 0;
+    const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
 
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const pos = toCanvas(e.clientX, e.clientY);
-    const angle = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
-    let newRot = startRotRef.current + (angle - startAngleRef.current);
-    if (e.shiftKey) newRot = Math.round(newRot / 15) * 15;
-    newRot = ((newRot % 360) + 360) % 360;
-    if (newRot > 180) newRot -= 360;
-    patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+    const onMove = (ev: MouseEvent) => {
+      const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx) * (180 / Math.PI);
+      let newRot = startRot + (angle - startAngle);
+      if (ev.shiftKey) newRot = Math.round(newRot / 15) * 15;
+      newRot = ((newRot % 360) + 360) % 360;
+      if (newRot > 180) newRot -= 360;
+      patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
-
-  const onPointerUp = () => { dragging.current = false; };
 
   return (
-    <svg
+    <div
       data-export-hide="true"
       style={{
         position: "absolute",
-        top: -30,
+        top: -28,
         left: "50%",
         transform: "translateX(-50%)",
         width: 16,
-        height: 31,
-        overflow: "visible",
+        height: 16,
+        borderRadius: "50%",
+        background: "white",
+        border: "2px solid hsl(var(--primary))",
+        cursor: "crosshair",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         zIndex: 999995,
-        cursor: "grab",
         pointerEvents: "all",
       }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
+      onMouseDown={handleMouseDown}
     >
-      {/* stem — from bottom of circle (y=14) to block top edge (y=30) */}
-      <line x1={8} y1={14} x2={8} y2={30}
-        stroke="hsl(var(--primary))" strokeWidth={1.5}
-        style={{ pointerEvents: "none" }} />
-      {/* circle */}
-      <circle cx={8} cy={7} r={6}
-        fill="hsl(var(--background))"
-        stroke="hsl(var(--primary))" strokeWidth={1.5}
-        style={{ pointerEvents: "none" }} />
-      {/* rotation arrow */}
-      <path d="M4.5,7 A4,4 0 1,1 11.5,7"
-        fill="none" stroke="hsl(var(--primary))" strokeWidth={1}
-        strokeLinecap="round" style={{ pointerEvents: "none" }} />
-      <polyline points="11.5,7 11.5,4.5 14,7" fill="hsl(var(--primary))"
-        stroke="none" style={{ pointerEvents: "none" }} />
-    </svg>
+      <RotateCw style={{ width: 8, height: 8, color: "hsl(var(--primary))" }} />
+    </div>
   );
 }
 
