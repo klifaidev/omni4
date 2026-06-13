@@ -39,27 +39,37 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
     },
     ref,
   ) {
-    const dragRef = useRef<{
-      startX: number; startY: number; origX: number; origY: number;
-    } | null>(null);
+    const rafRef = useRef<number | null>(null);
+
+    const scheduleUpdate = (fn: () => void) => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        fn();
+        rafRef.current = null;
+      });
+    };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.button !== 0 || isLocked || isEditing) return;
       e.stopPropagation();
       onSelect(e.shiftKey);
-      dragRef.current = { startX: e.clientX, startY: e.clientY, origX: x, origY: y };
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const origX = x;
+      const origY = y;
 
       const onMouseMove = (ev: MouseEvent) => {
-        if (!dragRef.current) return;
-        const dx = (ev.clientX - dragRef.current.startX) / scale;
-        const dy = (ev.clientY - dragRef.current.startY) / scale;
-        onMove(
-          Math.round(dragRef.current.origX + dx),
-          Math.round(dragRef.current.origY + dy),
-        );
+        const dx = (ev.clientX - startX) / scale;
+        const dy = (ev.clientY - startY) / scale;
+        scheduleUpdate(() => {
+          onMove(Math.round(origX + dx), Math.round(origY + dy));
+        });
       };
       const onMouseUp = () => {
-        dragRef.current = null;
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
       };
@@ -86,20 +96,24 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       const onMouseMove = (ev: MouseEvent) => {
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
-        // Project screen delta into block's local (de-rotated) space
         const localDx = (dx * cos + dy * sin) / scale;
         const localDy = (-dx * sin + dy * cos) / scale;
 
         let nx = origX, ny = origY, nw = origW, nh = origH;
-
         if (dir.includes("e")) nw = Math.max(50, origW + localDx);
         if (dir.includes("s")) nh = Math.max(30, origH + localDy);
         if (dir.includes("w")) { nw = Math.max(50, origW - localDx); nx = origX + (origW - nw); }
         if (dir.includes("n")) { nh = Math.max(30, origH - localDy); ny = origY + (origH - nh); }
 
-        onResize(Math.round(nx), Math.round(ny), Math.round(nw), Math.round(nh));
+        scheduleUpdate(() => {
+          onResize(Math.round(nx), Math.round(ny), Math.round(nw), Math.round(nh));
+        });
       };
       const onMouseUp = () => {
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
       };
@@ -131,7 +145,6 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       >
         {children}
 
-        {/* Resize handles — visible only when selected and not locked */}
         {isSelected && !isLocked && HANDLES.map((handle) => {
           const { dir, cursor, ...pos } = handle;
           return (

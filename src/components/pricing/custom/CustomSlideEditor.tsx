@@ -2327,6 +2327,52 @@ const FONT_FAMILIES = [
   { value: "'Courier New', monospace", label: "Courier New" },
 ];
 
+// ---------------------------------------------------------------------------
+// Slider + numeric input combo, reused across all inspector sliders
+// ---------------------------------------------------------------------------
+function SliderWithInput({
+  value, min, max, step = 1, unit = "", onChange,
+}: {
+  value: number; min: number; max: number; step?: number; unit?: string;
+  onChange: (v: number) => void;
+}) {
+  const fmt = (n: number) => String(Math.round(n * 1000) / 1000);
+  const [inputVal, setInputVal] = useState(fmt(value));
+  useEffect(() => { setInputVal(fmt(value)); }, [value]);
+
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div className="flex-1 min-w-0">
+        <Slider min={min} max={max} step={step} value={value} onChange={onChange} />
+      </div>
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        <input
+          type="number"
+          min={min} max={max} step={step}
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onBlur={() => {
+            const v = parseFloat(inputVal);
+            if (!isNaN(v)) {
+              const clamped = Math.min(max, Math.max(min, v));
+              onChange(clamped);
+              setInputVal(fmt(clamped));
+            } else {
+              setInputVal(fmt(value));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") { setInputVal(fmt(value)); e.currentTarget.blur(); }
+          }}
+          className="w-14 h-6 rounded border border-border/40 bg-background text-right text-[11px] px-1.5 focus:outline-none focus:ring-1 focus:ring-primary/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        {unit && <span className="text-[10px] text-muted-foreground w-4 text-left">{unit}</span>}
+      </div>
+    </div>
+  );
+}
+
 function TextTitleInspector({ block, onChange }: {
   block: TitleBlock | TextBlock;
   onChange: (patch: Partial<TitleBlock | TextBlock>) => void;
@@ -2356,7 +2402,7 @@ function TextTitleInspector({ block, onChange }: {
           </Select>
         </Row>
         <Row label="Tamanho (px)">
-          <NumberStepper value={block.size} min={8} max={200}
+          <SliderWithInput value={block.size} min={8} max={200} unit="px"
             onChange={(v) => onChange({ size: v })} />
         </Row>
         <Row label="Cor">
@@ -2388,50 +2434,31 @@ function TextTitleInspector({ block, onChange }: {
           />
         </Row>
         <Row label="Espaç. letras">
-          <Slider value={block.letterSpacing ?? 0} min={-0.1} max={0.5} step={0.01} suffix="em"
+          <SliderWithInput value={block.letterSpacing ?? 0} min={-0.1} max={0.5} step={0.01} unit="em"
             onChange={(v) => onChange({ letterSpacing: v })} />
         </Row>
         <Row label="Altura linha">
-          <Slider value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} suffix="×"
+          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="×"
             onChange={(v) => onChange({ lineHeight: v })} />
         </Row>
       </Section>
 
       <Section title="Rotação" defaultOpen={false}>
         <Row label="Girar">
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <Slider value={block.rotation ?? 0} min={-180} max={180} step={1}
-                onChange={(v) => onChange({ rotation: v })} />
-            </div>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                min={-180}
-                max={180}
-                value={block.rotation ?? 0}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= -180 && v <= 180) onChange({ rotation: v });
-                }}
-                className="w-14 h-6 rounded border border-border/40 bg-background text-center text-[11px] px-1 focus:outline-none focus:ring-1 focus:ring-primary/60"
-              />
-              <span className="text-[10px] text-muted-foreground">°</span>
-            </div>
-            <button
-              className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
-              onClick={() => onChange({ rotation: 0 })}
-              title="Resetar rotação"
-            >
-              ↺
-            </button>
-          </div>
+          <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="°"
+            onChange={(v) => onChange({ rotation: v })} />
+        </Row>
+        <Row label="">
+          <button className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+            onClick={() => onChange({ rotation: 0 })} title="Resetar rotação">
+            ↺ Zerar rotação
+          </button>
         </Row>
       </Section>
 
       <Section title="Aparência" defaultOpen={false}>
         <Row label="Opacidade">
-          <Slider value={block.opacity ?? 100} min={10} max={100} step={1} suffix="%"
+          <SliderWithInput value={block.opacity ?? 100} min={10} max={100} unit="%"
             onChange={(v) => onChange({ opacity: v })} />
         </Row>
         <Row label="Sombra texto">
@@ -2440,7 +2467,7 @@ function TextTitleInspector({ block, onChange }: {
             onChange={(e) => onChange({ textShadow: e.target.value })} />
         </Row>
         <Row label="Padding (px)">
-          <NumberStepper value={block.padding ?? 0} min={0} max={60}
+          <SliderWithInput value={block.padding ?? 0} min={0} max={60} unit="px"
             onChange={(v) => onChange({ padding: v })} />
         </Row>
         <Row label="Fundo (hex)">
@@ -2449,7 +2476,7 @@ function TextTitleInspector({ block, onChange }: {
             onChange={(e) => onChange({ backgroundColor: e.target.value.replace("#", "") || undefined })} />
         </Row>
         <Row label="Borda arred.">
-          <NumberStepper value={block.borderRadius ?? 0} min={0} max={40}
+          <SliderWithInput value={block.borderRadius ?? 0} min={0} max={40} unit="px"
             onChange={(v) => onChange({ borderRadius: v })} />
         </Row>
       </Section>
@@ -2746,16 +2773,24 @@ function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageB
     const cy = rect.top + rect.height / 2;
     const startRot = block.rotation ?? 0;
     const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
+    let raf: number | null = null;
 
     const onMove = (ev: MouseEvent) => {
-      const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx) * (180 / Math.PI);
-      let newRot = startRot + (angle - startAngle);
-      if (ev.shiftKey) newRot = Math.round(newRot / 15) * 15;
-      newRot = ((newRot % 360) + 360) % 360;
-      if (newRot > 180) newRot -= 360;
-      patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+      if (raf !== null) cancelAnimationFrame(raf);
+      const evX = ev.clientX; const evY = ev.clientY;
+      const shiftKey = ev.shiftKey;
+      raf = requestAnimationFrame(() => {
+        const angle = Math.atan2(evY - cy, evX - cx) * (180 / Math.PI);
+        let newRot = startRot + (angle - startAngle);
+        if (shiftKey) newRot = Math.round(newRot / 15) * 15;
+        newRot = ((newRot % 360) + 360) % 360;
+        if (newRot > 180) newRot -= 360;
+        patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+        raf = null;
+      });
     };
     const onUp = () => {
+      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
