@@ -66,6 +66,7 @@ import { registerCustomCanvas } from "@/lib/customCanvasRegistry";
 import { saveUserTemplate } from "@/lib/customTemplates";
 import { TemplatePicker } from "./templates/TemplatePicker";
 import { ShapeInspector } from "./ShapeInspector";
+import { RotatableBlock } from "./RotatableBlock";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { newId } from "@/lib/slidesFlow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -717,6 +718,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
+                const useRotatableBlock = isRotatable && rotation !== 0;
                 // Shape-specific Rnd config — contextual handles override.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked;
                 let shapeDisableDrag = !!blk.locked;
@@ -744,190 +746,226 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 return (
                 <ContextMenu key={blk.id}>
                   <ContextMenuTrigger asChild>
-                    <Rnd
-                      size={{ width: blk.w, height: blk.h }}
-                      position={{ x: blk.x, y: blk.y }}
-                      bounds="parent"
-                      scale={scale}
-                      lockAspectRatio={shapeLockAspect}
-                      disableDragging={shapeDisableDrag}
-                      enableResizing={shapeResize}
-                      onDragStart={(_e, _d) => {
-                        // If shift wasn't held and this block isn't already
-                        // selected, select it before drag begins.
-                        if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
-                      }}
-                      onDrag={(_, d) => {
-                        const ids = draggableSiblings(blk.id);
-                        // Snap to alignment guides (with tolerance).
-                        const snap = computeGuides(ids, d.x, d.y, blk.w, blk.h);
-                        // If guide didn't fire (no v/h), fall back to grid snap during drag? No — grid snaps on stop only.
-                        if (snap.guides.v.length || snap.guides.h.length) {
-                          d.x = snap.x; d.y = snap.y;
-                        }
-                      }}
-                      onResize={(_, __, refEl, ___, pos) => {
-                        const w = parseInt(refEl.style.width, 10);
-                        const h = parseInt(refEl.style.height, 10);
-                        const snap = computeGuides([blk.id], pos.x, pos.y, w, h);
-                        // For resize we just visualise guides; keep size raw.
-                        void snap;
-                      }}
-                      onDragStop={(_, d) => {
-                        setGuides({ v: [], h: [] });
-                        const ids = draggableSiblings(blk.id);
-                        let dx = d.x - blk.x;
-                        let dy = d.y - blk.y;
-                        // Snap to grid on mouseup (B8.4) — only if no guides fired.
-                        if (prefs.gridEnabled) {
-                          const sx = snapToGrid(d.x, prefs.gridSize);
-                          const sy = snapToGrid(d.y, prefs.gridSize);
-                          dx = sx - blk.x;
-                          dy = sy - blk.y;
-                        }
-                        if (ids.length === 1) {
-                          updateBlock(blk.id, { x: blk.x + dx, y: blk.y + dy });
-                        } else {
-                          const patches = ids
-                            .map((id) => config.blocks.find((b) => b.id === id))
-                            .filter((b): b is CustomBlock => !!b && !b.locked)
-                            .map((b) => ({ id: b.id, patch: { x: b.x + dx, y: b.y + dy } as Partial<CustomBlock> }));
-                          patchBlocksAction(patches, "Mover blocos");
-                        }
-                      }}
-                      onResizeStop={(_, __, refEl, ___, pos) => {
-                        setGuides({ v: [], h: [] });
-                        let w = parseInt(refEl.style.width, 10);
-                        let h = parseInt(refEl.style.height, 10);
-                        let x = pos.x, y = pos.y;
-                        if (prefs.gridEnabled) {
-                          x = snapToGrid(x, prefs.gridSize);
-                          y = snapToGrid(y, prefs.gridSize);
-                          w = Math.max(prefs.gridSize, snapToGrid(w, prefs.gridSize));
-                          h = Math.max(prefs.gridSize, snapToGrid(h, prefs.gridSize));
-                        }
-                        updateBlock(blk.id, { w, h, x, y });
-                      }}
-                      onMouseDown={(e) => {
-                        if (isEditing) {
-                          // Permite que o textarea receba o clique.
-                          return;
-                        }
-                        e.stopPropagation();
-                        const wasSelected = selectedIds.includes(blk.id);
-                        const shift = (e as MouseEvent).shiftKey;
-                        // Click on a single member of a group while group is
-                        // already selected → keep group selected.
-                        selectBlock(blk.id, { additive: shift });
-                        // Sai de edição inline ao clicar em outro bloco.
-                        if (inlineEditId && inlineEditId !== blk.id) {
-                          setInlineEditId(null);
-                        }
-                        if (blk.locked && wasSelected && !shift && (e as MouseEvent).button === 0) {
-                          toast("Bloco bloqueado. Clique com botão direito para desbloquear.", { duration: 1800 });
-                        }
-                      }}
-                      onDoubleClick={(e) => {
-                        if (isInlineEditable) {
-                          e.stopPropagation();
+                    {useRotatableBlock ? (
+                      /* ---- bloco com rotação: RotatableBlock (sem Rnd) ---- */
+                      <RotatableBlock
+                        x={blk.x} y={blk.y} w={blk.w} h={blk.h}
+                        rotation={rotation}
+                        scale={scale}
+                        isSelected={isSelected}
+                        isLocked={!!blk.locked}
+                        isEditing={isEditing}
+                        onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
+                        onSelect={(additive) => {
+                          selectBlock(blk.id, { additive: !!additive });
+                          if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
+                        }}
+                        onDoubleClick={isInlineEditable ? () => {
                           setInlineEditId(blk.id);
                           selectBlock(blk.id);
-                          return;
-                        }
-                        if (blk.groupId) {
-                          e.stopPropagation();
-                          enterGroupEdit(blk.id);
-                        }
-                      }}
-                      style={{
-                        zIndex: isEditing ? 9999998 : blk.z,
-                      }}
-                      className={cn(
-                        "group/block",
-                        isSelected
-                          ? (rotation !== 0
-                              ? "outline outline-2 outline-offset-1 outline-transparent"
-                              : "outline outline-2 outline-offset-1 outline-primary")
-                          : "outline outline-1 outline-transparent hover:outline-primary/40",
-                      )}
-                    >
-                      <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
-                        width: "100%", height: "100%",
-                        transform: (isRotatable && rotation !== 0) ? `rotate(${rotation}deg)` : undefined,
-                        transformOrigin: "50% 50%",
-                        pointerEvents: blk.kind === "chart" ? "auto" : "none",
-                        visibility: blk.hidden ? "hidden" : "visible",
-                      }}>
-                        <BlockRenderer block={blk} isEditing={isEditing} />
-                      </div>
-                      {/* Rotated border — always visible when rotated, color changes with selection */}
-                      {isRotatable && rotation !== 0 && (
-                        <div
-                          data-export-hide="true"
-                          style={{
-                            position: "absolute",
-                            inset: isSelected ? -2 : 0,
-                            border: isSelected
-                              ? "2px solid hsl(var(--primary))"
-                              : "1px solid hsl(var(--border) / 0.5)",
-                            transform: `rotate(${rotation}deg)`,
-                            transformOrigin: "50% 50%",
-                            pointerEvents: "none",
-                            borderRadius: 1,
-                            zIndex: 10,
-                          }}
-                        />
-                      )}
-                      {isEditing && (
-                        <InlineTextEditor
-                          block={blk as TitleBlock | TextBlock}
-                          onPatch={(patch) =>
-                            patchBlockAction(blk.id, patch, "Alterar estilo")
+                        } : undefined}
+                        style={{ zIndex: blk.z }}
+                      >
+                        <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
+                          width: "100%", height: "100%",
+                          pointerEvents: "none",
+                          visibility: blk.hidden ? "hidden" : "visible",
+                        }}>
+                          <BlockRenderer block={blk} isEditing={isEditing} />
+                        </div>
+                        {isEditing && (
+                          <InlineTextEditor
+                            block={blk as TitleBlock | TextBlock}
+                            onPatch={(patch) => patchBlockAction(blk.id, patch, "Alterar estilo")}
+                            onExit={() => setInlineEditId(null)}
+                          />
+                        )}
+                        {isInlineEditable && !isEditing && !blk.locked && (
+                          <div
+                            data-export-hide="true"
+                            className="opacity-0 group-hover/block:opacity-100 transition-opacity"
+                            style={{
+                              position: "absolute", top: 4, right: 4,
+                              width: 18, height: 18, borderRadius: 4,
+                              background: "hsl(var(--background) / 0.9)",
+                              border: "1px solid hsl(var(--border))",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              zIndex: 999990, pointerEvents: "none",
+                            }}
+                            title="Duplo-clique para editar"
+                          >
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        )}
+                        <DataSourceBadge block={blk} />
+                        {blk.locked && (
+                          <div
+                            data-export-hide="true"
+                            style={{
+                              position: "absolute", top: 4, right: 4,
+                              width: 18, height: 18, borderRadius: 4,
+                              background: "hsl(var(--background) / 0.9)",
+                              border: "1px solid hsl(var(--border))",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              zIndex: 999990, pointerEvents: "none",
+                            }}
+                            title="Bloco bloqueado"
+                          >
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        )}
+                        {isSelected && !blk.locked && !isEditing && (
+                          <BlockRotationHandle
+                            block={blk as TitleBlock | TextBlock | ImageBlock}
+                          />
+                        )}
+                      </RotatableBlock>
+                    ) : (
+                      /* ---- bloco sem rotação: Rnd normal ---- */
+                      <Rnd
+                        size={{ width: blk.w, height: blk.h }}
+                        position={{ x: blk.x, y: blk.y }}
+                        bounds="parent"
+                        scale={scale}
+                        lockAspectRatio={shapeLockAspect}
+                        disableDragging={shapeDisableDrag}
+                        enableResizing={shapeResize}
+                        onDragStart={(_e, _d) => {
+                          if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
+                        }}
+                        onDrag={(_, d) => {
+                          const ids = draggableSiblings(blk.id);
+                          const snap = computeGuides(ids, d.x, d.y, blk.w, blk.h);
+                          if (snap.guides.v.length || snap.guides.h.length) {
+                            d.x = snap.x; d.y = snap.y;
                           }
-                          onExit={() => setInlineEditId(null)}
-                        />
-                      )}
-                      {isInlineEditable && !isEditing && !blk.locked && (
-                        <div
-                          data-export-hide="true"
-                          className="opacity-0 group-hover/block:opacity-100 transition-opacity"
-                          style={{
-                            position: "absolute", top: 4, right: 4,
-                            width: 18, height: 18, borderRadius: 4,
-                            background: "hsl(var(--background) / 0.9)",
-                            border: "1px solid hsl(var(--border))",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            zIndex: 999990, pointerEvents: "none",
-                          }}
-                          title="Duplo-clique para editar"
-                        >
-                          <Pencil className="h-3 w-3 text-muted-foreground" />
+                        }}
+                        onResize={(_, __, refEl, ___, pos) => {
+                          const w = parseInt(refEl.style.width, 10);
+                          const h = parseInt(refEl.style.height, 10);
+                          const snap = computeGuides([blk.id], pos.x, pos.y, w, h);
+                          void snap;
+                        }}
+                        onDragStop={(_, d) => {
+                          setGuides({ v: [], h: [] });
+                          const ids = draggableSiblings(blk.id);
+                          let dx = d.x - blk.x;
+                          let dy = d.y - blk.y;
+                          if (prefs.gridEnabled) {
+                            const sx = snapToGrid(d.x, prefs.gridSize);
+                            const sy = snapToGrid(d.y, prefs.gridSize);
+                            dx = sx - blk.x;
+                            dy = sy - blk.y;
+                          }
+                          if (ids.length === 1) {
+                            updateBlock(blk.id, { x: blk.x + dx, y: blk.y + dy });
+                          } else {
+                            const patches = ids
+                              .map((id) => config.blocks.find((b) => b.id === id))
+                              .filter((b): b is CustomBlock => !!b && !b.locked)
+                              .map((b) => ({ id: b.id, patch: { x: b.x + dx, y: b.y + dy } as Partial<CustomBlock> }));
+                            patchBlocksAction(patches, "Mover blocos");
+                          }
+                        }}
+                        onResizeStop={(_, __, refEl, ___, pos) => {
+                          setGuides({ v: [], h: [] });
+                          let w = parseInt(refEl.style.width, 10);
+                          let h = parseInt(refEl.style.height, 10);
+                          let x = pos.x, y = pos.y;
+                          if (prefs.gridEnabled) {
+                            x = snapToGrid(x, prefs.gridSize);
+                            y = snapToGrid(y, prefs.gridSize);
+                            w = Math.max(prefs.gridSize, snapToGrid(w, prefs.gridSize));
+                            h = Math.max(prefs.gridSize, snapToGrid(h, prefs.gridSize));
+                          }
+                          updateBlock(blk.id, { w, h, x, y });
+                        }}
+                        onMouseDown={(e) => {
+                          if (isEditing) { return; }
+                          e.stopPropagation();
+                          const wasSelected = selectedIds.includes(blk.id);
+                          const shift = (e as MouseEvent).shiftKey;
+                          selectBlock(blk.id, { additive: shift });
+                          if (inlineEditId && inlineEditId !== blk.id) { setInlineEditId(null); }
+                          if (blk.locked && wasSelected && !shift && (e as MouseEvent).button === 0) {
+                            toast("Bloco bloqueado. Clique com botão direito para desbloquear.", { duration: 1800 });
+                          }
+                        }}
+                        onDoubleClick={(e) => {
+                          if (isInlineEditable) {
+                            e.stopPropagation();
+                            setInlineEditId(blk.id);
+                            selectBlock(blk.id);
+                            return;
+                          }
+                          if (blk.groupId) {
+                            e.stopPropagation();
+                            enterGroupEdit(blk.id);
+                          }
+                        }}
+                        style={{ zIndex: isEditing ? 9999998 : blk.z }}
+                        className={cn(
+                          "group/block",
+                          isSelected
+                            ? "outline outline-2 outline-offset-1 outline-primary"
+                            : "outline outline-1 outline-transparent hover:outline-primary/40",
+                        )}
+                      >
+                        <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
+                          width: "100%", height: "100%",
+                          pointerEvents: blk.kind === "chart" ? "auto" : "none",
+                          visibility: blk.hidden ? "hidden" : "visible",
+                        }}>
+                          <BlockRenderer block={blk} isEditing={isEditing} />
                         </div>
-                      )}
-                      <DataSourceBadge block={blk} />
-                      {blk.locked && (
-                        <div
-                          data-export-hide="true"
-                          style={{
-                            position: "absolute", top: 4, right: 4,
-                            width: 18, height: 18, borderRadius: 4,
-                            background: "hsl(var(--background) / 0.9)",
-                            border: "1px solid hsl(var(--border))",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            zIndex: 999990, pointerEvents: "none",
-                          }}
-                          title="Bloco bloqueado"
-                        >
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                      )}
-                      {/* Rotation handle — inside Rnd, not rotated with content */}
-                      {isSelected && !blk.locked && !isEditing && isRotatable && (
-                        <BlockRotationHandle
-                          block={blk as TitleBlock | TextBlock | ImageBlock}
-                        />
-                      )}
-                    </Rnd>
+                        {isEditing && (
+                          <InlineTextEditor
+                            block={blk as TitleBlock | TextBlock}
+                            onPatch={(patch) => patchBlockAction(blk.id, patch, "Alterar estilo")}
+                            onExit={() => setInlineEditId(null)}
+                          />
+                        )}
+                        {isInlineEditable && !isEditing && !blk.locked && (
+                          <div
+                            data-export-hide="true"
+                            className="opacity-0 group-hover/block:opacity-100 transition-opacity"
+                            style={{
+                              position: "absolute", top: 4, right: 4,
+                              width: 18, height: 18, borderRadius: 4,
+                              background: "hsl(var(--background) / 0.9)",
+                              border: "1px solid hsl(var(--border))",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              zIndex: 999990, pointerEvents: "none",
+                            }}
+                            title="Duplo-clique para editar"
+                          >
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        )}
+                        <DataSourceBadge block={blk} />
+                        {blk.locked && (
+                          <div
+                            data-export-hide="true"
+                            style={{
+                              position: "absolute", top: 4, right: 4,
+                              width: 18, height: 18, borderRadius: 4,
+                              background: "hsl(var(--background) / 0.9)",
+                              border: "1px solid hsl(var(--border))",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              zIndex: 999990, pointerEvents: "none",
+                            }}
+                            title="Bloco bloqueado"
+                          >
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        )}
+                        {isSelected && !blk.locked && !isEditing && isRotatable && (
+                          <BlockRotationHandle
+                            block={blk as TitleBlock | TextBlock | ImageBlock}
+                          />
+                        )}
+                      </Rnd>
+                    )}
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-56">
                     <ContextMenuItem onSelect={() => duplicateBlock(blk.id)}>
