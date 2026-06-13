@@ -49,7 +49,7 @@ import {
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
-  type TitleBlock, type TextBlock, type DreBlock,
+  type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
   isLineFamily,
   type ConditionalFormatMode, type ConditionalFormatRule,
 } from "@/lib/customSlide";
@@ -836,7 +836,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           enterGroupEdit(blk.id);
                         }
                       }}
-                      style={{ zIndex: isEditing ? 9999998 : blk.z }}
+                      style={{
+                        zIndex: isEditing ? 9999998 : blk.z,
+                        ...(
+                          (blk.kind === "title" || blk.kind === "text" || blk.kind === "image") &&
+                          (blk as TitleBlock | TextBlock | ImageBlock).rotation
+                            ? { rotate: `${(blk as TitleBlock | TextBlock | ImageBlock).rotation}deg` }
+                            : {}
+                        ),
+                      }}
                       className={cn(
                         "group/block",
                         isSelected
@@ -848,12 +856,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         width: "100%", height: "100%",
                         pointerEvents: blk.kind === "chart" ? "auto" : "none",
                         visibility: blk.hidden ? "hidden" : "visible",
-                        ...((blk.kind === "title" || blk.kind === "text") && (blk as TitleBlock | TextBlock).rotation
-                          ? {
-                              transform: `rotate(${(blk as TitleBlock | TextBlock).rotation}deg)`,
-                              transformOrigin: "center center",
-                            }
-                          : {}),
                       }}>
                         <BlockRenderer block={blk} isEditing={isEditing} />
                       </div>
@@ -899,6 +901,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         >
                           <Lock className="h-3 w-3 text-muted-foreground" />
                         </div>
+                      )}
+                      {/* Rotation handle — inside Rnd so rotates with block */}
+                      {isSelected && !blk.locked && !isEditing &&
+                        (blk.kind === "title" || blk.kind === "text" || blk.kind === "image") && (
+                        <BlockRotationHandle
+                          block={blk as TitleBlock | TextBlock | ImageBlock}
+                          scale={scale}
+                          canvasEl={canvasRef.current}
+                        />
                       )}
                     </Rnd>
                   </ContextMenuTrigger>
@@ -985,28 +996,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                   <ShapeHandleOverlay key={`sh-${sb.id}`} block={sb}
                     scale={scale} canvasEl={canvasRef.current} />
                 ))}
-
-              {/* Rotation handle for selected title/text blocks. */}
-              {(() => {
-                if (selectedIds.length !== 1) return null;
-                const blk = config.blocks.find((b) => b.id === selectedIds[0]);
-                if (!blk || (blk.kind !== "title" && blk.kind !== "text") || blk.locked) return null;
-                const ttBlk = blk as TitleBlock | TextBlock;
-                const cx = ttBlk.x + ttBlk.w / 2;
-                const HANDLE_OFFSET = 28;
-                const STEM_H = 14;
-                return (
-                  <RotationHandleOverlay
-                    key={`rot-${ttBlk.id}`}
-                    block={ttBlk}
-                    cx={cx}
-                    cy={ttBlk.y - HANDLE_OFFSET}
-                    stemH={STEM_H}
-                    scale={scale}
-                    canvasEl={canvasRef.current}
-                  />
-                );
-              })()}
 
               {/* Group outlines + resize handles. */}
               {(config.groups ?? []).map((g) => {
@@ -2656,24 +2645,21 @@ function ClearFiltersToolbar() {
   );
 }
 
-// Convert client mouse coords to canvas-space coords (accounting for scale).
 // ---------------------------------------------------------------------------
-// Rotation handle overlay for title/text blocks
+// Rotation handle — child of Rnd, rotates with the block
 // ---------------------------------------------------------------------------
-function RotationHandleOverlay({ block, cx, cy, stemH, scale, canvasEl }: {
-  block: TitleBlock | TextBlock;
-  cx: number; cy: number; stemH: number;
-  scale: number; canvasEl: HTMLDivElement | null;
+function BlockRotationHandle({ block, scale, canvasEl }: {
+  block: TitleBlock | TextBlock | ImageBlock;
+  scale: number;
+  canvasEl: HTMLDivElement | null;
 }) {
   const dragging = useRef(false);
   const startAngleRef = useRef(0);
   const startRotRef = useRef(0);
-
-  const HANDLE_R = 8;
   const blockCx = block.x + block.w / 2;
   const blockCy = block.y + block.h / 2;
 
-  const clientToCanvasLocal = (clientX: number, clientY: number) => {
+  const toCanvas = (clientX: number, clientY: number) => {
     if (!canvasEl) return { x: clientX, y: clientY };
     const r = canvasEl.getBoundingClientRect();
     return { x: (clientX - r.left) / scale, y: (clientY - r.top) / scale };
@@ -2683,7 +2669,7 @@ function RotationHandleOverlay({ block, cx, cy, stemH, scale, canvasEl }: {
     e.stopPropagation();
     e.preventDefault();
     dragging.current = true;
-    const pos = clientToCanvasLocal(e.clientX, e.clientY);
+    const pos = toCanvas(e.clientX, e.clientY);
     startAngleRef.current = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
     startRotRef.current = block.rotation ?? 0;
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -2691,11 +2677,9 @@ function RotationHandleOverlay({ block, cx, cy, stemH, scale, canvasEl }: {
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
-    const pos = clientToCanvasLocal(e.clientX, e.clientY);
+    const pos = toCanvas(e.clientX, e.clientY);
     const angle = Math.atan2(pos.y - blockCy, pos.x - blockCx) * (180 / Math.PI);
-    let delta = angle - startAngleRef.current;
-    let newRot = startRotRef.current + delta;
-    // Snap to 15°
+    let newRot = startRotRef.current + (angle - startAngleRef.current);
     if (e.shiftKey) newRot = Math.round(newRot / 15) * 15;
     newRot = ((newRot % 360) + 360) % 360;
     if (newRot > 180) newRot -= 360;
@@ -2709,36 +2693,34 @@ function RotationHandleOverlay({ block, cx, cy, stemH, scale, canvasEl }: {
       data-export-hide="true"
       style={{
         position: "absolute",
-        left: cx - HANDLE_R,
-        top: cy - HANDLE_R,
-        width: HANDLE_R * 2,
-        height: HANDLE_R * 2 + stemH,
+        top: -30,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: 16,
+        height: 31,
         overflow: "visible",
-        pointerEvents: "none",
         zIndex: 999995,
+        cursor: "grab",
+        pointerEvents: "all",
       }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
     >
-      <line
-        x1={HANDLE_R} y1={HANDLE_R * 2}
-        x2={HANDLE_R} y2={HANDLE_R * 2 + stemH}
+      {/* stem — from bottom of circle (y=14) to block top edge (y=30) */}
+      <line x1={8} y1={14} x2={8} y2={30}
         stroke="hsl(var(--primary))" strokeWidth={1.5}
-      />
-      <circle
-        cx={HANDLE_R} cy={HANDLE_R} r={HANDLE_R - 1}
+        style={{ pointerEvents: "none" }} />
+      {/* circle */}
+      <circle cx={8} cy={7} r={6}
         fill="hsl(var(--background))"
         stroke="hsl(var(--primary))" strokeWidth={1.5}
-        style={{ cursor: "grab", pointerEvents: "all" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-      />
-      {/* Rotation arrow symbol */}
-      <path
-        d="M5,8 A4,4 0 1,1 11,8"
-        fill="none" stroke="hsl(var(--primary))" strokeWidth={1.2}
-        strokeLinecap="round" style={{ pointerEvents: "none" }}
-      />
-      <polyline points="11,8 11,5 14,8" fill="hsl(var(--primary))"
+        style={{ pointerEvents: "none" }} />
+      {/* rotation arrow */}
+      <path d="M4.5,7 A4,4 0 1,1 11.5,7"
+        fill="none" stroke="hsl(var(--primary))" strokeWidth={1}
+        strokeLinecap="round" style={{ pointerEvents: "none" }} />
+      <polyline points="11.5,7 11.5,4.5 14,7" fill="hsl(var(--primary))"
         stroke="none" style={{ pointerEvents: "none" }} />
     </svg>
   );

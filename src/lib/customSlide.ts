@@ -138,6 +138,7 @@ export interface ImageBlock extends BaseBlock {
   kind: "image";
   src: string;
   fit: "contain" | "cover";
+  rotation?: number;
 }
 
 export type ShapeType =
