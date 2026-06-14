@@ -83,8 +83,15 @@ function Frame({ children }: { children: React.ReactNode; label?: string }) {
 }
 
 function HaraldFooterStripe() {
-  // Faixa vermelha fina inferior (rodapé estilizado, suficiente para a prévia)
-  return <rect x={0} y={SLIDE_H - 18} width={SLIDE_W} height={18} fill={C.haraldRed} />;
+  return (
+    <>
+      <rect x={0} y={SLIDE_H - 28} width={SLIDE_W} height={28} fill={C.haraldRed} />
+      <text x={SLIDE_W - 40} y={SLIDE_H - 9} fontFamily="Calibri" fontSize="16" fontWeight={700}
+        fill="white" textAnchor="end">Harald</text>
+      <text x={40} y={SLIDE_H - 9} fontFamily="Calibri" fontSize="10" fontStyle="italic"
+        fill="white">FONTE: KE30 – OMNI4 Pricing Analytics</text>
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +160,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
       <svg viewBox={`0 0 ${SLIDE_W} ${SLIDE_H}`} className="h-full w-full">
         <rect width={SLIDE_W} height={SLIDE_H} fill={C.white} />
         {/* Título + barra vermelha decorativa */}
-        <text x={40} y={58} fontFamily="Calibri" fontSize="52" fontWeight={700} fill={C.haraldRed}>
+        <text x={40} y={58} fontFamily="Calibri" fontSize="52" fontWeight={700} fill={C.ink}>
           Overview CM/VOL
         </text>
         <rect x={40} y={68} width={340} height={3} fill={C.haraldRed} rx={1} />
@@ -170,7 +177,8 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
 
         {/* 4 linhas com separadores */}
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
-          data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)} />
+          data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
+          deltaFmt={(v) => (v >= 0 ? "+" : "") + fmtIntBR(v / 1000) + " Mi"} />
         <line x1={35} y1={95 + 135} x2={1295} y2={95 + 135} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135} title="CM/%" data={data}
           realKey="realCmPct" budKey="budCmPct" fmt={(v) => fmtPctBR(v, 1)} />
@@ -187,7 +195,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
 }
 
 function LineRow({
-  y, title, headerNote, data, realKey, budKey, fmt,
+  y, title, headerNote, data, realKey, budKey, fmt, deltaFmt,
 }: {
   y: number;
   title: string;
@@ -196,6 +204,7 @@ function LineRow({
   realKey: string;
   budKey: string;
   fmt: (v: number) => string;
+  deltaFmt?: (delta: number) => string;
 }) {
   const x = 35;
   const w = 1260;
@@ -231,6 +240,23 @@ function LineRow({
     if (b != null && isFinite(b)) budPts.push({ x: xOf(i), y: yOf(b) });
   });
 
+  // Separador vertical Real / Budget
+  const sepColIdx = data.findIndex((r: any) => {
+    const rv = r[realKey]; const bv = r[budKey];
+    return (rv == null || rv === 0) && bv != null && bv !== 0;
+  });
+  const hasSep = sepColIdx > 0;
+  const sepX = hasSep ? plotX + (sepColIdx - 0.5) * colW : 0;
+  let deltaLabel = "";
+  let deltaColor = C.haraldRed;
+  if (hasSep && deltaFmt) {
+    const totalReal = data.reduce((s: number, r: any) => { const v = r[realKey]; return v && v > 0 ? s + v : s; }, 0);
+    const totalBud  = data.reduce((s: number, r: any) => { const v = r[budKey];  return v && v > 0 ? s + v : s; }, 0);
+    const delta = totalReal - totalBud;
+    deltaLabel = deltaFmt(delta);
+    deltaColor = delta >= 0 ? "#16A34A" : C.haraldRed;
+  }
+
   return (
     <g>
       {/* Título rotacionado 270° */}
@@ -252,10 +278,28 @@ function LineRow({
       )}
 
       {/* Curves */}
-      <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={6} fill="none"
+      <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={7} fill="none"
         strokeLinecap="round" strokeLinejoin="round" />
       <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={5} fill="none"
-        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="12,7" />
+        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="14,8" />
+
+      {/* Separador vertical Real / Budget + nota de variação */}
+      {hasSep && (
+        <>
+          <line x1={sepX} y1={plotY + 5} x2={sepX} y2={plotY + plotH - 5}
+            stroke={C.haraldRed} strokeWidth={1.5} />
+          {deltaFmt && deltaLabel && (
+            <>
+              <text x={sepX} y={plotY - 15} fontFamily="Calibri" fontSize="13" fontWeight={700}
+                fill={deltaColor} textAnchor="middle">
+                {deltaLabel}
+              </text>
+              <line x1={sepX - 60} y1={plotY - 2} x2={sepX + 60} y2={plotY - 2}
+                stroke={C.haraldRed} strokeWidth={1} />
+            </>
+          )}
+        </>
+      )}
 
       {/* Labels por mês: maior valor acima, menor abaixo — zeros ignorados */}
       {data.map((r, i) => {
@@ -308,6 +352,13 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: any[]; accumGa
   const colW = plotW / Math.max(1, data.length);
   const barW = colW * 0.36;
 
+  // Separador vertical Real / Budget + nota de variação em volume
+  const sepColIdxV = data.findIndex((r: any) => r.realVol === 0 && r.budVol > 0);
+  const hasSepV = sepColIdxV > 0;
+  const sepXV = hasSepV ? plotX + (sepColIdxV - 0.5) * colW : 0;
+  const volDeltaLabel = (accumGapTons >= 0 ? "+" : "-") + fmtIntBR(Math.abs(accumGapTons)) + " Tons";
+  const volDeltaColor = accumGapTons >= 0 ? "#16A34A" : C.haraldRed;
+
   return (
     <g>
       {/* Título VOLUME rotacionado */}
@@ -355,17 +406,32 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: any[]; accumGa
                 </text>
               </>
             )}
-            {/* Mês */}
-            <text x={cx} y={y + h - 2} fontFamily="Calibri" fontSize="11" fontWeight={700}
-              fill={C.muted} textAnchor="middle">
+            {/* Mês inclinado -35° */}
+            <text
+              transform={`rotate(-35, ${cx}, ${y + h - 8})`}
+              x={cx} y={y + h - 8}
+              fontFamily="Calibri" fontSize="11" fontWeight={700}
+              fill={C.muted} textAnchor="end">
               {r.label}
             </text>
           </g>
         );
       })}
 
-      {/* Legenda REAL / BUDGET */}
-      <g transform={`translate(${plotX + plotW - 200} ${y + h + 12})`}>
+      {/* Separador vertical Real / Budget + nota de variação */}
+      {hasSepV && (
+        <>
+          <line x1={sepXV} y1={plotY + 5} x2={sepXV} y2={plotY + plotH - 5}
+            stroke={C.haraldRed} strokeWidth={1.5} />
+          <text x={sepXV} y={plotY - 15} fontFamily="Calibri" fontSize="13" fontWeight={700}
+            fill={volDeltaColor} textAnchor="middle">
+            {volDeltaLabel}
+          </text>
+        </>
+      )}
+
+      {/* Legenda REAL / BUDGET — canto inferior direito do plot */}
+      <g transform={`translate(${plotX + plotW - 180} ${y + h + 8})`}>
         <rect width={18} height={10} fill={C.haraldRed} />
         <text x={26} y={9} fontFamily="Calibri" fontSize="11" fontWeight={700} fill={C.ink}>REAL</text>
         <rect x={80} width={18} height={10} fill={C.black} />

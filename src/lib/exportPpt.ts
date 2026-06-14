@@ -933,9 +933,10 @@ function plotLineRow(
     realGet: (r: BudgetEvoRow) => number | null;
     budGet: (r: BudgetEvoRow) => number | null;
     fmt: (v: number) => string;
+    deltaFmt?: (delta: number) => string;
   },
 ) {
-  const { x, y, w, h, title, headerNote, data, realGet, budGet, fmt } = opts;
+  const { x, y, w, h, title, headerNote, data, realGet, budGet, fmt, deltaFmt } = opts;
 
   // Title rotated 90° to the left (vertical, reading bottom to top)
   slide.addText(title, {
@@ -991,11 +992,40 @@ function plotLineRow(
   const svgW = plotW * SCALE;
   const svgH = plotH * SCALE;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">`
-    + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
-    + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="12,7"/>`
+    + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+    + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14,8"/>`
     + `</svg>`;
   const svgData = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
   slide.addImage({ data: svgData, x: plotX, y: plotY, w: plotW, h: plotH });
+
+  // Separador vertical Real / Budget + nota de variação
+  const sepColIdx = data.findIndex((m) => {
+    const rv = realGet(m);
+    const bv = budGet(m);
+    return (rv == null || rv === 0) && bv != null && (bv as number) !== 0;
+  });
+  if (sepColIdx > 0) {
+    const sepX = plotX + (sepColIdx - 0.5) * colW;
+    slide.addShape("line", {
+      x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
+      line: { color: "C8102E", width: 1.5, dashType: "solid" },
+    });
+    if (deltaFmt) {
+      const totalReal = data.reduce((s, m) => { const v = realGet(m); return v && v > 0 ? s + v : s; }, 0);
+      const totalBud  = data.reduce((s, m) => { const v = budGet(m);  return v && v > 0 ? s + v : s; }, 0);
+      const delta = totalReal - totalBud;
+      slide.addText(deltaFmt(delta), {
+        x: sepX - 0.8, y: plotY - 0.3, w: 1.6, h: 0.25,
+        fontFace: "Calibri", fontSize: 11, bold: true,
+        color: delta >= 0 ? PPT_COLORS.positive : "C8102E",
+        align: "center", valign: "middle", margin: 0,
+      });
+      slide.addShape("line", {
+        x: sepX - 0.8, y: plotY - 0.08, w: 1.6, h: 0,
+        line: { color: "C8102E", width: 1 },
+      });
+    }
+  }
 
   // Smart label placement: per month, larger value above, smaller below
   // Labels horizontal, font 10, bold, no wrapping
@@ -1100,16 +1130,38 @@ function plotVolBars(
       });
     }
     slide.addText(r.label, {
-      x: plotX + colW * i, y: y + h - 0.02, w: colW, h: 0.22,
+      x: plotX + colW * i, y: y + h - 0.12, w: colW, h: 0.22,
       fontFace: "Calibri", fontSize: 8, bold: true, color: PPT_COLORS.muted,
       align: "center", valign: "top", margin: 0,
+      rotate: 315,
     });
   });
 
-  slide.addShape("rect", { x: plotX + plotW - 1.5, y: y + h + 0.17, w: 0.2, h: 0.1, fill: { color: PPT_COLORS.haraldRed }, line: { color: PPT_COLORS.haraldRed, width: 0 } });
-  slide.addText("REAL", { x: plotX + plotW - 1.27, y: y + h + 0.12, w: 0.4, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: PPT_COLORS.haraldRed, margin: 0 });
-  slide.addShape("rect", { x: plotX + plotW - 0.75, y: y + h + 0.17, w: 0.2, h: 0.1, fill: { color: "000000" }, line: { color: "000000", width: 0 } });
-  slide.addText("BUDGET", { x: plotX + plotW - 0.52, y: y + h + 0.12, w: 0.52, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: "000000", margin: 0 });
+  // Separador vertical Real / Budget + nota de variação em volume
+  const sepColIdxV = data.findIndex((r) => r.realVol === 0 && r.budVol > 0);
+  if (sepColIdxV > 0) {
+    const sepX = plotX + (sepColIdxV - 0.5) * colW;
+    slide.addShape("line", {
+      x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
+      line: { color: "C8102E", width: 1.5, dashType: "solid" },
+    });
+    const volDelta = accumGapTons;
+    const volDeltaLabel = (volDelta >= 0 ? "+" : "-") + fmtTonAbs(Math.abs(volDelta)) + " Tons";
+    slide.addText(volDeltaLabel, {
+      x: sepX - 0.8, y: plotY - 0.3, w: 1.6, h: 0.25,
+      fontFace: "Calibri", fontSize: 11, bold: true,
+      color: volDelta >= 0 ? PPT_COLORS.positive : "C8102E",
+      align: "center", valign: "middle", margin: 0,
+    });
+  }
+
+  // Legenda posicionada abaixo das barras
+  const legY = plotY + plotH + 0.05;
+  const legX = plotX + plotW - 1.5;
+  slide.addShape("rect", { x: legX, y: legY + 0.05, w: 0.2, h: 0.1, fill: { color: PPT_COLORS.haraldRed }, line: { color: PPT_COLORS.haraldRed, width: 0 } });
+  slide.addText("REAL", { x: legX + 0.23, y: legY, w: 0.4, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: PPT_COLORS.haraldRed, margin: 0 });
+  slide.addShape("rect", { x: legX + 0.75, y: legY + 0.05, w: 0.2, h: 0.1, fill: { color: "000000" }, line: { color: "000000", width: 0 } });
+  slide.addText("BUDGET", { x: legX + 0.98, y: legY, w: 0.52, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: "000000", margin: 0 });
 }
 
 export function addBudgetEvoSlide(
@@ -1124,7 +1176,7 @@ export function addBudgetEvoSlide(
   slide.addText("Overview CM/VOL", {
     x: 0.4, y: 0.15, w: 9, h: 0.5,
     fontFace: "Calibri", fontSize: 28, bold: true,
-    color: PPT_COLORS.haraldRed, margin: 0,
+    color: PPT_COLORS.ink, margin: 0,
   });
   // Barra decorativa vermelha abaixo do título
   slide.addShape("rect", {
@@ -1151,6 +1203,7 @@ export function addBudgetEvoSlide(
     realGet: (r) => r.realCm || null,
     budGet: (r) => r.budCm || null,
     fmt: (v) => fmtMoneyAbs(v),
+    deltaFmt: (delta) => (delta >= 0 ? "+" : "") + fmtMoneyAbs(delta / 1000) + " Mi",
   });
   curY += rowH;
   addSep(curY);
@@ -1181,6 +1234,12 @@ export function addBudgetEvoSlide(
     x: rowX, y: curY, w: rowW, h: rowH - 0.1,
     data: monthly,
     accumGapTons: accumGap.volGap,
+  });
+
+  // Texto de fonte/crédito sobre o rodapé
+  slide.addText("FONTE: KE30 – OMNI4 Pricing Analytics", {
+    x: 0.4, y: 7.0, w: 8, h: 0.2,
+    fontFace: "Calibri", fontSize: 7, color: "FFFFFF", italic: true, margin: 0,
   });
 }
 
