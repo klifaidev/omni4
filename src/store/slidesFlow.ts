@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
 import type { CollabEvent } from "@/lib/collaboration";
+import { migrateDataSource } from "@/lib/customSlide";
 
 export interface SlidesPreset {
   id: string;
@@ -269,6 +270,20 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       name: "pricing.slidesFlow.v1",
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ items: s.items, presets: s.presets, transition: s.transition }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const migrateItems = (items: SlideItem[]) => {
+          for (const item of items) {
+            if (item.kind !== "custom") continue;
+            for (const blk of item.config.blocks) {
+              const b = blk as { dataSource?: string };
+              b.dataSource = migrateDataSource(b.dataSource);
+            }
+          }
+        };
+        migrateItems(state.items);
+        for (const preset of state.presets) migrateItems(preset.items);
+      },
     },
   ),
 );

@@ -4,7 +4,10 @@ import React, { useMemo } from "react";
 import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
+  BlockDataSource,
 } from "@/lib/customSlide";
+import type { PricingRow } from "@/lib/types";
+import type { BudgetRow } from "@/lib/budget";
 import { aggregate, LINES, fmt } from "../DreTable";
 import { useMonthsInfo } from "@/store/selectors";
 import { applyFilters, calcPVM } from "@/lib/analytics";
@@ -19,10 +22,23 @@ import {
 } from "@/lib/customKpi";
 import { KPI_MEASURES } from "@/lib/customSlide";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
-import { budgetRowsAsPricing } from "@/lib/budgetAdapter";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
+
+function useDataSource(
+  dataSource: BlockDataSource | undefined,
+  pricing: PricingRow[],
+  budget: BudgetRow[],
+): PricingRow[] {
+  return useMemo(() => {
+    if (!dataSource || dataSource === "ke30") return pricing;
+    if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+    if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    return pricing;
+  }, [dataSource, pricing, budget]);
+}
 
 export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
   { id: "rol_real",  label: "ROL",            field: "rol_real",         agg: "sum", format: "currency", tone: "real" },
@@ -122,10 +138,7 @@ function KpiRender({ block: b }: { block: KpiBlock }) {
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
-  const baseRows = useMemo(
-    () => (b.dataSource === "budget" ? budgetRowsAsPricing(budget) : pricing),
-    [b.dataSource, pricing, budget],
-  );
+  const baseRows = useDataSource(b.dataSource, pricing, budget);
 
   // Split incoming filters into "period" (special: format-tolerant + overrides
   // the block's own periodMode/periodValue) and "dimensional" (other dims).
@@ -281,11 +294,10 @@ function BridgeRender({ block: b }: { block: BridgeBlock }) {
 function TableRender({ block: b }: { block: TableBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
+  const sourceRows = useDataSource(b.dataSource, pricing, budget);
 
   const data = useMemo(() => {
-    const isBudget = b.dataSource === "budget";
-    const realRows = isBudget ? budgetRowsAsPricing(budget) : pricing;
-    const unified = buildUnifiedRows(realRows, [], "real");
+    const unified = buildUnifiedRows(sourceRows, [], "real");
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
     const cfg: PivotConfig = {
@@ -306,7 +318,7 @@ function TableRender({ block: b }: { block: TableBlock }) {
       return vz - va;
     });
     return { result, measures, sortedHeaders };
-  }, [pricing, budget, b.dataSource, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure]);
+  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure]);
 
   if (!data || data.sortedHeaders.length === 0) {
     return (
@@ -517,10 +529,7 @@ function ChartRender({ block }: { block: ChartBlock }) {
 function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const rows = useMemo(
-    () => (b.dataSource === "budget" ? budgetRowsAsPricing(budget) : pricing),
-    [b.dataSource, pricing, budget],
-  );
+  const rows = useDataSource(b.dataSource, pricing, budget);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
     () => computeTopRanking(rows, b.filters, b.dim, b.measure, 9999, b.periodMode, b.periodValue),
@@ -629,6 +638,8 @@ function conditionalColor(
 
 function DreRender({ block: blk }: { block: DreBlock }) {
   const pricingRows = usePricing((s) => s.rows);
+  const budgetRows = useBudget((s) => s.rows);
+  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
   const months = useMonthsInfo();
 
   const cols = useMemo(() => {
@@ -642,11 +653,11 @@ function DreRender({ block: blk }: { block: DreBlock }) {
   const aggsByCol = useMemo(() => {
     const map = new Map<string, ReturnType<typeof aggregate>>();
     for (const col of cols) {
-      const rs = pricingRows.filter((r) => r.periodo === col.periodo);
+      const rs = sourceRows.filter((r) => r.periodo === col.periodo);
       map.set(col.periodo, aggregate(rs));
     }
     return map;
-  }, [pricingRows, cols]);
+  }, [sourceRows, cols]);
 
   const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 

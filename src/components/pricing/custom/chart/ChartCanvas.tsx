@@ -20,7 +20,7 @@ const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
 );
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { budgetRowsAsPricing } from "@/lib/budgetAdapter";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { computeChartSeries, computeTopRanking, formatValue, inferFormat } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
@@ -210,10 +210,11 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const rawDsRows = useMemo(
-    () => (block.dataSource === "budget" ? budgetRowsAsPricing(budget) : pricing),
-    [block.dataSource, pricing, budget],
-  );
+  const rawDsRows = useMemo(() => {
+    if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+    if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    return pricing;
+  }, [block.dataSource, pricing, budget]);
   const xDim = block.fieldWells?.xDim ?? null;
   // C1 — colorDim overrides breakdown as series-key generator
   const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
@@ -1601,7 +1602,9 @@ function WaterfallChart({
   const metric = usePricing((s) => s.metric);
   const budget = useBudget((s) => s.rows);
   const dsRows = dsRowsProp
-    ?? (block.dataSource === "budget" ? budgetRowsAsPricing(budget) : pricing);
+    ?? (block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
+      : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
+      : pricing);
 
   const wfMode = style.waterfall.mode ?? "pvm";
   const pvmCfg = style.waterfall.pvm ?? { base: null, comp: null, periodMode: "month" as const, decomposition: "effects", topN: 6, comparisonMode: "prev-month" as const };

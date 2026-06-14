@@ -99,7 +99,7 @@ export type KpiFormat = "auto" | "currency" | "percent" | "tons" | "number";
  * - "budget": base agregada / orçamentária (Excel Budget — useBudget)
  * Padrão histórico: "ke30".
  */
-export type BlockDataSource = "ke30" | "budget";
+export type BlockDataSource = "ke30" | "budget" | "budget_real";
 
 /** Medidas suportadas pela base Budget (subset do KpiMeasureId). */
 export const BUDGET_SUPPORTED_MEASURES: ReadonlyArray<KpiMeasureId> = [
@@ -407,8 +407,8 @@ export interface DreBlock extends BaseBlock {
   textColor: string;
   /** Mostrar linha de totais. Default true. */
   showTotal: boolean;
-  /** Fonte de dados. Default "real". */
-  dataSource: "real" | "budget";
+  /** Fonte de dados. Default "ke30". */
+  dataSource?: BlockDataSource;
   showVariacao?: boolean;
   variacaoTipo?: "absoluta" | "percentual" | "ambas";
   conditionalFormat?: {
@@ -536,7 +536,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         headerColor: "#C8102E",
         textColor: "#1C2430",
         showTotal: true,
-        dataSource: "real",
+        dataSource: "ke30",
       } as DreBlock;
   }
 }
@@ -619,10 +619,22 @@ export const BUDGET_UNAVAILABLE_MEASURES: readonly string[] = [
 export const BUDGET_UNAVAILABLE_HINT =
   "Indisponível na fonte Budget — a base Budget não contém custos detalhados (Margem Bruta, Frete, Comissão).";
 
+/** Retorna true se a fonte de dados é derivada da planilha Budget (budget ou budget_real). */
+export function isFromBudgetBase(ds: BlockDataSource | undefined): boolean {
+  return ds === "budget" || ds === "budget_real";
+}
+
+/** Migra valores antigos de dataSource para o esquema atual. */
+export function migrateDataSource(ds: string | undefined): BlockDataSource {
+  if (ds === "real") return "ke30";
+  if (ds === "budget" || ds === "budget_real" || ds === "ke30") return ds;
+  return "ke30";
+}
+
 export function isMeasureAvailable(
   measureId: string,
   dataSource: BlockDataSource | undefined,
 ): boolean {
-  if (dataSource !== "budget") return true;
+  if (!isFromBudgetBase(dataSource)) return true;
   return !BUDGET_UNAVAILABLE_MEASURES.includes(measureId);
 }

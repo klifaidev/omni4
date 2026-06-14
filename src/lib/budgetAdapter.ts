@@ -56,6 +56,15 @@ export function budgetRowsAsPricing(rows: BudgetRow[]): PricingRow[] {
   }));
 }
 
+/** Converte linhas Budget filtradas por kind. */
+export function budgetRowsAsPricingFiltered(
+  rows: BudgetRow[],
+  kind: "budget" | "real" | "all",
+): PricingRow[] {
+  const filtered = kind === "all" ? rows : rows.filter((r) => r.kind === kind);
+  return budgetRowsAsPricing(filtered);
+}
+
 /** Medidas que NÃO existem na base Budget (devem ser desabilitadas na UI). */
 export const BUDGET_UNSUPPORTED_MEASURES: ReadonlySet<KpiMeasureId> = new Set([
   "mb", "mbPct", "frete", "comissao",

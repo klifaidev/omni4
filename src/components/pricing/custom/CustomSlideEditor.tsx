@@ -47,6 +47,8 @@ import {
   CANVAS_W, CANVAS_H, FOOTER_H,
   newBlock, newChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
+  isFromBudgetBase,
+  type BlockDataSource,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
@@ -1627,44 +1629,45 @@ function FilteredInspector({
   onFiltersChange: (f: Filters) => void;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
-  const ds = (block as { dataSource?: "ke30" | "budget" }).dataSource ?? "ke30";
-  const [pendingSource, setPendingSource] = useState<"ke30" | "budget" | null>(null);
+  const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
+  const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
+  const hasBudget = useBudget((s) => s.rows.length > 0);
 
   // Bridge não tem fonte selecionável (sempre KE30 — usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
 
-  const applySwitch = (next: "ke30" | "budget") => {
+  const applySwitch = (next: BlockDataSource) => {
     if (next === ds) return;
     setPendingSource(next);
   };
 
   const confirmSwitch = () => {
     if (!pendingSource) return;
+    const isBudgetBase = isFromBudgetBase(pendingSource);
     // Reset filtros + medida quando a fonte muda — campos podem não existir.
     const patch: Partial<CustomBlock> = {
       dataSource: pendingSource,
       filters: {},
     } as never;
-    if (block.kind === "kpi" && pendingSource === "budget") {
-      // mb/mbPct/frete/comissao não existem no Budget
+    if (block.kind === "kpi" && isBudgetBase) {
       const m = (block as KpiBlock).measure;
       if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
         (patch as Partial<KpiBlock>).measure = "rol";
       }
     }
-    if (block.kind === "chart" && pendingSource === "budget") {
+    if (block.kind === "chart" && isBudgetBase) {
       const m = (block as ChartBlock).measure;
       if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
         (patch as Partial<ChartBlock>).measure = "rol";
       }
     }
-    if (block.kind === "topSku" && pendingSource === "budget") {
+    if (block.kind === "topSku" && isBudgetBase) {
       const m = (block as TopSkuBlock).measure;
       if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
         (patch as Partial<TopSkuBlock>).measure = "rol";
       }
     }
-    if (block.kind === "table" && pendingSource === "budget") {
+    if (block.kind === "table" && isBudgetBase) {
       const tb = block as Extract<CustomBlock, { kind: "table" }>;
       const filtered = tb.measures.filter((m) => !BUDGET_UNAVAILABLE_MEASURES.includes(m));
       if (filtered.length !== tb.measures.length) {
@@ -1678,6 +1681,18 @@ function FilteredInspector({
     setPendingSource(null);
   };
 
+  const dsBadgeLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
+  const dsBadgeCls = ds === "ke30"
+    ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
+    : ds === "budget"
+      ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
+      : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
+  const dsDesc = ds === "ke30"
+    ? "Detalhada (KE30): receita, custos, margens, frete, comissão."
+    : ds === "budget"
+      ? "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissão."
+      : "Realizado da planilha Budget (linhas com kind=real). Sem MB/Frete/Comissão.";
+
   return (
     <div className="space-y-2">
       {showPicker && (
@@ -1686,45 +1701,43 @@ function FilteredInspector({
             <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
               Fonte de Dados
             </Label>
-            <Badge
-              variant="secondary"
-              className={cn(
-                "text-[9px]",
-                ds === "ke30"
-                  ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
-                  : "bg-purple-500/15 text-purple-600 dark:text-purple-300",
-              )}
-            >
-              {ds === "ke30" ? "KE30" : "Budget"}
+            <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
+              {dsBadgeLabel}
             </Badge>
           </div>
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              type="button"
-              onClick={() => applySwitch("ke30")}
-              className={cn(
-                "rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                ds === "ke30"
-                  ? "bg-blue-500/20 text-blue-700 dark:text-blue-200"
-                  : "bg-card hover:bg-secondary text-muted-foreground",
-              )}
-            >KE30</button>
-            <button
-              type="button"
-              onClick={() => applySwitch("budget")}
-              className={cn(
-                "rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                ds === "budget"
-                  ? "bg-purple-500/20 text-purple-700 dark:text-purple-200"
-                  : "bg-card hover:bg-secondary text-muted-foreground",
-              )}
-            >Budget</button>
-          </div>
-          <p className="mt-1 text-[9px] leading-snug text-muted-foreground">
-            {ds === "ke30"
-              ? "Detalhada (KE30): receita, custos, margens, frete, comissão."
-              : "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissão."}
-          </p>
+          {hasBudget ? (
+            <div className="grid grid-cols-3 gap-1">
+              <button type="button" onClick={() => applySwitch("ke30")}
+                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                  ds === "ke30"
+                    ? "bg-blue-500/20 text-blue-700 dark:text-blue-200"
+                    : "bg-card hover:bg-secondary text-muted-foreground",
+                )}>KE30</button>
+              <button type="button" onClick={() => applySwitch("budget")}
+                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                  ds === "budget"
+                    ? "bg-purple-500/20 text-purple-700 dark:text-purple-200"
+                    : "bg-card hover:bg-secondary text-muted-foreground",
+                )}>Budget</button>
+              <button type="button" onClick={() => applySwitch("budget_real")}
+                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                  ds === "budget_real"
+                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200"
+                    : "bg-card hover:bg-secondary text-muted-foreground",
+                )}>Real Bud.</button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-1">
+              <button type="button" onClick={() => applySwitch("ke30")}
+                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                  "bg-blue-500/20 text-blue-700 dark:text-blue-200",
+                )}>KE30</button>
+              <p className="mt-1 text-[9px] text-muted-foreground italic">
+                Carregue a base Budget para mais opções.
+              </p>
+            </div>
+          )}
+          <p className="mt-1 text-[9px] leading-snug text-muted-foreground">{dsDesc}</p>
         </div>
       )}
 
@@ -1752,7 +1765,7 @@ function FilteredInspector({
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPendingSource(null)}>Cancelar</Button>
-            <Button onClick={confirmSwitch}>Trocar para {pendingSource === "budget" ? "Budget" : "KE30"}</Button>
+            <Button onClick={confirmSwitch}>Trocar para {pendingSource === "ke30" ? "KE30" : pendingSource === "budget" ? "Budget" : "Real Bud."}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1859,7 +1872,7 @@ function KpiInspector({ block, onChange }: {
               <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {KPI_MEASURES.map((m) => {
-                  const disabled = block.dataSource === "budget"
+                  const disabled = isFromBudgetBase(block.dataSource)
                     && BUDGET_UNAVAILABLE_MEASURES.includes(m.id);
                   return (
                     <SelectItem key={m.id} value={m.id} disabled={disabled}
@@ -1870,7 +1883,7 @@ function KpiInspector({ block, onChange }: {
                 })}
               </SelectContent>
             </Select>
-            {block.dataSource === "budget" && (
+            {isFromBudgetBase(block.dataSource) && (
               <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
                 {BUDGET_UNAVAILABLE_HINT}
               </p>
@@ -2515,6 +2528,50 @@ function TextTitleInspector({ block, onChange }: {
 }
 
 // ---------------------------------------------------------------------------
+function DreSourcePicker({ block, onChange }: {
+  block: DreBlock;
+  onChange: (patch: Partial<DreBlock>) => void;
+}) {
+  const hasBudget = useBudget((s) => s.rows.length > 0);
+  const ds = block.dataSource ?? "ke30";
+  const dsBadgeLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
+  const dsBadgeCls = ds === "ke30"
+    ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
+    : ds === "budget"
+      ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
+      : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
+  if (!hasBudget) return null;
+  return (
+    <div className="rounded-md border border-border/60 bg-secondary/30 p-2">
+      <div className="mb-1.5 flex items-center justify-between">
+        <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
+          Fonte de Dados
+        </Label>
+        <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
+          {dsBadgeLabel}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        {(["ke30", "budget", "budget_real"] as BlockDataSource[]).map((opt) => {
+          const label = opt === "ke30" ? "KE30" : opt === "budget" ? "Budget" : "Real Bud.";
+          const activeCls = opt === "ke30"
+            ? "bg-blue-500/20 text-blue-700 dark:text-blue-200"
+            : opt === "budget"
+              ? "bg-purple-500/20 text-purple-700 dark:text-purple-200"
+              : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200";
+          return (
+            <button key={opt} type="button"
+              onClick={() => { if (opt !== ds) onChange({ dataSource: opt, periodos: null }); }}
+              className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                ds === opt ? activeCls : "bg-card hover:bg-secondary text-muted-foreground",
+              )}>{label}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DreBlockInspector({ block, onChange }: {
   block: DreBlock;
   onChange: (patch: Partial<DreBlock>) => void;
@@ -2526,6 +2583,7 @@ function DreBlockInspector({ block, onChange }: {
 
   return (
     <div className="space-y-2">
+      <DreSourcePicker block={block} onChange={onChange} />
       <Section title="Períodos" defaultOpen>
         <Row label="Modo">
           <Segmented
@@ -2741,8 +2799,13 @@ function PaletteButton({
 function DataSourceBadge({ block }: { block: CustomBlock }) {
   const kinds: CustomBlockKind[] = ["chart", "kpi", "table", "topSku"];
   if (!kinds.includes(block.kind)) return null;
-  const ds = (block as { dataSource?: "ke30" | "budget" }).dataSource ?? "ke30";
-  const isKe30 = ds === "ke30";
+  const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
+  const bgColor = ds === "ke30"
+    ? "rgba(37,99,235,0.92)"
+    : ds === "budget"
+      ? "rgba(147,51,234,0.92)"
+      : "rgba(5,150,105,0.92)";
+  const dsLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
   return (
     <div
       data-edit-only="true"
@@ -2758,12 +2821,12 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
         letterSpacing: 0.5,
         textTransform: "uppercase",
         color: "#fff",
-        background: isKe30 ? "rgba(37,99,235,0.92)" : "rgba(147,51,234,0.92)",
+        background: bgColor,
         boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
         pointerEvents: "none",
       }}
     >
-      {isKe30 ? "KE30" : "Budget"}
+      {dsLabel}
     </div>
   );
 }

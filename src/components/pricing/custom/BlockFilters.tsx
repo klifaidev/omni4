@@ -9,7 +9,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
-import { budgetRowsAsPricing } from "@/lib/budgetAdapter";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { getDeParaBySku } from "@/lib/depara";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BlockDataSource } from "@/lib/customSlide";
@@ -38,11 +38,12 @@ export function BlockFilters({
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const baseRows = useMemo(() => {
-    if (dataSource === "budget") return budgetRowsAsPricing(budget);
+    if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+    if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     return applyFilters(pricing, {}, null).filter((r) => getDeParaBySku(r.sku));
   }, [dataSource, pricing, budget]);
   // Em Budget só mostramos campos suportados (sem UF/Regional/Mercado Ajustado/Cliente).
-  const isBudget = dataSource === "budget";
+  const isBudget = dataSource === "budget" || dataSource === "budget_real";
   const setKey = (k: FilterKey, vals: string[]) => {
     const next: Filters = { ...filters };
     if (vals.length === 0) delete next[k];

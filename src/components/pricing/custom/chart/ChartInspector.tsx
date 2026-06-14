@@ -23,7 +23,7 @@ import { ChartTypePicker } from "./ChartTypePicker";
 import { STYLE_PRESETS, buildStylePresetPatch, type StylePresetId } from "./stylePresets";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { budgetRowsAsPricing } from "@/lib/budgetAdapter";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { useMemo } from "react";
@@ -162,7 +162,9 @@ export function ChartInspector({
   // Detect actual series/categories present on canvas to drive per-item editors
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const dsRows = block.dataSource === "budget" ? budgetRowsAsPricing(budget) : pricing;
+  const dsRows = block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
+    : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
+    : pricing;
   const detectedSeries = useMemo(() => {
     try {
       const r = computeChartSeries(dsRows, block.filters, block.measure, block.breakdown);
@@ -1349,7 +1351,7 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
   onChange: (p: Patch) => void;
   value: WaterfallColumn[];
   setValue: (cols: WaterfallColumn[]) => void;
-  dsRows: ReturnType<typeof budgetRowsAsPricing> | ReturnType<typeof usePricing.getState>["rows"];
+  dsRows: ReturnType<typeof budgetRowsAsPricingFiltered> | ReturnType<typeof usePricing.getState>["rows"];
 }) {
   const upd = (i: number, p: Partial<WaterfallColumn>) => {
     const next = [...value]; next[i] = { ...next[i], ...p };
