@@ -991,8 +991,8 @@ function plotLineRow(
   const svgW = plotW * SCALE;
   const svgH = plotH * SCALE;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">`
-    + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
-    + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10,6"/>`
+    + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+    + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="12,7"/>`
     + `</svg>`;
   const svgData = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
   slide.addImage({ data: svgData, x: plotX, y: plotY, w: plotW, h: plotH });
@@ -1038,7 +1038,7 @@ function plotVolBars(
   });
   slide.addText(`${accumGapTons.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} Tons`, {
     x: x + w * 0.55, y: y - 0.05, w: w * 0.45, h: 0.25,
-    fontFace: "Calibri", fontSize: 10, bold: true,
+    fontFace: "Calibri", fontSize: 12, bold: true,
     color: PPT_COLORS.haraldRed, align: "center", valign: "top", margin: 0,
   });
 
@@ -1106,10 +1106,10 @@ function plotVolBars(
     });
   });
 
-  slide.addShape("rect", { x: plotX + plotW - 1.4, y: y + h + 0.18, w: 0.18, h: 0.1, fill: { color: PPT_COLORS.haraldRed }, line: { color: PPT_COLORS.haraldRed, width: 0 } });
-  slide.addText("REAL", { x: plotX + plotW - 1.2, y: y + h + 0.13, w: 0.4, h: 0.18, fontFace: "Calibri", fontSize: 8, bold: true, color: PPT_COLORS.ink, margin: 0 });
-  slide.addShape("rect", { x: plotX + plotW - 0.7, y: y + h + 0.18, w: 0.18, h: 0.1, fill: { color: "000000" }, line: { color: "000000", width: 0 } });
-  slide.addText("BUDGET", { x: plotX + plotW - 0.5, y: y + h + 0.13, w: 0.5, h: 0.18, fontFace: "Calibri", fontSize: 8, bold: true, color: PPT_COLORS.ink, margin: 0 });
+  slide.addShape("rect", { x: plotX + plotW - 1.5, y: y + h + 0.17, w: 0.2, h: 0.1, fill: { color: PPT_COLORS.haraldRed }, line: { color: PPT_COLORS.haraldRed, width: 0 } });
+  slide.addText("REAL", { x: plotX + plotW - 1.27, y: y + h + 0.12, w: 0.4, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: PPT_COLORS.haraldRed, margin: 0 });
+  slide.addShape("rect", { x: plotX + plotW - 0.75, y: y + h + 0.17, w: 0.2, h: 0.1, fill: { color: "000000" }, line: { color: "000000", width: 0 } });
+  slide.addText("BUDGET", { x: plotX + plotW - 0.52, y: y + h + 0.12, w: 0.52, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: "000000", margin: 0 });
 }
 
 export function addBudgetEvoSlide(
@@ -1122,15 +1122,26 @@ export function addBudgetEvoSlide(
   addHaraldFooter(slide);
 
   slide.addText("Overview CM/VOL", {
-    x: 0.4, y: 0.2, w: 8, h: 0.5,
-    fontFace: "Calibri", fontSize: 24, bold: true,
+    x: 0.4, y: 0.15, w: 9, h: 0.5,
+    fontFace: "Calibri", fontSize: 28, bold: true,
     color: PPT_COLORS.haraldRed, margin: 0,
+  });
+  // Barra decorativa vermelha abaixo do título
+  slide.addShape("rect", {
+    x: 0.4, y: 0.68, w: 2.6, h: 0.04,
+    fill: { color: PPT_COLORS.haraldRed },
+    line: { color: PPT_COLORS.haraldRed, width: 0 },
   });
 
   const rowH = 1.35;
   const rowX = 0.35;
   const rowW = 12.6;
   let curY = 0.95;
+
+  const addSep = (atY: number) => slide.addShape("line", {
+    x: rowX, y: atY, w: rowW, h: 0,
+    line: { color: "E2E8F0", width: 0.5 },
+  });
 
   plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
@@ -1142,26 +1153,29 @@ export function addBudgetEvoSlide(
     fmt: (v) => fmtMoneyAbs(v),
   });
   curY += rowH;
+  addSep(curY);
 
   plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM/%",
     data: monthly,
-    realGet: (r) => r.realCmPct,
-    budGet: (r) => r.budCmPct,
+    realGet: (r) => r.realCmPct || null,
+    budGet: (r) => r.budCmPct || null,
     fmt: (v) => `${(v * 100).toFixed(1)}%`,
   });
   curY += rowH;
+  addSep(curY);
 
   plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM/Kg",
     data: monthly,
-    realGet: (r) => r.realCmKg,
-    budGet: (r) => r.budCmKg,
+    realGet: (r) => r.realCmKg || null,
+    budGet: (r) => r.budCmKg || null,
     fmt: (v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   });
   curY += rowH;
+  addSep(curY);
 
   plotVolBars(slide, {
     x: rowX, y: curY, w: rowW, h: rowH - 0.1,

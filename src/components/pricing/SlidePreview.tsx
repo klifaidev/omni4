@@ -152,18 +152,32 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
     <Frame label="Overview CM/VOL">
       <svg viewBox={`0 0 ${SLIDE_W} ${SLIDE_H}`} className="h-full w-full">
         <rect width={SLIDE_W} height={SLIDE_H} fill={C.white} />
-        {/* Título */}
-        <text x={40} y={62} fontFamily="Calibri" fontSize="48" fontWeight={700} fill={C.haraldRed}>
+        {/* Título + barra vermelha decorativa */}
+        <text x={40} y={58} fontFamily="Calibri" fontSize="52" fontWeight={700} fill={C.haraldRed}>
           Overview CM/VOL
         </text>
+        <rect x={40} y={68} width={340} height={3} fill={C.haraldRed} rx={1} />
 
-        {/* 4 linhas */}
+        {/* Legenda REAL / BUDGET — canto superior direito */}
+        <g transform="translate(1050 30)">
+          <rect width={22} height={10} fill={C.haraldRed} rx={2} />
+          <text x={30} y={10} fontFamily="Calibri" fontSize="14" fontWeight={700} fill={C.haraldRed}>REAL</text>
+          <rect x={100} width={22} height={4} fill={C.black} rx={1} />
+          <rect x={110} y={3} width={0} height={4} fill={C.black} />
+          <line x1={100} y1={5} x2={122} y2={5} stroke={C.black} strokeWidth={5} strokeDasharray="6,4" />
+          <text x={130} y={10} fontFamily="Calibri" fontSize="14" fontWeight={700} fill={C.black}>BUDGET</text>
+        </g>
+
+        {/* 4 linhas com separadores */}
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)} />
+        <line x1={35} y1={95 + 135} x2={1295} y2={95 + 135} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135} title="CM/%" data={data}
           realKey="realCmPct" budKey="budCmPct" fmt={(v) => fmtPctBR(v, 1)} />
+        <line x1={35} y1={95 + 135 * 2} x2={1295} y2={95 + 135 * 2} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135 * 2} title="CM/Kg" data={data}
           realKey="realCmKg" budKey="budCmKg" fmt={(v) => fmtDecimalBR(v, 2)} />
+        <line x1={35} y1={95 + 135 * 3} x2={1295} y2={95 + 135 * 3} stroke="#E2E8F0" strokeWidth={1} />
         <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.vol} />
 
         <HaraldFooterStripe />
@@ -238,17 +252,17 @@ function LineRow({
       )}
 
       {/* Curves */}
-      <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={4} fill="none"
+      <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={6} fill="none"
         strokeLinecap="round" strokeLinejoin="round" />
-      <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={4} fill="none"
-        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="10,6" />
+      <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={5} fill="none"
+        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="12,7" />
 
-      {/* Labels por mês: maior valor acima, menor abaixo */}
+      {/* Labels por mês: maior valor acima, menor abaixo — zeros ignorados */}
       {data.map((r, i) => {
         const a = r[realKey], b = r[budKey];
         const items: { v: number; color: string }[] = [];
-        if (a != null && isFinite(a)) items.push({ v: a, color: C.haraldRed });
-        if (b != null && isFinite(b)) items.push({ v: b, color: C.black });
+        if (a != null && isFinite(a) && a !== 0) items.push({ v: a, color: C.haraldRed });
+        if (b != null && isFinite(b) && b !== 0) items.push({ v: b, color: C.black });
         if (items.length === 0) return null;
         items.sort((p, q) => q.v - p.v);
         const cx = xOf(i);
@@ -304,8 +318,8 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: any[]; accumGa
         VOLUME
       </text>
 
-      {/* Header tons acumulado */}
-      <text x={x + w * 0.78} y={y - 2} fontFamily="Calibri" fontSize="14" fontWeight={700}
+      {/* Header tons acumulado — destaque vermelho */}
+      <text x={x + w * 0.78} y={y - 2} fontFamily="Calibri" fontSize="16" fontWeight={700}
         fill={C.haraldRed} textAnchor="middle">
         {`${accumGapTons.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} Tons`}
       </text>
