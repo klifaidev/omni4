@@ -5,7 +5,8 @@ import { defaultItem } from "./slidesFlow";
 import {
   defaultCustomSlide, newBlock,
   type CustomSlideConfig, type CustomBlock,
-  type TitleBlock, type KpiBlock, type TopSkuBlock, type ChartBlock, type TableBlock,
+  type TitleBlock, type TextBlock, type KpiBlock, type ShapeBlock,
+  type TopSkuBlock, type ChartBlock, type TableBlock,
 } from "./customSlide";
 
 export type TemplateCategory =
@@ -191,6 +192,186 @@ const TopSkuLayout = (
   </>
 );
 
+// Thumbnail Budget Evo: 4 bandas horizontais Real (vermelho) + Budget (preto tracejado)
+const BudgetEvoFourRows = (
+  <>
+    <rect x="10" y="8" width="90" height="5" rx="1.5" fill={SVG_FG} />
+    <rect x="10" y="14" width="35" height="1.5" fill={SVG_FG} />
+    {([
+      [20, 14], [38, 12], [56, 10], [72, 12],
+    ] as [number, number][]).map(([rowY, barH], i) => (
+      <g key={i}>
+        <rect x="10" y={rowY} width="140" height={barH} rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
+        {i < 3 ? (
+          <>
+            <polyline points={`16,${rowY + barH - 3} 32,${rowY + barH - 7} 48,${rowY + barH - 5} 64,${rowY + barH - 9} 80,${rowY + barH - 6} 96,${rowY + barH - 10} 112,${rowY + barH - 7} 128,${rowY + barH - 11} 144,${rowY + barH - 9}`} fill="none" stroke="#C8102E" strokeWidth="1.5" />
+            <polyline points={`16,${rowY + barH - 4} 32,${rowY + barH - 6} 48,${rowY + barH - 7} 64,${rowY + barH - 8} 80,${rowY + barH - 7} 96,${rowY + barH - 9} 112,${rowY + barH - 8} 128,${rowY + barH - 10} 144,${rowY + barH - 8}`} fill="none" stroke="#1C2430" strokeWidth="1" strokeDasharray="2 1.5" />
+          </>
+        ) : (
+          [16, 32, 48, 64, 80, 96, 112, 128].map((bx, j) => (
+            <g key={j}>
+              <rect x={bx - 2} y={rowY + 2} width={4} height={barH - 4} fill="#C8102E" rx="0.3" />
+              <rect x={bx + 3} y={rowY + 3} width={4} height={barH - 5} fill="#1C2430" rx="0.3" />
+            </g>
+          ))
+        )}
+      </g>
+    ))}
+    <rect x="0" y="86" width="160" height="4" fill="#C8102E" />
+  </>
+);
+
+// ---------------------------------------------------------------------------
+// Budget Evo Canvas template — block factory
+// ---------------------------------------------------------------------------
+function buildBudgetEvoConfig(): CustomSlideConfig {
+  let zCtr = 0;
+  const nextZ = () => ++zCtr;
+
+  function mkShape(p: Partial<ShapeBlock>): ShapeBlock {
+    const b = newBlock("shape", zCtr) as ShapeBlock;
+    return { ...b, ...p, z: nextZ() };
+  }
+  function mkTitle(p: Partial<TitleBlock>): TitleBlock {
+    const b = newBlock("title", zCtr) as TitleBlock;
+    return { ...b, ...p, z: nextZ() };
+  }
+  function mkText(p: Partial<TextBlock>): TextBlock {
+    const b = newBlock("text", zCtr) as TextBlock;
+    return { ...b, ...p, z: nextZ() };
+  }
+
+  function mkLineChart(
+    measure: ChartBlock["measure"],
+    dataSource: ChartBlock["dataSource"],
+    x: number, y: number, w: number, h: number,
+    color: string,
+    lineStyle: "solid" | "dashed",
+    dLabelFmt: "currency" | "percent" | "number" | "auto",
+    dLabelDec: number,
+    showXAxis: boolean,
+    bgTransparent: boolean,
+  ): ChartBlock {
+    const b = newBlock("chart", zCtr) as ChartBlock;
+    return {
+      ...b,
+      x, y, w, h, z: nextZ(),
+      chartType: "line",
+      measure,
+      breakdown: null,
+      dataSource,
+      showGrid: false,
+      showLegend: false,
+      showLabels: true,
+      title: "",
+      style: {
+        general: {
+          legendShow: false, titleShow: false,
+          background: bgTransparent ? "transparent" : "#FFFFFF",
+          borderWidth: 0, padding: 4,
+        },
+        xAxis: { show: showXAxis, labelSize: 11 },
+        yAxis: { show: false },
+        grid: { show: false },
+        dataLabels: {
+          show: true, position: "above", size: 11, bold: true,
+          format: dLabelFmt, decimals: dLabelDec, color,
+        },
+        series: [{ key: "0", color, lineStyle, thickness: 3 }],
+      } as unknown as ChartBlock["style"],
+    };
+  }
+
+  function mkColChart(
+    dataSource: ChartBlock["dataSource"],
+    x: number, y: number, w: number, h: number,
+    color: string,
+    bgTransparent: boolean,
+  ): ChartBlock {
+    const b = newBlock("chart", zCtr) as ChartBlock;
+    return {
+      ...b,
+      x, y, w, h, z: nextZ(),
+      chartType: "column",
+      measure: "volume",
+      breakdown: null,
+      dataSource,
+      showGrid: false,
+      showLegend: false,
+      showLabels: true,
+      title: "",
+      style: {
+        general: {
+          legendShow: false, titleShow: false,
+          background: bgTransparent ? "transparent" : "#FFFFFF",
+          borderWidth: 0, padding: 4,
+        },
+        xAxis: { show: true, labelSize: 11 },
+        yAxis: { show: false },
+        grid: { show: false },
+        dataLabels: {
+          show: true, position: "inside-end", size: 10, bold: true,
+          format: "number", decimals: 0, color,
+        },
+        series: [{ key: "0", color }],
+      } as unknown as ChartBlock["style"],
+    };
+  }
+
+  const SEP = "#E2E8F0";
+
+  const blocks: CustomBlock[] = [
+    // 1. Título principal
+    mkTitle({ x: 40, y: 20, w: 900, h: 55, text: "Overview CM/VOL", size: 48, bold: true, color: "#1C2430", align: "left" }),
+    // 2. Barra vermelha abaixo do título
+    mkShape({ x: 40, y: 78, w: 340, h: 4, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 2 }),
+    // 3. Legenda REAL – retângulo vermelho
+    mkShape({ x: 1050, y: 24, w: 28, h: 14, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 1 }),
+    // 4. Legenda REAL – texto
+    mkText({ x: 1082, y: 20, w: 60, h: 22, text: "REAL", size: 13, color: "#C8102E", align: "left" }),
+    // 5. Legenda BUDGET – linha tracejada
+    mkShape({ x: 1150, y: 26, w: 28, h: 8, shape: "dashed-line", fill: "#1C2430", strokeColor: "#1C2430", lineThickness: 3, strokeWidth: 0, radius: 0, lineDirection: "horizontal" }),
+    // 6. Legenda BUDGET – texto
+    mkText({ x: 1185, y: 20, w: 80, h: 22, text: "BUDGET", size: 13, color: "#1C2430", align: "left" }),
+
+    // --- LINHA 1: CM ABS (y=85, h=148) ---
+    mkLineChart("cm", "budget_real", 95, 85, 1195, 148, "#C8102E", "solid",  "currency", 0, false, false),
+    mkLineChart("cm", "budget",      95, 85, 1195, 148, "#1C2430", "dashed", "currency", 0, false, true),
+    mkTitle({ x: 30, y: 120, w: 80, h: 80, text: "CM ABS", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
+
+    // Separador 1
+    mkShape({ x: 40, y: 233, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
+
+    // --- LINHA 2: CM% (y=238, h=130) ---
+    mkLineChart("cmPct", "budget_real", 95, 238, 1195, 130, "#C8102E", "solid",  "percent", 1, false, false),
+    mkLineChart("cmPct", "budget",      95, 238, 1195, 130, "#1C2430", "dashed", "percent", 1, false, true),
+    mkTitle({ x: 30, y: 270, w: 60, h: 60, text: "CM/%", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
+
+    // Separador 2
+    mkShape({ x: 40, y: 368, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
+
+    // --- LINHA 3: CM/Kg (y=373, h=120) — usa precoMedio (R$/Kg), mais próximo de CM/Kg disponível ---
+    mkLineChart("precoMedio", "budget_real", 95, 373, 1195, 120, "#C8102E", "solid",  "number", 2, false, false),
+    mkLineChart("precoMedio", "budget",      95, 373, 1195, 120, "#1C2430", "dashed", "number", 2, false, true),
+    mkTitle({ x: 30, y: 403, w: 60, h: 60, text: "CM/Kg", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
+
+    // Separador 3
+    mkShape({ x: 40, y: 493, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
+
+    // --- LINHA 4: VOLUME (y=498, h=175) — barras agrupadas Real vs Budget ---
+    mkColChart("budget_real", 95, 498, 1195, 175, "#C8102E", false),
+    mkColChart("budget",      95, 498, 1195, 175, "#1C2430", true),
+    mkTitle({ x: 20, y: 548, w: 80, h: 80, text: "VOLUME", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
+
+    // --- Rodapé ---
+    mkShape({ x: 0, y: 722, w: 1333, h: 28, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 0 }),
+    mkText({ x: 20, y: 728, w: 800, h: 18, text: "FONTE: KE30 – OMNI4 Pricing Analytics", size: 10, italic: true, color: "#FFFFFF", align: "left" }),
+    mkText({ x: 1200, y: 726, w: 120, h: 22, text: "Harald", size: 16, color: "#FFFFFF", align: "right" }),
+  ];
+
+  return { background: "FFFFFF", showHaraldFooter: false, blocks };
+}
+
 const Multi = (parts: React.ReactNode[]) => (
   <Frame>
     {parts.map((p, i) => {
@@ -235,6 +416,22 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
         placeTitle(z + 1, "Top SKUs por margem"),
         placeTopSku(z + 2, 40, 1240, "Top 10 SKUs", "cm", 10),
       ]),
+    ],
+  },
+  {
+    id: "budget-evo-canvas",
+    name: "Budget Evolutivo",
+    description: "Overview de CM e Volume Real vs Budget editável no canvas",
+    category: "Resultado Mensal",
+    requires: ["budget"],
+    thumbnail: ({ className }) => Page(BudgetEvoFourRows, className),
+    build: (_ctx) => [
+      mk("custom", (it) => {
+        if (it.kind !== "custom") return it;
+        it.config = buildBudgetEvoConfig();
+        it.label = "Budget Evolutivo";
+        return it;
+      }),
     ],
   },
   {
