@@ -2587,6 +2587,24 @@ function DreBlockInspector({ block, onChange }: {
         </Row>
         <ToggleField label="Mostrar Budget" value={block.showBudget}
           onChange={(v) => onChange({ showBudget: v })} />
+        <ToggleField
+          label="Mostrar variação (último vs penúltimo)"
+          value={block.showVariacao ?? false}
+          onChange={(v) => onChange({ showVariacao: v })}
+        />
+        {(block.showVariacao ?? false) && (
+          <Row label="Tipo de variação">
+            <Segmented
+              value={block.variacaoTipo ?? "percentual"}
+              onChange={(v) => onChange({ variacaoTipo: v as "absoluta" | "percentual" | "ambas" })}
+              options={[
+                { value: "percentual", label: "%" },
+                { value: "absoluta", label: "Δ" },
+                { value: "ambas", label: "Ambas" },
+              ]}
+            />
+          </Row>
+        )}
       </Section>
 
       <Section title="Formatação Condicional" defaultOpen={false}>

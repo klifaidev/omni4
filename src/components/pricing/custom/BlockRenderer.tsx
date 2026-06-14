@@ -1,6 +1,6 @@
 // Renderer dos blocos do slide personalizado.
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
@@ -648,10 +648,20 @@ function DreRender({ block: blk }: { block: DreBlock }) {
     return map;
   }, [pricingRows, cols]);
 
+  const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+
   const visibleLines = useMemo(() => {
     if (!blk.linhas) return LINES;
     return LINES.filter((l) => blk.linhas!.includes(l.id));
   }, [blk.linhas]);
+
+  const showVar = (blk.showVariacao ?? false) && cols.length >= 2;
+  const ultimoCol = showVar ? cols[cols.length - 1] : null;
+  const penultimoCol = showVar ? cols[cols.length - 2] : null;
+  const aggUltimo = showVar && ultimoCol ? aggsByCol.get(ultimoCol.periodo) ?? null : null;
+  const aggPenultimo = showVar && penultimoCol ? aggsByCol.get(penultimoCol.periodo) ?? null : null;
+
+  const LINHAS_CUSTO = ["cv","cvPctRol","cvKg","mp","emb","cf","cfKg","mod","cif","frete","freteKg","com","comPct","comKg"];
 
   const conditionalMeta = useMemo(() => {
     const cf = blk.conditionalFormat;
@@ -699,7 +709,8 @@ function DreRender({ block: blk }: { block: DreBlock }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: fs, color: blk.textColor, tableLayout: "fixed" }}>
         <colgroup>
           <col style={{ width: "30%" }} />
-          {cols.map((c) => <col key={c.periodo} style={{ width: `${70 / cols.length}%` }} />)}
+          {cols.map((c) => <col key={c.periodo} style={{ width: `${(showVar ? 55 : 70) / cols.length}%` }} />)}
+          {showVar && <col style={{ width: "15%" }} />}
         </colgroup>
         <thead>
           <tr>
@@ -713,12 +724,24 @@ function DreRender({ block: blk }: { block: DreBlock }) {
             {cols.map((col) => (
               <th key={col.periodo} style={{
                 background: blk.headerColor, color: "#FFFFFF",
-                padding: padVal, textAlign: "right", fontWeight: 600,
+                padding: padVal, textAlign: "center", fontWeight: 600,
                 fontSize: fs + 1,
               }}>
-                {col.mes}/{String(col.ano).slice(2)}
+                {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
               </th>
             ))}
+            {showVar && ultimoCol && penultimoCol && (
+              <th style={{
+                background: blk.headerColor, color: "#FFFFFF",
+                padding: padVal, textAlign: "center", fontWeight: 600,
+                fontSize: fs + 1,
+                borderLeft: "1px solid rgba(255,255,255,0.3)",
+              }}>
+                {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
+                {" vs "}
+                {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -755,7 +778,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   }
                   return (
                     <td key={col.periodo} style={{
-                      padding: padVal, textAlign: "right",
+                      padding: padVal, textAlign: "center",
                       fontWeight: line.bold ? 600 : 400,
                       color: cfColor ?? (isNeg ? "#DC2626"
                         : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
@@ -768,6 +791,48 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                     </td>
                   );
                 })}
+                {showVar && (() => {
+                  const valUltimo = aggUltimo ? line.get(aggUltimo) : null;
+                  const valPenultimo = aggPenultimo ? line.get(aggPenultimo) : null;
+                  const varPct = (valUltimo !== null && valPenultimo !== null && valPenultimo !== 0)
+                    ? (valUltimo - valPenultimo) / Math.abs(valPenultimo)
+                    : null;
+                  const varAbs = (valUltimo !== null && valPenultimo !== null)
+                    ? valUltimo - valPenultimo
+                    : null;
+                  const isCusto = LINHAS_CUSTO.includes(line.id);
+                  const isPositivo = varPct !== null && varPct > 0;
+                  const cor = varPct === null ? blk.textColor
+                    : (isPositivo !== isCusto) ? "#16A34A" : "#DC2626";
+                  const tipo = blk.variacaoTipo ?? "percentual";
+                  let display: React.ReactNode = "—";
+                  if (tipo === "percentual") {
+                    if (varPct !== null) {
+                      const sinal = varPct > 0 ? "+" : "";
+                      display = `${sinal}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+                    }
+                  } else if (tipo === "absoluta") {
+                    display = varAbs !== null ? fmt(varAbs, line.kind) : "—";
+                  } else {
+                    const pctStr = varPct !== null
+                      ? `${varPct > 0 ? "+" : ""}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+                      : "—";
+                    display = varAbs !== null ? <>{pctStr} ({fmt(varAbs, line.kind)})</> : pctStr;
+                  }
+                  return (
+                    <td style={{
+                      padding: padVal, textAlign: "center",
+                      fontWeight: line.bold ? 600 : 400,
+                      color: cor,
+                      borderLeft: `1px solid ${blk.headerColor}20`,
+                      borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+                      fontSize: fs,
+                      background: isEven ? "#F8FAFC" : "#FFFFFF",
+                    }}>
+                      {display}
+                    </td>
+                  );
+                })()}
               </tr>
             );
           })}

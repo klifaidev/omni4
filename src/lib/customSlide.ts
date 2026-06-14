@@ -409,6 +409,8 @@ export interface DreBlock extends BaseBlock {
   showTotal: boolean;
   /** Fonte de dados. Default "real". */
   dataSource: "real" | "budget";
+  showVariacao?: boolean;
+  variacaoTipo?: "absoluta" | "percentual" | "ambas";
   conditionalFormat?: {
     enabled: boolean;
     scope: "row" | "table";
