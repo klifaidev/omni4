@@ -423,7 +423,6 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     name: "Budget Evolutivo",
     description: "Overview de CM e Volume Real vs Budget editável no canvas",
     category: "Resultado Mensal",
-    requires: ["budget"],
     thumbnail: ({ className }) => Page(BudgetEvoFourRows, className),
     build: (_ctx) => [
       mk("custom", (it) => {
