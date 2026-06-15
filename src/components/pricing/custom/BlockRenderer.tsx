@@ -132,6 +132,37 @@ function exportCellContent(
   );
 }
 
+function ExportGridCell({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style: React.CSSProperties;
+}) {
+  const align = String(style.textAlign ?? "center");
+  return (
+    <div style={{
+      ...style,
+      minWidth: 0,
+      minHeight: 0,
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: textAlignToJustify[align] ?? "center",
+      lineHeight: 1.15,
+    }}>
+      <span style={{
+        minWidth: 0,
+        overflow: style.overflow,
+        textOverflow: style.textOverflow,
+        whiteSpace: style.whiteSpace,
+      }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
 function fitFontSize(opts: {
   desired: number;
   width: number;
@@ -630,6 +661,88 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     return {};
   };
 
+  if (readOnly) {
+    const valueCols = showCols ? cols.length * measures.length : measures.length;
+    const gridTemplateColumns = `minmax(0, 1.7fr) repeat(${valueCols}, minmax(0, 1fr))`;
+    const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
+    const gridTemplateRows = `repeat(${rowCount}, minmax(0, 1fr))`;
+
+    const headerCells = [
+      <ExportGridCell key="row-head" style={cellHead}>
+        {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
+      </ExportGridCell>,
+      ...(showCols
+        ? cols.flatMap((c) => measures.map((m) => (
+            <ExportGridCell key={`${c.key}-${m.id}`} style={cellHead}>
+              {c.values.join(" / ")} · {m.label}
+            </ExportGridCell>
+          )))
+        : measures.map((m) => (
+            <ExportGridCell key={m.id} style={cellHead}>
+              {m.label}
+            </ExportGridCell>
+          ))),
+    ];
+
+    const bodyCells = visibleHeaders.flatMap((rh) => [
+      <ExportGridCell key={`${rh.key}-label`} style={cellLabel}>
+        {rh.values.join(" / ") || "Total"}
+      </ExportGridCell>,
+      ...(showCols
+        ? cols.flatMap((c) => measures.map((m) => {
+            const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
+            return (
+              <ExportGridCell key={`${rh.key}-${c.key}-${m.id}`} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}>
+                {fmtMeasure(m, v)}
+              </ExportGridCell>
+            );
+          }))
+        : measures.map((m) => {
+            const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
+            return (
+              <ExportGridCell key={`${rh.key}-${m.id}`} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }}>
+                {fmtMeasure(m, v)}
+              </ExportGridCell>
+            );
+          })),
+    ]);
+
+    const othersCells = othersRow
+      ? [
+          <ExportGridCell key="others-label" style={{ ...cellLabel, fontStyle: "italic", background: "#F1F5F9" }}>
+            Outros ({hiddenHeaders.length})
+          </ExportGridCell>,
+          ...(showCols
+            ? cols.flatMap((c) => measures.map((m) => (
+                <ExportGridCell key={`oth-${c.key}-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}>
+                  {fmtMeasure(m, othersRow[c.key][m.id])}
+                </ExportGridCell>
+              )))
+            : measures.map((m) => (
+                <ExportGridCell key={`oth-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}>
+                  {fmtMeasure(m, othersRow.__row__[m.id])}
+                </ExportGridCell>
+              ))),
+        ]
+      : [];
+
+    return (
+      <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
+        <div style={{
+          width: "100%",
+          height: "100%",
+          display: "grid",
+          gridTemplateColumns,
+          gridTemplateRows,
+        }}>
+          {headerCells}
+          {bodyCells}
+          {othersCells}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -900,6 +1013,162 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
       ? <th key={key} style={cellStyle}>{inner}</th>
       : <td key={key} style={cellStyle}>{inner}</td>;
   };
+
+  if (readOnly) {
+    const colWidths = [
+      "30%",
+      ...cols.map(() => `${(showVar ? 55 : 70) / cols.length}%`),
+      ...(showVar ? ["15%"] : []),
+    ].join(" ");
+    const rowCount = 1 + visibleLines.length;
+    const gridTemplateRows = `repeat(${rowCount}, minmax(0, 1fr))`;
+    const headerBase: React.CSSProperties = {
+      background: blk.headerColor,
+      color: "#FFFFFF",
+      fontWeight: 600,
+      fontSize: fs + 1,
+      whiteSpace: "nowrap",
+      lineHeight: 1.15,
+    };
+
+    const headerCells = [
+      <ExportGridCell key="indicador" style={{ ...headerBase, padding: pad, textAlign: "left" }}>
+        Indicador
+      </ExportGridCell>,
+      ...cols.map((col) => (
+        <ExportGridCell key={col.periodo} style={{ ...headerBase, padding: padVal, textAlign: "center" }}>
+          {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
+        </ExportGridCell>
+      )),
+      ...(showVar && ultimoCol && penultimoCol
+        ? [
+            <ExportGridCell key="var" style={{
+              ...headerBase,
+              padding: padVal,
+              textAlign: "center",
+              borderLeft: "1px solid rgba(255,255,255,0.3)",
+            }}>
+              {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
+              {" vs "}
+              {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
+            </ExportGridCell>,
+          ]
+        : []),
+    ];
+
+    const bodyCells = visibleLines.flatMap((line, idx) => {
+      const isEven = idx % 2 === 0;
+      const rowBg = isEven ? "#F8FAFC" : "#FFFFFF";
+      const lineCells: React.ReactNode[] = [
+        <ExportGridCell key={`${line.id}-label`} style={{
+          padding: pad,
+          fontWeight: line.bold ? 600 : 400,
+          color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
+            ? blk.headerColor : blk.textColor,
+          borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          fontSize: fs,
+          textAlign: "left",
+          background: rowBg,
+        }}>
+          {line.label}
+        </ExportGridCell>,
+      ];
+
+      for (const col of cols) {
+        const agg = aggsByCol.get(col.periodo);
+        const val = agg ? line.get(agg) : null;
+        const isNeg = val !== null && val < 0;
+        const cf = conditionalMeta?.cf;
+        const cfActive = cf?.enabled && cf.linhasAtivas.includes(line.id) && val !== null;
+        let cfBg: string | undefined;
+        let cfColor: string | undefined;
+        if (cfActive && conditionalMeta && val !== null) {
+          const { min, max } = cf.scope === "row"
+            ? (conditionalMeta.rowMinMax.get(line.id) ?? { min: val, max: val })
+            : { min: conditionalMeta.tableMin, max: conditionalMeta.tableMax };
+          const cc = conditionalColor(val, min, max, cf.colorMin, cf.colorMid, cf.colorMax);
+          if (cf.applyTo === "cell") cfBg = cc;
+          else cfColor = cc;
+        }
+        lineCells.push(
+          <ExportGridCell key={`${line.id}-${col.periodo}`} style={{
+            padding: padVal,
+            textAlign: "center",
+            fontWeight: line.bold ? 600 : 400,
+            color: cfColor ?? (isNeg ? "#DC2626"
+              : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
+              : blk.textColor),
+            background: cfBg ?? rowBg,
+            borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+            fontSize: fs,
+          }}>
+            {val === null ? "—" : fmt(val, line.kind)}
+          </ExportGridCell>,
+        );
+      }
+
+      if (showVar && aggUltimo && aggPenultimo) {
+        const valUltimo = line.get(aggUltimo);
+        const valPenultimo = line.get(aggPenultimo);
+        const varPct = valPenultimo !== 0 ? (valUltimo - valPenultimo) / Math.abs(valPenultimo) : null;
+        const varAbs = valUltimo - valPenultimo;
+        const isCusto = LINHAS_CUSTO.includes(line.id);
+        const isPositivo = varPct !== null && varPct > 0;
+        const cor = varPct === null ? blk.textColor
+          : (isPositivo !== isCusto) ? "#16A34A" : "#DC2626";
+        const tipo = blk.variacaoTipo ?? "percentual";
+        let display: React.ReactNode = "—";
+        if (tipo === "percentual") {
+          if (varPct !== null) {
+            const sinal = varPct > 0 ? "+" : "";
+            display = `${sinal}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+          }
+        } else if (tipo === "absoluta") {
+          display = fmt(varAbs, line.kind);
+        } else {
+          const pctStr = varPct !== null
+            ? `${varPct > 0 ? "+" : ""}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+            : "—";
+          display = <>{pctStr} ({fmt(varAbs, line.kind)})</>;
+        }
+        lineCells.push(
+          <ExportGridCell key={`${line.id}-var`} style={{
+            padding: padVal,
+            textAlign: "center",
+            fontWeight: line.bold ? 600 : 400,
+            color: cor,
+            borderLeft: `1px solid ${blk.headerColor}20`,
+            borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+            fontSize: fs,
+            background: rowBg,
+          }}>
+            {display}
+          </ExportGridCell>,
+        );
+      }
+
+      return lineCells;
+    });
+
+    return (
+      <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri, Arial, sans-serif" }}>
+        <div style={{
+          width: "100%",
+          height: "100%",
+          display: "grid",
+          gridTemplateColumns: colWidths,
+          gridTemplateRows,
+          color: blk.textColor,
+        }}>
+          {headerCells}
+          {bodyCells}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri, Arial, sans-serif" }}>
