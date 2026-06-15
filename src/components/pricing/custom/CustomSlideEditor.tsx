@@ -54,9 +54,10 @@ import {
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
   isLineFamily,
   type ConditionalFormatMode, type ConditionalFormatRule,
+  type OmniBaseBlock,
   type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
   type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock,
-  type OmniCustoEvolucaoBlock, type OmniCustoComposicaoBlock,
+  type OmniCustoEvolucaoBlock, type OmniCustoComposicaoBlock, type OmniCustoPressaoBlock,
   type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock,
   type OmniAbcCurvaBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock,
   type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
@@ -177,6 +178,7 @@ const OMNI_PALETTE: OmniPaletteEntry[] = [
   // Custos
   { id: "omni_custo_evolucao",       kind: "omni_custo_evolucao",       label: "Evolução Custos",       icon: BarChart2,         group: "Custos" },
   { id: "omni_custo_composicao",     kind: "omni_custo_composicao",     label: "Composição Custos",     icon: BarChart3,         group: "Custos" },
+  { id: "omni_custo_pressao",        kind: "omni_custo_pressao",        label: "Pressão de Custo",      icon: Activity,          group: "Custos" },
   // Preço / Bridge
   { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: "Decomp. Preço",         icon: PanelTop,          group: "Preço" },
   { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: "Bridge PVM",            icon: GitBranch,         group: "Preço" },
@@ -1680,6 +1682,8 @@ function BlockSpecificEditor({ block, onChange }: {
       return <OmniCustoInspector block={block as OmniCustoEvolucaoBlock} onChange={onChange as (p: Partial<OmniCustoEvolucaoBlock>) => void} />;
     case "omni_custo_composicao":
       return <OmniCustoInspector block={block as OmniCustoComposicaoBlock} onChange={onChange as (p: Partial<OmniCustoComposicaoBlock>) => void} />;
+    case "omni_custo_pressao":
+      return <OmniCustoPressaoInspector block={block as OmniCustoPressaoBlock} onChange={onChange as (p: Partial<OmniCustoPressaoBlock>) => void} />;
     case "omni_price_decomp":
       return <OmniPriceDecompInspector block={block as OmniPriceDecompBlock} onChange={onChange as (p: Partial<OmniPriceDecompBlock>) => void} />;
     case "omni_bridge_pvm":
@@ -3491,10 +3495,86 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
   );
 }
 
-/** Shared: Metric + Título */
+function OmniFiltersSection({ block, onChange }: {
+  block: OmniBaseBlock;
+  onChange: (patch: Partial<OmniBaseBlock>) => void;
+}) {
+  const rows = usePricing((s) => s.rows);
+  const unique = (field: keyof import("@/lib/types").PricingRow) =>
+    Array.from(new Set(rows.map((r) => r[field] as string | undefined).filter(Boolean))).sort() as string[];
+
+  const dimOpt = (field: keyof import("@/lib/types").PricingRow, placeholder: string) => [
+    { value: "", label: placeholder },
+    ...unique(field).map((v) => ({ value: v, label: v })),
+  ];
+
+  return (
+    <Section label="Filtros">
+      <Row label="Períodos">
+        <MultiSelectFilter
+          selected={block.periodos ?? []}
+          options={unique("periodo").map((v) => ({ value: v, label: v }))}
+          onChange={(v) => onChange({ periodos: v.length ? v : null })}
+          placeholder="Todos"
+        />
+      </Row>
+      <Row label="Canal">
+        <SelectField
+          value={block.canalAjustado ?? ""}
+          options={dimOpt("canalAjustado", "Todos")}
+          onChange={(v) => onChange({ canalAjustado: v || null })}
+        />
+      </Row>
+      <Row label="Categoria">
+        <SelectField
+          value={block.categoria ?? ""}
+          options={dimOpt("categoria", "Todas")}
+          onChange={(v) => onChange({ categoria: v || null })}
+        />
+      </Row>
+      <Row label="Subcategoria">
+        <SelectField
+          value={block.subcategoria ?? ""}
+          options={dimOpt("subcategoria", "Todas")}
+          onChange={(v) => onChange({ subcategoria: v || null })}
+        />
+      </Row>
+      <Row label="Marca">
+        <SelectField
+          value={block.marca ?? ""}
+          options={dimOpt("marca", "Todas")}
+          onChange={(v) => onChange({ marca: v || null })}
+        />
+      </Row>
+      <Row label="Formato">
+        <SelectField
+          value={block.formato ?? ""}
+          options={dimOpt("formato", "Todos")}
+          onChange={(v) => onChange({ formato: v || null })}
+        />
+      </Row>
+      <Row label="Regional">
+        <SelectField
+          value={block.regional ?? ""}
+          options={dimOpt("regional", "Todas")}
+          onChange={(v) => onChange({ regional: v || null })}
+        />
+      </Row>
+      <Row label="UF">
+        <SelectField
+          value={block.uf ?? ""}
+          options={dimOpt("uf", "Todas")}
+          onChange={(v) => onChange({ uf: v || null })}
+        />
+      </Row>
+    </Section>
+  );
+}
+
+/** Shared: Metric + Título + Filtros */
 function OmniMetricInspector({ block, onChange, label }: {
-  block: { showTitle: boolean; title?: string; metric: OmniMetric; filters: import("@/lib/types").Filters };
-  onChange: (p: { showTitle?: boolean; title?: string; metric?: OmniMetric }) => void;
+  block: OmniBaseBlock & { metric: OmniMetric };
+  onChange: (p: Partial<OmniBaseBlock> & { metric?: OmniMetric }) => void;
   label: string;
 }) {
   return (
@@ -3505,6 +3585,7 @@ function OmniMetricInspector({ block, onChange, label }: {
           <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange} />
     </div>
   );
 }
@@ -3529,13 +3610,14 @@ function OmniEvolucaoInspector({ block, onChange }: {
           <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
 
 /** Heróis / Ofensores + Barras ABC (shared) */
 function OmniHeroisInspector({ block, onChange }: {
-  block: (OmniHeroisOfensoresBlock | OmniAbcBarsBlock) & { showTitle: boolean; title?: string };
+  block: OmniHeroisOfensoresBlock | OmniAbcBarsBlock;
   onChange: (p: Partial<OmniHeroisOfensoresBlock & OmniAbcBarsBlock>) => void;
 }) {
   const label = block.kind === "omni_herois_ofensores" ? "Heróis/Ofensores" : "Barras ABC";
@@ -3560,6 +3642,7 @@ function OmniHeroisInspector({ block, onChange }: {
           <NumberStepper value={block.topN} min={3} max={20} step={1} onChange={(v) => onChange({ topN: v })} />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3580,6 +3663,7 @@ function OmniCanalTrendInspector({ block, onChange }: {
           <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3606,6 +3690,31 @@ function OmniCustoInspector({ block, onChange }: {
           <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
+    </div>
+  );
+}
+
+/** Pressão de Custo */
+function OmniCustoPressaoInspector({ block, onChange }: {
+  block: OmniCustoPressaoBlock;
+  onChange: (p: Partial<OmniCustoPressaoBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Pressão de Custo sobre Receita" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Custo Variável">
+          <ToggleField value={block.showCustoVariavel} onChange={(v) => onChange({ showCustoVariavel: v })} label="" />
+        </Row>
+        <Row label="Custo Fixo">
+          <ToggleField value={block.showCustoFixo} onChange={(v) => onChange({ showCustoFixo: v })} label="" />
+        </Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3628,6 +3737,7 @@ function OmniPriceDecompInspector({ block, onChange }: {
         <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
           value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3650,6 +3760,7 @@ function OmniBridgePvmInspector({ block, onChange }: {
         <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
           value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3673,6 +3784,7 @@ function OmniFarolInspector({ block, onChange }: {
         <Row label="Período Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto (último)"
           value={block.periodoComp ?? ""} onChange={(e) => onChange({ periodoComp: e.target.value || null })} /></Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
@@ -3693,14 +3805,15 @@ function OmniAbcCurvaInspector({ block, onChange }: {
           <ToggleField value={block.showTable} onChange={(v) => onChange({ showTable: v })} label="" />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }
 
 /** Portfolio Matrix + generic dim/metric */
 function OmniDimMetricInspector({ block, onChange, label }: {
-  block: { showTitle: boolean; title?: string; metric: OmniMetric; dim: OmniDim };
-  onChange: (p: { showTitle?: boolean; title?: string; metric?: OmniMetric; dim?: OmniDim }) => void;
+  block: OmniBaseBlock & { dim: OmniDim };
+  onChange: (p: Partial<OmniBaseBlock> & { dim?: OmniDim }) => void;
   label: string;
 }) {
   return (
@@ -3714,6 +3827,7 @@ function OmniDimMetricInspector({ block, onChange, label }: {
           <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
         </Row>
       </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
 }

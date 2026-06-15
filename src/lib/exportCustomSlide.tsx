@@ -336,6 +336,7 @@ export async function addCustomSlide(
         case "omni_canal_mix":
         case "omni_custo_evolucao":
         case "omni_custo_composicao":
+        case "omni_custo_pressao":
         case "omni_price_decomp":
         case "omni_bridge_pvm":
         case "omni_farol":

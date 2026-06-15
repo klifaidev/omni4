@@ -5,8 +5,10 @@ import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
   BlockDataSource,
+  OmniBaseBlock,
   OmniEvolucaoMensalBlock, OmniHeatmapSazonalidadeBlock, OmniHeroisOfensoresBlock,
   OmniCanalTrendBlock, OmniCanalMixBlock, OmniCustoEvolucaoBlock, OmniCustoComposicaoBlock,
+  OmniCustoPressaoBlock,
   OmniPriceDecompBlock, OmniBridgePvmBlock, OmniFarolBlock,
   OmniAbcCurvaBlock, OmniPortfolioMatrixBlock, OmniAbcBarsBlock,
   OmniMetric,
@@ -57,6 +59,21 @@ function useDataSource(
   }, [dataSource, pricing, budget]);
 }
 
+function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
+  return rows.filter((r) => {
+    if (blk.periodos?.length && !blk.periodos.includes(r.periodo)) return false;
+    if (blk.canal && r.canal !== blk.canal) return false;
+    if (blk.canalAjustado && r.canalAjustado !== blk.canalAjustado) return false;
+    if (blk.categoria && r.categoria !== blk.categoria) return false;
+    if (blk.subcategoria && r.subcategoria !== blk.subcategoria) return false;
+    if (blk.marca && r.marca !== blk.marca) return false;
+    if (blk.formato && r.formato !== blk.formato) return false;
+    if (blk.regional && r.regional !== blk.regional) return false;
+    if (blk.uf && r.uf !== blk.uf) return false;
+    return true;
+  });
+}
+
 export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
   { id: "rol_real",  label: "ROL",            field: "rol_real",         agg: "sum", format: "currency", tone: "real" },
   { id: "vol_real",  label: "Volume (Kg)",    field: "volumeKg_real",    agg: "sum", format: "tons",     tone: "real" },
@@ -99,6 +116,7 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
     case "omni_canal_mix":            return <OmniCanalMixRender block={block} />;
     case "omni_custo_evolucao":       return <OmniCustoEvolucaoRender block={block} />;
     case "omni_custo_composicao":     return <OmniCustoComposicaoRender block={block} />;
+    case "omni_custo_pressao":        return <OmniCustoPressaoRender block={block} />;
     case "omni_price_decomp":         return <OmniPriceDecompRender block={block} />;
     case "omni_bridge_pvm":           return <OmniBridgePvmRender block={block} />;
     case "omni_farol":                return <OmniFarolRender block={block} />;
@@ -288,7 +306,7 @@ function BridgeRender({ block: b }: { block: BridgeBlock }) {
 
   const pvmResult = useMemo(() => {
     if (!b.base || !b.comp || b.base === b.comp) return { kind: "unconfigured" as const };
-    const filtered = applyFilters(pricing, b.filters, null);
+    const filtered = applyOmniFilters(pricing, b);
     const labels = b.mode === "month" ? {
       base: (() => { const r = filtered.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
       comp: (() => { const r = filtered.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
@@ -935,7 +953,7 @@ function canalTrendValue(pt: ReturnType<typeof computeCanalTrend>[number], metri
 // ---- omni_evolucao_mensal ----
 function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const series = useMemo(() => computeCanalTrend(filtered, null, "cm"), [filtered]);
   const info = omniMetricInfo(b.metric);
 
@@ -984,7 +1002,7 @@ function heatColorOmni(v: number | null, min: number, max: number): { bg: string
 
 function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonalidadeBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
   const { matrix, min, max } = useMemo(() => {
@@ -1069,7 +1087,7 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
 // ---- omni_herois_ofensores ----
 function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(() => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"), [filtered, b.dim]);
   const minRolForPct = useMemo(() => rows.reduce((s, r) => s + r.rol, 0) * 0.01, [rows]);
 
@@ -1102,7 +1120,7 @@ function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlo
 // ---- omni_canal_trend ----
 function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const allHistory = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
   const { data, canais } = useMemo(() => {
@@ -1157,7 +1175,7 @@ function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
 // ---- omni_canal_mix ----
 function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const allHistory = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
   const { data, canais } = useMemo(() => {
@@ -1204,7 +1222,7 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
 // ---- omni_custo_evolucao ----
 function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
   if (evolution.length === 0) return omniEmpty();
@@ -1242,7 +1260,7 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
 // ---- omni_custo_composicao ----
 function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
   if (evolution.length === 0) return omniEmpty();
@@ -1281,7 +1299,7 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
 function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
   const pricing = usePricing((s) => s.rows);
   const months  = useMonthsInfo();
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
     if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
@@ -1328,7 +1346,7 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
 function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   const pricing = usePricing((s) => s.rows);
   const months  = useMonthsInfo();
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
     if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
@@ -1360,7 +1378,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
   const pricing = usePricing((s) => s.rows);
 
   const { filtered, allClients, value } = useMemo(() => {
-    const all = applyFilters(pricing, b.filters, null);
+    const all = applyOmniFilters(pricing, b);
     const allClients = new Set(all.map((r) => r.cliente).filter(Boolean));
     let subset = all;
     if (b.periodoComp) {
@@ -1373,7 +1391,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
     const activeClients = new Set(subset.map((r) => r.cliente).filter(Boolean));
     const value = allClients.size > 0 ? activeClients.size / allClients.size : 0;
     return { filtered: subset, allClients, value };
-  }, [pricing, b.filters, b.periodoComp]);
+  }, [pricing, b]);
 
   const activeCount = useMemo(() => new Set(filtered.map((r) => r.cliente).filter(Boolean)).size, [filtered]);
 
@@ -1395,7 +1413,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
 // ---- omni_abc_curva ----
 function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
     [filtered, b.dim],
@@ -1416,7 +1434,7 @@ function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
 // ---- omni_portfolio_matrix ----
 function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
   const rows = useMemo(
     () => aggregateBy(filtered, b.metric === "mb" ? "mb" : "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
@@ -1438,7 +1456,7 @@ function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlo
 // ---- omni_abc_bars ----
 function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
   const pricing = usePricing((s) => s.rows);
-  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
     [filtered, b.dim],
@@ -1466,6 +1484,44 @@ function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
             <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_custo_pressao ----
+function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
+  const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
+
+  if (evolution.length === 0) return omniEmpty();
+
+  const data = evolution.map((r) => ({
+    label: r.label,
+    cv: b.showCustoVariavel ? r.custoVariavelPctRol : undefined,
+    cf: b.showCustoFixo ? r.custoFixoPctRol : undefined,
+  }));
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Pressão de Custo sobre Receita")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} stackOffset="none" margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} width={40} />
+            <Tooltip formatter={(v: number) => formatPct(v)} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            {b.showCustoVariavel && (
+              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke="#C8102E" fill="#C8102E" fillOpacity={0.7} strokeWidth={1.5} dot={false} />
+            )}
+            {b.showCustoFixo && (
+              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke="#1C2430" fill="#1C2430" fillOpacity={0.5} strokeWidth={1.5} dot={false} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
