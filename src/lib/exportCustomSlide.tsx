@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import { CANVAS_W, CANVAS_H, type CustomSlideConfig } from "./customSlide";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
+import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 
 const SLIDE_W_IN = 13.33;
 const SLIDE_H_IN = 7.5;
@@ -71,11 +72,11 @@ function hasRenderableSvgGeometry(root: HTMLElement): boolean {
 }
 
 async function waitForChartPaint(root: HTMLElement): Promise<void> {
-  // Recharts e alguns blocos Omni dependem de ResizeObserver + paint.
-  for (let i = 0; i < 30; i++) {
+  // Recharts e blocos Omni dependem de ResizeObserver + paint assíncrono.
+  for (let i = 0; i < 50; i++) {
     await nextFrame();
     if (hasRenderableSvgGeometry(root)) return;
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
 
@@ -97,7 +98,7 @@ function canvasLooksBlank(canvas: HTMLCanvasElement): boolean {
     }
   }
 
-  return seen > 0 && nonWhite / seen < 0.002;
+  return seen > 0 && nonWhite / seen < 0.0005;
 }
 
 async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvasElement> {
@@ -122,8 +123,8 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
   const host = document.createElement("div");
   host.style.cssText = [
     "position:fixed",
-    `left:-${CANVAS_W + 200}px`,
-    "top:0",
+    "left:0",
+    `top:-${CANVAS_H + 200}px`,
     `width:${CANVAS_W}px`,
     `height:${CANVAS_H}px`,
     "background:#FFFFFF",
@@ -138,14 +139,15 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
     flushSync(() => {
       root.render(
         React.createElement(
-          React.Fragment,
-          null,
+          SlideFilterProvider,
+          { slideKey: "export" },
           React.createElement("style", null, EXPORT_CAPTURE_CSS),
           React.createElement(CustomCanvasReadOnly, { config }),
         ),
       );
     });
 
+    await new Promise((r) => setTimeout(r, 500));
     await waitForFonts();
     await waitForImages(host);
     await waitForChartPaint(host);
@@ -177,8 +179,8 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
   const host = document.createElement("div");
   host.style.cssText = [
     "position:fixed",
-    `left:-${captureW + 200}px`,
-    "top:0",
+    "left:0",
+    `top:-${captureH + 200}px`,
     `width:${captureW}px`,
     `height:${captureH}px`,
     "background:#FFFFFF",
@@ -192,7 +194,7 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
   try {
     flushSync(() => {
       root.render(
-        React.createElement(React.Fragment, null,
+        React.createElement(SlideFilterProvider, { slideKey: "export" },
           React.createElement("style", null, EXPORT_CAPTURE_CSS),
           React.createElement(
             "div",
@@ -214,6 +216,7 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
       );
     });
 
+    await new Promise((r) => setTimeout(r, 500));
     await waitForFonts();
     await waitForImages(host);
     await waitForChartPaint(host);
