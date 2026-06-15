@@ -212,6 +212,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [canvasHovered, setCanvasHovered] = useState(false);
 
   const [fitScale, setFitScale] = useState(1);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -462,6 +463,48 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV]);
 
+  // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const active = document.activeElement;
+      const inField =
+        active?.tagName === "INPUT" ||
+        active?.tagName === "TEXTAREA" ||
+        (active as HTMLElement)?.isContentEditable;
+      if (inField) return;
+
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItem = items.find((item) => item.type.startsWith("image/"));
+      if (!imageItem) return;
+
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const W = 600, H = 400;
+        const id = addBlockAction("image");
+        if (!id) return;
+        patchBlockAction(
+          id,
+          { src: dataUrl, w: W, h: H,
+            x: Math.round((CANVAS_W - W) / 2),
+            y: Math.round((CANVAS_H - H) / 2),
+          } as Partial<CustomBlock>,
+          "Colar imagem",
+        );
+        setSelection([id]);
+        toast.success("Imagem colada no slide.");
+      };
+      reader.readAsDataURL(file);
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, []);
+
   // Smart guides — compute lines + snap target for the dragging block.
   // Snap is applied by react-rnd via onDrag's returned coords; we mutate
   // d.x / d.y directly which Rnd respects on next frame.
@@ -696,6 +739,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               height: CANVAS_H * scale,
               margin: "12px auto",
             }}
+            onMouseEnter={() => setCanvasHovered(true)}
+            onMouseLeave={() => setCanvasHovered(false)}
           >
             <div
               data-canvas-bg="true"
@@ -747,6 +792,30 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 if (pos) onCursorMove(pos.x, pos.y);
               }}
             >
+              {/* Paste-image hint — shown when canvas is hovered with no selection */}
+              {canvasHovered && selectedIds.length === 0 && (
+                <div
+                  data-edit-only="true"
+                  style={{
+                    position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998,
+                    border: "2px solid rgba(59,130,246,0.55)",
+                    borderRadius: 2,
+                    animation: "omni-paste-pulse 2s ease-in-out infinite",
+                  }}
+                >
+                  <style>{`@keyframes omni-paste-pulse{0%,100%{border-color:rgba(59,130,246,0.55)}50%{border-color:rgba(59,130,246,0.15)}}`}</style>
+                  <div style={{
+                    position: "absolute", bottom: 10, left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "rgba(37,99,235,0.82)",
+                    color: "#fff", padding: "3px 10px",
+                    borderRadius: 4, fontSize: 10, whiteSpace: "nowrap",
+                    letterSpacing: "0.02em",
+                  }}>
+                    Ctrl+V para colar imagem
+                  </div>
+                </div>
+              )}
               {/* Snap-to-grid background — dot pattern, behind blocks. */}
               {prefs.gridEnabled && (
                 <svg
