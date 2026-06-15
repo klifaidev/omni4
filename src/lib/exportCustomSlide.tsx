@@ -328,6 +328,20 @@ export async function addCustomSlide(
         case "chart":
         case "bridge":
         case "dre":
+        // Omni Analytics — todos exportados como imagem
+        case "omni_evolucao_mensal":
+        case "omni_heatmap_sazonalidade":
+        case "omni_herois_ofensores":
+        case "omni_canal_trend":
+        case "omni_canal_mix":
+        case "omni_custo_evolucao":
+        case "omni_custo_composicao":
+        case "omni_price_decomp":
+        case "omni_bridge_pvm":
+        case "omni_farol":
+        case "omni_abc_curva":
+        case "omni_portfolio_matrix":
+        case "omni_abc_bars":
           await renderBlockAsImage(slide, blk, opts?.slideId);
           break;
       }

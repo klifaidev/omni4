@@ -5,12 +5,29 @@ import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
   BlockDataSource,
+  OmniEvolucaoMensalBlock, OmniHeatmapSazonalidadeBlock, OmniHeroisOfensoresBlock,
+  OmniCanalTrendBlock, OmniCanalMixBlock, OmniCustoEvolucaoBlock, OmniCustoComposicaoBlock,
+  OmniPriceDecompBlock, OmniBridgePvmBlock, OmniFarolBlock,
+  OmniAbcCurvaBlock, OmniPortfolioMatrixBlock, OmniAbcBarsBlock,
+  OmniMetric,
 } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { aggregate, LINES, fmt } from "../DreTable";
 import { useMonthsInfo } from "@/store/selectors";
-import { applyFilters, calcPVM } from "@/lib/analytics";
+import {
+  applyFilters, calcPVM, aggregateBy,
+  computeCanalTrend, computeCostEvolution, computePriceDecomposition,
+} from "@/lib/analytics";
+import { FarolGauge } from "@/components/farol/FarolGauge";
+import { AbcBar } from "@/components/pricing/AbcBar";
+import { AbcPareto, classifyAbc } from "@/components/pricing/AbcPareto";
+import { PortfolioMatrix } from "@/components/pricing/PortfolioMatrix";
+import {
+  ResponsiveContainer, ComposedChart, Bar, Line, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from "recharts";
+import { formatPct, formatTon } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
@@ -74,6 +91,20 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
     case "chart":  return <ChartRender block={block} />;
     case "topSku": return <TopSkuRender block={block} />;
     case "dre":    return <DreRender block={block} />;
+    // Omni Analytics
+    case "omni_evolucao_mensal":      return <OmniEvolucaoMensalRender block={block} />;
+    case "omni_heatmap_sazonalidade": return <OmniHeatmapSazonalidadeRender block={block} />;
+    case "omni_herois_ofensores":     return <OmniHeroisOfensoresRender block={block} />;
+    case "omni_canal_trend":          return <OmniCanalTrendRender block={block} />;
+    case "omni_canal_mix":            return <OmniCanalMixRender block={block} />;
+    case "omni_custo_evolucao":       return <OmniCustoEvolucaoRender block={block} />;
+    case "omni_custo_composicao":     return <OmniCustoComposicaoRender block={block} />;
+    case "omni_price_decomp":         return <OmniPriceDecompRender block={block} />;
+    case "omni_bridge_pvm":           return <OmniBridgePvmRender block={block} />;
+    case "omni_farol":                return <OmniFarolRender block={block} />;
+    case "omni_abc_curva":            return <OmniAbcCurvaRender block={block} />;
+    case "omni_portfolio_matrix":     return <OmniPortfolioMatrixRender block={block} />;
+    case "omni_abc_bars":             return <OmniAbcBarsRender block={block} />;
   }
 }
 
@@ -855,4 +886,587 @@ function DreRender({ block: blk }: { block: DreBlock }) {
 
 function labelOfDim(id: string): string {
   return ALL_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
+}
+
+// ---------------------------------------------------------------------------
+// Omni Analytics Renderers
+// ---------------------------------------------------------------------------
+
+const OMNI_COLORS = ["#C8102E", "#1C2430", "#2563EB", "#16A34A", "#D97706", "#7C3AED", "#0891B2", "#BE185D"];
+
+function omniEmpty(msg = "Sem dados.") {
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <span style={{ fontSize: 13, color: "hsl(var(--muted-foreground))" }}>{msg}</span>
+    </div>
+  );
+}
+
+function omniTitle(title: string) {
+  return (
+    <div style={{ fontSize: 12, fontWeight: 700, color: "#1C2430", marginBottom: 6, paddingLeft: 2 }}>
+      {title}
+    </div>
+  );
+}
+
+/** Maps OmniMetric to display info */
+function omniMetricInfo(metric: OmniMetric): { label: string; fmt: (v: number) => string } {
+  switch (metric) {
+    case "cm":        return { label: "CM",       fmt: (v) => formatBRL(v, { compact: true }) };
+    case "mb":        return { label: "MB",       fmt: (v) => formatBRL(v, { compact: true }) };
+    case "rol":       return { label: "ROL",      fmt: (v) => formatBRL(v, { compact: true }) };
+    case "volume":    return { label: "Volume",   fmt: (v) => formatTon(v) };
+    case "margemPct": return { label: "Margem %", fmt: (v) => formatPct(v) };
+  }
+}
+
+/** Resolve value from CanalTrendPoint based on OmniMetric */
+function canalTrendValue(pt: ReturnType<typeof computeCanalTrend>[number], metric: OmniMetric): number {
+  switch (metric) {
+    case "cm":        return pt.margem;
+    case "mb":        return pt.margem;
+    case "rol":       return pt.rol;
+    case "volume":    return pt.volumeKg;
+    case "margemPct": return pt.margemPct;
+  }
+}
+
+// ---- omni_evolucao_mensal ----
+function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const series = useMemo(() => computeCanalTrend(filtered, null, "cm"), [filtered]);
+  const info = omniMetricInfo(b.metric);
+
+  if (series.length === 0) return omniEmpty();
+
+  const data = series.map((pt) => ({ label: pt.label, value: canalTrendValue(pt, b.metric) }));
+
+  const DataElement = b.chartType === "bar"
+    ? <Bar dataKey="value" name={info.label} fill={OMNI_COLORS[0]} radius={[3, 3, 0, 0]} />
+    : b.chartType === "area"
+    ? <Area type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} fill={`${OMNI_COLORS[0]}33`} strokeWidth={2} dot={false} />
+    : <Line type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} />;
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Evolução Mensal")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
+            <Tooltip formatter={(v: number) => [info.fmt(v), info.label]} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            {DataElement}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_heatmap_sazonalidade ----
+const FY_MONTHS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+const MONTH_LABELS = ["Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
+
+function heatColorOmni(v: number | null, min: number, max: number): { bg: string; color: string } {
+  if (v === null) return { bg: "hsl(var(--muted) / 0.3)", color: "hsl(var(--muted-foreground))" };
+  const range = max - min;
+  const t = range > 0 ? (v - min) / range : 0.5;
+  const h = t * 158;
+  const s = 80;
+  const l = 65 - t * 13;
+  return { bg: `hsl(${h.toFixed(0)} ${s}% ${l.toFixed(0)}%)`, color: l < 58 ? "#fff" : "#1C2430" };
+}
+
+function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonalidadeBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const info = omniMetricInfo(b.metric);
+
+  const { matrix, min, max } = useMemo(() => {
+    const acc = new Map<string, Map<number, number>>();
+    for (const r of filtered) {
+      const fy = r.fy || String(r.ano);
+      const byM = acc.get(fy) ?? new Map<number, number>();
+      const prev = byM.get(r.mes) ?? 0;
+      const val = b.metric === "rol" ? r.rol
+        : b.metric === "volume" ? r.volumeKg
+        : b.metric === "margemPct" ? r.contribMarginal  // raw cm, we'll normalize later
+        : b.metric === "mb" ? r.margemBruta
+        : r.contribMarginal; // cm
+      byM.set(r.mes, prev + val);
+      acc.set(fy, byM);
+    }
+    const fys = Array.from(acc.keys()).sort();
+    if (b.metric === "margemPct") {
+      // need ROL per cell too for %
+      const rolAcc = new Map<string, Map<number, number>>();
+      for (const r of filtered) {
+        const fy = r.fy || String(r.ano);
+        const byM = rolAcc.get(fy) ?? new Map<number, number>();
+        byM.set(r.mes, (byM.get(r.mes) ?? 0) + r.rol);
+        rolAcc.set(fy, byM);
+      }
+      const mRows = fys.map((fy) => {
+        const byM = acc.get(fy)!;
+        const byRol = rolAcc.get(fy)!;
+        return { fy, cells: FY_MONTHS.map((m) => { const cm = byM.get(m); const rol = byRol?.get(m) ?? 0; return cm != null && rol > 0 ? cm / rol : null; }) };
+      });
+      const allVals = mRows.flatMap((r) => r.cells.filter((v): v is number => v !== null));
+      return { matrix: mRows, min: allVals.length ? Math.min(...allVals) : 0, max: allVals.length ? Math.max(...allVals) : 1 };
+    }
+    const mRows = fys.map((fy) => {
+      const byM = acc.get(fy)!;
+      return { fy, cells: FY_MONTHS.map((m) => byM.get(m) ?? null) };
+    });
+    const allVals = mRows.flatMap((r) => r.cells.filter((v): v is number => v !== null));
+    return { matrix: mRows, min: allVals.length ? Math.min(...allVals) : 0, max: allVals.length ? Math.max(...allVals) : 1 };
+  }, [filtered, b.metric]);
+
+  if (matrix.length === 0) return omniEmpty();
+
+  const cellW = 36;
+  const cellH = 22;
+  const fs = 9;
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
+      {b.showTitle && omniTitle(b.title || "Heatmap Sazonalidade")}
+      <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{info.label}</div>
+      <table style={{ borderCollapse: "collapse", fontSize: fs }}>
+        <thead>
+          <tr>
+            <th style={{ padding: "2px 4px", textAlign: "left", fontSize: fs, color: "hsl(var(--muted-foreground))", fontWeight: 600 }}>FY</th>
+            {MONTH_LABELS.map((ml) => (
+              <th key={ml} style={{ padding: "2px 4px", textAlign: "center", fontSize: fs, color: "hsl(var(--muted-foreground))", fontWeight: 600, minWidth: cellW }}>{ml}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map((row) => (
+            <tr key={row.fy}>
+              <td style={{ padding: "2px 4px", fontWeight: 600, fontSize: fs, color: "#1C2430", whiteSpace: "nowrap" }}>{row.fy}</td>
+              {row.cells.map((v, i) => {
+                const { bg, color } = heatColorOmni(v, min, max);
+                return (
+                  <td key={i} style={{ background: bg, color, textAlign: "center", padding: `2px 0`, minWidth: cellW, height: cellH, fontSize: fs, fontWeight: 500, borderRadius: 2 }}>
+                    {v !== null ? info.fmt(v) : "—"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---- omni_herois_ofensores ----
+function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const rows = useMemo(() => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"), [filtered, b.dim]);
+  const minRolForPct = useMemo(() => rows.reduce((s, r) => s + r.rol, 0) * 0.01, [rows]);
+
+  if (rows.length === 0) return omniEmpty();
+
+  const showHero    = b.variant === "hero" || b.variant === "both";
+  const showVillain = b.variant === "villain" || b.variant === "both";
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8 }}>
+      {b.showTitle && omniTitle(b.title || "Heróis e Ofensores")}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden" }}>
+        {showHero && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>Heróis</div>
+            <AbcBar rows={rows} variant="hero" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
+          </div>
+        )}
+        {showVillain && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>Ofensores</div>
+            <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_canal_trend ----
+function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const allHistory = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const info = omniMetricInfo(b.metric);
+
+  const { data, canais } = useMemo(() => {
+    if (b.canal !== null) {
+      const pts = computeCanalTrend(allHistory, b.canal, "cm");
+      const d = pts.map((pt) => ({ label: pt.label, [b.canal!]: canalTrendValue(pt, b.metric) }));
+      return { data: d, canais: [b.canal] };
+    }
+    // Top canais
+    const canalSet = Array.from(new Set(allHistory.map((r) => r.canalAjustado || "Sem canal")));
+    const sorted = canalSet
+      .map((c) => ({ c, total: allHistory.filter((r) => (r.canalAjustado || "Sem canal") === c).reduce((s, r) => s + r.rol, 0) }))
+      .sort((a, b) => b.total - a.total).slice(0, 6).map((x) => x.c);
+
+    const periodMap = new Map<string, Record<string, number>>();
+    for (const c of sorted) {
+      const pts = computeCanalTrend(allHistory, c, "cm");
+      for (const pt of pts) {
+        const entry = periodMap.get(pt.label) ?? {};
+        entry[c] = canalTrendValue(pt, b.metric);
+        periodMap.set(pt.label, entry);
+      }
+    }
+    const allLabels = Array.from(periodMap.keys()).sort();
+    const d = allLabels.map((label) => ({ label, ...periodMap.get(label) }));
+    return { data: d, canais: sorted };
+  }, [allHistory, b.canal, b.metric]);
+
+  if (data.length === 0) return omniEmpty();
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Tendência por Canal")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
+            <Tooltip formatter={(v: number) => info.fmt(v)} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            {canais.map((c, i) => (
+              <Line key={c} type="monotone" dataKey={c} stroke={OMNI_COLORS[i % OMNI_COLORS.length]} strokeWidth={2} dot={false} />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_canal_mix ----
+function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const allHistory = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const info = omniMetricInfo(b.metric);
+
+  const { data, canais } = useMemo(() => {
+    const canalRows = aggregateBy(allHistory, "cm", (r) => r.canalAjustado || "Sem canal");
+    const sorted = canalRows.sort((a, x) => x.rol - a.rol).slice(0, 8).map((c) => c.key);
+
+    const periodMap = new Map<string, Record<string, number>>();
+    for (const c of sorted) {
+      const pts = computeCanalTrend(allHistory, c, "cm");
+      for (const pt of pts) {
+        const entry = periodMap.get(pt.label) ?? {};
+        entry[c] = canalTrendValue(pt, b.metric);
+        periodMap.set(pt.label, entry);
+      }
+    }
+    const allLabels = Array.from(periodMap.keys()).sort();
+    const d = allLabels.map((label) => ({ label, ...periodMap.get(label) }));
+    return { data: d, canais: sorted };
+  }, [allHistory, b.metric]);
+
+  if (data.length === 0) return omniEmpty();
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Mix por Canal")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
+            <Tooltip formatter={(v: number) => info.fmt(v)} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            {canais.map((c, i) => (
+              <Bar key={c} dataKey={c} stackId="a" fill={OMNI_COLORS[i % OMNI_COLORS.length]} />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_custo_evolucao ----
+function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
+
+  if (evolution.length === 0) return omniEmpty();
+
+  const fmtY = b.viewMode === "pct" ? (v: number) => formatPct(v)
+    : b.viewMode === "kg" ? (v: number) => `${formatBRL(v, { compact: true })}/kg`
+    : (v: number) => formatBRL(v, { compact: true });
+
+  const data = evolution.map((r) => ({
+    label: r.label,
+    cv: b.viewMode === "pct" ? r.custoVariavelPctRol : b.viewMode === "kg" ? r.custoVariavelPorKg : r.custoVariavel,
+    cf: b.viewMode === "pct" ? r.custoFixoPctRol     : b.viewMode === "kg" ? r.custoFixoPorKg     : r.custoFixo,
+  }));
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Evolução de Custos")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
+            <Tooltip formatter={(v: number) => fmtY(v)} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            <Line type="monotone" dataKey="cv" name="Custo Variável" stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="cf" name="Custo Fixo" stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_custo_composicao ----
+function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
+
+  if (evolution.length === 0) return omniEmpty();
+
+  const fmtY = b.viewMode === "pct"
+    ? (v: number) => formatPct(v)
+    : (v: number) => formatBRL(v, { compact: true });
+
+  const data = evolution.map((r) => ({
+    label: r.label,
+    cv: b.viewMode === "pct" ? r.custoVariavelPctRol : r.custoVariavel,
+    cf: b.viewMode === "pct" ? r.custoFixoPctRol     : r.custoFixo,
+  }));
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Composição de Custos")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
+            <Tooltip formatter={(v: number) => fmtY(v)} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            <Bar dataKey="cv" name="Custo Variável" stackId="a" fill={OMNI_COLORS[0]} />
+            <Bar dataKey="cf" name="Custo Fixo"     stackId="a" fill={OMNI_COLORS[1]} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_price_decomp ----
+function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const months  = useMonthsInfo();
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+
+  const { baseKey, compKey } = useMemo(() => {
+    if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
+    const opts = b.periodMode === "fy"
+      ? Array.from(new Set(filtered.map((r) => r.fy))).sort()
+      : months.map((m) => m.periodo);
+    const compKey = opts[opts.length - 1] ?? "";
+    const baseKey = opts[opts.length - 2] ?? "";
+    return { baseKey, compKey };
+  }, [filtered, b.base, b.comp, b.periodMode, months]);
+
+  const result = useMemo(
+    () => computePriceDecomposition(filtered, baseKey, compKey, b.periodMode),
+    [filtered, baseKey, compKey, b.periodMode],
+  );
+
+  if (!result) return omniEmpty("Selecione dois períodos para comparar.");
+
+  const signColor = (v: number) => v >= 0 ? "#16A34A" : "#C8102E";
+  const fmtBRL2 = (v: number) => formatBRL(v, { compact: false, digits: 2 });
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8, overflow: "auto" }}>
+      {b.showTitle && omniTitle(b.title || "Decomposição de Preço")}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {[
+          { label: "Preço Médio Base", value: fmtBRL2(result.precoMedioBase), color: "#1C2430" },
+          { label: "Preço Médio Comp", value: fmtBRL2(result.precoMedioComp), color: "#1C2430" },
+          { label: "Variação Total",   value: `${formatPct(result.variacaoPct)}`, color: signColor(result.variacaoPct) },
+          { label: "Efeito Preço",     value: `${formatPct(result.pctPreco)}`,    color: signColor(result.pctPreco) },
+          { label: "Efeito Mix",       value: `${formatPct(result.pctMix)}`,      color: signColor(result.pctMix) },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ flex: "1 1 120px", background: "hsl(var(--card))", borderRadius: 8, border: "1px solid hsl(var(--border) / 0.5)", padding: "10px 12px" }}>
+            <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_bridge_pvm ----
+function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const months  = useMonthsInfo();
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+
+  const { baseKey, compKey } = useMemo(() => {
+    if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
+    const opts = b.periodMode === "fy"
+      ? Array.from(new Set(filtered.map((r) => r.fy))).sort()
+      : months.map((m) => m.periodo);
+    return { baseKey: opts[opts.length - 2] ?? "", compKey: opts[opts.length - 1] ?? "" };
+  }, [filtered, b.base, b.comp, b.periodMode, months]);
+
+  const result = useMemo(() => {
+    if (!baseKey || !compKey) return null;
+    return calcPVM(filtered, baseKey, compKey, b.periodMode);
+  }, [filtered, baseKey, compKey, b.periodMode]);
+
+  if (!result) return omniEmpty("Selecione dois períodos para comparar.");
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Bridge PVM")}
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <Waterfall result={result} height="100%" />
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_farol ----
+function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
+  const pricing = usePricing((s) => s.rows);
+
+  const { filtered, allClients, value } = useMemo(() => {
+    const all = applyFilters(pricing, b.filters, null);
+    const allClients = new Set(all.map((r) => r.cliente).filter(Boolean));
+    let subset = all;
+    if (b.periodoComp) {
+      subset = all.filter((r) => r.periodo === b.periodoComp || r.fy === b.periodoComp);
+    } else {
+      const periods = Array.from(new Set(all.map((r) => r.periodo))).sort();
+      const lastPeriod = periods[periods.length - 1];
+      if (lastPeriod) subset = all.filter((r) => r.periodo === lastPeriod);
+    }
+    const activeClients = new Set(subset.map((r) => r.cliente).filter(Boolean));
+    const value = allClients.size > 0 ? activeClients.size / allClients.size : 0;
+    return { filtered: subset, allClients, value };
+  }, [pricing, b.filters, b.periodoComp]);
+
+  const activeCount = useMemo(() => new Set(filtered.map((r) => r.cliente).filter(Boolean)).size, [filtered]);
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 8 }}>
+      {b.showTitle && omniTitle(b.title || "Farol de Positivação")}
+      {b.showGauge && (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <FarolGauge value={value} size={Math.min(b.w, b.h) * 0.55} />
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>
+        {activeCount.toLocaleString("pt-BR")} clientes ativos / {allClients.size.toLocaleString("pt-BR")} total
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_abc_curva ----
+function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const rows = useMemo(
+    () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
+    [filtered, b.dim],
+  );
+
+  if (rows.length === 0) return omniEmpty();
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
+      {b.showTitle && omniTitle(b.title || "Curva ABC")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <AbcPareto rows={rows} />
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_portfolio_matrix ----
+function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const info = omniMetricInfo(b.metric);
+  const rows = useMemo(
+    () => aggregateBy(filtered, b.metric === "mb" ? "mb" : "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
+    [filtered, b.metric, b.dim],
+  );
+
+  if (rows.length === 0) return omniEmpty();
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "hidden" }}>
+      {b.showTitle && omniTitle(b.title || "Matriz de Portfólio")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <PortfolioMatrix rows={rows} metricLabel={info.label} />
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_abc_bars ----
+function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyFilters(pricing, b.filters, null), [pricing, b.filters]);
+  const rows = useMemo(
+    () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
+    [filtered, b.dim],
+  );
+  const minRolForPct = useMemo(() => rows.reduce((s, r) => s + r.rol, 0) * 0.01, [rows]);
+
+  if (rows.length === 0) return omniEmpty();
+
+  const showHero    = b.variant === "hero" || b.variant === "both";
+  const showVillain = b.variant === "villain" || b.variant === "both";
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8 }}>
+      {b.showTitle && omniTitle(b.title || "Barras ABC")}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden" }}>
+        {showHero && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>Top</div>
+            <AbcBar rows={rows} variant="hero" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
+          </div>
+        )}
+        {showVillain && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>Bottom</div>
+            <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

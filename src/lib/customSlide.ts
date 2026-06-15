@@ -19,7 +19,21 @@ export type CustomBlockKind =
   | "table"
   | "chart"
   | "topSku"
-  | "dre";
+  | "dre"
+  // Omni Analytics — blocos que reusam componentes das abas analíticas
+  | "omni_evolucao_mensal"
+  | "omni_heatmap_sazonalidade"
+  | "omni_herois_ofensores"
+  | "omni_canal_trend"
+  | "omni_canal_mix"
+  | "omni_custo_evolucao"
+  | "omni_custo_composicao"
+  | "omni_price_decomp"
+  | "omni_bridge_pvm"
+  | "omni_farol"
+  | "omni_abc_curva"
+  | "omni_portfolio_matrix"
+  | "omni_abc_bars";
 
 export type BlockEnterAnimation = "none" | "fade" | "slide-up" | "pop";
 
@@ -422,9 +436,139 @@ export interface DreBlock extends BaseBlock {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Omni Analytics Blocks — reusam componentes das abas analíticas
+// ---------------------------------------------------------------------------
+export type OmniMetric = "cm" | "mb" | "rol" | "volume" | "margemPct";
+export type OmniDim = "sku" | "skuDesc" | "cliente" | "marca" | "categoria" | "canalAjustado";
+export type OmniAbcSortBy = "margem" | "volume" | "margemPct";
+export type OmniHeroesVariant = "hero" | "villain" | "both";
+
+export interface OmniBaseBlock extends BaseBlock {
+  /** Filtros de contexto — se vazio herda o filtro global da aba */
+  filters: Filters;
+  /** Mostrar título no topo do bloco */
+  showTitle: boolean;
+  /** Título customizado — se vazio usa label padrão do tipo */
+  title?: string;
+}
+
+export interface OmniEvolucaoMensalBlock extends OmniBaseBlock {
+  kind: "omni_evolucao_mensal";
+  metric: OmniMetric;
+  /** Dimensão de quebra (ex.: marca, canal). null = totais */
+  breakdown: OmniDim | null;
+  showLegend: boolean;
+  chartType: "line" | "bar" | "area";
+}
+
+export interface OmniHeatmapSazonalidadeBlock extends OmniBaseBlock {
+  kind: "omni_heatmap_sazonalidade";
+  metric: OmniMetric;
+}
+
+export interface OmniHeroisOfensoresBlock extends OmniBaseBlock {
+  kind: "omni_herois_ofensores";
+  metric: OmniMetric;
+  dim: OmniDim;
+  variant: OmniHeroesVariant;
+  sortBy: OmniAbcSortBy;
+  topN: number;
+}
+
+export interface OmniCanalTrendBlock extends OmniBaseBlock {
+  kind: "omni_canal_trend";
+  metric: OmniMetric;
+  /** null = todos os canais somados */
+  canal: string | null;
+  showLegend: boolean;
+}
+
+export interface OmniCanalMixBlock extends OmniBaseBlock {
+  kind: "omni_canal_mix";
+  metric: OmniMetric;
+  showLegend: boolean;
+}
+
+export interface OmniCustoEvolucaoBlock extends OmniBaseBlock {
+  kind: "omni_custo_evolucao";
+  /** "pct" = % do ROL; "kg" = por Kg; "abs" = absoluto */
+  viewMode: "pct" | "kg" | "abs";
+  showLegend: boolean;
+}
+
+export interface OmniCustoComposicaoBlock extends OmniBaseBlock {
+  kind: "omni_custo_composicao";
+  viewMode: "pct" | "abs";
+  showLegend: boolean;
+}
+
+export interface OmniPriceDecompBlock extends OmniBaseBlock {
+  kind: "omni_price_decomp";
+  /** Período base (string "FY YYYY" ou periodo "005.2025"). null = auto */
+  base: string | null;
+  /** Período comparação. null = auto */
+  comp: string | null;
+  periodMode: "fy" | "month";
+}
+
+export interface OmniBridgePvmBlock extends OmniBaseBlock {
+  kind: "omni_bridge_pvm";
+  base: string | null;
+  comp: string | null;
+  periodMode: "fy" | "month";
+}
+
+export interface OmniFarolBlock extends OmniBaseBlock {
+  kind: "omni_farol";
+  /** Período referência. null = auto (último período disponível) */
+  periodoRef: string | null;
+  /** Período comparação. null = auto */
+  periodoComp: string | null;
+  showGauge: boolean;
+}
+
+export interface OmniAbcCurvaBlock extends OmniBaseBlock {
+  kind: "omni_abc_curva";
+  metric: OmniMetric;
+  dim: OmniDim;
+  showTable: boolean;
+}
+
+export interface OmniPortfolioMatrixBlock extends OmniBaseBlock {
+  kind: "omni_portfolio_matrix";
+  metric: OmniMetric;
+  dim: OmniDim;
+}
+
+export interface OmniAbcBarsBlock extends OmniBaseBlock {
+  kind: "omni_abc_bars";
+  metric: OmniMetric;
+  dim: OmniDim;
+  variant: OmniHeroesVariant;
+  sortBy: OmniAbcSortBy;
+  topN: number;
+}
+
+export type OmniBlock =
+  | OmniEvolucaoMensalBlock
+  | OmniHeatmapSazonalidadeBlock
+  | OmniHeroisOfensoresBlock
+  | OmniCanalTrendBlock
+  | OmniCanalMixBlock
+  | OmniCustoEvolucaoBlock
+  | OmniCustoComposicaoBlock
+  | OmniPriceDecompBlock
+  | OmniBridgePvmBlock
+  | OmniFarolBlock
+  | OmniAbcCurvaBlock
+  | OmniPortfolioMatrixBlock
+  | OmniAbcBarsBlock;
+
 export type CustomBlock =
   | TitleBlock | TextBlock | KpiBlock | ImageBlock
-  | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock | DreBlock;
+  | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock | DreBlock
+  | OmniBlock;
 
 export interface CustomSlideConfig {
   blocks: CustomBlock[];
@@ -538,6 +682,58 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         showTotal: true,
         dataSource: "ke30",
       } as DreBlock;
+    // --- Omni Analytics ---
+    case "omni_evolucao_mensal":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
+        filters: {}, showTitle: true, title: "Evolução Mensal",
+        metric: "cm", breakdown: null, showLegend: true, chartType: "line" } as OmniEvolucaoMensalBlock;
+    case "omni_heatmap_sazonalidade":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 340,
+        filters: {}, showTitle: true, title: "Heatmap Sazonalidade", metric: "margemPct" } as OmniHeatmapSazonalidadeBlock;
+    case "omni_herois_ofensores":
+      return { id, kind, z, x: 60, y: 160, w: 580, h: 380,
+        filters: {}, showTitle: true, title: "Heróis e Ofensores",
+        metric: "cm", dim: "skuDesc", variant: "both", sortBy: "margem", topN: 5 } as OmniHeroisOfensoresBlock;
+    case "omni_canal_trend":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
+        filters: {}, showTitle: true, title: "Tendência por Canal",
+        metric: "margemPct", canal: null, showLegend: true } as OmniCanalTrendBlock;
+    case "omni_canal_mix":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
+        filters: {}, showTitle: true, title: "Mix por Canal",
+        metric: "rol", showLegend: true } as OmniCanalMixBlock;
+    case "omni_custo_evolucao":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
+        filters: {}, showTitle: true, title: "Evolução de Custos",
+        viewMode: "pct", showLegend: true } as OmniCustoEvolucaoBlock;
+    case "omni_custo_composicao":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
+        filters: {}, showTitle: true, title: "Composição de Custos",
+        viewMode: "pct", showLegend: true } as OmniCustoComposicaoBlock;
+    case "omni_price_decomp":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
+        filters: {}, showTitle: true, title: "Decomposição de Preço",
+        base: null, comp: null, periodMode: "month" } as OmniPriceDecompBlock;
+    case "omni_bridge_pvm":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
+        filters: {}, showTitle: true, title: "Bridge PVM",
+        base: null, comp: null, periodMode: "month" } as OmniBridgePvmBlock;
+    case "omni_farol":
+      return { id, kind, z, x: 200, y: 160, w: 500, h: 420,
+        filters: {}, showTitle: true, title: "Farol de Positivação",
+        periodoRef: null, periodoComp: null, showGauge: true } as OmniFarolBlock;
+    case "omni_abc_curva":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 460,
+        filters: {}, showTitle: true, title: "Curva ABC",
+        metric: "rol", dim: "skuDesc", showTable: false } as OmniAbcCurvaBlock;
+    case "omni_portfolio_matrix":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 460,
+        filters: {}, showTitle: true, title: "Matriz de Portfólio",
+        metric: "cm", dim: "skuDesc" } as OmniPortfolioMatrixBlock;
+    case "omni_abc_bars":
+      return { id, kind, z, x: 60, y: 160, w: 580, h: 380,
+        filters: {}, showTitle: true, title: "Barras ABC",
+        metric: "cm", dim: "skuDesc", variant: "hero", sortBy: "margem", topN: 5 } as OmniAbcBarsBlock;
   }
 }
 
@@ -593,6 +789,20 @@ export const BLOCK_LABELS: Record<CustomBlockKind, string> = {
   chart: "Gráfico",
   topSku: "Top Ranking",
   dre: "DRE",
+  // Omni Analytics
+  omni_evolucao_mensal: "Evolução Mensal",
+  omni_heatmap_sazonalidade: "Heatmap Sazonalidade",
+  omni_herois_ofensores: "Heróis e Ofensores",
+  omni_canal_trend: "Tendência Canal",
+  omni_canal_mix: "Mix por Canal",
+  omni_custo_evolucao: "Evolução de Custos",
+  omni_custo_composicao: "Composição de Custos",
+  omni_price_decomp: "Decomposição de Preço",
+  omni_bridge_pvm: "Bridge PVM",
+  omni_farol: "Farol de Positivação",
+  omni_abc_curva: "Curva ABC / Pareto",
+  omni_portfolio_matrix: "Matriz de Portfólio",
+  omni_abc_bars: "Barras ABC",
 };
 
 // ---------------------------------------------------------------------------

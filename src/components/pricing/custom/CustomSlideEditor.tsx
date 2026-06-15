@@ -54,9 +54,15 @@ import {
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
   isLineFamily,
   type ConditionalFormatMode, type ConditionalFormatRule,
+  type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
+  type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock,
+  type OmniCustoEvolucaoBlock, type OmniCustoComposicaoBlock,
+  type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock,
+  type OmniAbcCurvaBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock,
+  type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
 } from "@/lib/customSlide";
 import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
-import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider } from "./chart/Inspector";
+import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField } from "./chart/Inspector";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
 import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "./BlockRenderer";
@@ -113,7 +119,7 @@ import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, RotateCw } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop } from "lucide-react";
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -157,6 +163,30 @@ const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon:
   { id: "topSku", kind: "topSku", label: "Top Ranking", icon: Trophy },
   { id: "dre",    kind: "dre",    label: "DRE",         icon: TableIcon },
 ];
+
+// Group 3 — Omni Analytics
+type OmniPaletteEntry = { id: string; kind: CustomBlockKind; label: string; icon: Icon; group: string };
+const OMNI_PALETTE: OmniPaletteEntry[] = [
+  // Visão Geral
+  { id: "omni_evolucao_mensal",      kind: "omni_evolucao_mensal",      label: "Evolução Mensal",      icon: TrendingUp,        group: "Visão Geral" },
+  { id: "omni_heatmap_sazonalidade", kind: "omni_heatmap_sazonalidade", label: "Heatmap Sazonalidade", icon: Grid3x3,           group: "Visão Geral" },
+  { id: "omni_herois_ofensores",     kind: "omni_herois_ofensores",     label: "Heróis/Ofensores",     icon: Zap,               group: "Visão Geral" },
+  // Canais
+  { id: "omni_canal_trend",          kind: "omni_canal_trend",          label: "Tendência Canal",       icon: Activity,          group: "Canais" },
+  { id: "omni_canal_mix",            kind: "omni_canal_mix",            label: "Mix por Canal",         icon: LayersIcon,        group: "Canais" },
+  // Custos
+  { id: "omni_custo_evolucao",       kind: "omni_custo_evolucao",       label: "Evolução Custos",       icon: BarChart2,         group: "Custos" },
+  { id: "omni_custo_composicao",     kind: "omni_custo_composicao",     label: "Composição Custos",     icon: BarChart3,         group: "Custos" },
+  // Preço / Bridge
+  { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: "Decomp. Preço",         icon: PanelTop,          group: "Preço" },
+  { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: "Bridge PVM",            icon: GitBranch,         group: "Preço" },
+  // ABC / Farol
+  { id: "omni_farol",                kind: "omni_farol",                label: "Farol Positivação",     icon: Gauge,             group: "ABC/Farol" },
+  { id: "omni_abc_curva",            kind: "omni_abc_curva",            label: "Curva ABC",             icon: Network,           group: "ABC/Farol" },
+  { id: "omni_portfolio_matrix",     kind: "omni_portfolio_matrix",     label: "Matriz Portfólio",      icon: ScatterIcon,       group: "ABC/Farol" },
+  { id: "omni_abc_bars",             kind: "omni_abc_bars",             label: "Barras ABC",            icon: BarChartHorizontal, group: "ABC/Farol" },
+];
+const OMNI_GROUPS = ["Visão Geral", "Canais", "Custos", "Preço", "ABC/Farol"] as const;
 
 interface Props {
   /** ID estável do slide — usado para registrar o canvas no exporter */
@@ -512,6 +542,26 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 label={it.label}
                 onClick={() => addBlock(it.kind)}
               />
+            ))}
+          </PaletteGroup>
+
+          <Separator className="my-2" />
+
+          <PaletteGroup title="Omni Analytics">
+            {OMNI_GROUPS.map((group) => (
+              <div key={group}>
+                <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {group}
+                </div>
+                {OMNI_PALETTE.filter((it) => it.group === group).map((it) => (
+                  <PaletteButton
+                    key={it.id}
+                    icon={it.icon}
+                    label={it.label}
+                    onClick={() => addBlock(it.kind)}
+                  />
+                ))}
+              </div>
             ))}
           </PaletteGroup>
 
@@ -1614,6 +1664,34 @@ function BlockSpecificEditor({ block, onChange }: {
 
     case "dre":
       return <DreBlockInspector block={block} onChange={onChange as (patch: Partial<DreBlock>) => void} />;
+
+    // Omni Analytics inspectors
+    case "omni_evolucao_mensal":
+      return <OmniEvolucaoInspector block={block as OmniEvolucaoMensalBlock} onChange={onChange as (p: Partial<OmniEvolucaoMensalBlock>) => void} />;
+    case "omni_heatmap_sazonalidade":
+      return <OmniMetricInspector block={block as OmniHeatmapSazonalidadeBlock} onChange={onChange as (p: Partial<OmniHeatmapSazonalidadeBlock>) => void} label="Heatmap Sazonalidade" />;
+    case "omni_herois_ofensores":
+      return <OmniHeroisInspector block={block as OmniHeroisOfensoresBlock} onChange={onChange as (p: Partial<OmniHeroisOfensoresBlock>) => void} />;
+    case "omni_canal_trend":
+      return <OmniCanalTrendInspector block={block as OmniCanalTrendBlock} onChange={onChange as (p: Partial<OmniCanalTrendBlock>) => void} />;
+    case "omni_canal_mix":
+      return <OmniMetricInspector block={block as OmniCanalMixBlock} onChange={onChange as (p: Partial<OmniCanalMixBlock>) => void} label="Mix por Canal" />;
+    case "omni_custo_evolucao":
+      return <OmniCustoInspector block={block as OmniCustoEvolucaoBlock} onChange={onChange as (p: Partial<OmniCustoEvolucaoBlock>) => void} />;
+    case "omni_custo_composicao":
+      return <OmniCustoInspector block={block as OmniCustoComposicaoBlock} onChange={onChange as (p: Partial<OmniCustoComposicaoBlock>) => void} />;
+    case "omni_price_decomp":
+      return <OmniPriceDecompInspector block={block as OmniPriceDecompBlock} onChange={onChange as (p: Partial<OmniPriceDecompBlock>) => void} />;
+    case "omni_bridge_pvm":
+      return <OmniBridgePvmInspector block={block as OmniBridgePvmBlock} onChange={onChange as (p: Partial<OmniBridgePvmBlock>) => void} />;
+    case "omni_farol":
+      return <OmniFarolInspector block={block as OmniFarolBlock} onChange={onChange as (p: Partial<OmniFarolBlock>) => void} />;
+    case "omni_abc_curva":
+      return <OmniAbcCurvaInspector block={block as OmniAbcCurvaBlock} onChange={onChange as (p: Partial<OmniAbcCurvaBlock>) => void} />;
+    case "omni_portfolio_matrix":
+      return <OmniDimMetricInspector block={block as OmniPortfolioMatrixBlock} onChange={onChange as (p: Partial<OmniPortfolioMatrixBlock>) => void} label="Matriz Portfólio" />;
+    case "omni_abc_bars":
+      return <OmniHeroisInspector block={block as OmniAbcBarsBlock} onChange={onChange as (p: Partial<OmniAbcBarsBlock>) => void} />;
   }
 }
 
@@ -3359,5 +3437,283 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Omni Analytics Inspector helpers
+// ---------------------------------------------------------------------------
+
+const OMNI_METRIC_OPTIONS: { value: OmniMetric; label: string }[] = [
+  { value: "cm",        label: "Contrib. Marginal" },
+  { value: "mb",        label: "Margem Bruta" },
+  { value: "rol",       label: "ROL" },
+  { value: "volume",    label: "Volume (Kg)" },
+  { value: "margemPct", label: "Margem %" },
+];
+
+const OMNI_DIM_OPTIONS: { value: OmniDim; label: string }[] = [
+  { value: "skuDesc",       label: "SKU" },
+  { value: "marca",         label: "Marca" },
+  { value: "categoria",     label: "Categoria" },
+  { value: "canalAjustado", label: "Canal" },
+  { value: "cliente",       label: "Cliente" },
+  { value: "sku",           label: "SKU (código)" },
+];
+
+const OMNI_SORTBY_OPTIONS: { value: OmniAbcSortBy; label: string }[] = [
+  { value: "margem",    label: "CM Absoluto" },
+  { value: "margemPct", label: "CM %" },
+  { value: "volume",    label: "Volume" },
+];
+
+function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
+  showTitle: boolean;
+  title?: string;
+  defaultTitle: string;
+  onChange: (patch: { showTitle?: boolean; title?: string }) => void;
+}) {
+  return (
+    <Section label="Título">
+      <Row label="Mostrar">
+        <ToggleField value={showTitle} onChange={(v) => onChange({ showTitle: v })} label="" />
+      </Row>
+      {showTitle && (
+        <Row label="Texto">
+          <input
+            className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs"
+            value={title ?? defaultTitle}
+            onChange={(e) => onChange({ title: e.target.value })}
+          />
+        </Row>
+      )}
+    </Section>
+  );
+}
+
+/** Shared: Metric + Título */
+function OmniMetricInspector({ block, onChange, label }: {
+  block: { showTitle: boolean; title?: string; metric: OmniMetric; filters: import("@/lib/types").Filters };
+  onChange: (p: { showTitle?: boolean; title?: string; metric?: OmniMetric }) => void;
+  label: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Evolução Mensal */
+function OmniEvolucaoInspector({ block, onChange }: {
+  block: OmniEvolucaoMensalBlock;
+  onChange: (p: Partial<OmniEvolucaoMensalBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Evolução Mensal" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+        <Row label="Tipo">
+          <SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as "line" | "bar" | "area" })}
+            options={[{ value: "line", label: "Linha" }, { value: "bar", label: "Barra" }, { value: "area", label: "Área" }]} />
+        </Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Heróis / Ofensores + Barras ABC (shared) */
+function OmniHeroisInspector({ block, onChange }: {
+  block: (OmniHeroisOfensoresBlock | OmniAbcBarsBlock) & { showTitle: boolean; title?: string };
+  onChange: (p: Partial<OmniHeroisOfensoresBlock & OmniAbcBarsBlock>) => void;
+}) {
+  const label = block.kind === "omni_herois_ofensores" ? "Heróis/Ofensores" : "Barras ABC";
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Dimensão">
+          <SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} />
+        </Row>
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+        <Row label="Ordenar por">
+          <SelectField value={block.sortBy} onChange={(v) => onChange({ sortBy: v as OmniAbcSortBy })} options={OMNI_SORTBY_OPTIONS} />
+        </Row>
+        <Row label="Exibir">
+          <SelectField value={block.variant} onChange={(v) => onChange({ variant: v as OmniHeroesVariant })}
+            options={[{ value: "both", label: "Ambos" }, { value: "hero", label: "Apenas Heróis" }, { value: "villain", label: "Apenas Ofensores" }]} />
+        </Row>
+        <Row label="Top N">
+          <NumberStepper value={block.topN} min={3} max={20} step={1} onChange={(v) => onChange({ topN: v })} />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Canal Trend */
+function OmniCanalTrendInspector({ block, onChange }: {
+  block: OmniCanalTrendBlock;
+  onChange: (p: Partial<OmniCanalTrendBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Tendência Canal" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Custo (Evolução e Composição compartilham) */
+function OmniCustoInspector({ block, onChange }: {
+  block: OmniCustoEvolucaoBlock | OmniCustoComposicaoBlock;
+  onChange: (p: Partial<OmniCustoEvolucaoBlock & OmniCustoComposicaoBlock>) => void;
+}) {
+  const label = block.kind === "omni_custo_evolucao" ? "Evolução de Custos" : "Composição de Custos";
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Visão">
+          <SelectField value={block.viewMode} onChange={(v) => onChange({ viewMode: v as "pct" | "abs" | "kg" })}
+            options={[
+              { value: "pct", label: "% do ROL" },
+              { value: "abs", label: "Absoluto" },
+              ...(block.kind === "omni_custo_evolucao" ? [{ value: "kg" as const, label: "Por Kg" }] : []),
+            ]} />
+        </Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Price Decomp */
+function OmniPriceDecompInspector({ block, onChange }: {
+  block: OmniPriceDecompBlock;
+  onChange: (p: Partial<OmniPriceDecompBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Decomposição de Preço" onChange={onChange} />
+      <Section label="Períodos">
+        <Row label="Modo">
+          <SelectField value={block.periodMode} onChange={(v) => onChange({ periodMode: v as "fy" | "month" })}
+            options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
+        </Row>
+        <Row label="Base"><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
+          value={block.base ?? ""} onChange={(e) => onChange({ base: e.target.value || null })} /></Row>
+        <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
+          value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Bridge PVM */
+function OmniBridgePvmInspector({ block, onChange }: {
+  block: OmniBridgePvmBlock;
+  onChange: (p: Partial<OmniBridgePvmBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Bridge PVM" onChange={onChange} />
+      <Section label="Períodos">
+        <Row label="Modo">
+          <SelectField value={block.periodMode} onChange={(v) => onChange({ periodMode: v as "fy" | "month" })}
+            options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
+        </Row>
+        <Row label="Base"><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
+          value={block.base ?? ""} onChange={(e) => onChange({ base: e.target.value || null })} /></Row>
+        <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
+          value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Farol */
+function OmniFarolInspector({ block, onChange }: {
+  block: OmniFarolBlock;
+  onChange: (p: Partial<OmniFarolBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Farol de Positivação" onChange={onChange} />
+      <Section label="Exibição">
+        <Row label="Gauge">
+          <ToggleField value={block.showGauge} onChange={(v) => onChange({ showGauge: v })} label="" />
+        </Row>
+      </Section>
+      <Section label="Período">
+        <Row label="Período Ref."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
+          value={block.periodoRef ?? ""} onChange={(e) => onChange({ periodoRef: e.target.value || null })} /></Row>
+        <Row label="Período Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto (último)"
+          value={block.periodoComp ?? ""} onChange={(e) => onChange({ periodoComp: e.target.value || null })} /></Row>
+      </Section>
+    </div>
+  );
+}
+
+/** ABC Curva */
+function OmniAbcCurvaInspector({ block, onChange }: {
+  block: OmniAbcCurvaBlock;
+  onChange: (p: Partial<OmniAbcCurvaBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Curva ABC" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Dimensão">
+          <SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} />
+        </Row>
+        <Row label="Tabela">
+          <ToggleField value={block.showTable} onChange={(v) => onChange({ showTable: v })} label="" />
+        </Row>
+      </Section>
+    </div>
+  );
+}
+
+/** Portfolio Matrix + generic dim/metric */
+function OmniDimMetricInspector({ block, onChange, label }: {
+  block: { showTitle: boolean; title?: string; metric: OmniMetric; dim: OmniDim };
+  onChange: (p: { showTitle?: boolean; title?: string; metric?: OmniMetric; dim?: OmniDim }) => void;
+  label: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Dimensão">
+          <SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} />
+        </Row>
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+      </Section>
+    </div>
   );
 }
