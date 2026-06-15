@@ -150,7 +150,6 @@ function ExportPositionedCell({
   padX?: number;
 }) {
   const align = style.textAlign ?? "center";
-  const fontSize = typeof style.fontSize === "number" ? style.fontSize : 12;
   return (
     <div style={{
       ...style,
@@ -160,18 +159,17 @@ function ExportPositionedCell({
       width: `${width}%`,
       height: `${height}%`,
       boxSizing: "border-box",
-      padding: 0,
+      padding: `0 ${padX}px`,
       overflow: "hidden",
-      lineHeight: 1,
+      lineHeight: 1.15,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: textAlignToJustify[String(align)] ?? "center",
     }}>
       <span style={{
-        position: "absolute",
-        left: padX,
-        right: padX,
-        top: "50%",
-        transform: "translateY(-50%)",
         display: "block",
-        lineHeight: `${fontSize}px`,
+        width: "100%",
+        lineHeight: 1.15,
         textAlign: align,
         whiteSpace: "nowrap",
         overflow: style.overflow,
