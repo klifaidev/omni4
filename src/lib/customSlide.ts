@@ -435,6 +435,15 @@ export interface DreBlock extends BaseBlock {
     applyTo: "cell" | "text";
     linhasAtivas: string[];
   };
+  // Filtros dimensionais
+  canal?: string | null;
+  canalAjustado?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  marca?: string | null;
+  formato?: string | null;
+  regional?: string | null;
+  uf?: string | null;
 }
 
 // ---------------------------------------------------------------------------

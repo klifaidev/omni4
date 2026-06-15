@@ -2731,6 +2731,13 @@ function DreBlockInspector({ block, onChange }: {
   const allMonths = [...months].sort((a, b) =>
     a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
   );
+  const rows = usePricing((s) => s.rows);
+  const unique = (field: keyof import("@/lib/types").PricingRow) =>
+    Array.from(new Set(rows.map((r) => r[field] as string | undefined).filter(Boolean))).sort() as string[];
+  const dimOpt = (field: keyof import("@/lib/types").PricingRow, placeholder: string) => [
+    { value: "", label: placeholder },
+    ...unique(field).map((v) => ({ value: v, label: v })),
+  ];
 
   return (
     <div className="space-y-2">
@@ -2749,6 +2756,58 @@ function DreBlockInspector({ block, onChange }: {
             selected={block.periodos ?? []}
             onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
             placeholder="Últimos 6 meses"
+          />
+        </Row>
+      </Section>
+
+      <Section title="Filtros" defaultOpen={false}>
+        <Row label="Canal">
+          <SelectField
+            value={block.canalAjustado ?? ""}
+            options={dimOpt("canalAjustado", "Todos")}
+            onChange={(v) => onChange({ canalAjustado: v || null })}
+          />
+        </Row>
+        <Row label="Categoria">
+          <SelectField
+            value={block.categoria ?? ""}
+            options={dimOpt("categoria", "Todas")}
+            onChange={(v) => onChange({ categoria: v || null })}
+          />
+        </Row>
+        <Row label="Subcategoria">
+          <SelectField
+            value={block.subcategoria ?? ""}
+            options={dimOpt("subcategoria", "Todas")}
+            onChange={(v) => onChange({ subcategoria: v || null })}
+          />
+        </Row>
+        <Row label="Marca">
+          <SelectField
+            value={block.marca ?? ""}
+            options={dimOpt("marca", "Todas")}
+            onChange={(v) => onChange({ marca: v || null })}
+          />
+        </Row>
+        <Row label="Formato">
+          <SelectField
+            value={block.formato ?? ""}
+            options={dimOpt("formato", "Todos")}
+            onChange={(v) => onChange({ formato: v || null })}
+          />
+        </Row>
+        <Row label="Regional">
+          <SelectField
+            value={block.regional ?? ""}
+            options={dimOpt("regional", "Todas")}
+            onChange={(v) => onChange({ regional: v || null })}
+          />
+        </Row>
+        <Row label="UF">
+          <SelectField
+            value={block.uf ?? ""}
+            options={dimOpt("uf", "Todas")}
+            onChange={(v) => onChange({ uf: v || null })}
           />
         </Row>
       </Section>
