@@ -95,6 +95,42 @@ function fmtMeasure(m: PivotMeasure, v: number): string {
 }
 
 const justifyMap: Record<string, string> = { left: "flex-start", center: "center", right: "flex-end" };
+const textAlignToJustify: Record<string, React.CSSProperties["justifyContent"]> = {
+  left: "flex-start",
+  center: "center",
+  right: "flex-end",
+};
+
+function exportCellStyle(style: React.CSSProperties): React.CSSProperties {
+  return {
+    ...style,
+    padding: 0,
+    lineHeight: 1,
+    verticalAlign: "middle",
+  };
+}
+
+function exportCellContent(
+  content: React.ReactNode,
+  opts: { padding: React.CSSProperties["padding"]; align?: React.CSSProperties["textAlign"] },
+) {
+  const align = String(opts.align ?? "center");
+  return (
+    <div style={{
+      minHeight: "100%",
+      height: "100%",
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: textAlignToJustify[align] ?? "center",
+      padding: opts.padding,
+      lineHeight: 1.15,
+      textAlign: opts.align,
+    }}>
+      {content}
+    </div>
+  );
+}
 
 function fitFontSize(opts: {
   desired: number;
@@ -125,10 +161,10 @@ export function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlo
     case "image":  return <ImageRender block={block} />;
     case "shape":  return <ShapeRender block={block} />;
     case "bridge": return <BridgeRender block={block} />;
-    case "table":  return <TableRender block={block} />;
+    case "table":  return <TableRender block={block} readOnly={readOnly} />;
     case "chart":  return <ChartRender block={block} />;
     case "topSku": return <TopSkuRender block={block} />;
-    case "dre":    return <DreRender block={block} />;
+    case "dre":    return <DreRender block={block} readOnly={readOnly} />;
     // Omni Analytics
     case "omni_evolucao_mensal":      return <OmniEvolucaoMensalRender block={block} />;
     case "omni_heatmap_sazonalidade": return <OmniHeatmapSazonalidadeRender block={block} />;
@@ -406,7 +442,7 @@ function BridgeRender({ block: b }: { block: BridgeBlock }) {
   );
 }
 
-function TableRender({ block: b }: { block: TableBlock }) {
+function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boolean }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const sourceRows = useDataSource(b.dataSource, pricing, budget);
@@ -476,6 +512,23 @@ function TableRender({ block: b }: { block: TableBlock }) {
   // ---------- Formatação condicional ----------
   const valueAlign = b.valueAlign ?? "right";
   const cellValDyn: React.CSSProperties = { ...cellVal, textAlign: valueAlign };
+  const tableCell = (
+    tag: "th" | "td",
+    content: React.ReactNode,
+    style: React.CSSProperties,
+    key?: React.Key,
+  ) => {
+    if (!readOnly) {
+      return tag === "th"
+        ? <th key={key} style={style}>{content}</th>
+        : <td key={key} style={style}>{content}</td>;
+    }
+    const inner = exportCellContent(content, { padding: style.padding, align: style.textAlign });
+    const cellStyle = exportCellStyle(style);
+    return tag === "th"
+      ? <th key={key} style={cellStyle}>{inner}</th>
+      : <td key={key} style={cellStyle}>{inner}</td>;
+  };
 
   const getValueFor = (rhKey: string, colKey: string, mId: string): number => {
     if (showCols && colKey !== "__row__") {
@@ -582,7 +635,7 @@ function TableRender({ block: b }: { block: TableBlock }) {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={cellHead}>{b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}</th>
+            {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", cellHead)}
             {showCols
               ? cols.flatMap((c) => measures.map((m) => (
                   <th key={`${c.key}-${m.id}`} style={cellHead}>{c.values.join(" / ")} · {m.label}</th>
@@ -593,33 +646,27 @@ function TableRender({ block: b }: { block: TableBlock }) {
         <tbody>
           {visibleHeaders.map((rh) => (
             <tr key={rh.key}>
-              <td style={cellLabel}>{rh.values.join(" / ") || "Total"}</td>
+              {tableCell("td", rh.values.join(" / ") || "Total", cellLabel)}
               {showCols
                 ? cols.flatMap((c) => measures.map((m) => {
                     const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
-                    return <td key={`${c.key}-${m.id}`} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}>{fmtMeasure(m, v)}</td>;
+                    return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }, `${c.key}-${m.id}`);
                   }))
                 : measures.map((m) => {
                     const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
-                    return <td key={m.id} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }}>{fmtMeasure(m, v)}</td>;
+                    return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }, m.id);
                   })}
             </tr>
           ))}
           {othersRow && (
             <tr style={{ background: "#F1F5F9" }}>
-              <td style={{ ...cellLabel, fontStyle: "italic" }}>
-                Outros ({hiddenHeaders.length})
-              </td>
+              {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
               {showCols
                 ? cols.flatMap((c) => measures.map((m) => (
-                    <td key={`oth-${c.key}-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic" }}>
-                      {fmtMeasure(m, othersRow[c.key][m.id])}
-                    </td>
+                    tableCell("td", fmtMeasure(m, othersRow[c.key][m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
                   )))
                 : measures.map((m) => (
-                    <td key={`oth-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic" }}>
-                      {fmtMeasure(m, othersRow.__row__[m.id])}
-                    </td>
+                    tableCell("td", fmtMeasure(m, othersRow.__row__[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${m.id}`)
                   ))}
             </tr>
           )}
@@ -753,7 +800,7 @@ function conditionalColor(
   return t <= 0.5 ? lerpColor(colorMin, colorMid, t * 2) : lerpColor(colorMid, colorMax, (t - 0.5) * 2);
 }
 
-function DreRender({ block: blk }: { block: DreBlock }) {
+function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boolean }) {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
   const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
@@ -836,6 +883,23 @@ function DreRender({ block: blk }: { block: DreBlock }) {
   const fs = blk.fontSize;
   const pad = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.55)}px`;
   const padVal = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.36)}px`;
+  const dreCell = (
+    tag: "th" | "td",
+    content: React.ReactNode,
+    style: React.CSSProperties,
+    key?: React.Key,
+  ) => {
+    if (!readOnly) {
+      return tag === "th"
+        ? <th key={key} style={style}>{content}</th>
+        : <td key={key} style={style}>{content}</td>;
+    }
+    const inner = exportCellContent(content, { padding: style.padding, align: style.textAlign });
+    const cellStyle = exportCellStyle(style);
+    return tag === "th"
+      ? <th key={key} style={cellStyle}>{inner}</th>
+      : <td key={key} style={cellStyle}>{inner}</td>;
+  };
 
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri, Arial, sans-serif" }}>
@@ -885,7 +949,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
             const isEven = idx % 2 === 0;
             return (
               <tr key={line.id} style={{ background: isEven ? "#F8FAFC" : "#FFFFFF" }}>
-                <td style={{
+                {dreCell("td", line.label, {
                   padding: pad,
                   fontWeight: line.bold ? 600 : 400,
                   color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
@@ -894,9 +958,8 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                   fontSize: fs,
                   verticalAlign: "middle", lineHeight: 1.15,
-                }}>
-                  {line.label}
-                </td>
+                  textAlign: "left",
+                })}
                 {cols.map((col) => {
                   const agg = aggsByCol.get(col.periodo);
                   const val = agg ? line.get(agg) : null;
@@ -915,7 +978,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   }
                   return (
                     <td key={col.periodo} style={{
-                      padding: padVal, textAlign: "center",
+                      padding: readOnly ? 0 : padVal, textAlign: "center",
                       fontWeight: line.bold ? 600 : 400,
                       color: cfColor ?? (isNeg ? "#DC2626"
                         : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
@@ -925,7 +988,9 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                       fontSize: fs,
                       verticalAlign: "middle", lineHeight: 1.15,
                     }}>
-                      {val === null ? "—" : fmt(val, line.kind)}
+                      {readOnly
+                        ? exportCellContent(val === null ? "—" : fmt(val, line.kind), { padding: padVal, align: "center" })
+                        : val === null ? "—" : fmt(val, line.kind)}
                     </td>
                   );
                 })}
@@ -959,7 +1024,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   }
                   return (
                     <td style={{
-                      padding: padVal, textAlign: "center",
+                      padding: readOnly ? 0 : padVal, textAlign: "center",
                       fontWeight: line.bold ? 600 : 400,
                       color: cor,
                       borderLeft: `1px solid ${blk.headerColor}20`,
@@ -968,7 +1033,9 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                       background: isEven ? "#F8FAFC" : "#FFFFFF",
                       verticalAlign: "middle", lineHeight: 1.15,
                     }}>
-                      {display}
+                      {readOnly
+                        ? exportCellContent(display, { padding: padVal, align: "center" })
+                        : display}
                     </td>
                   );
                 })()}

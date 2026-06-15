@@ -35,6 +35,89 @@ const EXPORT_CAPTURE_CSS = `
   }
 `;
 
+function isLikelySvgSource(src: string | undefined): src is string {
+  if (!src) return false;
+  const s = src.trim().toLowerCase();
+  return s.startsWith("data:image/svg+xml")
+    || s.startsWith("blob:")
+    || s.endsWith(".svg")
+    || s.includes(".svg?");
+}
+
+function svgDataUrlToText(src: string): string | null {
+  const comma = src.indexOf(",");
+  if (!src.toLowerCase().startsWith("data:image/svg+xml") || comma < 0) return null;
+  const meta = src.slice(0, comma).toLowerCase();
+  const payload = src.slice(comma + 1);
+  try {
+    return meta.includes(";base64")
+      ? decodeURIComponent(escape(atob(payload)))
+      : decodeURIComponent(payload);
+  } catch {
+    try {
+      return atob(payload);
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function loadSvgText(src: string): Promise<string | null> {
+  const fromDataUrl = svgDataUrlToText(src);
+  if (fromDataUrl) return fromDataUrl;
+  try {
+    const res = await fetch(src);
+    const text = await res.text();
+    return text.includes("<svg") ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+async function rasterizeSvgSource(src: string, width: number, height: number): Promise<string> {
+  if (!isLikelySvgSource(src)) return src;
+  const svg = await loadSvgText(src);
+  if (!svg) return src;
+
+  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Falha ao rasterizar SVG do slide."));
+    });
+
+    const scale = EXPORT_SCALE;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return src;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return src;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function prepareConfigForExport(config: CustomSlideConfig): Promise<CustomSlideConfig> {
+  const blocks = await Promise.all(config.blocks.map(async (block) => {
+    if (block.kind !== "image" || !isLikelySvgSource(block.src)) return block;
+    const src = await rasterizeSvgSource(block.src, block.w, block.h);
+    return src === block.src ? block : { ...block, src };
+  }));
+  const backgroundImage = config.backgroundImage && isLikelySvgSource(config.backgroundImage)
+    ? await rasterizeSvgSource(config.backgroundImage, CANVAS_W, CANVAS_H)
+    : config.backgroundImage;
+  return { ...config, blocks, backgroundImage };
+}
+
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
@@ -126,6 +209,7 @@ async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvas
 }
 
 async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
+  const exportConfig = await prepareConfigForExport(config);
   const host = document.createElement("div");
   host.style.cssText = [
     "position:fixed",
@@ -148,7 +232,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
           SlideFilterProvider,
           { slideKey: "export" },
           React.createElement("style", null, EXPORT_CAPTURE_CSS),
-          React.createElement(CustomCanvasReadOnly, { config }),
+          React.createElement(CustomCanvasReadOnly, { config: exportConfig }),
         ),
       );
     });
@@ -161,9 +245,9 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
     await nextFrame();
 
     let canvas = await captureHost(host, EXPORT_SCALE);
-    if (config.blocks.length > 0 && canvasLooksBlank(canvas)) {
+    if (exportConfig.blocks.length > 0 && canvasLooksBlank(canvas)) {
       console.warn("[customSlide export] captura principal vazia; usando fallback legado.");
-      canvas = await renderLegacyCanvas(config);
+      canvas = await renderLegacyCanvas(exportConfig);
     }
 
     return canvas.toDataURL("image/png");
