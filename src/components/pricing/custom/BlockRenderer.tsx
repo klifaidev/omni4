@@ -652,15 +652,17 @@ const topHead: React.CSSProperties = {
 
 const cellHead: React.CSSProperties = {
   background: "#C8102E", color: "#fff", padding: "6px 8px", textAlign: "center",
-  fontWeight: 700, fontSize: 11, border: "1px solid #fff",
+  fontWeight: 700, fontSize: 11, border: "1px solid #fff", verticalAlign: "middle", lineHeight: 1.15,
 };
 const cellLabel: React.CSSProperties = {
   padding: "5px 8px", textAlign: "left", fontWeight: 600,
   color: "#1C2430", borderBottom: "1px solid #E2E8F0", background: "#fff",
+  verticalAlign: "middle", lineHeight: 1.15,
 };
 const cellVal: React.CSSProperties = {
   padding: "5px 8px", textAlign: "right", color: "#1C2430",
   borderBottom: "1px solid #E2E8F0", background: "#fff",
+  verticalAlign: "middle", lineHeight: 1.15,
 };
 
 // ---------------------------------------------------------------------------
@@ -783,6 +785,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
               background: blk.headerColor, color: "#FFFFFF",
               padding: pad, textAlign: "left", fontWeight: 600,
               fontSize: fs + 1, whiteSpace: "nowrap",
+              verticalAlign: "middle", lineHeight: 1.15,
             }}>
               Indicador
             </th>
@@ -791,6 +794,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                 background: blk.headerColor, color: "#FFFFFF",
                 padding: padVal, textAlign: "center", fontWeight: 600,
                 fontSize: fs + 1,
+                verticalAlign: "middle", lineHeight: 1.15,
               }}>
                 {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
               </th>
@@ -801,6 +805,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                 padding: padVal, textAlign: "center", fontWeight: 600,
                 fontSize: fs + 1,
                 borderLeft: "1px solid rgba(255,255,255,0.3)",
+                verticalAlign: "middle", lineHeight: 1.15,
               }}>
                 {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
                 {" vs "}
@@ -822,6 +827,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                   borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
                   whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                   fontSize: fs,
+                  verticalAlign: "middle", lineHeight: 1.15,
                 }}>
                   {line.label}
                 </td>
@@ -851,6 +857,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                       background: cfBg,
                       borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
                       fontSize: fs,
+                      verticalAlign: "middle", lineHeight: 1.15,
                     }}>
                       {val === null ? "—" : fmt(val, line.kind)}
                     </td>
@@ -893,6 +900,7 @@ function DreRender({ block: blk }: { block: DreBlock }) {
                       borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
                       fontSize: fs,
                       background: isEven ? "#F8FAFC" : "#FFFFFF",
+                      verticalAlign: "middle", lineHeight: 1.15,
                     }}>
                       {display}
                     </td>
@@ -967,10 +975,10 @@ function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock
   const data = series.map((pt) => ({ label: pt.label, value: canalTrendValue(pt, b.metric) }));
 
   const DataElement = b.chartType === "bar"
-    ? <Bar dataKey="value" name={info.label} fill={OMNI_COLORS[0]} radius={[3, 3, 0, 0]} />
+    ? <Bar dataKey="value" name={info.label} fill={OMNI_COLORS[0]} radius={[3, 3, 0, 0]} isAnimationActive={false} />
     : b.chartType === "area"
-    ? <Area type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} fill={`${OMNI_COLORS[0]}33`} strokeWidth={2} dot={false} />
-    : <Line type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} />;
+    ? <Area type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} fill={`${OMNI_COLORS[0]}33`} strokeWidth={2} dot={false} isAnimationActive={false} />
+    : <Line type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />;
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
@@ -1168,7 +1176,7 @@ function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
             <Tooltip formatter={(v: number) => info.fmt(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {canais.map((c, i) => (
-              <Line key={c} type="monotone" dataKey={c} stroke={OMNI_COLORS[i % OMNI_COLORS.length]} strokeWidth={2} dot={false} />
+              <Line key={c} type="monotone" dataKey={c} stroke={OMNI_COLORS[i % OMNI_COLORS.length]} strokeWidth={2} dot={false} isAnimationActive={false} />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
@@ -1215,7 +1223,7 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
             <Tooltip formatter={(v: number) => info.fmt(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {canais.map((c, i) => (
-              <Bar key={c} dataKey={c} stackId="a" fill={OMNI_COLORS[i % OMNI_COLORS.length]} />
+              <Bar key={c} dataKey={c} stackId="a" fill={OMNI_COLORS[i % OMNI_COLORS.length]} isAnimationActive={false} />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
@@ -1253,8 +1261,8 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
-            <Line type="monotone" dataKey="cv" name="Custo Variável" stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="cf" name="Custo Fixo" stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" />
+            <Line type="monotone" dataKey="cv" name="Custo Variável" stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="cf" name="Custo Fixo" stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1291,8 +1299,8 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
-            <Bar dataKey="cv" name="Custo Variável" stackId="a" fill={OMNI_COLORS[0]} />
-            <Bar dataKey="cf" name="Custo Fixo"     stackId="a" fill={OMNI_COLORS[1]} />
+            <Bar dataKey="cv" name="Custo Variável" stackId="a" fill={OMNI_COLORS[0]} isAnimationActive={false} />
+            <Bar dataKey="cf" name="Custo Fixo"     stackId="a" fill={OMNI_COLORS[1]} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1520,10 +1528,10 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
             <Tooltip formatter={(v: number) => formatPct(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {b.showCustoVariavel && (
-              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke="#C8102E" fill="#C8102E" fillOpacity={0.7} strokeWidth={1.5} dot={false} />
+              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke="#C8102E" fill="#C8102E" fillOpacity={0.7} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
             {b.showCustoFixo && (
-              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke="#1C2430" fill="#1C2430" fillOpacity={0.5} strokeWidth={1.5} dot={false} />
+              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke="#1C2430" fill="#1C2430" fillOpacity={0.5} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
           </ComposedChart>
         </ResponsiveContainer>

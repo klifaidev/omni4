@@ -533,6 +533,7 @@ export function CustomCanvasReadOnly({
           anim === "slide-up" ? `blkSlideUp 350ms ease-out ${delay}ms both` :
           anim === "pop" ? `blkPop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms both` :
           undefined;
+        const rotation = readOnlyRotation(blk);
         return (
           <div
             key={`${blk.id}-${animKey}`}
@@ -542,6 +543,9 @@ export function CustomCanvasReadOnly({
               zIndex: blk.z,
               pointerEvents: blk.kind === "chart" ? "auto" : "none",
               animation,
+              transform: rotation ? `rotate(${rotation}deg)` : undefined,
+              transformOrigin: "50% 50%",
+              visibility: blk.hidden ? "hidden" : "visible",
             }}
           >
             <BlockRenderer block={blk} />
@@ -561,6 +565,13 @@ export function CustomCanvasReadOnly({
       )}
     </div>
   );
+}
+
+function readOnlyRotation(block: CustomBlock): number {
+  if (block.kind === "title" || block.kind === "text" || block.kind === "image") {
+    return block.rotation ?? 0;
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------------------

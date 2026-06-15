@@ -13,9 +13,20 @@ import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMo
 const SLIDE_W_IN = 13.33;
 const SLIDE_H_IN = 7.5;
 
-// 1333 x 750 em 3x = 3999 x 2250 px, equivalente a ~300 DPI no slide wide.
-const EXPORT_SCALE = 3;
+// 1333 x 750 em 4x = 5332 x 3000 px. Prioriza fidelidade premium no PPTX.
+const EXPORT_SCALE = 4;
 const LEGACY_SCALE = 2;
+const EXPORT_CAPTURE_CSS = `
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    caret-color: transparent !important;
+  }
+  .recharts-surface * {
+    animation: none !important;
+    transition: none !important;
+  }
+`;
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -125,7 +136,14 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
 
   try {
     flushSync(() => {
-      root.render(React.createElement(CustomCanvasReadOnly, { config }));
+      root.render(
+        React.createElement(
+          React.Fragment,
+          null,
+          React.createElement("style", null, EXPORT_CAPTURE_CSS),
+          React.createElement(CustomCanvasReadOnly, { config }),
+        ),
+      );
     });
 
     await waitForFonts();
@@ -174,20 +192,23 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
   try {
     flushSync(() => {
       root.render(
-        React.createElement(
-          "div",
-          { style: { width: captureW, height: captureH, background: "#FFFFFF", overflow: "hidden" } },
+        React.createElement(React.Fragment, null,
+          React.createElement("style", null, EXPORT_CAPTURE_CSS),
           React.createElement(
             "div",
-            {
-              style: {
-                width: CANVAS_W,
-                height: CANVAS_H,
-                transform: `scale(${LEGACY_SCALE})`,
-                transformOrigin: "top left",
+            { style: { width: captureW, height: captureH, background: "#FFFFFF", overflow: "hidden" } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  width: CANVAS_W,
+                  height: CANVAS_H,
+                  transform: `scale(${LEGACY_SCALE})`,
+                  transformOrigin: "top left",
+                },
               },
-            },
-            React.createElement(CustomCanvasReadOnly, { config }),
+              React.createElement(CustomCanvasReadOnly, { config }),
+            ),
           ),
         ),
       );
