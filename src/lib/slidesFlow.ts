@@ -194,7 +194,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
     case "budget_evo": {
       const cfg = item.config;
       return {
-        build: (pptx) => {
+        build: async (pptx) => {
           const monthly = computeBudgetEvoMonthly(ctx.budgetRows, cfg.filters, cfg.start, cfg.end);
           if (monthly.length === 0) {
             throw new Error(`Budget Evolutivo "${item.label}": sem dados para o range selecionado.`);
@@ -208,7 +208,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
               }),
               { cmGap: 0, volGap: 0 },
             );
-          addBudgetEvoSlide(pptx, monthly, accum);
+          await addBudgetEvoSlide(pptx, monthly, accum);
         },
       };
     }

@@ -548,7 +548,7 @@ export function CustomCanvasReadOnly({
               visibility: blk.hidden ? "hidden" : "visible",
             }}
           >
-            <BlockRenderer block={blk} />
+            <BlockRenderer block={blk} readOnly />
           </div>
         );
       })}

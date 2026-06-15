@@ -27,6 +27,12 @@ const EXPORT_CAPTURE_CSS = `
     animation: none !important;
     transition: none !important;
   }
+  table, thead, tbody, tr, th, td {
+    vertical-align: middle !important;
+  }
+  th, td {
+    line-height: 1.15 !important;
+  }
 `;
 
 function nextFrame(): Promise<void> {

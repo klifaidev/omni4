@@ -923,7 +923,41 @@ function smoothPathD(points: { x: number; y: number }[]): string {
   return d;
 }
 
-function plotLineRow(
+function svgDataUrl(svg: string): string {
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+}
+
+async function svgToPngDataUrl(svg: string, widthPx: number, heightPx: number, scale = 4): Promise<string> {
+  if (typeof document === "undefined") return svgDataUrl(svg);
+
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Falha ao renderizar SVG do gráfico."));
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(widthPx * scale));
+    canvas.height = Math.max(1, Math.round(heightPx * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return svgDataUrl(svg);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return svgDataUrl(svg);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function plotLineRow(
   slide: PptxGenJS.Slide,
   opts: {
     x: number; y: number; w: number; h: number;
@@ -995,8 +1029,8 @@ function plotLineRow(
     + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
     + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14,8"/>`
     + `</svg>`;
-  const svgData = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-  slide.addImage({ data: svgData, x: plotX, y: plotY, w: plotW, h: plotH });
+  const chartData = await svgToPngDataUrl(svg, svgW, svgH, 4);
+  slide.addImage({ data: chartData, x: plotX, y: plotY, w: plotW, h: plotH });
 
   // Separador vertical Real / Budget + nota de variação
   const sepColIdx = data.findIndex((m) => {
@@ -1164,11 +1198,11 @@ function plotVolBars(
   slide.addText("BUDGET", { x: legX + 0.98, y: legY, w: 0.52, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: "000000", margin: 0 });
 }
 
-export function addBudgetEvoSlide(
+export async function addBudgetEvoSlide(
   pptx: PptxGenJS,
   monthly: BudgetEvoRow[],
   accumGap: { cmGap: number; volGap: number },
-) {
+): Promise<void> {
   const slide = pptx.addSlide();
   slide.background = { color: "FFFFFF" };
   addHaraldFooter(slide);
@@ -1195,7 +1229,7 @@ export function addBudgetEvoSlide(
     line: { color: "E2E8F0", width: 0.5 },
   });
 
-  plotLineRow(slide, {
+  await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM ABS",
     headerNote: fmtMoneyAbs(accumGap.cmGap),
@@ -1208,7 +1242,7 @@ export function addBudgetEvoSlide(
   curY += rowH;
   addSep(curY);
 
-  plotLineRow(slide, {
+  await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM/%",
     data: monthly,
@@ -1219,7 +1253,7 @@ export function addBudgetEvoSlide(
   curY += rowH;
   addSep(curY);
 
-  plotLineRow(slide, {
+  await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM/Kg",
     data: monthly,
@@ -1251,7 +1285,7 @@ export async function exportBudgetEvoPpt(
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   pptx.title = "Overview CM/VOL — Real vs Budget";
-  addBudgetEvoSlide(pptx, monthly, accumGap);
+  await addBudgetEvoSlide(pptx, monthly, accumGap);
   const blob = (await pptx.write({ outputType: "blob" })) as Blob;
   triggerDownload(blob, `overview_cm_vol_real_vs_budget.pptx`);
 }
@@ -1326,4 +1360,3 @@ export async function exportSlideFlow(
   const grouped = await groupBridgeElements(rawBlob, bridgeSlideIndex ?? 1);
   triggerDownload(grouped, fileName);
 }
-

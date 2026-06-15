@@ -96,11 +96,32 @@ function fmtMeasure(m: PivotMeasure, v: number): string {
 
 const justifyMap: Record<string, string> = { left: "flex-start", center: "center", right: "flex-end" };
 
-export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+function fitFontSize(opts: {
+  desired: number;
+  width: number;
+  height: number;
+  text: string;
+  lineHeight: number;
+  padding?: number;
+  min?: number;
+}) {
+  const pad = opts.padding ?? 0;
+  const min = opts.min ?? 8;
+  const availableW = Math.max(1, opts.width - pad * 2);
+  const availableH = Math.max(1, opts.height - pad * 2);
+  const lines = String(opts.text || "").split(/\r?\n/);
+  const longest = Math.max(1, ...lines.map((line) => line.length));
+  const lineCount = Math.max(1, lines.length);
+  const byHeight = availableH / (lineCount * opts.lineHeight);
+  const byWidth = availableW / (longest * 0.58);
+  return Math.max(min, Math.floor(Math.min(opts.desired, byHeight, byWidth)));
+}
+
+export function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
   switch (block.kind) {
-    case "title":  return <TitleRender block={block} isEditing={isEditing} />;
-    case "text":   return <TextRender block={block} isEditing={isEditing} />;
-    case "kpi":    return <KpiRender block={block} />;
+    case "title":  return <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />;
+    case "text":   return <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />;
+    case "kpi":    return <KpiRender block={block} readOnly={readOnly} />;
     case "image":  return <ImageRender block={block} />;
     case "shape":  return <ShapeRender block={block} />;
     case "bridge": return <BridgeRender block={block} />;
@@ -126,27 +147,41 @@ export function BlockRenderer({ block, readOnly: _readOnly, isEditing }: { block
   }
 }
 
-function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: boolean }) {
+function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isEditing?: boolean; readOnly?: boolean }) {
+  const padding = b.padding ?? 0;
+  const lineHeight = Math.max(b.lineHeight ?? 1.1, readOnly ? 1.18 : 1.1);
+  const fontSize = readOnly
+    ? fitFontSize({
+        desired: b.size,
+        width: b.w,
+        height: b.h,
+        text: b.text,
+        lineHeight,
+        padding,
+        min: 10,
+      })
+    : b.size;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
       alignItems: "center", justifyContent: justifyMap[b.align] ?? "flex-start",
+      boxSizing: "border-box",
       fontFamily: b.fontFamily ?? "Calibri, sans-serif",
-      fontSize: b.size,
+      fontSize,
       fontWeight: b.bold ? 700 : 400,
       fontStyle: b.italic ? "italic" : "normal",
       color: `#${b.color}`,
-      lineHeight: b.lineHeight ?? 1.1,
+      lineHeight,
       textAlign: b.align,
       letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
       textShadow: b.textShadow || undefined,
       opacity: b.opacity != null ? b.opacity / 100 : undefined,
       textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
-      padding: b.padding ?? 0,
+      padding,
       backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
         ? `#${b.backgroundColor}` : undefined,
       borderRadius: b.borderRadius ?? undefined,
-      overflow: "hidden",
+      overflow: readOnly ? "visible" : "hidden",
       visibility: isEditing ? "hidden" : "visible",
     }}>
       {b.text}
@@ -154,23 +189,37 @@ function TitleRender({ block: b, isEditing }: { block: TitleBlock; isEditing?: b
   );
 }
 
-function TextRender({ block: b, isEditing }: { block: TextBlock; isEditing?: boolean }) {
+function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEditing?: boolean; readOnly?: boolean }) {
+  const padding = b.padding ?? 0;
+  const lineHeight = Math.max(b.lineHeight ?? 1.3, readOnly ? 1.25 : 1.3);
+  const fontSize = readOnly
+    ? fitFontSize({
+        desired: b.size,
+        width: b.w,
+        height: b.h,
+        text: b.text,
+        lineHeight,
+        padding,
+        min: 8,
+      })
+    : b.size;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
       alignItems: "flex-start", justifyContent: b.align,
+      boxSizing: "border-box",
       fontFamily: b.fontFamily ?? "Calibri, sans-serif",
-      fontSize: b.size,
+      fontSize,
       fontStyle: b.italic ? "italic" : "normal",
       color: `#${b.color}`,
       textAlign: b.align,
-      whiteSpace: "pre-wrap", overflow: "hidden",
-      lineHeight: b.lineHeight ?? 1.3,
+      whiteSpace: "pre-wrap", overflow: readOnly ? "visible" : "hidden",
+      lineHeight,
       letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
       textShadow: b.textShadow || undefined,
       opacity: b.opacity != null ? b.opacity / 100 : undefined,
       textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
-      padding: b.padding ?? 0,
+      padding,
       backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
         ? `#${b.backgroundColor}` : undefined,
       borderRadius: b.borderRadius ?? undefined,
@@ -181,7 +230,7 @@ function TextRender({ block: b, isEditing }: { block: TextBlock; isEditing?: boo
   );
 }
 
-function KpiRender({ block: b }: { block: KpiBlock }) {
+function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const { filters } = useSlideFilters();
@@ -246,10 +295,22 @@ function KpiRender({ block: b }: { block: KpiBlock }) {
 
   const cardBg = b.cardBg ?? "F8FAFC";
   const isTransparent = cardBg === "transparent";
+  const valueSize = readOnly
+    ? fitFontSize({
+        desired: b.valueSize,
+        width: b.w,
+        height: Math.max(1, b.h - 44),
+        text: value,
+        lineHeight: 1.18,
+        padding: 24,
+        min: 12,
+      })
+    : b.valueSize;
   return (
     <div style={{
       width: "100%", height: "100%",
       display: "flex", flexDirection: "column", justifyContent: "center",
+      boxSizing: "border-box",
       padding: 12, borderRadius: isTransparent ? 0 : 12,
       background: isTransparent ? "transparent" : `#${cardBg}`,
       border: isTransparent ? "none" : "1px solid #E2E8F0",
@@ -259,8 +320,13 @@ function KpiRender({ block: b }: { block: KpiBlock }) {
         {b.label || measureLabel || "KPI"}
       </div>
       <div style={{
-        fontSize: b.valueSize, fontWeight: 700, color: `#${b.color}`,
-        marginTop: 4, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        fontSize: valueSize, fontWeight: 700, color: `#${b.color}`,
+        marginTop: 4, lineHeight: readOnly ? 1.18 : 1.05,
+        whiteSpace: "nowrap",
+        overflow: readOnly ? "visible" : "hidden",
+        textOverflow: readOnly ? undefined : "ellipsis",
+        paddingBlock: readOnly ? 2 : 0,
+        minHeight: readOnly ? Math.ceil(valueSize * 1.18) : undefined,
       }}>
         {value}
       </div>
