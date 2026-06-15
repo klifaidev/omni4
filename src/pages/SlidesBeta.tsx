@@ -50,7 +50,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
   ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Layers, LayoutTemplate, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Users2, X,
+  GitBranch, GripVertical, Layers, LayoutTemplate, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -74,6 +74,10 @@ import type { BudgetRow } from "@/lib/budget";
 import { SlidePreview, ScaledPreview } from "@/components/pricing/SlidePreview";
 import { CustomSlideEditor } from "@/components/pricing/custom/CustomSlideEditor";
 import { TemplateGallery } from "@/components/pricing/custom/TemplateGallery";
+import { ImportPptxDialog } from "@/components/pricing/custom/ImportPptxDialog";
+import type { PptxSlide } from "@/components/pricing/custom/ImportPptxDialog";
+import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
+import type { ImageBlock } from "@/lib/customSlide";
 import { PresentationMode } from "@/components/pricing/custom/PresentationMode";
 import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import type { SlideTemplate } from "@/lib/slideTemplates";
@@ -1441,6 +1445,7 @@ export default function SlidesBeta() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [dragging, setDragging] = useState<{ source: "catalog"; kind: SlideKind } | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -1716,6 +1721,19 @@ export default function SlidesBeta() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Galeria de templates</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline" size="sm" className="h-8 gap-1.5"
+                      onClick={() => setImportOpen(true)}
+                      aria-label="Importar slides de PowerPoint"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      Importar PPTX
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Importar slides de um arquivo .pptx</TooltipContent>
                 </Tooltip>
                 <SavePresetDialog />
                 <Tooltip>
@@ -2092,6 +2110,46 @@ export default function SlidesBeta() {
         onOpenChange={setGalleryOpen}
         ctx={{ months, budgetMonths }}
         onSelect={applyTemplate}
+      />
+      <ImportPptxDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={(slides: PptxSlide[], selectedIndices: number[]) => {
+          for (const idx of selectedIndices) {
+            const slide = slides[idx];
+            if (!slide) continue;
+            addItem("custom");
+            const state = useSlidesFlow.getState();
+            const created = state.items[state.items.length - 1];
+            if (!created) continue;
+            const imageBlock: ImageBlock = {
+              id: crypto.randomUUID(),
+              kind: "image",
+              x: 0, y: 0,
+              w: CANVAS_W, h: CANVAS_H,
+              z: 1,
+              src: slide.thumbnailDataUrl ?? "",
+              fit: "cover",
+            };
+            updateItem(created.id, (it) =>
+              it.kind === "custom"
+                ? {
+                    ...it,
+                    label: `Slide ${slide.numero} (importado)`,
+                    config: {
+                      background: "FFFFFF",
+                      showHaraldFooter: false,
+                      blocks: slide.thumbnailDataUrl ? [imageBlock] : [],
+                    },
+                  } as typeof it
+                : it,
+            );
+          }
+          setImportOpen(false);
+          toast.success(
+            `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
+          );
+        }}
       />
       <FullscreenCustomEditor
         open={fullscreenOpen}
