@@ -57,7 +57,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
-import { useSlidesFlow } from "@/store/slidesFlow";
+import { useSlidesFlow, type SlidesPreset } from "@/store/slidesFlow";
 import {
   SLIDE_CATALOG, defaultItem, isItemReady, itemToFlow, metaOf,
   type SlideItem, type SlideKind,
@@ -1331,6 +1331,42 @@ function SavePresetDialog() {
   );
 }
 
+function safePresetFileName(name: string): string {
+  const cleaned = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return cleaned || "modelo-slides";
+}
+
+function exportPresetModel(preset: SlidesPreset) {
+  const payload = {
+    schema: "omni4.slidesPresetExport.v1",
+    exportedAt: new Date().toISOString(),
+    preset: {
+      id: preset.id,
+      name: preset.name,
+      description: preset.description,
+      createdAt: preset.createdAt,
+      updatedAt: preset.updatedAt,
+      items: preset.items,
+    },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safePresetFileName(preset.name)}.omni4-modelo.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function PresetsPanel() {
   const presets = useSlidesFlow((s) => s.presets);
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
@@ -1371,6 +1407,16 @@ function PresetsPanel() {
               onClick={() => { overwritePreset(p.id); toast.success(`"${p.name}" atualizado.`); }}
             >
               <Save className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost" size="icon" className="h-6 w-6"
+              title="Exportar modelo"
+              onClick={() => {
+                exportPresetModel(p);
+                toast.success(`Modelo "${p.name}" exportado.`);
+              }}
+            >
+              <Download className="h-3 w-3" />
             </Button>
             <Button
               variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive"
