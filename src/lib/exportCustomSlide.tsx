@@ -191,20 +191,25 @@ async function waitFonts() {
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
 }
 
-async function captureNode(node: HTMLElement, bgColor: string | undefined = "#FFFFFF"): Promise<string> {
-  const width = Math.max(1, Math.ceil(node.offsetWidth || node.getBoundingClientRect().width));
-  const height = Math.max(1, Math.ceil(node.offsetHeight || node.getBoundingClientRect().height));
+async function captureNode(
+  node: HTMLElement,
+  bgColor: string | undefined = "#FFFFFF",
+  opts: { w?: number; h?: number; resetTransform?: boolean } = {},
+): Promise<string> {
+  const width = Math.max(1, opts.w ?? Math.ceil(node.offsetWidth || node.getBoundingClientRect().width));
+  const height = Math.max(1, opts.h ?? Math.ceil(node.offsetHeight || node.getBoundingClientRect().height));
+  const styleOverride: Record<string, string> = {
+    width: `${width}px`,
+    height: `${height}px`,
+  };
+  if (opts.resetTransform) styleOverride.transform = "none";
   return toPng(node, {
     width,
     height,
     pixelRatio: 4,
     backgroundColor: bgColor,
     cacheBust: true,
-    style: {
-      width: `${width}px`,
-      height: `${height}px`,
-      transform: "none",
-    },
+    style: styleOverride,
     filter: (n) => {
       if (!(n instanceof Element)) return true;
       if (n.getAttribute("data-edit-only") === "true") return false;
@@ -226,11 +231,14 @@ async function renderBlockOffscreen(block: CustomBlock): Promise<string> {
   const transparent = isBlockTransparent(block);
   const bgCss = transparent ? "transparent" : "#FFFFFF";
   const host = document.createElement("div");
+  // Posiciona completamente fora do viewport via left negativo, sem transform,
+  // para evitar artefatos de compositing de GPU em elementos translateados.
   host.style.cssText = [
-    "position:fixed", "left:0", "top:0",
+    "position:fixed",
+    `left:-${block.w + 200}px`, "top:0",
     `width:${block.w}px`, `height:${block.h}px`,
     `background:${bgCss}`, "overflow:hidden", "pointer-events:none",
-    "transform:translateX(-150vw)", "z-index:2147483647",
+    "z-index:2147483647",
   ].join(";");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -240,30 +248,27 @@ async function renderBlockOffscreen(block: CustomBlock): Promise<string> {
         style: { width: block.w, height: block.h, background: bgCss, overflow: "hidden" },
       }, React.createElement(BlockRenderer, { block })));
     });
-    // Aguarda render + dados. Recharts usa ResizeObserver (assíncrono) para
-    // dimensionar o ResponsiveContainer; precisamos dar tempo para isso + para
-    // a primeira pintura dos paths SVG. Captura prematura → gráfico em branco.
     await waitFonts();
-    // 4 RAFs garantem ResizeObserver → measure → render → paint
     for (let i = 0; i < 4; i++) {
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
-    await new Promise((r) => setTimeout(r, 350));
-    // Verifica se o SVG do recharts efetivamente tem geometria pintada;
-    // se ainda estiver vazio, espera mais um pouco antes de capturar.
+    await new Promise((r) => setTimeout(r, 500));
     const hasGeom = () => {
       const svgs = host.querySelectorAll("svg");
       for (const svg of svgs) {
         if (svg.querySelector("path, rect, circle, polyline, polygon")) return true;
       }
-      return svgs.length === 0; // sem svg = bloco não-recharts (ok)
+      return svgs.length === 0;
     };
     let tries = 0;
-    while (!hasGeom() && tries < 10) {
-      await new Promise((r) => setTimeout(r, 120));
+    while (!hasGeom() && tries < 15) {
+      await new Promise((r) => setTimeout(r, 150));
       tries++;
     }
-    return await captureNode(host, transparent ? undefined : "#FFFFFF");
+    return await captureNode(host, transparent ? undefined : "#FFFFFF", {
+      w: block.w,
+      h: block.h,
+    });
   } finally {
     setTimeout(() => { try { root.unmount(); } catch {} host.remove(); }, 0);
   }
@@ -284,7 +289,13 @@ async function renderBlockAsImage(
       dataUrl = await renderBlockOffscreen(block);
     } catch (offscreenErr) {
       if (!liveNode) throw offscreenErr;
-      dataUrl = await captureNode(liveNode);
+      // resetTransform remove o scale do editor; dimensões explícitas garantem
+      // que offsetWidth não capture o tamanho escalado.
+      dataUrl = await captureNode(liveNode, "#FFFFFF", {
+        w: block.w,
+        h: block.h,
+        resetTransform: true,
+      });
     }
     slide.addImage({
       data: dataUrl,
