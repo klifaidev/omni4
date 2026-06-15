@@ -691,19 +691,10 @@ function DreRender({ block: blk }: { block: DreBlock }) {
   const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
   const months = useMonthsInfo();
 
-  const filteredRows = useMemo(() => {
-    return sourceRows.filter((r) => {
-      if (blk.canal && r.canal !== blk.canal) return false;
-      if (blk.canalAjustado && r.canalAjustado !== blk.canalAjustado) return false;
-      if (blk.categoria && r.categoria !== blk.categoria) return false;
-      if (blk.subcategoria && r.subcategoria !== blk.subcategoria) return false;
-      if (blk.marca && r.marca !== blk.marca) return false;
-      if (blk.formato && r.formato !== blk.formato) return false;
-      if (blk.regional && r.regional !== blk.regional) return false;
-      if (blk.uf && r.uf !== blk.uf) return false;
-      return true;
-    });
-  }, [sourceRows, blk.canal, blk.canalAjustado, blk.categoria, blk.subcategoria, blk.marca, blk.formato, blk.regional, blk.uf]);
+  const filteredRows = useMemo(
+    () => applyFilters(sourceRows, blk.filters ?? {}, null),
+    [sourceRows, blk.filters],
+  );
 
   const cols = useMemo(() => {
     const allMonths = [...months].sort((a, b) =>

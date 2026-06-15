@@ -435,15 +435,8 @@ export interface DreBlock extends BaseBlock {
     applyTo: "cell" | "text";
     linhasAtivas: string[];
   };
-  // Filtros dimensionais
-  canal?: string | null;
-  canalAjustado?: string | null;
-  categoria?: string | null;
-  subcategoria?: string | null;
-  marca?: string | null;
-  formato?: string | null;
-  regional?: string | null;
-  uf?: string | null;
+  /** Filtros Produto + Comercial (mesma estrutura dos demais blocos). */
+  filters: Filters;
 }
 
 // ---------------------------------------------------------------------------
@@ -696,6 +689,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         textColor: "#1C2430",
         showTotal: true,
         dataSource: "ke30",
+        filters: {},
       } as DreBlock;
     // --- Omni Analytics ---
     case "omni_evolucao_mensal":
