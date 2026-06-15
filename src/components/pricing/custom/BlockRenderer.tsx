@@ -132,30 +132,50 @@ function exportCellContent(
   );
 }
 
-function ExportGridCell({
+function ExportPositionedCell({
   children,
   style,
+  left,
+  top,
+  width,
+  height,
+  padX = 6,
 }: {
   children: React.ReactNode;
   style: React.CSSProperties;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  padX?: number;
 }) {
-  const align = String(style.textAlign ?? "center");
+  const align = style.textAlign ?? "center";
+  const fontSize = typeof style.fontSize === "number" ? style.fontSize : 12;
   return (
     <div style={{
       ...style,
-      minWidth: 0,
-      minHeight: 0,
+      position: "absolute",
+      left: `${left}%`,
+      top: `${top}%`,
+      width: `${width}%`,
+      height: `${height}%`,
       boxSizing: "border-box",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: textAlignToJustify[align] ?? "center",
-      lineHeight: 1.15,
+      padding: 0,
+      overflow: "hidden",
+      lineHeight: 1,
     }}>
       <span style={{
-        minWidth: 0,
+        position: "absolute",
+        left: padX,
+        right: padX,
+        top: "50%",
+        transform: "translateY(-50%)",
+        display: "block",
+        lineHeight: `${fontSize}px`,
+        textAlign: align,
+        whiteSpace: "nowrap",
         overflow: style.overflow,
         textOverflow: style.textOverflow,
-        whiteSpace: style.whiteSpace,
       }}>
         {children}
       </span>
@@ -663,65 +683,115 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
 
   if (readOnly) {
     const valueCols = showCols ? cols.length * measures.length : measures.length;
-    const gridTemplateColumns = `minmax(0, 1.7fr) repeat(${valueCols}, minmax(0, 1fr))`;
     const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
-    const gridTemplateRows = `repeat(${rowCount}, minmax(0, 1fr))`;
+    const rowH = 100 / rowCount;
+    const firstColW = 100 * 1.7 / (1.7 + valueCols);
+    const valueColW = (100 - firstColW) / Math.max(1, valueCols);
+    const leftForValue = (idx: number) => firstColW + idx * valueColW;
 
     const headerCells = [
-      <ExportGridCell key="row-head" style={cellHead}>
+      <ExportPositionedCell key="row-head" style={cellHead} left={0} top={0} width={firstColW} height={rowH} padX={8}>
         {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
-      </ExportGridCell>,
+      </ExportPositionedCell>,
       ...(showCols
-        ? cols.flatMap((c) => measures.map((m) => (
-            <ExportGridCell key={`${c.key}-${m.id}`} style={cellHead}>
+        ? cols.flatMap((c, ci) => measures.map((m, mi) => (
+            <ExportPositionedCell
+              key={`${c.key}-${m.id}`}
+              style={cellHead}
+              left={leftForValue(ci * measures.length + mi)}
+              top={0}
+              width={valueColW}
+              height={rowH}
+              padX={8}
+            >
               {c.values.join(" / ")} · {m.label}
-            </ExportGridCell>
+            </ExportPositionedCell>
           )))
-        : measures.map((m) => (
-            <ExportGridCell key={m.id} style={cellHead}>
+        : measures.map((m, mi) => (
+            <ExportPositionedCell key={m.id} style={cellHead} left={leftForValue(mi)} top={0} width={valueColW} height={rowH} padX={8}>
               {m.label}
-            </ExportGridCell>
+            </ExportPositionedCell>
           ))),
     ];
 
-    const bodyCells = visibleHeaders.flatMap((rh) => [
-      <ExportGridCell key={`${rh.key}-label`} style={cellLabel}>
+    const bodyCells = visibleHeaders.flatMap((rh, ri) => [
+      <ExportPositionedCell key={`${rh.key}-label`} style={cellLabel} left={0} top={(ri + 1) * rowH} width={firstColW} height={rowH} padX={8}>
         {rh.values.join(" / ") || "Total"}
-      </ExportGridCell>,
+      </ExportPositionedCell>,
       ...(showCols
-        ? cols.flatMap((c) => measures.map((m) => {
+        ? cols.flatMap((c, ci) => measures.map((m, mi) => {
             const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
             return (
-              <ExportGridCell key={`${rh.key}-${c.key}-${m.id}`} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}>
+              <ExportPositionedCell
+                key={`${rh.key}-${c.key}-${m.id}`}
+                style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}
+                left={leftForValue(ci * measures.length + mi)}
+                top={(ri + 1) * rowH}
+                width={valueColW}
+                height={rowH}
+                padX={8}
+              >
                 {fmtMeasure(m, v)}
-              </ExportGridCell>
+              </ExportPositionedCell>
             );
           }))
-        : measures.map((m) => {
+        : measures.map((m, mi) => {
             const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
             return (
-              <ExportGridCell key={`${rh.key}-${m.id}`} style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }}>
+              <ExportPositionedCell
+                key={`${rh.key}-${m.id}`}
+                style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }}
+                left={leftForValue(mi)}
+                top={(ri + 1) * rowH}
+                width={valueColW}
+                height={rowH}
+                padX={8}
+              >
                 {fmtMeasure(m, v)}
-              </ExportGridCell>
+              </ExportPositionedCell>
             );
           })),
     ]);
 
     const othersCells = othersRow
       ? [
-          <ExportGridCell key="others-label" style={{ ...cellLabel, fontStyle: "italic", background: "#F1F5F9" }}>
+          <ExportPositionedCell
+            key="others-label"
+            style={{ ...cellLabel, fontStyle: "italic", background: "#F1F5F9" }}
+            left={0}
+            top={(rowCount - 1) * rowH}
+            width={firstColW}
+            height={rowH}
+            padX={8}
+          >
             Outros ({hiddenHeaders.length})
-          </ExportGridCell>,
+          </ExportPositionedCell>,
           ...(showCols
-            ? cols.flatMap((c) => measures.map((m) => (
-                <ExportGridCell key={`oth-${c.key}-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}>
+            ? cols.flatMap((c, ci) => measures.map((m, mi) => (
+                <ExportPositionedCell
+                  key={`oth-${c.key}-${m.id}`}
+                  style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}
+                  left={leftForValue(ci * measures.length + mi)}
+                  top={(rowCount - 1) * rowH}
+                  width={valueColW}
+                  height={rowH}
+                  padX={8}
+                >
                   {fmtMeasure(m, othersRow[c.key][m.id])}
-                </ExportGridCell>
+                </ExportPositionedCell>
               )))
-            : measures.map((m) => (
-                <ExportGridCell key={`oth-${m.id}`} style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}>
+            : measures.map((m, mi) => (
+                <ExportPositionedCell
+                  key={`oth-${m.id}`}
+                  style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}
+                  left={leftForValue(mi)}
+                  top={(rowCount - 1) * rowH}
+                  width={valueColW}
+                  height={rowH}
+                  padX={8}
+                >
                   {fmtMeasure(m, othersRow.__row__[m.id])}
-                </ExportGridCell>
+                </ExportPositionedCell>
               ))),
         ]
       : [];
@@ -731,9 +801,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
         <div style={{
           width: "100%",
           height: "100%",
-          display: "grid",
-          gridTemplateColumns,
-          gridTemplateRows,
+          position: "relative",
         }}>
           {headerCells}
           {bodyCells}
@@ -1015,13 +1083,12 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
   };
 
   if (readOnly) {
-    const colWidths = [
-      "30%",
-      ...cols.map(() => `${(showVar ? 55 : 70) / cols.length}%`),
-      ...(showVar ? ["15%"] : []),
-    ].join(" ");
     const rowCount = 1 + visibleLines.length;
-    const gridTemplateRows = `repeat(${rowCount}, minmax(0, 1fr))`;
+    const rowH = 100 / rowCount;
+    const firstColW = 30;
+    const periodColW = (showVar ? 55 : 70) / cols.length;
+    const varColW = showVar ? 15 : 0;
+    const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
     const headerBase: React.CSSProperties = {
       background: blk.headerColor,
       color: "#FFFFFF",
@@ -1032,26 +1099,34 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     };
 
     const headerCells = [
-      <ExportGridCell key="indicador" style={{ ...headerBase, padding: pad, textAlign: "left" }}>
+      <ExportPositionedCell key="indicador" style={{ ...headerBase, padding: pad, textAlign: "left" }} left={0} top={0} width={firstColW} height={rowH} padX={Math.round(fs * 0.55)}>
         Indicador
-      </ExportGridCell>,
-      ...cols.map((col) => (
-        <ExportGridCell key={col.periodo} style={{ ...headerBase, padding: padVal, textAlign: "center" }}>
+      </ExportPositionedCell>,
+      ...cols.map((col, ci) => (
+        <ExportPositionedCell
+          key={col.periodo}
+          style={{ ...headerBase, padding: padVal, textAlign: "center" }}
+          left={leftForPeriod(ci)}
+          top={0}
+          width={periodColW}
+          height={rowH}
+          padX={Math.round(fs * 0.36)}
+        >
           {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
-        </ExportGridCell>
+        </ExportPositionedCell>
       )),
       ...(showVar && ultimoCol && penultimoCol
         ? [
-            <ExportGridCell key="var" style={{
+            <ExportPositionedCell key="var" style={{
               ...headerBase,
               padding: padVal,
               textAlign: "center",
               borderLeft: "1px solid rgba(255,255,255,0.3)",
-            }}>
+            }} left={firstColW + cols.length * periodColW} top={0} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
               {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
               {" vs "}
               {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
-            </ExportGridCell>,
+            </ExportPositionedCell>,
           ]
         : []),
     ];
@@ -1059,8 +1134,9 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     const bodyCells = visibleLines.flatMap((line, idx) => {
       const isEven = idx % 2 === 0;
       const rowBg = isEven ? "#F8FAFC" : "#FFFFFF";
+      const top = (idx + 1) * rowH;
       const lineCells: React.ReactNode[] = [
-        <ExportGridCell key={`${line.id}-label`} style={{
+        <ExportPositionedCell key={`${line.id}-label`} style={{
           padding: pad,
           fontWeight: line.bold ? 600 : 400,
           color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
@@ -1072,12 +1148,13 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
           fontSize: fs,
           textAlign: "left",
           background: rowBg,
-        }}>
+        }} left={0} top={top} width={firstColW} height={rowH} padX={Math.round(fs * 0.55)}>
           {line.label}
-        </ExportGridCell>,
+        </ExportPositionedCell>,
       ];
 
-      for (const col of cols) {
+      for (let ci = 0; ci < cols.length; ci++) {
+        const col = cols[ci];
         const agg = aggsByCol.get(col.periodo);
         const val = agg ? line.get(agg) : null;
         const isNeg = val !== null && val < 0;
@@ -1094,7 +1171,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
           else cfColor = cc;
         }
         lineCells.push(
-          <ExportGridCell key={`${line.id}-${col.periodo}`} style={{
+          <ExportPositionedCell key={`${line.id}-${col.periodo}`} style={{
             padding: padVal,
             textAlign: "center",
             fontWeight: line.bold ? 600 : 400,
@@ -1104,9 +1181,9 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             background: cfBg ?? rowBg,
             borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
             fontSize: fs,
-          }}>
+          }} left={leftForPeriod(ci)} top={top} width={periodColW} height={rowH} padX={Math.round(fs * 0.36)}>
             {val === null ? "—" : fmt(val, line.kind)}
-          </ExportGridCell>,
+          </ExportPositionedCell>,
         );
       }
 
@@ -1135,7 +1212,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
           display = <>{pctStr} ({fmt(varAbs, line.kind)})</>;
         }
         lineCells.push(
-          <ExportGridCell key={`${line.id}-var`} style={{
+          <ExportPositionedCell key={`${line.id}-var`} style={{
             padding: padVal,
             textAlign: "center",
             fontWeight: line.bold ? 600 : 400,
@@ -1144,9 +1221,9 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
             fontSize: fs,
             background: rowBg,
-          }}>
+          }} left={firstColW + cols.length * periodColW} top={top} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
             {display}
-          </ExportGridCell>,
+          </ExportPositionedCell>,
         );
       }
 
@@ -1158,9 +1235,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
         <div style={{
           width: "100%",
           height: "100%",
-          display: "grid",
-          gridTemplateColumns: colWidths,
-          gridTemplateRows,
+          position: "relative",
           color: blk.textColor,
         }}>
           {headerCells}
