@@ -19,6 +19,7 @@ import { usePricing } from "@/store/pricing";
 import { computeKpiBlock } from "./customKpi";
 import { getCustomCanvas } from "./customCanvasRegistry";
 import { BlockRenderer } from "@/components/pricing/custom/BlockRenderer";
+import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 
 const SLIDE_W_IN = 13.33;
 const SLIDE_H_IN = 7.5;
@@ -194,7 +195,7 @@ async function waitFonts() {
 async function captureNode(
   node: HTMLElement,
   bgColor: string | undefined = "#FFFFFF",
-  opts: { w?: number; h?: number; resetTransform?: boolean } = {},
+  opts: { w?: number; h?: number; resetTransform?: boolean; pixelRatio?: number } = {},
 ): Promise<string> {
   const width = Math.max(1, opts.w ?? Math.ceil(node.offsetWidth || node.getBoundingClientRect().width));
   const height = Math.max(1, opts.h ?? Math.ceil(node.offsetHeight || node.getBoundingClientRect().height));
@@ -206,7 +207,7 @@ async function captureNode(
   return toPng(node, {
     width,
     height,
-    pixelRatio: 4,
+    pixelRatio: opts.pixelRatio ?? 4,
     backgroundColor: bgColor,
     cacheBust: true,
     style: styleOverride,
@@ -244,9 +245,13 @@ async function renderBlockOffscreen(block: CustomBlock): Promise<string> {
   const root = createRoot(host);
   try {
     flushSync(() => {
-      root.render(React.createElement("div", {
-        style: { width: block.w, height: block.h, background: bgCss, overflow: "hidden" },
-      }, React.createElement(BlockRenderer, { block })));
+      root.render(
+        React.createElement(SlideFilterProvider, { slideKey: `export-${block.id}` },
+          React.createElement("div", {
+            style: { width: block.w, height: block.h, background: bgCss, overflow: "hidden" },
+          }, React.createElement(BlockRenderer, { block })),
+        ),
+      );
     });
     await waitFonts();
     for (let i = 0; i < 4; i++) {
@@ -268,6 +273,7 @@ async function renderBlockOffscreen(block: CustomBlock): Promise<string> {
     return await captureNode(host, transparent ? undefined : "#FFFFFF", {
       w: block.w,
       h: block.h,
+      pixelRatio: 2,
     });
   } finally {
     setTimeout(() => { try { root.unmount(); } catch {} host.remove(); }, 0);
@@ -278,24 +284,26 @@ async function renderBlockAsImage(
   slide: PptxGenJS.Slide, block: CustomBlock, slideId?: string,
 ) {
   const box = BOX(block);
+  const transparent = isBlockTransparent(block);
   try {
     const canvas = slideId ? getCustomCanvas(slideId) : null;
     const liveNode = canvas?.querySelector(`[data-block-id="${block.id}"]`) as HTMLElement | null;
     await waitFonts();
     let dataUrl: string;
-    try {
-      // Preferimos o render offscreen: ele fica em 1:1, sem escala do editor e
-      // sem handles/overlays. O DOM ao vivo vira fallback quando necessário.
-      dataUrl = await renderBlockOffscreen(block);
-    } catch (offscreenErr) {
-      if (!liveNode) throw offscreenErr;
-      // resetTransform remove o scale do editor; dimensões explícitas garantem
-      // que offsetWidth não capture o tamanho escalado.
-      dataUrl = await captureNode(liveNode, "#FFFFFF", {
+    if (liveNode) {
+      // Preferir captura do DOM ao vivo: já tem todos os contexts, dados reais
+      // e charts renderizados. resetTransform remove o rotate do bloco (adicionado
+      // pela tela de edição); dimensões explícitas ignoram qualquer scale do editor.
+      dataUrl = await captureNode(liveNode, transparent ? undefined : "#FFFFFF", {
         w: block.w,
         h: block.h,
         resetTransform: true,
+        pixelRatio: 4,
       });
+    } else {
+      // Fallback offscreen: usado quando o slide não está visível no editor
+      // (nenhum CustomSlideEditor montado para esse slideId).
+      dataUrl = await renderBlockOffscreen(block);
     }
     slide.addImage({
       data: dataUrl,
@@ -325,8 +333,19 @@ async function fetchAsDataUrl(url: string): Promise<string> {
 export async function addCustomSlide(
   pptx: PptxGenJS,
   config: CustomSlideConfig,
-  opts?: { slideId?: string },
+  opts?: { slideId?: string; onNavigate?: () => Promise<void> | void },
 ) {
+  // Navega para o slide no editor antes de capturar, garantindo que
+  // CustomSlideEditor esteja montado e liveNode esteja disponível.
+  if (opts?.onNavigate) {
+    await opts.onNavigate();
+    // Aguarda o editor montar e os charts terminarem de renderizar.
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
   const slide = pptx.addSlide();
   if (config.background && config.background !== "transparent") {
     slide.background = { color: config.background };

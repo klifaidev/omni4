@@ -14,6 +14,7 @@ import type { BudgetRow } from "./budget";
 import { applyFilters, calcPVM } from "./analytics";
 import { applyBudgetFilters } from "./budget";
 import { useBudget } from "@/store/budget";
+import { useSlidesFlow } from "@/store/slidesFlow";
 import { monthLabel } from "./format";
 import {
   addBridgePvmSlides,
@@ -229,7 +230,14 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       const id = item.id;
       return {
         build: async (pptx) => {
-          await addCustomSlide(pptx, cfg, { slideId: id });
+          await addCustomSlide(pptx, cfg, {
+            slideId: id,
+            // Navega para o slide antes de capturar, garantindo que o
+            // CustomSlideEditor esteja montado e os liveNodes disponíveis.
+            onNavigate: () => {
+              useSlidesFlow.getState().select(id);
+            },
+          });
         },
       };
     }
