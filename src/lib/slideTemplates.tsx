@@ -193,33 +193,39 @@ const TopSkuLayout = (
 );
 
 // Thumbnail Budget Evo: 4 bandas horizontais Real (vermelho) + Budget (preto tracejado)
-const BudgetEvoFourRows = (
-  <>
-    <rect x="10" y="8" width="90" height="5" rx="1.5" fill={SVG_FG} />
-    <rect x="10" y="14" width="35" height="1.5" fill={SVG_FG} />
-    {([
-      [20, 14], [38, 12], [56, 10], [72, 12],
-    ] as [number, number][]).map(([rowY, barH], i) => (
-      <g key={i}>
-        <rect x="10" y={rowY} width="140" height={barH} rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
-        {i < 3 ? (
-          <>
-            <polyline points={`16,${rowY + barH - 3} 32,${rowY + barH - 7} 48,${rowY + barH - 5} 64,${rowY + barH - 9} 80,${rowY + barH - 6} 96,${rowY + barH - 10} 112,${rowY + barH - 7} 128,${rowY + barH - 11} 144,${rowY + barH - 9}`} fill="none" stroke="#C8102E" strokeWidth="1.5" />
-            <polyline points={`16,${rowY + barH - 4} 32,${rowY + barH - 6} 48,${rowY + barH - 7} 64,${rowY + barH - 8} 80,${rowY + barH - 7} 96,${rowY + barH - 9} 112,${rowY + barH - 8} 128,${rowY + barH - 10} 144,${rowY + barH - 8}`} fill="none" stroke="#1C2430" strokeWidth="1" strokeDasharray="2 1.5" />
-          </>
-        ) : (
-          [16, 32, 48, 64, 80, 96, 112, 128].map((bx, j) => (
-            <g key={j}>
-              <rect x={bx - 2} y={rowY + 2} width={4} height={barH - 4} fill="#C8102E" rx="0.3" />
-              <rect x={bx + 3} y={rowY + 3} width={4} height={barH - 5} fill="#1C2430" rx="0.3" />
-            </g>
-          ))
-        )}
-      </g>
-    ))}
-    <rect x="0" y="86" width="160" height="4" fill="#C8102E" />
-  </>
-);
+function BudgetEvoThumb({ className }: { className?: string }) {
+  return (
+    <Frame className={className}>
+      {/* Título */}
+      <rect x="10" y="8" width="90" height="5" rx="1.5" fill={SVG_FG} />
+      <rect x="10" y="14" width="35" height="1.5" fill={SVG_FG} />
+      {/* Linha 1: CM ABS (rowY=20, barH=14) */}
+      <rect x="10" y="20" width="140" height="14" rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
+      <polyline points="16,31 32,27 48,29 64,25 80,28 96,24 112,27 128,23 144,25" fill="none" stroke="#C8102E" strokeWidth="1.5" />
+      <polyline points="16,30 32,28 48,27 64,26 80,27 96,25 112,26 128,24 144,26" fill="none" stroke="#1C2430" strokeWidth="1" strokeDasharray="2 1.5" />
+      {/* Linha 2: CM% (rowY=38, barH=12) */}
+      <rect x="10" y="38" width="140" height="12" rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
+      <polyline points="16,47 32,43 48,45 64,41 80,44 96,40 112,43 128,39 144,41" fill="none" stroke="#C8102E" strokeWidth="1.5" />
+      <polyline points="16,46 32,44 48,43 64,42 80,43 96,41 112,42 128,40 144,42" fill="none" stroke="#1C2430" strokeWidth="1" strokeDasharray="2 1.5" />
+      {/* Linha 3: CM/Kg (rowY=56, barH=10) */}
+      <rect x="10" y="56" width="140" height="10" rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
+      <polyline points="16,63 32,59 48,61 64,57 80,60 96,56 112,59 128,55 144,57" fill="none" stroke="#C8102E" strokeWidth="1.5" />
+      <polyline points="16,62 32,60 48,59 64,58 80,59 96,57 112,58 128,56 144,58" fill="none" stroke="#1C2430" strokeWidth="1" strokeDasharray="2 1.5" />
+      {/* Linha 4: Volume (rowY=72, barH=12) — barras */}
+      <rect x="10" y="72" width="140" height="12" rx="0.5" fill="hsl(var(--card))" stroke={SVG_LINE} strokeWidth="0.4" />
+      <rect x="14" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="19" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="30" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="35" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="46" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="51" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="62" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="67" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="78" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="83" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="94" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="99" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="110" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="115" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      <rect x="126" y="74" width="4" height="8" fill="#C8102E" rx="0.3" /><rect x="131" y="75" width="4" height="7" fill="#1C2430" rx="0.3" />
+      {/* Rodapé */}
+      <rect x="0" y="86" width="160" height="4" fill="#C8102E" />
+    </Frame>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Budget Evo Canvas template — block factory
@@ -395,6 +401,21 @@ const Multi = (parts: React.ReactNode[]) => (
 export const SLIDE_TEMPLATES: SlideTemplate[] = [
   // ------- Resultado Mensal -------
   {
+    id: "budget-evo-canvas",
+    name: "Budget Evolutivo",
+    description: "Overview de CM e Volume Real vs Budget editável no canvas",
+    category: "Resultado Mensal",
+    thumbnail: BudgetEvoThumb,
+    build: (_ctx) => [
+      mk("custom", (it) => {
+        if (it.kind !== "custom") return it;
+        it.config = buildBudgetEvoConfig();
+        it.label = "Budget Evolutivo";
+        return it;
+      }),
+    ],
+  },
+  {
     id: "resultado-mensal-completo",
     name: "Resultado Mensal Completo",
     description: "Capa, Bridge PVM, Budget Evolutivo, KPIs e Top SKUs.",
@@ -416,21 +437,6 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
         placeTitle(z + 1, "Top SKUs por margem"),
         placeTopSku(z + 2, 40, 1240, "Top 10 SKUs", "cm", 10),
       ]),
-    ],
-  },
-  {
-    id: "budget-evo-canvas",
-    name: "Budget Evolutivo",
-    description: "Overview de CM e Volume Real vs Budget editável no canvas",
-    category: "Resultado Mensal",
-    thumbnail: ({ className }) => Page(BudgetEvoFourRows, className),
-    build: (_ctx) => [
-      mk("custom", (it) => {
-        if (it.kind !== "custom") return it;
-        it.config = buildBudgetEvoConfig();
-        it.label = "Budget Evolutivo";
-        return it;
-      }),
     ],
   },
   {
