@@ -150,6 +150,10 @@ function ExportPositionedCell({
   padX?: number;
 }) {
   const align = style.textAlign ?? "center";
+  const fontSize = typeof style.fontSize === "number" ? style.fontSize : 12;
+  const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+  const textX = align === "left" ? "0%" : align === "right" ? "100%" : "50%";
+  const dx = align === "left" ? padX : align === "right" ? -padX : 0;
   return (
     <div style={{
       ...style,
@@ -159,25 +163,100 @@ function ExportPositionedCell({
       width: `${width}%`,
       height: `${height}%`,
       boxSizing: "border-box",
-      padding: `0 ${padX}px`,
+      padding: 0,
       overflow: "hidden",
       lineHeight: 1.15,
       display: "flex",
       alignItems: "center",
       justifyContent: textAlignToJustify[String(align)] ?? "center",
     }}>
-      <span style={{
-        display: "block",
-        width: "100%",
-        lineHeight: 1.15,
-        textAlign: align,
-        whiteSpace: "nowrap",
-        overflow: style.overflow,
-        textOverflow: style.textOverflow,
-      }}>
-        {children}
-      </span>
+      <svg width="100%" height="100%" style={{ display: "block", overflow: "hidden" }}>
+        <text
+          x={textX}
+          dx={dx}
+          y="50%"
+          dominantBaseline="middle"
+          alignmentBaseline="middle"
+          textAnchor={textAnchor}
+          fontFamily="Calibri, Arial, sans-serif"
+          fontSize={`${fontSize}px`}
+          fontWeight={style.fontWeight as number | string | undefined}
+          fontStyle={style.fontStyle as string | undefined}
+          fill={cssColor(style.color)}
+        >
+          {children}
+        </text>
+      </svg>
     </div>
+  );
+}
+
+function cssColor(value: React.CSSProperties["color"], fallback = "#1C2430"): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function cssFill(value: React.CSSProperties["background"], fallback = "transparent"): string {
+  if (typeof value !== "string") return fallback;
+  if (value.startsWith("linear-gradient")) return fallback;
+  return value;
+}
+
+function SvgExportCell({
+  x,
+  y,
+  w,
+  h,
+  children,
+  style,
+  clipId,
+  padX = 6,
+  fontFamily = "Calibri, Arial, sans-serif",
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  children: React.ReactNode;
+  style: React.CSSProperties;
+  clipId: string;
+  padX?: number;
+  fontFamily?: string;
+}) {
+  const align = style.textAlign ?? "center";
+  const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+  const textX = align === "left" ? x + padX : align === "right" ? x + w - padX : x + w / 2;
+  const bg = cssFill(style.backgroundColor ?? style.background, "transparent");
+  const fontSize = typeof style.fontSize === "number" ? style.fontSize : 12;
+  return (
+    <g>
+      <clipPath id={clipId}>
+        <rect x={x} y={y} width={w} height={h} />
+      </clipPath>
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill={bg}
+        stroke="#E2E8F0"
+        strokeWidth={0.6}
+      />
+      <text
+        x={textX}
+        y={y + h / 2}
+        clipPath={`url(#${clipId})`}
+        dominantBaseline="middle"
+        alignmentBaseline="middle"
+        textAnchor={textAnchor}
+        fontFamily={fontFamily}
+        fontSize={fontSize}
+        fontWeight={style.fontWeight as number | string | undefined}
+        fontStyle={style.fontStyle as string | undefined}
+        fill={cssColor(style.color)}
+      >
+        {children}
+      </text>
+    </g>
   );
 }
 
@@ -391,6 +470,61 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         min: 12,
       })
     : b.valueSize;
+  if (readOnly) {
+    const fill = isTransparent ? "transparent" : `#${cardBg}`;
+    const stroke = isTransparent ? "transparent" : "#E2E8F0";
+    const labelText = b.label || measureLabel || "KPI";
+    const footerText = b.source === "dynamic"
+      ? `${measureLabel ?? ""}${b.periodMode && b.periodMode !== "all" && b.periodValue
+          ? ` · ${b.periodValue}`
+          : b.periodMode === "all" ? " · Todos os períodos" : ""}`
+      : "";
+    return (
+      <svg width="100%" height="100%" viewBox={`0 0 ${b.w} ${b.h}`} preserveAspectRatio="none" style={{ display: "block", overflow: "visible" }}>
+        <rect x={0.5} y={0.5} width={Math.max(1, b.w - 1)} height={Math.max(1, b.h - 1)} rx={isTransparent ? 0 : 12} fill={fill} stroke={stroke} />
+        <text
+          x={12}
+          y={Math.max(20, b.h * 0.28)}
+          dominantBaseline="middle"
+          alignmentBaseline="middle"
+          textAnchor="start"
+          fontFamily="Calibri, Arial, sans-serif"
+          fontSize={14}
+          letterSpacing={1}
+          fill="#64748B"
+        >
+          {labelText.toUpperCase()}
+        </text>
+        <text
+          x={12}
+          y={b.h / 2 + 6}
+          dominantBaseline="middle"
+          alignmentBaseline="middle"
+          textAnchor="start"
+          fontFamily="Calibri, Arial, sans-serif"
+          fontSize={valueSize}
+          fontWeight={700}
+          fill={`#${b.color}`}
+        >
+          {value}
+        </text>
+        {footerText && (
+          <text
+            x={12}
+            y={Math.max(16, b.h - 18)}
+            dominantBaseline="middle"
+            alignmentBaseline="middle"
+            textAnchor="start"
+            fontFamily="Calibri, Arial, sans-serif"
+            fontSize={11}
+            fill="#94A3B8"
+          >
+            {footerText}
+          </text>
+        )}
+      </svg>
+    );
+  }
   return (
     <div style={{
       width: "100%", height: "100%",
