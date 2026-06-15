@@ -61,7 +61,7 @@ async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> 
     await new Promise((r) => setTimeout(r, 350));
 
     const canvas = await html2canvas(host, {
-      scale: 2,
+      scale: 3,
       useCORS: true,
       backgroundColor: "#FFFFFF",
       width: SLIDE_W,
@@ -99,9 +99,9 @@ export async function exportToPdf(slideItems: SlideItem[], fileName: string): Pr
     toast.loading(`Gerando slide ${i + 1} de ${slideItems.length}...`, { id: progressId });
     try {
       const canvas = await renderSlideToCanvas(slideItems[i]);
-      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const imgData = canvas.toDataURL("image/png");
       if (i > 0) pdf.addPage([pageW, pageH], "landscape");
-      pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
+      pdf.addImage(imgData, "PNG", 0, 0, pageW, pageH, undefined, "SLOW");
     } catch (err) {
       console.error("PDF slide capture failed", i, err);
       failures++;

@@ -34,10 +34,16 @@ const BOX = (b: CustomBlock) => ({
 // ---------------------------------------------------------------------------
 // Renderizadores nativos (texto / KPI / forma / imagem)
 // ---------------------------------------------------------------------------
+function resolveFontFace(fontFamily: string | undefined): string {
+  if (!fontFamily) return "Calibri";
+  // fontFamily pode vir como "Inter, sans-serif" — pegar só o primeiro token
+  return fontFamily.split(",")[0].trim().replace(/['"]/g, "") || "Calibri";
+}
+
 function renderTitle(slide: PptxGenJS.Slide, b: TitleBlock) {
   slide.addText(b.text || "", {
     ...BOX(b),
-    fontFace: "Calibri",
+    fontFace: resolveFontFace(b.fontFamily),
     fontSize: Math.max(8, Math.round(b.size * 0.75)),
     bold: b.bold, italic: b.italic ?? false, color: b.color, align: b.align,
     valign: "middle", margin: 0, wrap: true, fit: "shrink",
@@ -47,7 +53,7 @@ function renderTitle(slide: PptxGenJS.Slide, b: TitleBlock) {
 function renderText(slide: PptxGenJS.Slide, b: TextBlock) {
   slide.addText(b.text || "", {
     ...BOX(b),
-    fontFace: "Calibri",
+    fontFace: resolveFontFace(b.fontFamily),
     fontSize: Math.max(8, Math.round(b.size * 0.75)),
     italic: b.italic ?? false, color: b.color, align: b.align,
     valign: "top", margin: 0, wrap: true,
@@ -191,7 +197,7 @@ async function captureNode(node: HTMLElement, bgColor: string | undefined = "#FF
   return toPng(node, {
     width,
     height,
-    pixelRatio: 2,
+    pixelRatio: 4,
     backgroundColor: bgColor,
     cacheBust: true,
     style: {
