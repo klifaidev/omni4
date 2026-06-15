@@ -33,7 +33,7 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, StickyNote,
-  Eye, EyeOff, GripVertical, Minus, Plus,
+  Eye, EyeOff, GripVertical, Minus,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";

@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   LineChart,
   Network,
+  PackageSearch,
   Presentation,
   Radar,
   SlidersHorizontal,
@@ -36,6 +37,7 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/alertas": { label: "Central de alertas", icon: BellRing },
   "/filtros": { label: "Filtros", icon: SlidersHorizontal },
   "/demanda": { label: "Demanda", icon: TrendingUp },
+  "/estoque": { label: "Estoque", icon: PackageSearch },
   "/farol": { label: "Farol de Cadastro", icon: Radar },
 };
 

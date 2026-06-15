@@ -28,6 +28,7 @@ import {
   Monitor,
   Moon,
   Network,
+  PackageSearch,
   Presentation,
   Radar,
   Search,
@@ -64,6 +65,7 @@ const workItems = [
   { to: "/alertas", label: "Alertas", icon: BellRing, alertBadge: true },
   { to: "/atividades", label: "Atividades", icon: KanbanSquare },
   { to: "/demanda", label: "Demanda", icon: TrendingUp },
+  { to: "/estoque", label: "Estoque", icon: PackageSearch },
   { to: "/slides", label: "Slides", icon: Presentation },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];
 
