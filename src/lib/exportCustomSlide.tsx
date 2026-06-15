@@ -41,6 +41,7 @@ function renderTitle(slide: PptxGenJS.Slide, b: TitleBlock) {
     fontSize: Math.max(8, Math.round(b.size * 0.75)),
     bold: b.bold, italic: b.italic ?? false, color: b.color, align: b.align,
     valign: "middle", margin: 0, wrap: true, fit: "shrink",
+    rotate: b.rotation ?? 0,
   });
 }
 function renderText(slide: PptxGenJS.Slide, b: TextBlock) {
@@ -50,6 +51,7 @@ function renderText(slide: PptxGenJS.Slide, b: TextBlock) {
     fontSize: Math.max(8, Math.round(b.size * 0.75)),
     italic: b.italic ?? false, color: b.color, align: b.align,
     valign: "top", margin: 0, wrap: true,
+    rotate: b.rotation ?? 0,
   });
 }
 function renderKpi(slide: PptxGenJS.Slide, b: KpiBlock,
@@ -169,6 +171,7 @@ function renderImage(slide: PptxGenJS.Slide, b: ImageBlock) {
     path: b.src.startsWith("data:") ? undefined : b.src,
     ...box,
     sizing: { type: b.fit === "cover" ? "cover" : "contain", w: box.w, h: box.h },
+    rotate: b.rotation ?? 0,
   });
 }
 
