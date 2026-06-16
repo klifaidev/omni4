@@ -86,12 +86,13 @@ export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
 
 export const CUSTOM_TABLE_DIMS = ALL_DIMENSIONS;
 
-function fmtMeasure(m: PivotMeasure, v: number): string {
-  if (!isFinite(v)) return "—";
-  if (m.format === "currency") return formatBRL(v);
-  if (m.format === "percent") return `${(v * 100).toFixed(1)}%`;
-  if (m.format === "tons") return Math.round(v).toLocaleString("pt-BR");
-  return v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+function fmtMeasure(m: PivotMeasure, v: number | null | undefined): string {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!isFinite(n)) return "—";
+  if (m.format === "currency") return formatBRL(n);
+  if (m.format === "percent") return `${(n * 100).toFixed(1)}%`;
+  if (m.format === "tons") return Math.round(n).toLocaleString("pt-BR");
+  return n.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
 const justifyMap: Record<string, string> = { left: "flex-start", center: "center", right: "flex-end" };
@@ -281,7 +282,55 @@ function fitFontSize(opts: {
   return Math.max(min, Math.floor(Math.min(opts.desired, byHeight, byWidth)));
 }
 
+class BlockErrorBoundary extends React.Component<
+  { block: CustomBlock; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(prevProps: { block: CustomBlock }) {
+    if (prevProps.block !== this.props.block && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 12,
+        boxSizing: "border-box",
+        background: "#FEF2F2",
+        border: "1px dashed #FCA5A5",
+        color: "#991B1B",
+        fontFamily: "Calibri, Arial, sans-serif",
+        fontSize: 12,
+        textAlign: "center",
+      }}>
+        Nao foi possivel renderizar este bloco com os filtros atuais.
+      </div>
+    );
+  }
+}
+
 export function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+  return (
+    <BlockErrorBoundary block={block}>
+      <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} />
+    </BlockErrorBoundary>
+  );
+}
+
+function BlockRendererInner({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
   switch (block.kind) {
     case "title":  return <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />;
     case "text":   return <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />;
@@ -912,7 +961,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                   height={rowH}
                   padX={8}
                 >
-                  {fmtMeasure(m, othersRow[c.key][m.id])}
+                  {fmtMeasure(m, othersRow[c.key]?.[m.id])}
                 </ExportPositionedCell>
               )))
             : measures.map((m, mi) => (
@@ -979,7 +1028,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
               {showCols
                 ? cols.flatMap((c) => measures.map((m) => (
-                    tableCell("td", fmtMeasure(m, othersRow[c.key][m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
+                    tableCell("td", fmtMeasure(m, othersRow[c.key]?.[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
                   )))
                 : measures.map((m) => (
                     tableCell("td", fmtMeasure(m, othersRow.__row__[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${m.id}`)
