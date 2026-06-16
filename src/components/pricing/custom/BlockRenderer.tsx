@@ -1757,15 +1757,15 @@ function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlo
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8 }}>
       {b.showTitle && omniTitle(b.title || "Heróis e Ofensores")}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden", paddingTop: 2 }}>
         {showHero && (
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>Heróis</div>
             <AbcBar rows={rows} variant="hero" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
         {showVillain && (
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>Ofensores</div>
             <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>

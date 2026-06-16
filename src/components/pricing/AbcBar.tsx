@@ -32,7 +32,7 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
   const text = variant === "hero" ? "text-success" : "text-destructive";
 
   return (
-    <ul className="space-y-3">
+    <ul className="flex h-full min-h-0 flex-col justify-between gap-2">
       {top.map((r, i) => {
         const value =
           sortBy === "volume" ? r.volumeKg : sortBy === "margemPct" ? r.margemPct : r.margem;
@@ -45,13 +45,13 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
             : formatBRL(r.margem, { compact: true });
         return (
           <li key={r.key} className="animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-            <div className="mb-1 flex items-start justify-between gap-2 text-[11px] leading-tight">
+            <div className="mb-1 flex items-start justify-between gap-2 text-[11px]">
               <span
                 className="min-w-0 flex-1 break-words font-medium text-foreground/90"
                 style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
+                  display: "block",
+                  lineHeight: 1.2,
+                  maxHeight: "2.5em",
                   overflow: "hidden",
                 }}
                 title={r.key}
