@@ -27,6 +27,7 @@ import {
   Calendar,
   CalendarDays,
   Info,
+  MapPin,
   TrendingDown,
   TrendingUp,
   X,
@@ -51,7 +52,44 @@ type PeriodMode = "month" | "fy";
 type RankingMetric = "preco" | "mix" | "total";
 type EvolDim = "total" | "marca" | "canal";
 
+type UfMapPoint = {
+  uf: string;
+  label: string;
+  x: number;
+  y: number;
+};
+
 const fmtRsKg = (v: number) => formatBRL(v, { digits: 2 });
+
+const UF_MAP_POINTS: UfMapPoint[] = [
+  { uf: "RR", label: "Roraima", x: 322, y: 48 },
+  { uf: "AP", label: "Amapá", x: 466, y: 88 },
+  { uf: "AM", label: "Amazonas", x: 230, y: 154 },
+  { uf: "PA", label: "Pará", x: 432, y: 170 },
+  { uf: "AC", label: "Acre", x: 110, y: 285 },
+  { uf: "RO", label: "Rondônia", x: 220, y: 292 },
+  { uf: "MT", label: "Mato Grosso", x: 350, y: 330 },
+  { uf: "TO", label: "Tocantins", x: 502, y: 302 },
+  { uf: "MA", label: "Maranhão", x: 595, y: 222 },
+  { uf: "PI", label: "Piauí", x: 650, y: 270 },
+  { uf: "CE", label: "Ceará", x: 720, y: 248 },
+  { uf: "RN", label: "Rio Grande do Norte", x: 790, y: 260 },
+  { uf: "PB", label: "Paraíba", x: 806, y: 298 },
+  { uf: "PE", label: "Pernambuco", x: 778, y: 330 },
+  { uf: "AL", label: "Alagoas", x: 760, y: 366 },
+  { uf: "SE", label: "Sergipe", x: 742, y: 402 },
+  { uf: "BA", label: "Bahia", x: 642, y: 400 },
+  { uf: "GO", label: "Goiás", x: 470, y: 416 },
+  { uf: "DF", label: "Distrito Federal", x: 520, y: 396 },
+  { uf: "MS", label: "Mato Grosso do Sul", x: 380, y: 505 },
+  { uf: "MG", label: "Minas Gerais", x: 570, y: 500 },
+  { uf: "ES", label: "Espírito Santo", x: 680, y: 514 },
+  { uf: "RJ", label: "Rio de Janeiro", x: 626, y: 568 },
+  { uf: "SP", label: "São Paulo", x: 516, y: 585 },
+  { uf: "PR", label: "Paraná", x: 458, y: 660 },
+  { uf: "SC", label: "Santa Catarina", x: 500, y: 730 },
+  { uf: "RS", label: "Rio Grande do Sul", x: 468, y: 820 },
+];
 
 export default function Preco() {
   usePageTitle("Análise de Preço");
@@ -67,6 +105,7 @@ export default function Preco() {
   const [comp, setComp] = useState<string | null>(null);
   const [rankingMetric, setRankingMetric] = useState<RankingMetric>("preco");
   const [evolDim, setEvolDim] = useState<EvolDim>("total");
+  const [selectedUf, setSelectedUf] = useState<string | null>(null);
   const [showFilterNote, setShowFilterNote] = useState(true);
 
   const options = useMemo(
@@ -221,6 +260,14 @@ export default function Preco() {
           <>
             <DecompositionKpis result={result} />
             <DecompositionCards result={result} />
+            <PriceUfMapSection
+              rows={filtered}
+              base={base}
+              comp={comp}
+              periodMode={periodMode}
+              selectedUf={selectedUf}
+              onSelectedUfChange={setSelectedUf}
+            />
             <ReadingCard result={result} />
             <RankingSection
               result={result}
@@ -484,6 +531,279 @@ function ReadingCard({ result }: { result: PriceDecompositionResult }) {
         ))}
       </div>
     </GlassCard>
+  );
+}
+
+function PriceUfMapSection({
+  rows,
+  base,
+  comp,
+  periodMode,
+  selectedUf,
+  onSelectedUfChange,
+}: {
+  rows: ReturnType<typeof applyFilters>;
+  base: string | null;
+  comp: string | null;
+  periodMode: PeriodMode;
+  selectedUf: string | null;
+  onSelectedUfChange: (uf: string | null) => void;
+}) {
+  const periodMatches = (periodo: string, fy: string, target: string | null) => {
+    if (!target) return false;
+    return periodMode === "fy" ? fy === target : periodo === target;
+  };
+
+  const data = useMemo(() => {
+    if (!comp) return [];
+    const compByUf = new Map<string, { rol: number; volumeKg: number }>();
+    const baseByUf = new Map<string, { rol: number; volumeKg: number }>();
+
+    for (const row of rows) {
+      const uf = (row.uf ?? "").trim().toUpperCase();
+      if (!uf) continue;
+      if (periodMatches(row.periodo, row.fy, comp)) {
+        const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0 };
+        cur.rol += row.rol;
+        cur.volumeKg += row.volumeKg;
+        compByUf.set(uf, cur);
+      }
+      if (periodMatches(row.periodo, row.fy, base)) {
+        const cur = baseByUf.get(uf) ?? { rol: 0, volumeKg: 0 };
+        cur.rol += row.rol;
+        cur.volumeKg += row.volumeKg;
+        baseByUf.set(uf, cur);
+      }
+    }
+
+    const totalVolume = Array.from(compByUf.values()).reduce((acc, cur) => acc + cur.volumeKg, 0);
+    return UF_MAP_POINTS.map((point) => {
+      const compValue = compByUf.get(point.uf) ?? { rol: 0, volumeKg: 0 };
+      const baseValue = baseByUf.get(point.uf);
+      const precoMedio = compValue.volumeKg > 0 ? compValue.rol / compValue.volumeKg : 0;
+      const precoBase =
+        baseValue && baseValue.volumeKg > 0 ? baseValue.rol / baseValue.volumeKg : null;
+      return {
+        ...point,
+        rol: compValue.rol,
+        volumeKg: compValue.volumeKg,
+        precoMedio,
+        volumeShare: totalVolume > 0 ? compValue.volumeKg / totalVolume : 0,
+        precoBase,
+        variacaoPreco: precoBase !== null ? precoMedio - precoBase : null,
+      };
+    }).filter((point) => point.volumeKg > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, base, comp, periodMode]);
+
+  const explicitSelection = data.find((point) => point.uf === selectedUf) ?? null;
+  const selected = explicitSelection ?? [...data].sort((a, b) => b.volumeKg - a.volumeKg)[0] ?? null;
+  const prices = data.map((point) => point.precoMedio).filter((value) => value > 0);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const maxShare = Math.max(...data.map((point) => point.volumeShare), 0);
+  const ranked = [...data].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
+
+  const colorForPrice = (value: number) => {
+    const span = maxPrice - minPrice;
+    const t = span > 0 ? (value - minPrice) / span : 0.5;
+    const hue = 210 - t * 210;
+    return `hsl(${hue} 85% 52%)`;
+  };
+
+  const radiusForShare = (share: number) => {
+    if (maxShare <= 0) return 12;
+    return 12 + Math.sqrt(share / maxShare) * 24;
+  };
+
+  return (
+    <GlassCard className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-primary" />
+            <h2 className="text-lg font-medium">Preço médio por UF</h2>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Cor = PM R$/kg no período de comparação. Tamanho = importância de volume da UF.
+          </p>
+        </div>
+        {explicitSelection && (
+          <button
+            type="button"
+            onClick={() => onSelectedUfChange(null)}
+            className="rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          >
+            Limpar seleção
+          </button>
+        )}
+      </header>
+
+      {data.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
+          Não há UF com volume no período selecionado para montar o mapa.
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+          <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
+            <svg
+              viewBox="0 0 900 900"
+              role="img"
+              aria-label="Mapa analítico de preço médio por UF"
+              className="h-[520px] w-full"
+            >
+              <path
+                d="M330 30 L470 70 L565 150 L690 230 L810 280 L760 410 L695 510 L645 610 L540 660 L505 820 L395 855 L335 725 L210 665 L120 565 L95 420 L55 320 L150 185 Z"
+                fill="hsl(var(--secondary) / 0.32)"
+                stroke="hsl(var(--border))"
+                strokeWidth="2"
+              />
+              {data.map((point) => {
+                const selectedPoint = selected?.uf === point.uf;
+                const radius = radiusForShare(point.volumeShare);
+                return (
+                  <g
+                    key={point.uf}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${point.label}: ${fmtRsKg(point.precoMedio)}/kg, ${formatPct(point.volumeShare)} do volume`}
+                    onClick={() => onSelectedUfChange(point.uf)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectedUfChange(point.uf);
+                      }
+                    }}
+                    className="cursor-pointer outline-none"
+                  >
+                    <circle
+                      cx={point.x}
+                      cy={point.y}
+                      r={radius + (selectedPoint ? 7 : 0)}
+                      fill={selectedPoint ? "hsl(var(--primary) / 0.18)" : "transparent"}
+                    />
+                    <circle
+                      cx={point.x}
+                      cy={point.y}
+                      r={radius}
+                      fill={colorForPrice(point.precoMedio)}
+                      opacity={selectedPoint ? 1 : 0.82}
+                      stroke={selectedPoint ? "hsl(var(--foreground))" : "hsl(var(--background))"}
+                      strokeWidth={selectedPoint ? 4 : 2}
+                    >
+                      <title>
+                        {point.label} • {fmtRsKg(point.precoMedio)}/kg • {formatPct(point.volumeShare)} do volume
+                      </title>
+                    </circle>
+                    <text
+                      x={point.x}
+                      y={point.y + 4}
+                      textAnchor="middle"
+                      className="select-none fill-background text-[22px] font-semibold"
+                    >
+                      {point.uf}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-muted-foreground">
+              <span>PM menor: {fmtRsKg(minPrice)}/kg</span>
+              <div className="h-2 w-48 rounded-full bg-gradient-to-r from-blue-500 via-emerald-500 to-red-500" />
+              <span>PM maior: {fmtRsKg(maxPrice)}/kg</span>
+            </div>
+          </div>
+
+          <aside className="space-y-4">
+            {selected && (
+              <div className="rounded-lg border border-border/60 bg-background/70 p-4">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  UF selecionada
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-3">
+                  <h3 className="text-xl font-semibold">{selected.label}</h3>
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
+                    {selected.uf}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <MapMetric label="Preço médio" value={`${fmtRsKg(selected.precoMedio)}/kg`} />
+                  <MapMetric
+                    label="Importância no volume"
+                    value={formatPct(selected.volumeShare)}
+                    helper={`${formatNum(selected.volumeKg / 1000, 1)} t`}
+                  />
+                  <MapMetric
+                    label="Variação vs. base"
+                    value={
+                      selected.variacaoPreco === null
+                        ? "Sem base"
+                        : `${selected.variacaoPreco >= 0 ? "+" : "−"}${fmtRsKg(Math.abs(selected.variacaoPreco))}/kg`
+                    }
+                    tone={
+                      selected.variacaoPreco === null
+                        ? "neutral"
+                        : selected.variacaoPreco >= 0
+                        ? "positive"
+                        : "negative"
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-border/60 bg-background/70 p-4">
+              <h3 className="text-sm font-medium">UFs mais relevantes em volume</h3>
+              <div className="mt-3 space-y-3">
+                {ranked.map((point) => (
+                  <button
+                    key={point.uf}
+                    type="button"
+                    onClick={() => onSelectedUfChange(point.uf)}
+                    className="grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-secondary/50"
+                  >
+                    <span className="rounded-md bg-secondary px-2 py-1 text-center text-xs font-semibold">
+                      {point.uf}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{point.label}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {formatPct(point.volumeShare)} do volume
+                      </span>
+                    </span>
+                    <span className="text-sm font-medium tabular-nums">
+                      {fmtRsKg(point.precoMedio)}/kg
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+function MapMetric({
+  label,
+  value,
+  helper,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+  tone?: "positive" | "negative" | "neutral";
+}) {
+  const color =
+    tone === "positive" ? "text-success" : tone === "negative" ? "text-destructive" : "text-foreground";
+  return (
+    <div className="rounded-md bg-secondary/40 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 text-lg font-semibold tabular-nums ${color}`}>{value}</div>
+      {helper && <div className="text-xs text-muted-foreground">{helper}</div>}
+    </div>
   );
 }
 
