@@ -29,7 +29,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { formatPct, formatTon } from "@/lib/format";
+import { formatPct, formatTon, formatNum } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
