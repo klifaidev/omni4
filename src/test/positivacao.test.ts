@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPositivacaoSeries } from "@/lib/positivacao";
+import { buildPositivacaoSeries, buildPositivacaoTotal } from "@/lib/positivacao";
 import type { PricingRow } from "@/lib/types";
 
 function row(patch: Partial<PricingRow>): PricingRow {
@@ -33,6 +33,16 @@ describe("buildPositivacaoSeries", () => {
 
     expect(series.table[0].key).toBe("Chocolates");
     expect(series.table[0].ultimo).toBe(2);
+  });
+
+  it("calcula total geral sem duplicar cliente em multiplas aberturas", () => {
+    const total = buildPositivacaoTotal([
+      row({ cliente: "100 Cliente A", marca: "Melken", categoria: "Barras" }),
+      row({ cliente: "100 Cliente A", marca: "Harald", categoria: "Coberturas" }),
+      row({ cliente: "200 Cliente B", marca: "Melken", categoria: "Barras" }),
+    ]);
+
+    expect(total[0].clientes).toBe(2);
   });
 
   it("monta evolutivo dos meses mais recentes", () => {

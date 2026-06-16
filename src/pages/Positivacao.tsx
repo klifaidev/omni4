@@ -20,6 +20,7 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { formatNum } from "@/lib/format";
 import {
   buildPositivacaoSeries,
+  buildPositivacaoTotal,
   POSITIVACAO_DIMS,
   type PositivacaoDim,
   type PositivacaoSeries,
@@ -52,11 +53,13 @@ export default function Positivacao() {
     for (const dim of POSITIVACAO_DIMS) out[dim.key] = buildPositivacaoSeries(rows, dim.key, 13);
     return out;
   }, [rows]);
+  const totalSeries = useMemo(() => buildPositivacaoTotal(rows, 13), [rows]);
 
   const selectedSeries = allSeries[chartDim];
-  const lastMonth = selectedSeries?.months[selectedSeries.months.length - 1];
-  const totalLast = selectedSeries?.table.reduce((s, r) => s + r.ultimo, 0) ?? 0;
-  const totalPrev = selectedSeries?.table.reduce((s, r) => s + r.anterior, 0) ?? 0;
+  const lastMonth = totalSeries[totalSeries.length - 1];
+  const prevMonth = totalSeries[totalSeries.length - 2];
+  const totalLast = lastMonth?.clientes ?? 0;
+  const totalPrev = prevMonth?.clientes ?? 0;
   const activeGroups = selectedSeries?.table.filter((r) => r.ultimo > 0).length ?? 0;
 
   if (rows.length === 0) {
@@ -84,7 +87,7 @@ export default function Positivacao() {
             icon={Users}
             label="Positivação atual"
             value={formatNum(totalLast, 0)}
-            sub={lastMonth ? `Soma das aberturas em ${lastMonth.label}` : "Sem mês disponível"}
+            sub={lastMonth ? `Clientes únicos ativos em ${lastMonth.label}` : "Sem mês disponível"}
           />
           <KpiCard
             icon={TrendingUp}

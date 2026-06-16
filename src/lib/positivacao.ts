@@ -35,6 +35,12 @@ export interface PositivacaoSeries {
   chartData: Record<string, string | number>[];
 }
 
+export interface PositivacaoTotalPoint {
+  periodo: string;
+  label: string;
+  clientes: number;
+}
+
 function dimMeta(dim: PositivacaoDim) {
   return POSITIVACAO_DIMS.find((d) => d.key === dim)!;
 }
@@ -110,4 +116,28 @@ export function buildPositivacaoSeries(rows: PricingRow[], dim: PositivacaoDim, 
   });
 
   return { months, table, chartKeys, chartData };
+}
+
+export function buildPositivacaoTotal(rows: PricingRow[], monthCount = 13): PositivacaoTotalPoint[] {
+  const months = latestPositivacaoMonths(rows, monthCount);
+  const monthSet = new Set(months.map((m) => m.periodo));
+  const byMonth = new Map<string, Set<string>>();
+
+  for (const r of rows) {
+    if (!monthSet.has(r.periodo)) continue;
+    const cli = activeCliente(r);
+    if (!cli) continue;
+    let clients = byMonth.get(r.periodo);
+    if (!clients) {
+      clients = new Set();
+      byMonth.set(r.periodo, clients);
+    }
+    clients.add(cli);
+  }
+
+  return months.map((m) => ({
+    periodo: m.periodo,
+    label: m.label,
+    clientes: byMonth.get(m.periodo)?.size ?? 0,
+  }));
 }
