@@ -111,4 +111,18 @@ describe("computePriceDecomposition", () => {
     expect(res).not.toBeNull();
     expect(res!.efeitoPrecoRsKg + res!.efeitoMixRsKg).toBeCloseTo(res!.variacaoTotal, 10);
   });
+
+  it("fecha variacao quando existem ajustes financeiros sem volume", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", mes: 4, sku: "A", volumeKg: 100, rol: 1000 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "A", volumeKg: 100, rol: 900 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "AJUSTE", volumeKg: 0, rol: -50 }),
+    ];
+
+    const res = computePriceDecomposition(rows, "004.2026", "005.2026", "month");
+
+    expect(res).not.toBeNull();
+    expect(res!.efeitoPrecoRsKg + res!.efeitoMixRsKg).toBeCloseTo(res!.variacaoTotal, 10);
+    expect(res!.skus.some((s) => s.sku === "__price_decomp_residual__")).toBe(true);
+  });
 });

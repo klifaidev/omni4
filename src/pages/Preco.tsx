@@ -391,7 +391,7 @@ function DecompositionCards({ result }: { result: PriceDecompositionResult }) {
       />
       <EffectCard
         title="Efeito Mix de SKUs"
-        tooltip="Variação explicada pela mudança na participação de volume de cada SKU no mix total, mantendo preços constantes."
+        tooltip="Variação explicada pela mudança na participação de volume de cada SKU, entrada/saída de SKUs e ajustes sem volume que afetam o preço médio."
         rsPerKg={result.efeitoMixRsKg}
         rsTotal={result.efeitoMixRs}
         pct={result.pctMix}
@@ -812,4 +812,3 @@ function EvolutionSection({
     </GlassCard>
   );
 }
-

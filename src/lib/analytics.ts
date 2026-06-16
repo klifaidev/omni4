@@ -827,6 +827,26 @@ export function computePriceDecomposition(
     });
   }
 
+  const targetDeltaRs = variacaoTotal * volTotalComp;
+  const residualRs = targetDeltaRs - efeitoPrecoRs - efeitoMixRs;
+  if (Math.abs(residualRs) > 0.000001) {
+    efeitoMixRs += residualRs;
+    skus.push({
+      sku: "__price_decomp_residual__",
+      skuDesc: "Ajustes sem volume / resíduo",
+      precoBase: 0,
+      precoComp: 0,
+      deltaPreco: 0,
+      deltaPrecoRs: 0,
+      shareBase: 0,
+      shareComp: 0,
+      deltaMixShare: 0,
+      efeitoMixRs: residualRs,
+      volumeBase: 0,
+      volumeComp: 0,
+    });
+  }
+
   const efeitoPrecoRsKg = volTotalComp > 0 ? efeitoPrecoRs / volTotalComp : 0;
   const efeitoMixRsKg = volTotalComp > 0 ? efeitoMixRs / volTotalComp : 0;
   const sumAbs = Math.abs(efeitoPrecoRs) + Math.abs(efeitoMixRs);
