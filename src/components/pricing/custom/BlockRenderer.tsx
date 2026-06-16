@@ -668,6 +668,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   }
 
   const { result, measures, sortedHeaders } = data;
+  const hasSingleMeasure = measures.length === 1;
+  const tableHeaderLabel = (colLabel: string, measureLabel: string) =>
+    hasSingleMeasure ? colLabel : `${colLabel} - ${measureLabel}`;
   const fit = resolveTableFit(b, sortedHeaders.length);
   const visibleHeaders = sortedHeaders.slice(0, fit.shown);
   const hiddenHeaders = sortedHeaders.slice(fit.shown);
@@ -836,7 +839,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               height={rowH}
               padX={8}
             >
-              {c.values.join(" / ")} · {m.label}
+              {tableHeaderLabel(c.values.join(" / "), m.label)}
             </ExportPositionedCell>
           )))
         : measures.map((m, mi) => (
@@ -951,7 +954,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", cellHead)}
             {showCols
               ? cols.flatMap((c) => measures.map((m) => (
-                  <th key={`${c.key}-${m.id}`} style={cellHead}>{c.values.join(" / ")} · {m.label}</th>
+                  <th key={`${c.key}-${m.id}`} style={cellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
                 )))
               : measures.map((m) => <th key={m.id} style={cellHead}>{m.label}</th>)}
           </tr>
@@ -1196,6 +1199,10 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
   const fs = blk.fontSize;
   const pad = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.55)}px`;
   const padVal = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.36)}px`;
+  const dreLineLabel = (line: (typeof visibleLines)[number]) =>
+    line.id === "vol" ? "Volume (Tons)" : line.label;
+  const fmtDreValue = (line: (typeof visibleLines)[number], value: number | null) =>
+    line.id === "vol" && value !== null ? formatNum(value, 0) : fmt(value, line.kind);
   const dreCell = (
     tag: "th" | "td",
     content: React.ReactNode,
@@ -1281,7 +1288,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
           textAlign: "left",
           background: rowBg,
         }} left={0} top={top} width={firstColW} height={rowH} padX={Math.round(fs * 0.55)}>
-          {line.label}
+          {dreLineLabel(line)}
         </ExportPositionedCell>,
       ];
 
@@ -1314,7 +1321,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
             fontSize: fs,
           }} left={leftForPeriod(ci)} top={top} width={periodColW} height={rowH} padX={Math.round(fs * 0.36)}>
-            {val === null ? "—" : fmt(val, line.kind)}
+            {fmtDreValue(line, val)}
           </ExportPositionedCell>,
         );
       }
@@ -1425,7 +1432,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             const isEven = idx % 2 === 0;
             return (
               <tr key={line.id} style={{ background: isEven ? "#F8FAFC" : "#FFFFFF" }}>
-                {dreCell("td", line.label, {
+                {dreCell("td", dreLineLabel(line), {
                   padding: pad,
                   fontWeight: line.bold ? 600 : 400,
                   color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
@@ -1465,8 +1472,8 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
                       verticalAlign: "middle", lineHeight: 1.15,
                     }}>
                       {readOnly
-                        ? exportCellContent(val === null ? "—" : fmt(val, line.kind), { padding: padVal, align: "center" })
-                        : val === null ? "—" : fmt(val, line.kind)}
+                        ? exportCellContent(fmtDreValue(line, val), { padding: padVal, align: "center" })
+                        : fmtDreValue(line, val)}
                     </td>
                   );
                 })}

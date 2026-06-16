@@ -257,6 +257,7 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
     dLabelDec: number,
     showXAxis: boolean,
     bgTransparent: boolean,
+    budgetGap?: ChartBlock["budgetGap"],
   ): ChartBlock {
     const b = newBlock("chart", zCtr) as ChartBlock;
     return {
@@ -285,6 +286,7 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
         },
         series: [{ key: "0", color, lineStyle, thickness: 3 }],
       } as unknown as ChartBlock["style"],
+      budgetGap,
     };
   }
 
@@ -293,6 +295,7 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
     x: number, y: number, w: number, h: number,
     color: string,
     bgTransparent: boolean,
+    budgetGap?: ChartBlock["budgetGap"],
   ): ChartBlock {
     const b = newBlock("chart", zCtr) as ChartBlock;
     return {
@@ -321,51 +324,43 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
         },
         series: [{ key: "0", color }],
       } as unknown as ChartBlock["style"],
+      budgetGap,
     };
   }
-
-  const SEP = "#E2E8F0";
 
   const blocks: CustomBlock[] = [
     // 1. Título principal
     mkTitle({ x: 40, y: 20, w: 900, h: 55, text: "Overview CM/VOL", size: 48, bold: true, color: "#1C2430", align: "left" }),
     // 2. Barra vermelha abaixo do título
-    mkShape({ x: 40, y: 78, w: 340, h: 4, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 2 }),
     // 3. Legenda REAL – retângulo vermelho
-    mkShape({ x: 1050, y: 24, w: 28, h: 14, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 1 }),
+    mkShape({ x: 1120, y: 694, w: 28, h: 14, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 1 }),
     // 4. Legenda REAL – texto
-    mkText({ x: 1082, y: 20, w: 60, h: 22, text: "REAL", size: 13, color: "#C8102E", align: "left" }),
+    mkText({ x: 1152, y: 690, w: 60, h: 22, text: "REAL", size: 13, color: "#C8102E", align: "left" }),
     // 5. Legenda BUDGET – linha tracejada
-    mkShape({ x: 1150, y: 26, w: 28, h: 8, shape: "dashed-line", fill: "#1C2430", strokeColor: "#1C2430", lineThickness: 3, strokeWidth: 0, radius: 0, lineDirection: "horizontal" }),
+    mkShape({ x: 1210, y: 696, w: 28, h: 8, shape: "dashed-line", fill: "#1C2430", strokeColor: "#1C2430", lineThickness: 3, strokeWidth: 0, radius: 0, lineDirection: "horizontal" }),
     // 6. Legenda BUDGET – texto
-    mkText({ x: 1185, y: 20, w: 80, h: 22, text: "BUDGET", size: 13, color: "#1C2430", align: "left" }),
+    mkText({ x: 1245, y: 690, w: 80, h: 22, text: "BUDGET", size: 13, color: "#1C2430", align: "left" }),
 
     // --- LINHA 1: CM ABS (y=85, h=148) ---
-    mkLineChart("cm", "budget_real", 95, 85, 1195, 148, "#C8102E", "solid",  "currency", 0, false, false),
+    mkLineChart("cm", "budget_real", 95, 85, 1195, 148, "#C8102E", "solid",  "currency", 0, false, false, { enabled: true, measure: "cm" }),
     mkLineChart("cm", "budget",      95, 85, 1195, 148, "#1C2430", "dashed", "currency", 0, false, true),
     mkTitle({ x: 30, y: 120, w: 80, h: 80, text: "CM ABS", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 
     // Separador 1
-    mkShape({ x: 40, y: 233, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
-
     // --- LINHA 2: CM% (y=238, h=130) ---
     mkLineChart("cmPct", "budget_real", 95, 238, 1195, 130, "#C8102E", "solid",  "percent", 1, false, false),
     mkLineChart("cmPct", "budget",      95, 238, 1195, 130, "#1C2430", "dashed", "percent", 1, false, true),
     mkTitle({ x: 30, y: 270, w: 60, h: 60, text: "CM/%", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 
     // Separador 2
-    mkShape({ x: 40, y: 368, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
-
     // --- LINHA 3: CM/Kg (y=373, h=120) — usa precoMedio (R$/Kg), mais próximo de CM/Kg disponível ---
     mkLineChart("precoMedio", "budget_real", 95, 373, 1195, 120, "#C8102E", "solid",  "number", 2, false, false),
     mkLineChart("precoMedio", "budget",      95, 373, 1195, 120, "#1C2430", "dashed", "number", 2, false, true),
     mkTitle({ x: 30, y: 403, w: 60, h: 60, text: "CM/Kg", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 
     // Separador 3
-    mkShape({ x: 40, y: 493, w: 1253, h: 1, shape: "rect", fill: SEP, strokeWidth: 0, radius: 0 }),
-
     // --- LINHA 4: VOLUME (y=498, h=175) — barras agrupadas Real vs Budget ---
-    mkColChart("budget_real", 95, 498, 1195, 175, "#C8102E", false),
+    mkColChart("budget_real", 95, 498, 1195, 175, "#C8102E", false, { enabled: true, measure: "volume" }),
     mkColChart("budget",      95, 498, 1195, 175, "#1C2430", true),
     mkTitle({ x: 20, y: 548, w: 80, h: 80, text: "VOLUME", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 

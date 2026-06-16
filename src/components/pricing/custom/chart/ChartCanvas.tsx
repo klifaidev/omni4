@@ -21,7 +21,7 @@ const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { computeChartSeries, computeTopRanking, formatValue, inferFormat } from "@/lib/customKpi";
+import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
 import { resolveFieldValue } from "./filterHelpers";
@@ -49,6 +49,17 @@ function axisFmt(ax: { format: string; decimals: number }, fallback: ReturnType<
 }
 function dashArr(s?: "solid" | "dashed" | "dotted") {
   return s === "dashed" ? "5 5" : s === "dotted" ? "2 4" : "0";
+}
+function signedPt(value: number, digits = 0) {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${Math.abs(value).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+function compactGapLabel(value: number, measure: ChartBlock["measure"]) {
+  if (measure === "volume") return `${signedPt(value, 0)} Tons`;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${signedPt(value / 1_000_000, 0)} Mi`;
+  if (abs >= 1_000) return `${signedPt(value / 1_000, 0)} mil`;
+  return signedPt(value, 0);
 }
 
 // Auto-contrast text color from background hex
@@ -424,6 +435,25 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     return computeChartSeries(dsRows, block.filters, style.measureLine, seriesDim);
   }, [block.chartType, style.measureLine, dsRows, block.filters, seriesDim]);
 
+  const budgetGap = useMemo(() => {
+    if (!block.budgetGap?.enabled || block.dataSource !== "budget_real") return null;
+    const measure = block.budgetGap.measure ?? block.measure;
+    const realRows = applyFilters(budgetRowsAsPricingFiltered(budget, "real"), block.filters ?? {}, null);
+    const realizedPeriods = new Set(realRows
+      .filter((r) => Math.abs(pickMeasure(aggregateKpi([r]), measure)) > 0)
+      .map((r) => r.periodo));
+    if (realizedPeriods.size === 0) return null;
+    const budgetRows = applyFilters(budgetRowsAsPricingFiltered(budget, "budget"), block.filters ?? {}, null)
+      .filter((r) => realizedPeriods.has(r.periodo));
+    const realValue = pickMeasure(aggregateKpi(realRows.filter((r) => realizedPeriods.has(r.periodo))), measure);
+    const budgetValue = pickMeasure(aggregateKpi(budgetRows), measure);
+    const gap = realValue - budgetValue;
+    return {
+      value: gap,
+      text: block.budgetGap.label ?? compactGapLabel(gap, measure),
+    };
+  }, [block.budgetGap, block.dataSource, block.filters, block.measure, budget]);
+
   // ---- ranking-style data for pie/donut/bubble/scatter/funnel/treemap ----
   const rankingTypes = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"];
   const ranking = useMemo(() => {
@@ -613,7 +643,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
   const dlSize = Math.max(10, style.dataLabels.size || 12);
   const sideRoom = dlOn ? Math.round(dlSize * 2.4) : 12;
   const topRoom = dlOn ? Math.round(dlSize * 1.6) : 12;
-  const chartMargin = { top: topRoom, right: sideRoom, left: sideRoom, bottom: 8 };
+  const chartMargin = { top: topRoom + (budgetGap ? 18 : 0), right: sideRoom, left: sideRoom, bottom: 8 };
   const hbarMargin = { top: 12, right: dlOn ? Math.round(dlSize * 3) : 24, left: 8, bottom: 8 };
 
   // ---- renderers per chart type ----
@@ -1296,6 +1326,24 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
         }}>{block.title}</div>
       )}
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+        {budgetGap && (
+          <div style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 6,
+            textAlign: "center",
+            fontFamily: "Calibri, sans-serif",
+            fontSize: 12,
+            fontWeight: 700,
+            color: budgetGap.value >= 0 ? "#16A34A" : "#C8102E",
+            pointerEvents: "none",
+            lineHeight: 1,
+          }}>
+            {budgetGap.text}
+          </div>
+        )}
         {ct === "waterfall" ? chart as React.ReactElement : (
           <ResponsiveContainer width="100%" height="100%">
             {chart as React.ReactElement}

@@ -364,6 +364,12 @@ export interface ChartBlock extends BaseBlock {
   style?: Partial<ChartStyle>;
   /** Fonte de dados — default "ke30". */
   dataSource?: BlockDataSource;
+  /** Anotacao opcional para mostrar gap acumulado Real vs Budget no canvas. */
+  budgetGap?: {
+    enabled: boolean;
+    measure: KpiMeasureId;
+    label?: string;
+  };
   /** Power BI-style axis field wells (Part B.1). When present, takes precedence over measure/breakdown for the relevant slot. */
   fieldWells?: {
     xDim?: string | null;
