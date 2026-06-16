@@ -16,9 +16,9 @@ type NegocioFilter = "retail" | "industria" | "exportacao" | "todos";
 type CdFilter = "todos" | "SP" | "PB";
 
 const statusLabels: Record<EstoqueStatus, string> = {
-  bloqueado: "Bloqueado",
-  critico: "Crítico 30d",
-  atencao: "Atenção 60d",
+  bloqueado: "Faixa 30d",
+  critico: "Faixa 60d",
+  atencao: "Faixa 90d",
   monitorar: "Monitorar",
   revisar: "Revisar cadastro",
 };
@@ -219,9 +219,9 @@ export default function Estoque() {
                 <FilterSelect label="CD" value={cd} onChange={(v) => setCd(v as CdFilter)} options={[["todos", "Todos"], ["SP", "SP"], ["PB", "PB"]]} />
                 <FilterSelect label="Status" value={status} onChange={(v) => setStatus(v as EstoqueStatus | "todos")} options={[
                   ["todos", "Todos"],
-                  ["bloqueado", "Bloqueado"],
-                  ["critico", "Crítico 30d"],
-                  ["atencao", "Atenção 60d"],
+                  ["bloqueado", "Faixa 30d"],
+                  ["critico", "Faixa 60d"],
+                  ["atencao", "Faixa 90d"],
                   ["monitorar", "Monitorar"],
                   ["revisar", "Revisar"],
                 ]} />
@@ -233,7 +233,7 @@ export default function Estoque() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <KpiCard icon={Boxes} label="Estoque filtrado" value={fmtKg(totals.kg)} sub={`${formatNum(totals.caixas, 0)} caixas`} />
-              <KpiCard icon={ShieldAlert} label="Risco shelf" value={fmtKg(totals.riscoKg)} sub={`${formatNum(totals.riscoCaixas, 0)} caixas em bloqueado/30/60d`} tone="warning" />
+              <KpiCard icon={ShieldAlert} label="Risco shelf" value={fmtKg(totals.riscoKg)} sub={`${formatNum(totals.riscoCaixas, 0)} caixas nas faixas 30/60/90d`} tone="warning" />
               <KpiCard icon={AlertTriangle} label="Não reprocessável" value={fmtKg(totals.naoReprocKg)} sub="Risco com pior caminho de perda" tone="danger" />
               <KpiCard icon={Factory} label="Impacto CM estimado" value={totals.impactoCm ? formatBRL(totals.impactoCm) : "Sem Real"} sub={`ROL em risco ${totals.impactoRol ? formatBRL(totals.impactoRol) : "—"}`} tone="accent" />
             </div>
@@ -265,7 +265,7 @@ export default function Estoque() {
               <GlassCard>
                 <h3 className="mb-4 text-sm font-semibold">Plano de ação recomendado</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <ActionCard title="1. Bloquear ou destravar venda" value={formatNum(filtered.filter((r) => r.status === "bloqueado").length, 0)} text="Lotes já dentro da trava de shelf. Prioridade máxima." />
+                  <ActionCard title="1. Atacar faixa 30d" value={formatNum(filtered.filter((r) => r.status === "bloqueado").length, 0)} text="Lotes na menor faixa de vencimento. Prioridade máxima." />
                   <ActionCard title="2. Atacar não reprocessáveis" value={fmtKg(totals.naoReprocKg)} text="Se não vender, tende a descarte. Puxar comercial e CD." />
                   <ActionCard title="3. Revisar cadastro" value={formatNum(totals.revisarPack, 0)} text="Sem pack confiável, shelf ou vencimento. Não entra bem no impacto R$." />
                 </div>
@@ -291,7 +291,7 @@ export default function Estoque() {
                       <th className="px-4 py-3 text-left">SKU / Material</th>
                       <th className="px-3 py-3 text-left">Status</th>
                       <th className="px-3 py-3 text-left">CD</th>
-                      <th className="px-3 py-3 text-right">Folga</th>
+                      <th className="px-3 py-3 text-right">Dias venc.</th>
                       <th className="px-3 py-3 text-right">Caixas</th>
                       <th className="px-3 py-3 text-right">Kg</th>
                       <th className="px-3 py-3 text-left">Pack</th>
@@ -309,7 +309,7 @@ export default function Estoque() {
                         </td>
                         <td className="px-3 py-3"><Badge variant="outline" className={cn("whitespace-nowrap", statusClass[r.status])}>{statusLabels[r.status]}</Badge></td>
                         <td className="px-3 py-3">{r.cd}</td>
-                        <td className="px-3 py-3 text-right">{r.folgaShelfDias ?? "—"} d</td>
+                        <td className="px-3 py-3 text-right">{r.diasAteVencimento ?? "—"} d</td>
                         <td className="px-3 py-3 text-right">{formatNum(r.qtCxs, 0)}</td>
                         <td className="px-3 py-3 text-right">{fmtKg(r.kgEstoque)}</td>
                         <td className="px-3 py-3">
@@ -338,7 +338,7 @@ function EmptyState() {
         <FileSpreadsheet className="mx-auto h-10 w-10 text-muted-foreground" />
         <h3 className="mt-4 text-lg font-semibold">Carregue a planilha de Shelf Life</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          A aba Estoque vai calcular folga real de shelf, kg por caixa, toneladas em risco e impacto financeiro estimado com a base Real.
+          A aba Estoque vai ler a faixa de shelf, calcular kg por caixa, toneladas em risco e impacto financeiro estimado com a base Real.
         </p>
       </div>
     </GlassCard>
@@ -394,10 +394,9 @@ function barColor(status: EstoqueStatus) {
 
 function actionFor(r: EstoqueRow & { impactoCm: number | null }) {
   if (r.status === "revisar") return "Revisar cadastro de shelf, vencimento ou embalagem.";
-  if (r.status === "bloqueado") return r.reprocessavel ? "Acionar qualidade/reprocesso e bloquear venda sem exceção." : "Priorizar decisão de descarte ou exceção comercial aprovada.";
+  if (r.status === "bloqueado") return r.reprocessavel ? "Acionar qualidade/reprocesso e plano imediato para faixa 30d." : "Priorizar decisão de descarte ou exceção comercial aprovada.";
   if (r.reprocessavel === false && isRisk(r.status)) return "Forçar plano comercial/CD: risco sem reprocesso.";
-  if (r.status === "critico") return "Venda/transferência urgente antes da trava de shelf.";
-  if (r.status === "atencao") return "Monitorar semanalmente e criar plano de escoamento.";
+  if (r.status === "critico") return "Venda/transferência urgente para sair da faixa 60d.";
+  if (r.status === "atencao") return "Monitorar semanalmente e criar plano para faixa 90d.";
   return "Monitorar no ciclo normal.";
 }
-

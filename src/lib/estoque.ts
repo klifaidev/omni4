@@ -25,7 +25,7 @@ export interface EstoqueRow {
     confianca: "ok" | "revisar";
   };
   diasAteVencimento: number | null;
-  folgaShelfDias: number | null;
+  shelfFaixaDias: number | null;
   kgEstoque: number | null;
   tonEstoque: number | null;
   status: EstoqueStatus;
@@ -98,6 +98,15 @@ export function parseShelfDays(raw: unknown): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function shelfBandFromDays(days: number | null): number | null {
+  if (days == null) return null;
+  if (days <= 30) return 30;
+  if (days <= 60) return 60;
+  if (days <= 90) return 90;
+  if (days <= 120) return 120;
+  return 121;
+}
+
 export function normalizeNegocio(raw: unknown): EstoqueRow["negocioGrupo"] {
   const s = normHeader(String(raw ?? ""));
   if (s.includes("retail") || s.includes("lancamentos") || s.includes("b2b4c")) return "retail";
@@ -138,11 +147,12 @@ export function parseMaterialPack(material: string): EstoqueRow["embalagem"] {
   };
 }
 
-export function estoqueStatus(folgaShelfDias: number | null, shelfPrazoDias: number | null, vencimento: string | null): EstoqueStatus {
-  if (!vencimento || shelfPrazoDias == null || folgaShelfDias == null) return "revisar";
-  if (folgaShelfDias <= 0) return "bloqueado";
-  if (folgaShelfDias <= 30) return "critico";
-  if (folgaShelfDias <= 60) return "atencao";
+export function estoqueStatus(shelfFaixaDias: number | null, diasAteVencimento: number | null): EstoqueStatus {
+  const faixa = shelfFaixaDias ?? shelfBandFromDays(diasAteVencimento);
+  if (faixa == null) return "revisar";
+  if (faixa <= 30) return "bloqueado";
+  if (faixa <= 60) return "critico";
+  if (faixa <= 90) return "atencao";
   return "monitorar";
 }
 
@@ -179,7 +189,7 @@ export async function parseEstoqueFile(file: File, today = new Date()): Promise<
     const shelfPrazoDias = parseShelfDays(obj.shelf);
     const vencimento = excelDateToIso(obj.vencimento);
     const diasAteVencimento = daysBetween(today, vencimento);
-    const folgaShelfDias = diasAteVencimento != null && shelfPrazoDias != null ? diasAteVencimento - shelfPrazoDias : null;
+    const shelfFaixaDias = shelfPrazoDias ?? shelfBandFromDays(diasAteVencimento);
     const embalagem = parseMaterialPack(material);
     const kgEstoque = embalagem.kgPorCaixa != null ? qtCxs * embalagem.kgPorCaixa : null;
     rows.push({
@@ -197,10 +207,10 @@ export async function parseEstoqueFile(file: File, today = new Date()): Promise<
       reprocessavel: parseReprocessavel(obj.reprocessavel),
       embalagem,
       diasAteVencimento,
-      folgaShelfDias,
+      shelfFaixaDias,
       kgEstoque,
       tonEstoque: kgEstoque != null ? kgEstoque / 1000 : null,
-      status: estoqueStatus(folgaShelfDias, shelfPrazoDias, vencimento),
+      status: estoqueStatus(shelfFaixaDias, diasAteVencimento),
     });
   }
 
@@ -214,4 +224,3 @@ export async function parseEstoqueFile(file: File, today = new Date()): Promise<
     warnings,
   };
 }
-
