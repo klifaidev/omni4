@@ -794,18 +794,18 @@ export function computePriceDecomposition(
     const volumeBase = a?.vol ?? 0;
     const volumeComp = b?.vol ?? 0;
     if (volumeBase === 0 && volumeComp === 0) continue;
-    const precoBase = volumeBase > 0 ? (a!.rol / volumeBase) : 0;
-    const precoComp = volumeComp > 0 ? (b!.rol / volumeComp) : 0;
+    const precoBase = volumeBase !== 0 ? (a!.rol / volumeBase) : 0;
+    const precoComp = volumeComp !== 0 ? (b!.rol / volumeComp) : 0;
     const shareBase = volTotalBase > 0 ? volumeBase / volTotalBase : 0;
     const shareComp = volTotalComp > 0 ? volumeComp / volTotalComp : 0;
     const deltaMixShare = shareComp - shareBase;
 
     // Price effect: only meaningful when SKU has volume in both periods.
-    const deltaPreco = volumeBase > 0 && volumeComp > 0 ? (precoComp - precoBase) : 0;
+    const deltaPreco = volumeBase !== 0 && volumeComp !== 0 ? (precoComp - precoBase) : 0;
     const deltaPrecoRs = deltaPreco * volumeComp;
 
     // Mix effect: uses base price as anchor; for new SKUs (no base), use comp price as proxy.
-    const anchorPrice = volumeBase > 0 ? precoBase : precoComp;
+    const anchorPrice = volumeBase !== 0 ? precoBase : precoComp;
     const efeitoMixI = deltaMixShare * anchorPrice * volTotalComp;
 
     efeitoPrecoRs += deltaPrecoRs;

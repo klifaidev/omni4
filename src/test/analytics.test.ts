@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcPVM, computeKPIs, aggregateBy } from "@/lib/analytics";
+import { calcPVM, computeKPIs, aggregateBy, computePriceDecomposition } from "@/lib/analytics";
 import { makeRow } from "./_helpers";
 
 describe("calcPVM", () => {
@@ -79,5 +79,36 @@ describe("aggregateBy", () => {
     expect(byKey.Y.rol).toBe(50);
     // ordenado por rol desc
     expect(agg[0].key).toBe("X");
+  });
+});
+
+describe("computePriceDecomposition", () => {
+  it("fecha variacao total como efeito preco + efeito mix em R$/kg", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", mes: 4, sku: "A", volumeKg: 100, rol: 1000 }),
+      makeRow({ periodo: "004.2026", mes: 4, sku: "B", volumeKg: 100, rol: 3000 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "A", volumeKg: 150, rol: 1350 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "B", volumeKg: 50, rol: 1600 }),
+    ];
+
+    const res = computePriceDecomposition(rows, "004.2026", "005.2026", "month");
+
+    expect(res).not.toBeNull();
+    expect(res!.efeitoPrecoRsKg + res!.efeitoMixRsKg).toBeCloseTo(res!.variacaoTotal, 10);
+  });
+
+  it("mantem fechamento quando ha devolucao com volume negativo", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", mes: 4, sku: "A", volumeKg: 100, rol: 1000 }),
+      makeRow({ periodo: "004.2026", mes: 4, sku: "B", volumeKg: 100, rol: 3000 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "A", volumeKg: 130, rol: 1300 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "B", volumeKg: 90, rol: 2700 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "C", volumeKg: -20, rol: -500 }),
+    ];
+
+    const res = computePriceDecomposition(rows, "004.2026", "005.2026", "month");
+
+    expect(res).not.toBeNull();
+    expect(res!.efeitoPrecoRsKg + res!.efeitoMixRsKg).toBeCloseTo(res!.variacaoTotal, 10);
   });
 });
