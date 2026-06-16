@@ -14,6 +14,7 @@ import {
   TableProperties,
   Target,
   TrendingUp,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,6 +39,7 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/filtros": { label: "Filtros", icon: SlidersHorizontal },
   "/demanda": { label: "Demanda", icon: TrendingUp },
   "/estoque": { label: "Estoque", icon: PackageSearch },
+  "/positivacao": { label: "Positivação", icon: UserCheck },
   "/farol": { label: "Farol de Cadastro", icon: Radar },
 };
 

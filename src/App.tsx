@@ -20,6 +20,7 @@ import Alertas from "./pages/Alertas.tsx";
 import Filtros from "./pages/Filtros.tsx";
 import Demanda from "./pages/Demanda.tsx";
 import Estoque from "./pages/Estoque.tsx";
+import Positivacao from "./pages/Positivacao.tsx";
 import FarolCadastro from "./pages/FarolCadastro.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -45,6 +46,7 @@ const App = () => (
           <Route path="/filtros" element={<Filtros />} />
           <Route path="/demanda" element={<Demanda />} />
           <Route path="/estoque" element={<Estoque />} />
+          <Route path="/positivacao" element={<Positivacao />} />
           <Route path="/farol" element={<FarolCadastro />} />
           <Route path="/slides" element={<SlidesBeta />} />
           <Route path="/upload" element={<Upload />} />

@@ -62,6 +62,10 @@ const HEADER_MAP: Record<string, keyof PricingRow | "ignore"> = {
   client: "cliente",
   customer: "cliente",
   razaosocial: "cliente",
+  gestorresp: "gestorResp",
+  gestorresponsavel: "gestorResp",
+  responsavel: "gestorResp",
+  gerente: "gestorResp",
   // região
   regiao: "regiao",
   uf: "regiao",
@@ -151,7 +155,6 @@ const HEADER_MAP: Record<string, keyof PricingRow | "ignore"> = {
   status: "ignore",
   // explicit ignores (avoid noise in unmapped list)
   ctbmg: "ignore",                // "Ctb. Mg. %"
-  gestorresp: "ignore",
   centro: "ignore",
 };
 

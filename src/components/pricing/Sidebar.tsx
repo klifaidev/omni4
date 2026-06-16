@@ -38,6 +38,7 @@ import {
   TableProperties,
   Target,
   TrendingUp,
+  UserCheck,
   X,
 } from "lucide-react";
 import { useActiveAlertCount } from "@/store/alertHistory";
@@ -66,6 +67,7 @@ const workItems = [
   { to: "/atividades", label: "Atividades", icon: KanbanSquare },
   { to: "/demanda", label: "Demanda", icon: TrendingUp },
   { to: "/estoque", label: "Estoque", icon: PackageSearch },
+  { to: "/positivacao", label: "Positivação", icon: UserCheck },
   { to: "/slides", label: "Slides", icon: Presentation },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];
 

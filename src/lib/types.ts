@@ -18,6 +18,7 @@ export interface PricingRow {
   sku?: string;
   skuDesc?: string;
   cliente?: string;
+  gestorResp?: string;
   regiao?: string;
   uf?: string;
   regional?: string;
@@ -69,6 +70,7 @@ export type FilterKey =
   | "subcategoria"
   | "formato"
   | "sku"
+  | "gestorResp"
   | "regiao"
   | "uf"
   | "regional"
