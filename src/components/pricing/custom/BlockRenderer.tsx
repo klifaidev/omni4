@@ -293,7 +293,7 @@ class BlockErrorBoundary extends React.Component<
   }
 
   componentDidUpdate(prevProps: { block: CustomBlock }) {
-    if (prevProps.block !== this.props.block && this.state.hasError) {
+    if (prevProps.block.id !== this.props.block.id && this.state.hasError) {
       this.setState({ hasError: false });
     }
   }
@@ -687,7 +687,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       rows: b.rowDims,
       cols: b.colDim ? [b.colDim] : [],
       values: measures,
-      filters: Object.fromEntries(Object.entries(b.filters).map(([k, v]) => [k, new Set(v ?? [])])),
+      filters: Object.fromEntries(Object.entries(b.filters).map(([k, v]) => [k, v ?? []])),
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
 

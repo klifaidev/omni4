@@ -2174,7 +2174,7 @@ function TableBlockEditor({ block, onChange }: {
     const cfg: PivotConfig = {
       rows: block.rowDims, cols: block.colDim ? [block.colDim] : [],
       values: measures,
-      filters: Object.fromEntries(Object.entries(block.filters).map(([k, v]) => [k, new Set(v ?? [])])),
+      filters: Object.fromEntries(Object.entries(block.filters).map(([k, v]) => [k, v ?? []])),
     };
     return computePivot(unified as unknown as Record<string, unknown>[], cfg).rowHeaders.length;
   }, [pricing, budget, block.rowDims, block.colDim, block.measures, block.filters]);
