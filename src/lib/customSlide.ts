@@ -103,7 +103,7 @@ export interface TextBlock extends BaseBlock {
 // ---------------------------------------------------------------------------
 export type KpiMeasureId =
   | "rol" | "volume" | "cm" | "mb" | "cv" | "frete" | "comissao"
-  | "cmPct" | "mbPct" | "precoMedio";
+  | "cmPct" | "mbPct" | "precoMedio" | "positivacao" | "ticketMedio";
 
 export type KpiPeriodMode = "fy" | "month" | "all";
 export type KpiFormat = "auto" | "currency" | "percent" | "tons" | "number";
@@ -876,11 +876,13 @@ export const KPI_MEASURES: { id: KpiMeasureId; label: string; format: Exclude<Kp
   { id: "cmPct",      label: "CM %",                format: "percent" },
   { id: "mbPct",      label: "MB %",                format: "percent" },
   { id: "precoMedio", label: "Preço Médio (R$/Kg)", format: "currency" },
+  { id: "positivacao", label: "Positivação",        format: "number" },
+  { id: "ticketMedio", label: "Ticket Médio (Kg/cliente)", format: "number" },
 ];
 
 // Medidas que NÃO existem na base Budget (apenas KE30 tem custos detalhados).
 export const BUDGET_UNAVAILABLE_MEASURES: readonly string[] = [
-  "mb", "mbPct", "frete", "comissao",
+  "mb", "mbPct", "frete", "comissao", "positivacao", "ticketMedio",
 ];
 
 export const BUDGET_UNAVAILABLE_HINT =

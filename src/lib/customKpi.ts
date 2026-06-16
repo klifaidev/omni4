@@ -3,6 +3,7 @@
 
 import type { PricingRow, Filters } from "./types";
 import { applyFilters } from "./analytics";
+import { clienteId } from "./farol";
 import type { KpiBlock, KpiMeasureId, KpiPeriodMode, KpiFormat } from "./customSlide";
 import { formatBRL, formatNum, formatPct, monthLabel } from "./format";
 
@@ -21,20 +22,42 @@ export interface KpiAgg {
   cv: number;
   frete: number;
   comissao: number;
+  clientesPositivados: Set<string>;
 }
 
 export function aggregateKpi(rows: PricingRow[]): KpiAgg {
-  const acc: KpiAgg = { rol: 0, volume: 0, cm: 0, mb: 0, cv: 0, frete: 0, comissao: 0 };
+  const acc = emptyKpiAgg();
   for (const r of rows) {
-    acc.rol += r.rol;
-    acc.volume += r.volumeKg;
-    acc.cm += r.contribMarginal;
-    acc.mb += r.margemBruta;
-    acc.cv += r.custoVariavel;
-    acc.frete += r.frete;
-    acc.comissao += r.comissao;
+    addToKpiAgg(acc, r);
   }
   return acc;
+}
+
+function emptyKpiAgg(): KpiAgg {
+  return {
+    rol: 0,
+    volume: 0,
+    cm: 0,
+    mb: 0,
+    cv: 0,
+    frete: 0,
+    comissao: 0,
+    clientesPositivados: new Set<string>(),
+  };
+}
+
+function addToKpiAgg(acc: KpiAgg, r: PricingRow) {
+  acc.rol += r.rol;
+  acc.volume += r.volumeKg;
+  acc.cm += r.contribMarginal;
+  acc.mb += r.margemBruta;
+  acc.cv += r.custoVariavel;
+  acc.frete += r.frete;
+  acc.comissao += r.comissao;
+  if (r.volumeKg > 0) {
+    const cliente = clienteId(r.cliente);
+    if (cliente) acc.clientesPositivados.add(cliente);
+  }
 }
 
 export function pickMeasure(agg: KpiAgg, measure: KpiMeasureId): number {
@@ -49,12 +72,15 @@ export function pickMeasure(agg: KpiAgg, measure: KpiMeasureId): number {
     case "cmPct": return agg.rol > 0 ? agg.cm / agg.rol : 0;
     case "mbPct": return agg.rol > 0 ? agg.mb / agg.rol : 0;
     case "precoMedio": return agg.volume > 0 ? agg.rol / agg.volume : 0;
+    case "positivacao": return agg.clientesPositivados.size;
+    case "ticketMedio": return agg.clientesPositivados.size > 0 ? agg.volume / agg.clientesPositivados.size : 0;
   }
 }
 
 export function inferFormat(measure: KpiMeasureId): Exclude<KpiFormat, "auto"> {
   if (measure === "cmPct" || measure === "mbPct") return "percent";
   if (measure === "volume") return "tons";
+  if (measure === "positivacao" || measure === "ticketMedio") return "number";
   return "currency";
 }
 
@@ -66,6 +92,7 @@ export function formatValue(
   if (f === "currency") return formatBRL(v, { digits: decimals ?? 0 });
   if (f === "percent") return formatPct(v, decimals ?? 1);
   if (f === "tons") return `${formatNum(v / 1000, decimals ?? 1)} t`;
+  if (measure === "ticketMedio") return `${formatNum(v, decimals ?? 1)} kg/cliente`;
   return formatNum(v, decimals ?? 0);
 }
 
@@ -107,10 +134,8 @@ export function computeChartSeries(
       let pm = seriesMap.get(seriesName);
       if (!pm) { pm = new Map(); seriesMap.set(seriesName, pm); }
       let a = pm.get(xKey);
-      if (!a) { a = { rol: 0, volume: 0, cm: 0, mb: 0, cv: 0, frete: 0, comissao: 0 }; pm.set(xKey, a); }
-      a.rol += r.rol; a.volume += r.volumeKg; a.cm += r.contribMarginal;
-      a.mb += r.margemBruta; a.cv += r.custoVariavel;
-      a.frete += r.frete; a.comissao += r.comissao;
+      if (!a) { a = emptyKpiAgg(); pm.set(xKey, a); }
+      addToKpiAgg(a, r);
     }
     const xs = Array.from(xMap.entries())
       .sort((a, b) => a[1].ord - b[1].ord)
@@ -137,10 +162,8 @@ export function computeChartSeries(
     let pm = seriesMap.get(seriesName);
     if (!pm) { pm = new Map(); seriesMap.set(seriesName, pm); }
     let a = pm.get(r.periodo);
-    if (!a) { a = { rol: 0, volume: 0, cm: 0, mb: 0, cv: 0, frete: 0, comissao: 0 }; pm.set(r.periodo, a); }
-    a.rol += r.rol; a.volume += r.volumeKg; a.cm += r.contribMarginal;
-    a.mb += r.margemBruta; a.cv += r.custoVariavel;
-    a.frete += r.frete; a.comissao += r.comissao;
+    if (!a) { a = emptyKpiAgg(); pm.set(r.periodo, a); }
+    addToKpiAgg(a, r);
   }
 
   const periodos = Array.from(periodoMap.entries())
@@ -172,10 +195,8 @@ export function computeTopRanking(
   for (const r of filtered) {
     const k = String((r as unknown as Record<string, unknown>)[dim] ?? "—");
     let a = map.get(k);
-    if (!a) { a = { rol: 0, volume: 0, cm: 0, mb: 0, cv: 0, frete: 0, comissao: 0 }; map.set(k, a); }
-    a.rol += r.rol; a.volume += r.volumeKg; a.cm += r.contribMarginal;
-    a.mb += r.margemBruta; a.cv += r.custoVariavel;
-    a.frete += r.frete; a.comissao += r.comissao;
+    if (!a) { a = emptyKpiAgg(); map.set(k, a); }
+    addToKpiAgg(a, r);
   }
   const entries = Array.from(map.entries()).map(([name, agg]) => ({
     name, value: pickMeasure(agg, measure),
