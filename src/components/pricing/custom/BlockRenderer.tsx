@@ -362,18 +362,8 @@ function BlockRendererInner({ block, readOnly, isEditing }: { block: CustomBlock
 
 function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isEditing?: boolean; readOnly?: boolean }) {
   const padding = b.padding ?? 0;
-  const lineHeight = Math.max(b.lineHeight ?? 1.1, readOnly ? 1.18 : 1.1);
-  const fontSize = readOnly
-    ? fitFontSize({
-        desired: b.size,
-        width: b.w,
-        height: b.h,
-        text: b.text,
-        lineHeight,
-        padding,
-        min: 10,
-      })
-    : b.size;
+  const lineHeight = b.lineHeight ?? 1.1;
+  const fontSize = b.size;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",
@@ -404,18 +394,8 @@ function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isE
 
 function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEditing?: boolean; readOnly?: boolean }) {
   const padding = b.padding ?? 0;
-  const lineHeight = Math.max(b.lineHeight ?? 1.3, readOnly ? 1.25 : 1.3);
-  const fontSize = readOnly
-    ? fitFontSize({
-        desired: b.size,
-        width: b.w,
-        height: b.h,
-        text: b.text,
-        lineHeight,
-        padding,
-        min: 8,
-      })
-    : b.size;
+  const lineHeight = b.lineHeight ?? 1.3;
+  const fontSize = b.size;
   return (
     <div style={{
       width: "100%", height: "100%", display: "flex",

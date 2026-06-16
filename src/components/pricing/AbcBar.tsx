@@ -45,9 +45,20 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
             : formatBRL(r.margem, { compact: true });
         return (
           <li key={r.key} className="animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-              <span className="truncate font-medium text-foreground/90">{r.key}</span>
-              <span className={cn("tabular-nums font-semibold", text)}>{headline}</span>
+            <div className="mb-1 flex items-start justify-between gap-2 text-[11px] leading-tight">
+              <span
+                className="min-w-0 flex-1 break-words font-medium text-foreground/90"
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+                title={r.key}
+              >
+                {r.key}
+              </span>
+              <span className={cn("shrink-0 tabular-nums font-semibold", text)}>{headline}</span>
             </div>
             <div className="relative h-2 overflow-hidden rounded-full bg-secondary/50">
               <div
