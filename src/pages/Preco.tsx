@@ -12,6 +12,7 @@ import {
   type PriceDecompositionResult,
   type PriceDecompositionSku,
 } from "@/lib/analytics";
+import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { formatBRL, formatPct, formatNum } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -90,6 +91,16 @@ const UF_MAP_POINTS: UfMapPoint[] = [
   { uf: "SC", label: "Santa Catarina", x: 500, y: 730 },
   { uf: "RS", label: "Rio Grande do Sul", x: 468, y: 820 },
 ];
+const VALID_UFS = new Set(UF_MAP_POINTS.map((point) => point.uf));
+
+function normalizeUf(value: string | undefined | null): string | null {
+  const uf = (value ?? "").trim().toUpperCase();
+  return VALID_UFS.has(uf) ? uf : null;
+}
+
+function getRowUf(row: { uf?: string; regiao?: string }): string | null {
+  return normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+}
 
 export default function Preco() {
   usePageTitle("Análise de Preço");
@@ -560,7 +571,7 @@ function PriceUfMapSection({
     const baseByUf = new Map<string, { rol: number; volumeKg: number }>();
 
     for (const row of rows) {
-      const uf = (row.uf ?? "").trim().toUpperCase();
+      const uf = getRowUf(row);
       if (!uf) continue;
       if (periodMatches(row.periodo, row.fy, comp)) {
         const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0 };
