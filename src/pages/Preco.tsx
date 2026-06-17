@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   ArrowRight,
+  BarChart3,
   BookOpen,
   Calendar,
   CalendarDays,
@@ -640,6 +641,11 @@ function PriceUfMapSection({
   const maxPrice = Math.max(...prices);
   const maxShare = Math.max(...data.map((point) => point.volumeShare), 0);
   const ranked = [...data].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
+  const totalVolumeKg = data.reduce((acc, point) => acc + point.volumeKg, 0);
+  const avgPrice =
+    totalVolumeKg > 0 ? data.reduce((acc, point) => acc + point.rol, 0) / totalVolumeKg : 0;
+  const priceSpread = prices.length > 0 ? maxPrice - minPrice : 0;
+  const topVolume = ranked[0] ?? null;
 
   const colorForPrice = (value: number) => {
     const span = maxPrice - minPrice;
@@ -650,30 +656,36 @@ function PriceUfMapSection({
 
   const radiusForShare = (share: number) => {
     if (maxShare <= 0) return 12;
-    return 12 + Math.sqrt(share / maxShare) * 24;
+    return 10 + Math.sqrt(share / maxShare) * 26;
   };
 
   return (
-    <GlassCard className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+    <GlassCard className="space-y-5 overflow-hidden">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-primary" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <MapPin className="h-4 w-4" />
+            </span>
             <h2 className="text-lg font-medium">Preço médio por UF</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Cor = PM R$/kg no período de comparação. Tamanho = importância de volume da UF.
+            Compare preço médio e peso de volume por estado no período selecionado.
           </p>
         </div>
-        {explicitSelection && (
-          <button
-            type="button"
-            onClick={() => onSelectedUfChange(null)}
-            className="rounded-full border border-border/60 px-3 py-1 text-xs text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-          >
-            Limpar seleção
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <MapPill label="Cor" value="Preço médio" />
+          <MapPill label="Bolha" value="Volume" />
+          {explicitSelection && (
+            <button
+              type="button"
+              onClick={() => onSelectedUfChange(null)}
+              className="rounded-full border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+            >
+              Limpar seleção
+            </button>
+          )}
+        </div>
       </header>
 
       {data.length === 0 ? (
@@ -681,23 +693,37 @@ function PriceUfMapSection({
           Não há UF com volume no período selecionado para montar o mapa.
         </div>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
-          <div className="rounded-lg border border-border/50 bg-secondary/20 p-3">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.45fr)]">
+          <div className="space-y-4 rounded-lg border border-border/50 bg-[radial-gradient(circle_at_50%_15%,hsl(var(--primary)/0.10),transparent_36%),linear-gradient(180deg,hsl(var(--secondary)/0.28),hsl(var(--background)/0.20))] p-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <MapStat label="PM médio" value={`${fmtRsKg(avgPrice)}/kg`} />
+              <MapStat label="Faixa de PM" value={`${fmtRsKg(priceSpread)}/kg`} />
+              <MapStat label="Volume total" value={`${formatNum(totalVolumeKg / 1000, 1)} t`} />
+              <MapStat label="Maior peso" value={topVolume ? `${topVolume.uf} · ${formatPct(topVolume.volumeShare)}` : "—"} />
+            </div>
+
             <svg
-              viewBox="0 0 900 900"
+              viewBox="0 0 900 820"
               role="img"
               aria-label="Mapa analítico de preço médio por UF"
-              className="h-[520px] w-full"
+              className="h-[440px] w-full"
             >
+              <defs>
+                <filter id="uf-shadow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="9" floodColor="#000000" floodOpacity="0.28" />
+                </filter>
+              </defs>
               <path
                 d="M330 30 L470 70 L565 150 L690 230 L810 280 L760 410 L695 510 L645 610 L540 660 L505 820 L395 855 L335 725 L210 665 L120 565 L95 420 L55 320 L150 185 Z"
-                fill="hsl(var(--secondary) / 0.32)"
-                stroke="hsl(var(--border))"
-                strokeWidth="2"
+                fill="hsl(var(--secondary) / 0.18)"
+                stroke="hsl(var(--border) / 0.75)"
+                strokeWidth="2.5"
+                transform="translate(0 -35)"
               />
               {data.map((point) => {
                 const selectedPoint = selected?.uf === point.uf;
                 const radius = radiusForShare(point.volumeShare);
+                const cy = point.y - 35;
                 return (
                   <g
                     key={point.uf}
@@ -715,18 +741,20 @@ function PriceUfMapSection({
                   >
                     <circle
                       cx={point.x}
-                      cy={point.y}
-                      r={radius + (selectedPoint ? 7 : 0)}
-                      fill={selectedPoint ? "hsl(var(--primary) / 0.18)" : "transparent"}
+                      cy={cy}
+                      r={radius + (selectedPoint ? 9 : 5)}
+                      fill={selectedPoint ? "hsl(var(--primary) / 0.24)" : "hsl(var(--background) / 0.18)"}
+                      opacity={selectedPoint ? 1 : 0.7}
                     />
                     <circle
                       cx={point.x}
-                      cy={point.y}
+                      cy={cy}
                       r={radius}
                       fill={colorForPrice(point.precoMedio)}
-                      opacity={selectedPoint ? 1 : 0.82}
+                      opacity={selectedPoint ? 1 : 0.9}
                       stroke={selectedPoint ? "hsl(var(--foreground))" : "hsl(var(--background))"}
                       strokeWidth={selectedPoint ? 4 : 2}
+                      filter="url(#uf-shadow)"
                     >
                       <title>
                         {point.label} • {fmtRsKg(point.precoMedio)}/kg • {formatPct(point.volumeShare)} do volume
@@ -734,9 +762,9 @@ function PriceUfMapSection({
                     </circle>
                     <text
                       x={point.x}
-                      y={point.y + 4}
+                      y={cy + 4}
                       textAnchor="middle"
-                      className="select-none fill-background text-[22px] font-semibold"
+                      className="select-none fill-white text-[20px] font-bold"
                     >
                       {point.uf}
                     </text>
@@ -744,26 +772,33 @@ function PriceUfMapSection({
                 );
               })}
             </svg>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-muted-foreground">
-              <span>PM menor: {fmtRsKg(minPrice)}/kg</span>
-              <div className="h-2 w-48 rounded-full bg-gradient-to-r from-blue-500 via-emerald-500 to-red-500" />
-              <span>PM maior: {fmtRsKg(maxPrice)}/kg</span>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/35 px-3 py-2 text-[11px] text-muted-foreground">
+              <span>PM menor · <strong className="font-medium text-foreground">{fmtRsKg(minPrice)}/kg</strong></span>
+              <div className="flex min-w-[220px] flex-1 items-center gap-2 sm:max-w-sm">
+                <span>baixo</span>
+                <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-red-500 shadow-[0_0_18px_hsl(var(--primary)/0.16)]" />
+                <span>alto</span>
+              </div>
+              <span>PM maior · <strong className="font-medium text-foreground">{fmtRsKg(maxPrice)}/kg</strong></span>
             </div>
           </div>
 
           <aside className="space-y-4">
             {selected && (
-              <div className="rounded-lg border border-border/60 bg-background/70 p-4">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  UF selecionada
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-3">
-                  <h3 className="text-xl font-semibold">{selected.label}</h3>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                      UF em foco
+                    </div>
+                    <h3 className="mt-1 text-2xl font-semibold">{selected.label}</h3>
+                  </div>
+                  <span className="rounded-lg bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
                     {selected.uf}
                   </span>
                 </div>
-                <div className="mt-4 grid gap-3">
+                <div className="mt-4 grid gap-2">
                   <MapMetric label="Preço médio" value={`${fmtRsKg(selected.precoMedio)}/kg`} />
                   <MapMetric
                     label="Importância no volume"
@@ -789,27 +824,40 @@ function PriceUfMapSection({
               </div>
             )}
 
-            <div className="rounded-lg border border-border/60 bg-background/70 p-4">
-              <h3 className="text-sm font-medium">UFs mais relevantes em volume</h3>
-              <div className="mt-3 space-y-3">
+            <div className="rounded-lg border border-border/60 bg-background/55 p-4">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-medium">Ranking de volume</h3>
+              </div>
+              <div className="mt-3 space-y-2.5">
                 {ranked.map((point) => (
                   <button
                     key={point.uf}
                     type="button"
                     onClick={() => onSelectedUfChange(point.uf)}
-                    className="grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-secondary/50"
+                    className="w-full rounded-md px-2 py-2 text-left hover:bg-secondary/50"
                   >
-                    <span className="rounded-md bg-secondary px-2 py-1 text-center text-xs font-semibold">
-                      {point.uf}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{point.label}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {formatPct(point.volumeShare)} do volume
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="rounded-md bg-secondary px-2 py-1 text-center text-xs font-semibold">
+                          {point.uf}
+                        </span>
+                        <span className="truncate text-sm font-medium">{point.label}</span>
+                      </span>
+                      <span className="text-xs font-medium tabular-nums">
+                        {fmtRsKg(point.precoMedio)}/kg
                       </span>
                     </span>
-                    <span className="text-sm font-medium tabular-nums">
-                      {fmtRsKg(point.precoMedio)}/kg
+                    <span className="mt-2 flex items-center gap-2">
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+                        <span
+                          className="block h-full rounded-full bg-primary"
+                          style={{ width: `${Math.max(4, point.volumeShare / Math.max(maxShare, 0.0001) * 100)}%` }}
+                        />
+                      </span>
+                      <span className="w-14 text-right text-[11px] text-muted-foreground">
+                        {formatPct(point.volumeShare)}
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -819,6 +867,24 @@ function PriceUfMapSection({
         </div>
       )}
     </GlassCard>
+  );
+}
+
+function MapPill({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/35 px-3 py-1.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
+    </span>
+  );
+}
+
+function MapStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/40 bg-background/45 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold tabular-nums text-foreground">{value}</div>
+    </div>
   );
 }
 
