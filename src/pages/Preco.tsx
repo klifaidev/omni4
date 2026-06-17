@@ -9,11 +9,14 @@ import { useFyList, useMonthsInfo } from "@/store/selectors";
 import {
   applyFilters,
   computePriceDecomposition,
+  uniqueValues,
   type PriceDecompositionResult,
   type PriceDecompositionSku,
 } from "@/lib/analytics";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { formatBRL, formatPct, formatNum } from "@/lib/format";
+import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
+import brMapRaw from "@/assets/br.svg?raw";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -50,6 +53,7 @@ import {
   YAxis,
 } from "recharts";
 import { usePageTitle } from "@/hooks/use-page-title";
+import type { FilterKey, PricingRow } from "@/lib/types";
 
 type PeriodMode = "month" | "fy";
 type RankingMetric = "preco" | "mix" | "total";
@@ -62,7 +66,22 @@ type UfMapPoint = {
   y: number;
 };
 
+type BrazilStatePath = {
+  uf: string;
+  name: string;
+  d: string;
+};
+
 const fmtRsKg = (v: number) => formatBRL(v, { digits: 2 });
+const SVG_UF_ID = /^BR([A-Z]{2})$/;
+
+const PRODUCT_FILTER_FIELDS: { key: FilterKey; label: string }[] = [
+  { key: "categoria", label: "Categoria" },
+  { key: "subcategoria", label: "Subcategoria" },
+  { key: "marca", label: "Marca" },
+  { key: "formato", label: "Formato" },
+  { key: "sku", label: "SKU" },
+];
 
 const UF_MAP_POINTS: UfMapPoint[] = [
   { uf: "RR", label: "Roraima", x: 322, y: 48 },
@@ -128,6 +147,44 @@ function normalizeUf(value: string | undefined | null): string | null {
 
 function getRowUf(row: { uf?: string; regiao?: string }): string | null {
   return normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+}
+
+function decodeSvgText(value: string): string {
+  const doc = new DOMParser().parseFromString(`<textarea>${value}</textarea>`, "text/html");
+  return doc.querySelector("textarea")?.value ?? value;
+}
+
+function parseBrazilSvg(raw: string): { states: BrazilStatePath[]; labelPoints: UfMapPoint[] } {
+  const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  const states = Array.from(doc.querySelectorAll("g#features path"))
+    .map((path) => {
+      const id = path.getAttribute("id") ?? "";
+      const match = id.match(SVG_UF_ID);
+      const d = path.getAttribute("d") ?? "";
+      if (!match || !d) return null;
+      return {
+        uf: match[1],
+        name: decodeSvgText(path.getAttribute("name") ?? match[1]),
+        d,
+      };
+    })
+    .filter(Boolean) as BrazilStatePath[];
+
+  const labelPoints = Array.from(doc.querySelectorAll("g#label_points circle"))
+    .map((circle) => {
+      const id = circle.getAttribute("id") ?? "";
+      const match = id.match(SVG_UF_ID);
+      if (!match) return null;
+      return {
+        uf: match[1],
+        label: decodeSvgText(circle.getAttribute("class") ?? match[1]),
+        x: Number(circle.getAttribute("cx") ?? 0),
+        y: Number(circle.getAttribute("cy") ?? 0),
+      };
+    })
+    .filter((point): point is UfMapPoint => Boolean(point && point.x && point.y));
+
+  return { states, labelPoints };
 }
 
 export default function Preco() {
@@ -306,9 +363,11 @@ export default function Preco() {
               base={base}
               comp={comp}
               periodMode={periodMode}
+              filters={filters}
               selectedUf={selectedUf}
               onSelectedUfChange={setSelectedUf}
               onApplyUfFilter={(values) => setFilter("uf", values)}
+              onProductFilterChange={setFilter}
             />
             <RankingSection
               result={result}
@@ -580,35 +639,65 @@ function PriceUfMapSection({
   base,
   comp,
   periodMode,
+  filters,
   selectedUf,
   onSelectedUfChange,
   onApplyUfFilter,
+  onProductFilterChange,
 }: {
   rows: ReturnType<typeof applyFilters>;
   base: string | null;
   comp: string | null;
   periodMode: PeriodMode;
+  filters: Partial<Record<FilterKey, string[]>>;
   selectedUf: string | null;
   onSelectedUfChange: (uf: string | null) => void;
   onApplyUfFilter: (values: string[]) => void;
+  onProductFilterChange: (key: FilterKey, values: string[]) => void;
 }) {
   const periodMatches = (periodo: string, fy: string, target: string | null) => {
     if (!target) return false;
     return periodMode === "fy" ? fy === target : periodo === target;
   };
 
+  const { states: brazilStates, labelPoints } = useMemo(() => parseBrazilSvg(brMapRaw), []);
+  const labelPointByUf = useMemo(
+    () => new Map(labelPoints.map((point) => [point.uf, point])),
+    [labelPoints],
+  );
+
+  const productFilterOptions = useMemo(() => {
+    const bySkuDesc = new Map<string, string>();
+    for (const row of rows) {
+      if (row.sku && row.skuDesc && !bySkuDesc.has(row.sku)) bySkuDesc.set(row.sku, row.skuDesc);
+    }
+    return Object.fromEntries(
+      PRODUCT_FILTER_FIELDS.map((field) => {
+        const values = uniqueValues(rows, field.key as keyof PricingRow);
+        const options = values
+          .map((value) => ({
+            value,
+            label: field.key === "sku" && bySkuDesc.get(value) ? `${value} - ${bySkuDesc.get(value)}` : value,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+        return [field.key, options];
+      }),
+    ) as Record<FilterKey, { value: string; label: string }[]>;
+  }, [rows]);
+
   const data = useMemo(() => {
     if (!comp) return [];
-    const compByUf = new Map<string, { rol: number; volumeKg: number; filterValues: Set<string> }>();
+    const compByUf = new Map<string, { rol: number; volumeKg: number; contribMarginal: number; filterValues: Set<string> }>();
     const baseByUf = new Map<string, { rol: number; volumeKg: number }>();
 
     for (const row of rows) {
       const uf = getRowUf(row);
       if (!uf) continue;
       if (periodMatches(row.periodo, row.fy, comp)) {
-        const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0, filterValues: new Set<string>() };
+        const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0, contribMarginal: 0, filterValues: new Set<string>() };
         cur.rol += row.rol;
         cur.volumeKg += row.volumeKg;
+        cur.contribMarginal += row.contribMarginal;
         if (row.uf) cur.filterValues.add(row.uf);
         compByUf.set(uf, cur);
       }
@@ -621,37 +710,45 @@ function PriceUfMapSection({
     }
 
     const totalVolume = Array.from(compByUf.values()).reduce((acc, cur) => acc + cur.volumeKg, 0);
-    return UF_MAP_POINTS.map((point) => {
-      const compValue = compByUf.get(point.uf) ?? { rol: 0, volumeKg: 0, filterValues: new Set<string>() };
-      const baseValue = baseByUf.get(point.uf);
+    return brazilStates.map((state) => {
+      const compValue = compByUf.get(state.uf) ?? { rol: 0, volumeKg: 0, contribMarginal: 0, filterValues: new Set<string>() };
+      const baseValue = baseByUf.get(state.uf);
       const precoMedio = compValue.volumeKg > 0 ? compValue.rol / compValue.volumeKg : 0;
+      const margemPct = compValue.rol > 0 ? compValue.contribMarginal / compValue.rol : 0;
       const precoBase =
         baseValue && baseValue.volumeKg > 0 ? baseValue.rol / baseValue.volumeKg : null;
+      const point = labelPointByUf.get(state.uf);
       return {
-        ...point,
+        uf: state.uf,
+        label: point?.label ?? state.name,
+        x: point?.x ?? 0,
+        y: point?.y ?? 0,
         rol: compValue.rol,
         volumeKg: compValue.volumeKg,
+        contribMarginal: compValue.contribMarginal,
+        margemPct,
         precoMedio,
         volumeShare: totalVolume > 0 ? compValue.volumeKg / totalVolume : 0,
         precoBase,
         variacaoPreco: precoBase !== null ? precoMedio - precoBase : null,
         filterValues: Array.from(compValue.filterValues),
       };
-    }).filter((point) => point.volumeKg > 0);
+    }).filter((point) => point.volumeKg > 0 && point.x && point.y);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, base, comp, periodMode]);
+  }, [rows, base, comp, periodMode, brazilStates, labelPointByUf]);
 
   const explicitSelection = data.find((point) => point.uf === selectedUf) ?? null;
   const selected = explicitSelection ?? [...data].sort((a, b) => b.volumeKg - a.volumeKg)[0] ?? null;
-  const prices = data.map((point) => point.precoMedio).filter((value) => value > 0);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
+  const margins = data.map((point) => point.margemPct).filter(Number.isFinite);
+  const minMargin = Math.min(...margins);
+  const maxMargin = Math.max(...margins);
   const maxShare = Math.max(...data.map((point) => point.volumeShare), 0);
   const ranked = [...data].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
+  const dataByUf = new Map(data.map((point) => [point.uf, point]));
 
-  const colorForPrice = (value: number) => {
-    const span = maxPrice - minPrice;
-    const t = span > 0 ? (value - minPrice) / span : 0.5;
+  const colorForMargin = (value: number) => {
+    const span = maxMargin - minMargin;
+    const t = span > 0 ? (value - minMargin) / span : 0.5;
     const hue = t * 220;
     return `hsl(${hue} 84% 54%)`;
   };
@@ -669,14 +766,14 @@ function PriceUfMapSection({
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <MapPin className="h-4 w-4" />
             </span>
-            <h2 className="text-lg font-medium">Preço médio por UF</h2>
+            <h2 className="text-lg font-medium">Margem por UF</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Cores do preço médio no período de comparação: vermelho = mais barato, azul = mais caro.
+            Cor = Contrib. Marginal %. Vermelho indica margem baixa; azul indica margem alta.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <MapPill label="Cor" value="Preço médio" />
+          <MapPill label="Cor" value="CM %" />
           <MapPill label="Bolha" value="Volume" />
           {explicitSelection && (
             <button
@@ -700,32 +797,47 @@ function PriceUfMapSection({
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/35 px-3 py-2 text-xs">
               <div>
                 <span className="font-medium text-foreground">Mapa do Brasil</span>
-                <span className="ml-2 text-muted-foreground">Preço médio por UF no período de comparação</span>
+                <span className="ml-2 text-muted-foreground">Contribuição Marginal % por UF no período de comparação</span>
               </div>
               <span className="text-muted-foreground">Bolha = participação no volume da visão atual</span>
             </div>
 
             <svg
-              viewBox="70 10 760 735"
+              viewBox="0 0 1000 912"
               role="img"
-              aria-label="Mapa analítico de preço médio por UF"
-              className="h-[390px] w-full"
+              aria-label="Mapa do Brasil por contribuição marginal percentual"
+              className="h-[420px] w-full"
             >
               <defs>
                 <filter id="uf-shadow" x="-40%" y="-40%" width="180%" height="180%">
                   <feDropShadow dx="0" dy="8" stdDeviation="9" floodColor="#000000" floodOpacity="0.28" />
                 </filter>
               </defs>
-              <path
-                d="M445 28 C498 35 534 64 570 101 C609 143 675 164 724 205 C770 244 821 270 824 324 C829 389 762 416 733 467 C711 506 707 554 668 588 C635 616 583 626 566 668 C550 704 562 753 521 786 C486 814 439 781 420 735 C404 696 382 668 341 651 C304 635 260 629 236 590 C211 551 181 531 179 482 C176 429 157 392 127 351 C98 311 117 267 160 242 C198 219 208 179 238 151 C272 119 303 78 348 53 C383 34 411 27 445 28 Z"
-                fill="hsl(var(--secondary) / 0.16)"
-                stroke="hsl(var(--foreground) / 0.18)"
-                strokeWidth="3"
-              />
+              {brazilStates.map((state) => {
+                const stateData = dataByUf.get(state.uf);
+                const selectedState = selected?.uf === state.uf;
+                return (
+                  <path
+                    key={state.uf}
+                    d={state.d}
+                    fill={stateData ? colorForMargin(stateData.margemPct) : "hsl(var(--secondary) / 0.35)"}
+                    opacity={stateData ? 0.9 : 0.5}
+                    stroke={selectedState ? "hsl(var(--foreground))" : "hsl(var(--background))"}
+                    strokeWidth={selectedState ? 2.2 : 0.8}
+                    className={stateData ? "cursor-pointer transition-opacity hover:opacity-100" : ""}
+                    onClick={() => stateData && onSelectedUfChange(state.uf)}
+                  >
+                    <title>
+                      {state.name}
+                      {stateData ? ` • CM ${formatPct(stateData.margemPct)} • Vol ${formatPct(stateData.volumeShare)}` : " • sem dados no período"}
+                    </title>
+                  </path>
+                );
+              })}
               {data.map((point) => {
                 const selectedPoint = selected?.uf === point.uf;
                 const radius = radiusForShare(point.volumeShare);
-                const cy = point.y - 72;
+                const cy = point.y;
                 return (
                   <g
                     key={point.uf}
@@ -752,14 +864,14 @@ function PriceUfMapSection({
                       cx={point.x}
                       cy={cy}
                       r={radius}
-                      fill={colorForPrice(point.precoMedio)}
+                      fill={colorForMargin(point.margemPct)}
                       opacity={selectedPoint ? 1 : 0.9}
                       stroke={selectedPoint ? "hsl(var(--foreground))" : "hsl(var(--background))"}
                       strokeWidth={selectedPoint ? 4 : 2}
                       filter="url(#uf-shadow)"
                     >
                       <title>
-                        {point.label} • {fmtRsKg(point.precoMedio)}/kg • {formatPct(point.volumeShare)} do volume
+                        {point.label} • CM {formatPct(point.margemPct)} • {formatPct(point.volumeShare)} do volume
                       </title>
                     </circle>
                     <text
@@ -776,14 +888,19 @@ function PriceUfMapSection({
             </svg>
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/35 px-3 py-2 text-[11px] text-muted-foreground">
-              <span>PM menor · <strong className="font-medium text-foreground">{fmtRsKg(minPrice)}/kg</strong></span>
+              <span>Menor CM · <strong className="font-medium text-foreground">{formatPct(minMargin)}</strong></span>
               <div className="flex min-w-[220px] flex-1 items-center gap-2 sm:max-w-sm">
-                <span>barato</span>
+                <span>baixa</span>
                 <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-500 via-emerald-400 to-blue-500 shadow-[0_0_18px_hsl(var(--primary)/0.16)]" />
-                <span>caro</span>
+                <span>alta</span>
               </div>
-              <span>PM maior · <strong className="font-medium text-foreground">{fmtRsKg(maxPrice)}/kg</strong></span>
+              <span>Maior CM · <strong className="font-medium text-foreground">{formatPct(maxMargin)}</strong></span>
             </div>
+            <ProductFiltersPanel
+              filters={filters}
+              optionsByKey={productFilterOptions}
+              onChange={onProductFilterChange}
+            />
           </div>
 
           <aside className="space-y-4">
@@ -801,6 +918,7 @@ function PriceUfMapSection({
                   </span>
                 </div>
                 <div className="mt-4 grid gap-2">
+                  <MapMetric label="Contrib. Marginal %" value={formatPct(selected.margemPct)} />
                   <MapMetric label="Preço médio" value={`${fmtRsKg(selected.precoMedio)}/kg`} />
                   <MapMetric
                     label="Importância no volume"
@@ -852,10 +970,10 @@ function PriceUfMapSection({
                         <span className="rounded-md bg-secondary px-2 py-1 text-center text-xs font-semibold">
                           {point.uf}
                         </span>
-                        <span className="truncate text-sm font-medium">{point.label}</span>
+                      <span className="truncate text-sm font-medium">{point.label}</span>
                       </span>
                       <span className="text-xs font-medium tabular-nums">
-                        {fmtRsKg(point.precoMedio)}/kg
+                        {formatPct(point.margemPct)}
                       </span>
                     </span>
                     <span className="mt-2 flex items-center gap-2">
@@ -889,12 +1007,45 @@ function MapPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MapStat({ label, value }: { label: string; value: string }) {
+function ProductFiltersPanel({
+  filters,
+  optionsByKey,
+  onChange,
+}: {
+  filters: Partial<Record<FilterKey, string[]>>;
+  optionsByKey: Record<FilterKey, { value: string; label: string }[]>;
+  onChange: (key: FilterKey, values: string[]) => void;
+}) {
   return (
-    <div className="rounded-md border border-border/40 bg-background/45 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-0.5 truncate text-sm font-semibold tabular-nums text-foreground">{value}</div>
-    </div>
+    <section className="rounded-lg border border-border/40 bg-background/35 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Filter className="h-3.5 w-3.5 text-primary" />
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Filtros de Produto
+        </h3>
+        <div className="h-px flex-1 bg-border/40" />
+      </div>
+      <div className="grid gap-2 md:grid-cols-5">
+        {PRODUCT_FILTER_FIELDS.map((field) => {
+          const options = optionsByKey[field.key] ?? [];
+          if (options.length === 0) return null;
+          return (
+            <div key={field.key}>
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                {field.label}
+              </label>
+              <MultiSelectFilter
+                options={options}
+                selected={filters[field.key] ?? []}
+                onChange={(values) => onChange(field.key, values)}
+                placeholder="Todos"
+                variant="sku"
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
