@@ -92,10 +92,36 @@ const UF_MAP_POINTS: UfMapPoint[] = [
   { uf: "RS", label: "Rio Grande do Sul", x: 468, y: 820 },
 ];
 const VALID_UFS = new Set(UF_MAP_POINTS.map((point) => point.uf));
+const STATE_NAME_TO_UF = new Map(
+  UF_MAP_POINTS.flatMap((point) => [
+    [normalizeText(point.label), point.uf],
+    [normalizeText(point.uf), point.uf],
+  ]),
+);
+STATE_NAME_TO_UF.set(normalizeText("Brasília"), "DF");
+STATE_NAME_TO_UF.set(normalizeText("Distrito Federal"), "DF");
+
+function normalizeText(value: string | undefined | null): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function normalizeUf(value: string | undefined | null): string | null {
-  const uf = (value ?? "").trim().toUpperCase();
-  return VALID_UFS.has(uf) ? uf : null;
+  const text = normalizeText(value);
+  if (!text) return null;
+  if (VALID_UFS.has(text)) return text;
+  const brCode = text.match(/\bBR\s*\/\s*([A-Z]{2})\b/)?.[1];
+  if (brCode && VALID_UFS.has(brCode)) return brCode;
+  const exactName = STATE_NAME_TO_UF.get(text);
+  if (exactName) return exactName;
+  for (const [name, uf] of STATE_NAME_TO_UF) {
+    if (name.length > 2 && text.includes(name)) return uf;
+  }
+  return null;
 }
 
 function getRowUf(row: { uf?: string; regiao?: string }): string | null {
@@ -271,6 +297,7 @@ export default function Preco() {
           <>
             <DecompositionKpis result={result} />
             <DecompositionCards result={result} />
+            <ReadingCard result={result} />
             <PriceUfMapSection
               rows={filtered}
               base={base}
@@ -279,7 +306,6 @@ export default function Preco() {
               selectedUf={selectedUf}
               onSelectedUfChange={setSelectedUf}
             />
-            <ReadingCard result={result} />
             <RankingSection
               result={result}
               metric={rankingMetric}
