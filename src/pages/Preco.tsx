@@ -837,7 +837,7 @@ function PriceUfMapSection({
               {brazilStates.map((state) => {
                 const stateData = dataByUf.get(state.uf);
                 const hasVolume = Boolean(stateData && stateData.volumeKg > 0);
-                const selectedState = selected?.uf === state.uf;
+                const selectedState = explicitSelection?.uf === state.uf;
                 const labelPoint = labelPointByUf.get(state.uf);
                 const transform =
                   selectedState && labelPoint
@@ -892,9 +892,9 @@ function PriceUfMapSection({
                       y={point.y + 5}
                       textAnchor="middle"
                       paintOrder="stroke"
-                      stroke="hsl(var(--background) / 0.72)"
-                      strokeWidth={3}
-                      className="select-none fill-slate-800 text-[18px] font-black"
+                      stroke="#1f2937"
+                      strokeWidth={1.1}
+                      className="select-none fill-white text-[18px] font-black"
                     >
                       {point.uf}
                     </text>
