@@ -28,6 +28,7 @@ import {
   BookOpen,
   Calendar,
   CalendarDays,
+  Filter,
   Info,
   MapPin,
   TrendingDown,
@@ -134,6 +135,7 @@ export default function Preco() {
 
   const rows = usePricing((s) => s.rows);
   const filters = usePricing((s) => s.filters);
+  const setFilter = usePricing((s) => s.setFilter);
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
   const fyList = useFyList();
   const months = useMonthsInfo();
@@ -306,6 +308,7 @@ export default function Preco() {
               periodMode={periodMode}
               selectedUf={selectedUf}
               onSelectedUfChange={setSelectedUf}
+              onApplyUfFilter={(values) => setFilter("uf", values)}
             />
             <RankingSection
               result={result}
@@ -579,6 +582,7 @@ function PriceUfMapSection({
   periodMode,
   selectedUf,
   onSelectedUfChange,
+  onApplyUfFilter,
 }: {
   rows: ReturnType<typeof applyFilters>;
   base: string | null;
@@ -586,6 +590,7 @@ function PriceUfMapSection({
   periodMode: PeriodMode;
   selectedUf: string | null;
   onSelectedUfChange: (uf: string | null) => void;
+  onApplyUfFilter: (values: string[]) => void;
 }) {
   const periodMatches = (periodo: string, fy: string, target: string | null) => {
     if (!target) return false;
@@ -594,16 +599,17 @@ function PriceUfMapSection({
 
   const data = useMemo(() => {
     if (!comp) return [];
-    const compByUf = new Map<string, { rol: number; volumeKg: number }>();
+    const compByUf = new Map<string, { rol: number; volumeKg: number; filterValues: Set<string> }>();
     const baseByUf = new Map<string, { rol: number; volumeKg: number }>();
 
     for (const row of rows) {
       const uf = getRowUf(row);
       if (!uf) continue;
       if (periodMatches(row.periodo, row.fy, comp)) {
-        const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0 };
+        const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0, filterValues: new Set<string>() };
         cur.rol += row.rol;
         cur.volumeKg += row.volumeKg;
+        if (row.uf) cur.filterValues.add(row.uf);
         compByUf.set(uf, cur);
       }
       if (periodMatches(row.periodo, row.fy, base)) {
@@ -616,7 +622,7 @@ function PriceUfMapSection({
 
     const totalVolume = Array.from(compByUf.values()).reduce((acc, cur) => acc + cur.volumeKg, 0);
     return UF_MAP_POINTS.map((point) => {
-      const compValue = compByUf.get(point.uf) ?? { rol: 0, volumeKg: 0 };
+      const compValue = compByUf.get(point.uf) ?? { rol: 0, volumeKg: 0, filterValues: new Set<string>() };
       const baseValue = baseByUf.get(point.uf);
       const precoMedio = compValue.volumeKg > 0 ? compValue.rol / compValue.volumeKg : 0;
       const precoBase =
@@ -629,6 +635,7 @@ function PriceUfMapSection({
         volumeShare: totalVolume > 0 ? compValue.volumeKg / totalVolume : 0,
         precoBase,
         variacaoPreco: precoBase !== null ? precoMedio - precoBase : null,
+        filterValues: Array.from(compValue.filterValues),
       };
     }).filter((point) => point.volumeKg > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -641,17 +648,12 @@ function PriceUfMapSection({
   const maxPrice = Math.max(...prices);
   const maxShare = Math.max(...data.map((point) => point.volumeShare), 0);
   const ranked = [...data].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
-  const totalVolumeKg = data.reduce((acc, point) => acc + point.volumeKg, 0);
-  const avgPrice =
-    totalVolumeKg > 0 ? data.reduce((acc, point) => acc + point.rol, 0) / totalVolumeKg : 0;
-  const priceSpread = prices.length > 0 ? maxPrice - minPrice : 0;
-  const topVolume = ranked[0] ?? null;
 
   const colorForPrice = (value: number) => {
     const span = maxPrice - minPrice;
     const t = span > 0 ? (value - minPrice) / span : 0.5;
-    const hue = 210 - t * 210;
-    return `hsl(${hue} 85% 52%)`;
+    const hue = t * 220;
+    return `hsl(${hue} 84% 54%)`;
   };
 
   const radiusForShare = (share: number) => {
@@ -670,7 +672,7 @@ function PriceUfMapSection({
             <h2 className="text-lg font-medium">Preço médio por UF</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Compare preço médio e peso de volume por estado no período selecionado.
+            Cores do preço médio no período de comparação: vermelho = mais barato, azul = mais caro.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -693,20 +695,21 @@ function PriceUfMapSection({
           Não há UF com volume no período selecionado para montar o mapa.
         </div>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.45fr)]">
-          <div className="space-y-4 rounded-lg border border-border/50 bg-[radial-gradient(circle_at_50%_15%,hsl(var(--primary)/0.10),transparent_36%),linear-gradient(180deg,hsl(var(--secondary)/0.28),hsl(var(--background)/0.20))] p-4">
-            <div className="grid gap-3 md:grid-cols-4">
-              <MapStat label="PM médio" value={`${fmtRsKg(avgPrice)}/kg`} />
-              <MapStat label="Faixa de PM" value={`${fmtRsKg(priceSpread)}/kg`} />
-              <MapStat label="Volume total" value={`${formatNum(totalVolumeKg / 1000, 1)} t`} />
-              <MapStat label="Maior peso" value={topVolume ? `${topVolume.uf} · ${formatPct(topVolume.volumeShare)}` : "—"} />
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(330px,0.5fr)]">
+          <div className="space-y-3 rounded-lg border border-border/50 bg-[radial-gradient(circle_at_50%_15%,hsl(var(--primary)/0.08),transparent_34%),linear-gradient(180deg,hsl(var(--secondary)/0.24),hsl(var(--background)/0.14))] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/35 px-3 py-2 text-xs">
+              <div>
+                <span className="font-medium text-foreground">Mapa do Brasil</span>
+                <span className="ml-2 text-muted-foreground">Preço médio por UF no período de comparação</span>
+              </div>
+              <span className="text-muted-foreground">Bolha = participação no volume da visão atual</span>
             </div>
 
             <svg
-              viewBox="0 0 900 820"
+              viewBox="70 10 760 735"
               role="img"
               aria-label="Mapa analítico de preço médio por UF"
-              className="h-[440px] w-full"
+              className="h-[390px] w-full"
             >
               <defs>
                 <filter id="uf-shadow" x="-40%" y="-40%" width="180%" height="180%">
@@ -714,16 +717,15 @@ function PriceUfMapSection({
                 </filter>
               </defs>
               <path
-                d="M330 30 L470 70 L565 150 L690 230 L810 280 L760 410 L695 510 L645 610 L540 660 L505 820 L395 855 L335 725 L210 665 L120 565 L95 420 L55 320 L150 185 Z"
-                fill="hsl(var(--secondary) / 0.18)"
-                stroke="hsl(var(--border) / 0.75)"
-                strokeWidth="2.5"
-                transform="translate(0 -35)"
+                d="M445 28 C498 35 534 64 570 101 C609 143 675 164 724 205 C770 244 821 270 824 324 C829 389 762 416 733 467 C711 506 707 554 668 588 C635 616 583 626 566 668 C550 704 562 753 521 786 C486 814 439 781 420 735 C404 696 382 668 341 651 C304 635 260 629 236 590 C211 551 181 531 179 482 C176 429 157 392 127 351 C98 311 117 267 160 242 C198 219 208 179 238 151 C272 119 303 78 348 53 C383 34 411 27 445 28 Z"
+                fill="hsl(var(--secondary) / 0.16)"
+                stroke="hsl(var(--foreground) / 0.18)"
+                strokeWidth="3"
               />
               {data.map((point) => {
                 const selectedPoint = selected?.uf === point.uf;
                 const radius = radiusForShare(point.volumeShare);
-                const cy = point.y - 35;
+                const cy = point.y - 72;
                 return (
                   <g
                     key={point.uf}
@@ -776,9 +778,9 @@ function PriceUfMapSection({
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/35 px-3 py-2 text-[11px] text-muted-foreground">
               <span>PM menor · <strong className="font-medium text-foreground">{fmtRsKg(minPrice)}/kg</strong></span>
               <div className="flex min-w-[220px] flex-1 items-center gap-2 sm:max-w-sm">
-                <span>baixo</span>
-                <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-blue-500 via-emerald-400 to-red-500 shadow-[0_0_18px_hsl(var(--primary)/0.16)]" />
-                <span>alto</span>
+                <span>barato</span>
+                <div className="h-2 flex-1 rounded-full bg-gradient-to-r from-red-500 via-emerald-400 to-blue-500 shadow-[0_0_18px_hsl(var(--primary)/0.16)]" />
+                <span>caro</span>
               </div>
               <span>PM maior · <strong className="font-medium text-foreground">{fmtRsKg(maxPrice)}/kg</strong></span>
             </div>
@@ -821,6 +823,14 @@ function PriceUfMapSection({
                     }
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => onApplyUfFilter(selected.filterValues.length ? selected.filterValues : [selected.label])}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground"
+                >
+                  <Filter className="h-4 w-4" />
+                  Filtrar visão por {selected.uf}
+                </button>
               </div>
             )}
 
