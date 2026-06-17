@@ -44,6 +44,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -655,6 +656,7 @@ function PriceUfMapSection({
   onApplyUfFilter: (values: string[]) => void;
   onProductFilterChange: (key: FilterKey, values: string[]) => void;
 }) {
+  const months = useMonthsInfo();
   const periodMatches = (periodo: string, fy: string, target: string | null) => {
     if (!target) return false;
     return periodMode === "fy" ? fy === target : periodo === target;
@@ -709,7 +711,7 @@ function PriceUfMapSection({
       }
     }
 
-    const totalVolume = Array.from(compByUf.values()).reduce((acc, cur) => acc + cur.volumeKg, 0);
+    const totalVolume = Array.from(compByUf.values()).reduce((acc, cur) => acc + Math.max(0, cur.volumeKg), 0);
     return brazilStates.map((state) => {
       const compValue = compByUf.get(state.uf) ?? { rol: 0, volumeKg: 0, contribMarginal: 0, filterValues: new Set<string>() };
       const baseValue = baseByUf.get(state.uf);
@@ -728,34 +730,53 @@ function PriceUfMapSection({
         contribMarginal: compValue.contribMarginal,
         margemPct,
         precoMedio,
-        volumeShare: totalVolume > 0 ? compValue.volumeKg / totalVolume : 0,
+        volumeShare: totalVolume > 0 && compValue.volumeKg > 0 ? compValue.volumeKg / totalVolume : 0,
         precoBase,
         variacaoPreco: precoBase !== null ? precoMedio - precoBase : null,
         filterValues: Array.from(compValue.filterValues),
       };
-    }).filter((point) => point.volumeKg > 0 && point.x && point.y);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, base, comp, periodMode, brazilStates, labelPointByUf]);
 
-  const explicitSelection = data.find((point) => point.uf === selectedUf) ?? null;
-  const selected = explicitSelection ?? [...data].sort((a, b) => b.volumeKg - a.volumeKg)[0] ?? null;
-  const margins = data.map((point) => point.margemPct).filter(Number.isFinite);
+  const activeData = data.filter((point) => point.volumeKg > 0 && point.x && point.y);
+  const explicitSelection = activeData.find((point) => point.uf === selectedUf) ?? null;
+  const selected = explicitSelection ?? [...activeData].sort((a, b) => b.volumeKg - a.volumeKg)[0] ?? null;
+  const margins = activeData.map((point) => point.margemPct).filter(Number.isFinite);
   const minMargin = Math.min(...margins);
   const maxMargin = Math.max(...margins);
-  const maxShare = Math.max(...data.map((point) => point.volumeShare), 0);
-  const ranked = [...data].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
+  const maxShare = Math.max(...activeData.map((point) => point.volumeShare), 0);
+  const ranked = [...activeData].sort((a, b) => b.volumeKg - a.volumeKg).slice(0, 6);
   const dataByUf = new Map(data.map((point) => [point.uf, point]));
+
+  const trendData = useMemo(() => {
+    const byPeriod = new Map<string, { rol: number; volumeKg: number; contribMarginal: number }>();
+    for (const row of rows) {
+      const cur = byPeriod.get(row.periodo) ?? { rol: 0, volumeKg: 0, contribMarginal: 0 };
+      cur.rol += row.rol;
+      cur.volumeKg += row.volumeKg;
+      cur.contribMarginal += row.contribMarginal;
+      byPeriod.set(row.periodo, cur);
+    }
+
+    return months
+      .filter((month) => byPeriod.has(month.periodo))
+      .map((month) => {
+        const cur = byPeriod.get(month.periodo)!;
+        return {
+          periodo: month.label,
+          precoMedio: cur.volumeKg > 0 ? cur.rol / cur.volumeKg : 0,
+          margemPct: cur.rol > 0 ? (cur.contribMarginal / cur.rol) * 100 : 0,
+          volumeT: cur.volumeKg / 1000,
+        };
+      });
+  }, [months, rows]);
 
   const colorForMargin = (value: number) => {
     const span = maxMargin - minMargin;
     const t = span > 0 ? (value - minMargin) / span : 0.5;
     const hue = t * 220;
     return `hsl(${hue} 84% 54%)`;
-  };
-
-  const radiusForShare = (share: number) => {
-    if (maxShare <= 0) return 12;
-    return 10 + Math.sqrt(share / maxShare) * 26;
   };
 
   return (
@@ -774,7 +795,7 @@ function PriceUfMapSection({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <MapPill label="Cor" value="CM %" />
-          <MapPill label="Bolha" value="Volume" />
+          <MapPill label="Rótulo" value="UF" />
           {explicitSelection && (
             <button
               type="button"
@@ -787,7 +808,7 @@ function PriceUfMapSection({
         </div>
       </header>
 
-      {data.length === 0 ? (
+      {activeData.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
           Não há UF com volume no período selecionado para montar o mapa.
         </div>
@@ -799,7 +820,7 @@ function PriceUfMapSection({
                 <span className="font-medium text-foreground">Mapa do Brasil</span>
                 <span className="ml-2 text-muted-foreground">Contribuição Marginal % por UF no período de comparação</span>
               </div>
-              <span className="text-muted-foreground">Bolha = participação no volume da visão atual</span>
+              <span className="text-muted-foreground">Cinza = UF sem volume no período</span>
             </div>
 
             <svg
@@ -815,70 +836,65 @@ function PriceUfMapSection({
               </defs>
               {brazilStates.map((state) => {
                 const stateData = dataByUf.get(state.uf);
+                const hasVolume = Boolean(stateData && stateData.volumeKg > 0);
                 const selectedState = selected?.uf === state.uf;
+                const labelPoint = labelPointByUf.get(state.uf);
+                const transform =
+                  selectedState && labelPoint
+                    ? `translate(${labelPoint.x} ${labelPoint.y}) scale(1.045) translate(${-labelPoint.x} ${-labelPoint.y})`
+                    : undefined;
                 return (
-                  <path
-                    key={state.uf}
-                    d={state.d}
-                    fill={stateData ? colorForMargin(stateData.margemPct) : "hsl(var(--secondary) / 0.35)"}
-                    opacity={stateData ? 0.9 : 0.5}
-                    stroke={selectedState ? "hsl(var(--foreground))" : "hsl(var(--background))"}
-                    strokeWidth={selectedState ? 2.2 : 0.8}
-                    className={stateData ? "cursor-pointer transition-opacity hover:opacity-100" : ""}
-                    onClick={() => stateData && onSelectedUfChange(state.uf)}
-                  >
-                    <title>
-                      {state.name}
-                      {stateData ? ` • CM ${formatPct(stateData.margemPct)} • Vol ${formatPct(stateData.volumeShare)}` : " • sem dados no período"}
-                    </title>
-                  </path>
+                  <g key={state.uf} transform={transform} className="transition-transform duration-200">
+                    <path
+                      d={state.d}
+                      fill={hasVolume ? colorForMargin(stateData!.margemPct) : "hsl(var(--muted) / 0.85)"}
+                      opacity={hasVolume ? 0.9 : 0.68}
+                      stroke={selectedState ? "hsl(var(--foreground))" : "hsl(var(--background))"}
+                      strokeWidth={selectedState ? 2.6 : 0.8}
+                      className={hasVolume ? "cursor-pointer transition-opacity hover:opacity-100" : ""}
+                      filter={selectedState ? "url(#uf-shadow)" : undefined}
+                      onClick={() => hasVolume && onSelectedUfChange(state.uf)}
+                    >
+                      <title>
+                        {state.name}
+                        {hasVolume
+                          ? ` • CM ${formatPct(stateData!.margemPct)} • Vol ${formatPct(stateData!.volumeShare)}`
+                          : " • sem volume no período"}
+                      </title>
+                    </path>
+                  </g>
                 );
               })}
-              {data.map((point) => {
-                const selectedPoint = selected?.uf === point.uf;
-                const radius = radiusForShare(point.volumeShare);
-                const cy = point.y;
+              {labelPoints.map((point) => {
+                const stateData = dataByUf.get(point.uf);
+                const hasVolume = Boolean(stateData && stateData.volumeKg > 0);
                 return (
                   <g
                     key={point.uf}
-                    tabIndex={0}
+                    tabIndex={hasVolume ? 0 : -1}
                     role="button"
-                    aria-label={`${point.label}: ${fmtRsKg(point.precoMedio)}/kg, ${formatPct(point.volumeShare)} do volume`}
-                    onClick={() => onSelectedUfChange(point.uf)}
+                    aria-label={
+                      hasVolume
+                        ? `${point.label}: CM ${formatPct(stateData!.margemPct)}, ${formatPct(stateData!.volumeShare)} do volume`
+                        : `${point.label}: sem volume no período`
+                    }
+                    onClick={() => hasVolume && onSelectedUfChange(point.uf)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
+                      if (hasVolume && (event.key === "Enter" || event.key === " ")) {
                         event.preventDefault();
                         onSelectedUfChange(point.uf);
                       }
                     }}
-                    className="cursor-pointer outline-none"
+                    className={hasVolume ? "cursor-pointer outline-none" : "outline-none"}
                   >
-                    <circle
-                      cx={point.x}
-                      cy={cy}
-                      r={radius + (selectedPoint ? 9 : 5)}
-                      fill={selectedPoint ? "hsl(var(--primary) / 0.24)" : "hsl(var(--background) / 0.18)"}
-                      opacity={selectedPoint ? 1 : 0.7}
-                    />
-                    <circle
-                      cx={point.x}
-                      cy={cy}
-                      r={radius}
-                      fill={colorForMargin(point.margemPct)}
-                      opacity={selectedPoint ? 1 : 0.9}
-                      stroke={selectedPoint ? "hsl(var(--foreground))" : "hsl(var(--background))"}
-                      strokeWidth={selectedPoint ? 4 : 2}
-                      filter="url(#uf-shadow)"
-                    >
-                      <title>
-                        {point.label} • CM {formatPct(point.margemPct)} • {formatPct(point.volumeShare)} do volume
-                      </title>
-                    </circle>
                     <text
                       x={point.x}
-                      y={cy + 4}
+                      y={point.y + 5}
                       textAnchor="middle"
-                      className="select-none fill-white text-[20px] font-bold"
+                      paintOrder="stroke"
+                      stroke="hsl(var(--background) / 0.72)"
+                      strokeWidth={3}
+                      className="select-none fill-slate-800 text-[18px] font-black"
                     >
                       {point.uf}
                     </text>
@@ -901,6 +917,7 @@ function PriceUfMapSection({
               optionsByKey={productFilterOptions}
               onChange={onProductFilterChange}
             />
+            <UfTrendChart data={trendData} />
           </div>
 
           <aside className="space-y-4">
@@ -1045,6 +1062,101 @@ function ProductFiltersPanel({
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function UfTrendChart({
+  data,
+}: {
+  data: { periodo: string; precoMedio: number; margemPct: number; volumeT: number }[];
+}) {
+  return (
+    <section className="rounded-lg border border-border/40 bg-background/35 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <TrendingUp className="h-3.5 w-3.5 text-primary" />
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Evolutivo da visão atual
+        </h3>
+        <div className="h-px flex-1 bg-border/40" />
+      </div>
+      {data.length === 0 ? (
+        <div className="flex h-[210px] items-center justify-center rounded-md border border-dashed border-border/50 text-sm text-muted-foreground">
+          Sem dados mensais para o gráfico.
+        </div>
+      ) : (
+        <div className="h-[230px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 12, right: 16, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.28} />
+              <XAxis
+                dataKey="periodo"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="volume"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => formatNum(Number(v), 0)}
+              />
+              <YAxis
+                yAxisId="value"
+                orientation="right"
+                stroke="hsl(var(--muted-foreground))"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => formatNum(Number(v), 0)}
+              />
+              <RTooltip
+                cursor={{ fill: "hsl(var(--secondary) / 0.35)" }}
+                contentStyle={{
+                  background: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                formatter={(value: number, name: string) => {
+                  if (name === "Volume (t)") return [`${formatNum(Number(value), 1)} t`, name];
+                  if (name === "Preço médio") return [`${formatBRL(Number(value), { digits: 2 })}/kg`, name];
+                  return [`${formatNum(Number(value), 1)}%`, name];
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar
+                yAxisId="volume"
+                dataKey="volumeT"
+                name="Volume (t)"
+                fill="hsl(var(--primary) / 0.26)"
+                radius={[4, 4, 0, 0]}
+              />
+              <Line
+                yAxisId="value"
+                type="monotone"
+                dataKey="precoMedio"
+                name="Preço médio"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2.4}
+                dot={{ r: 2.4, strokeWidth: 1 }}
+              />
+              <Line
+                yAxisId="value"
+                type="monotone"
+                dataKey="margemPct"
+                name="Margem %"
+                stroke="hsl(var(--success))"
+                strokeWidth={2.4}
+                dot={{ r: 2.4, strokeWidth: 1 }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </section>
   );
 }
