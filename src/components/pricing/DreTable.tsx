@@ -91,7 +91,7 @@ export interface DreLine {
 const safe = (n: number, d: number) => (d > 0 ? n / d : 0);
 
 export const LINES: DreLine[] = [
-  { id: "vol", label: "Volume (Kg)", kind: "kg", bold: true, get: (a) => a.volume },
+  { id: "vol", label: "Volume (Tons)", kind: "kg", bold: true, get: (a) => a.volume },
   { id: "rol", label: "Receita Líquida", kind: "value", get: (a) => a.rol },
   { id: "rolKg", label: "ROL (R$/Kg)", kind: "perKg", bold: true, get: (a) => safe(a.rol, a.volume) },
   { id: "cv", label: "Custo Variável", kind: "value", get: (a) => -Math.abs(a.custoVariavel) },
@@ -117,7 +117,7 @@ export function fmt(value: number | null, kind: RowKind) {
   if (value == null) return <span className="text-muted-foreground/50">—</span>;
   if (kind === "pct") return formatPct(value);
   if (kind === "perKg") return formatBRL(value, { digits: 2 });
-  if (kind === "kg") return `${formatNum(value, 0)} kg`;
+  if (kind === "kg") return formatNum(value, 0);
   if (Math.abs(value) >= 1_000_000) return formatBRL(value, { compact: true });
   return formatBRL(value, { digits: 0 });
 }

@@ -423,7 +423,7 @@ function numberFormatFor(kind: RowKind, sub: "value" | "delta" | "budget") {
   if (sub === "delta") return "0.0%;[Red]-0.0%";
   if (kind === "pct") return "0.0%;[Red]-0.0%";
   if (kind === "perKg") return '"R$" #,##0.00;[Red]-"R$" #,##0.00';
-  if (kind === "kg") return '#,##0 "kg"';
+  if (kind === "kg") return "#,##0";
   return '"R$" #,##0;[Red]-"R$" #,##0';
 }
 
