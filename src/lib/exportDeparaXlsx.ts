@@ -56,6 +56,49 @@ function appendSheet(
   XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
 }
 
+function downloadWorkbook(wb: XLSX.WorkBook, prefix: string) {
+  const today = new Date();
+  const stamp = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+  XLSX.writeFile(wb, `${prefix}_${stamp}.xlsx`);
+}
+
+function getInovacaoRows() {
+  const inov = getInovacaoMap() as Record<string, DeParaInovacaoEntry>;
+  return Object.entries(inov)
+    .map(([sku, v]) => ({
+      SKU: sku,
+      Classificacao: v.classificacao ?? "",
+      "Ano de Lancamento": v.anoLancamento ?? "",
+      Legado: v.legado ?? "",
+    }))
+    .sort((a, b) => a.SKU.localeCompare(b.SKU));
+}
+
+export function exportInovacaoDeparaAtualXlsx() {
+  const wb = XLSX.utils.book_new();
+  appendSheet(
+    wb,
+    "DePara Inovacao",
+    ["SKU", "Classificacao", "Ano de Lancamento", "Legado"],
+    getInovacaoRows(),
+  );
+  downloadWorkbook(wb, "depara_inovacao_atual");
+}
+
+export function exportInovacaoDeparaModeloXlsx() {
+  const wb = XLSX.utils.book_new();
+  appendSheet(
+    wb,
+    "Modelo",
+    ["SKU", "Classificacao", "Ano de Lancamento", "Legado"],
+    [
+      { SKU: "100001", Classificacao: "Inovacao", "Ano de Lancamento": "2026", Legado: "1A" },
+      { SKU: "100002", Classificacao: "Regular", "Ano de Lancamento": "", Legado: "" },
+    ],
+  );
+  downloadWorkbook(wb, "modelo_depara_inovacao");
+}
+
 export function exportDeparasXlsx() {
   const wb = XLSX.utils.book_new();
 
@@ -137,7 +180,5 @@ export function exportDeparasXlsx() {
   // Move índice para primeira posição
   wb.SheetNames = ["Índice", ...wb.SheetNames.filter((n) => n !== "Índice")];
 
-  const today = new Date();
-  const stamp = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  XLSX.writeFile(wb, `de-paras_auditoria_${stamp}.xlsx`);
+  downloadWorkbook(wb, "de-paras_auditoria");
 }

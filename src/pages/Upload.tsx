@@ -10,7 +10,7 @@ import { useBudget, getBudgetMonthsInfo } from "@/store/budget";
 import { useForecast, getForecastCyclesInfo, getForecastMonthsInfo } from "@/store/forecast";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { useMonthsInfo } from "@/store/selectors";
-import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, TrendingUp, GitBranch, Upload as UploadIcon } from "lucide-react";
+import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, TrendingUp } from "lucide-react";
 import { monthLabel } from "@/lib/format";
 import { getFreshness, type FreshnessStatus } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
@@ -158,7 +158,6 @@ export default function Upload() {
   const removeFile = usePricing((s) => s.removeFile);
   const clearAll = usePricing((s) => s.clearAll);
   const addParsed = usePricing((s) => s.addParsed);
-  const reclassifyPricing = usePricing((s) => s.reclassifyInovacao);
   const parsing = usePricing((s) => s.parsing);
   const isDemoData = usePricing((s) => s.isDemoData);
   const setDemoMode = usePricing((s) => s.setDemoMode);
@@ -169,7 +168,6 @@ export default function Upload() {
   const removeBudgetFile = useBudget((s) => s.removeBudgetFile);
   const clearBudget = useBudget((s) => s.clearBudget);
   const addBudget = useBudget((s) => s.addBudget);
-  const reclassifyBudget = useBudget((s) => s.reclassifyInovacao);
   const budgetMonths = useMemo(() => getBudgetMonthsInfo(budgetRows), [budgetRows]);
 
   const forecastRows = useForecast((s) => s.rows);
@@ -177,23 +175,12 @@ export default function Upload() {
   const removeForecastFile = useForecast((s) => s.removeForecastFile);
   const clearForecast = useForecast((s) => s.clearForecast);
   const addForecast = useForecast((s) => s.addForecast);
-  const reclassifyForecast = useForecast((s) => s.reclassifyInovacao);
   const forecastMonths = useMemo(() => getForecastMonthsInfo(forecastRows), [forecastRows]);
   const forecastCycles = useMemo(() => getForecastCyclesInfo(forecastRows), [forecastRows]);
 
   const setParsingStart = usePricing((s) => s.setParsingStart);
   const setParsingEnd = usePricing((s) => s.setParsingEnd);
-  const inovacaoFile = useInovacaoDepara((s) => s.file);
-  const inovacaoMap = useInovacaoDepara((s) => s.map);
   const setInovacaoDepara = useInovacaoDepara((s) => s.setDepara);
-  const clearInovacaoDepara = useInovacaoDepara((s) => s.clearDepara);
-  const inovacaoInputRef = useRef<HTMLInputElement>(null);
-
-  const reclassifyAllLoadedBases = useCallback(() => {
-    reclassifyPricing();
-    reclassifyBudget();
-    reclassifyForecast();
-  }, [reclassifyPricing, reclassifyBudget, reclassifyForecast]);
 
   const realFreshness = useMemo(() => getFreshness(months), [months]);
   const budgetFreshness = useMemo(() => getFreshness(budgetMonths), [budgetMonths]);
@@ -362,56 +349,6 @@ export default function Upload() {
     },
     [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
   );
-
-  const handleInovacaoDeparaFile = useCallback(
-    async (file: File) => {
-      try {
-        setParsingStart();
-        const parsed = await parseInovacaoDeparaFile(file);
-        if (parsed.file.rowCount === 0) {
-          toast.error(parsed.warnings[0] ?? "Nenhum SKU válido encontrado no De/Para.");
-          return;
-        }
-        setInovacaoDepara(parsed.map, parsed.file);
-        reclassifyAllLoadedBases();
-        toast.success(`De/Para de Inovação aplicado: ${parsed.file.rowCount.toLocaleString("pt-BR")} SKU(s).`);
-        parsed.warnings.forEach((w) => toast.warning(w));
-        if (basesLocais.isElectron) {
-          const resultado = await basesLocais.salvarBase("deparaInovacao", file);
-          if (resultado?.ok) {
-            toast.success("De/Para de Inovação salvo localmente.");
-            await refreshInfoSalvas();
-          }
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error("Falha ao importar De/Para de Inovação.");
-      } finally {
-        setParsingEnd();
-        if (inovacaoInputRef.current) inovacaoInputRef.current.value = "";
-      }
-    },
-    [
-      basesLocais.isElectron,
-      basesLocais.salvarBase,
-      inovacaoInputRef,
-      reclassifyAllLoadedBases,
-      refreshInfoSalvas,
-      setInovacaoDepara,
-      setParsingEnd,
-      setParsingStart,
-    ],
-  );
-
-  const handleClearInovacaoDepara = useCallback(async () => {
-    clearInovacaoDepara();
-    reclassifyAllLoadedBases();
-    if (basesLocais.isElectron) {
-      await basesLocais.deletarBase("deparaInovacao");
-      await refreshInfoSalvas();
-    }
-    toast.success("De/Para de Inovação restaurado para o padrão do app.");
-  }, [basesLocais, clearInovacaoDepara, reclassifyAllLoadedBases, refreshInfoSalvas]);
 
   const savedTypesSet = useMemo(
     () => new Set(Object.entries(basesSalvas).filter(([, v]) => v).map(([k]) => k)),
@@ -607,56 +544,6 @@ export default function Upload() {
               <span className="text-sm text-muted-foreground">Processando arquivo...</span>
             </div>
           )}
-        </GlassCard>
-
-        <GlassCard>
-          <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300">
-                <GitBranch className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold">De/Para Inovação</h3>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Administre SKUs de inovação e seus legados. Ao importar, Real, Budget e Forecast carregados são reclassificados automaticamente.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={inovacaoInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleInovacaoDeparaFile(file);
-                }}
-              />
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => inovacaoInputRef.current?.click()}>
-                <UploadIcon className="h-3.5 w-3.5" />
-                Importar De/Para
-              </Button>
-              <Button size="sm" variant="ghost" className="gap-1.5 text-destructive" onClick={handleClearInovacaoDepara}>
-                <Trash2 className="h-3.5 w-3.5" />
-                Restaurar padrão
-              </Button>
-            </div>
-          </header>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-border/40 bg-secondary/30 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">SKUs mapeados</div>
-              <div className="mt-1 text-xl font-semibold">{Object.keys(inovacaoMap).length.toLocaleString("pt-BR")}</div>
-            </div>
-            <div className="rounded-lg border border-border/40 bg-secondary/30 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Arquivo ativo</div>
-              <div className="mt-1 truncate text-sm font-medium">{inovacaoFile?.name ?? "Padrão do app"}</div>
-            </div>
-            <div className="rounded-lg border border-border/40 bg-secondary/30 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Colunas aceitas</div>
-              <div className="mt-1 text-xs text-muted-foreground">SKU, Classificação, Ano de Lançamento, Legado</div>
-            </div>
-          </div>
         </GlassCard>
 
         {/* Meses + arquivos da base Real */}
