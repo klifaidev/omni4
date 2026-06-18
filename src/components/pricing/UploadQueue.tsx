@@ -9,6 +9,7 @@ import {
   X,
   Database,
   Target,
+  TrendingUp,
   Play,
   Trash2,
   HardDrive,
@@ -16,8 +17,10 @@ import {
 } from "lucide-react";
 import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
 import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
+import { parseForecastFile, type ParsedForecast } from "@/lib/forecast";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
 import { useExistingPeriods } from "@/store/selectors";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -25,7 +28,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/format";
 
-type Kind = "real" | "budget";
+type Kind = "real" | "budget" | "forecast";
 type Status = "parsing" | "ready" | "error" | "applied";
 
 interface QueueItem {
@@ -41,8 +44,11 @@ interface QueueItem {
   // Conteúdo parseado pendente de commit:
   realPayload?: ParsedCsv;
   budgetPayload?: ParsedBudget;
+  forecastPayload?: ParsedForecast;
   originalFile?: File;
 }
+
+type SavedBaseType = "ke30" | "budget" | "forecast";
 
 let _idSeq = 0;
 const nextId = () => `q_${Date.now()}_${++_idSeq}`;
@@ -54,10 +60,10 @@ export function UploadQueue({
   onDeleteFile,
   isElectron,
 }: {
-  onAfterApply?: (applied: { tipo: "ke30" | "budget"; file: File }[]) => void;
+  onAfterApply?: (applied: { tipo: SavedBaseType; file: File }[]) => void;
   savedTypes?: Set<string>;
-  onSaveFile?: (tipo: "ke30" | "budget", file: File) => void;
-  onDeleteFile?: (tipo: "ke30" | "budget") => void;
+  onSaveFile?: (tipo: SavedBaseType, file: File) => void;
+  onDeleteFile?: (tipo: SavedBaseType) => void;
   isElectron?: boolean;
 } = {}) {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -66,13 +72,17 @@ export function UploadQueue({
 
   const realInput = useRef<HTMLInputElement>(null);
   const budgetInput = useRef<HTMLInputElement>(null);
+  const forecastInput = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState<Kind | null>(null);
 
   const addParsedReal = usePricing((s) => s.addParsed);
   const addBudget = useBudget((s) => s.addBudget);
+  const addForecast = useForecast((s) => s.addForecast);
   const realExisting = useExistingPeriods();
   const budgetRows = useBudget((s) => s.rows);
   const budgetExisting = useMemo(() => new Set(budgetRows.map((r) => r.periodo)), [budgetRows]);
+  const forecastRows = useForecast((s) => s.rows);
+  const forecastExisting = useMemo(() => new Set(forecastRows.map((r) => r.forecastCycle)), [forecastRows]);
 
   const enqueueFiles = useCallback(
     async (kind: Kind, files: FileList | File[]) => {
@@ -121,7 +131,7 @@ export function UploadQueue({
                   : it,
               ),
             );
-          } else {
+          } else if (kind === "budget") {
             const lower = file.name.toLowerCase();
             if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
               throw new Error("Apenas .xlsx/.xls aceito para Budget.");
@@ -147,6 +157,32 @@ export function UploadQueue({
                   : it,
               ),
             );
+          } else {
+            const lower = file.name.toLowerCase();
+            if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+              throw new Error("Apenas .xlsx/.xls aceito para Forecast.");
+            }
+            const parsed = await parseForecastFile(file);
+            if (parsed.rows.length === 0) {
+              throw new Error(parsed.warnings[0] ?? "nenhuma linha válida.");
+            }
+            const dup = parsed.file.cycles.filter((m) => forecastExisting.has(m));
+            setItems((prev) =>
+              prev.map((it) =>
+                it.id === placeholder.id
+                  ? {
+                      ...it,
+                      status: "ready",
+                      warnings: parsed.warnings,
+                      rowCount: parsed.rows.length,
+                      months: parsed.file.months,
+                      duplicateMonths: dup,
+                      forecastPayload: parsed,
+                      originalFile: file,
+                    }
+                  : it,
+              ),
+            );
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Falha ao processar arquivo.";
@@ -162,8 +198,9 @@ export function UploadQueue({
       setBusy(false);
       if (realInput.current) realInput.current.value = "";
       if (budgetInput.current) budgetInput.current.value = "";
+      if (forecastInput.current) forecastInput.current.value = "";
     },
-    [realExisting, budgetExisting],
+    [realExisting, budgetExisting, forecastExisting],
   );
 
   const removeItem = (id: string) =>
@@ -192,7 +229,7 @@ export function UploadQueue({
       if (!confirmReplace) return;
     }
     setApplying(true);
-    const successfullyApplied: { tipo: "ke30" | "budget"; file: File }[] = [];
+    const successfullyApplied: { tipo: SavedBaseType; file: File }[] = [];
     try {
       for (const it of readyItems) {
         if (it.kind === "real" && it.realPayload) {
@@ -210,6 +247,13 @@ export function UploadQueue({
             it.duplicateMonths.length > 0 ? confirmReplace : false,
           );
           if (it.originalFile) successfullyApplied.push({ tipo: "budget", file: it.originalFile });
+        } else if (it.kind === "forecast" && it.forecastPayload) {
+          addForecast(
+            it.forecastPayload.rows,
+            it.forecastPayload.file,
+            it.duplicateMonths.length > 0 ? confirmReplace : false,
+          );
+          if (it.originalFile) successfullyApplied.push({ tipo: "forecast", file: it.originalFile });
         }
       }
       const counts = readyItems.reduce(
@@ -218,10 +262,10 @@ export function UploadQueue({
           acc.rows += it.rowCount;
           return acc;
         },
-        { real: 0, budget: 0, rows: 0 },
+        { real: 0, budget: 0, forecast: 0, rows: 0 },
       );
       toast.success(
-        `Aplicado: ${counts.real} arquivo(s) Real + ${counts.budget} Budget · ${counts.rows.toLocaleString("pt-BR")} linhas.`,
+        `Aplicado: ${counts.real} Real + ${counts.budget} Budget + ${counts.forecast} Forecast · ${counts.rows.toLocaleString("pt-BR")} linhas.`,
       );
       setItems((prev) =>
         prev.map((it) =>
@@ -253,7 +297,7 @@ export function UploadQueue({
   return (
     <div className="space-y-4">
       {/* Drop zones lado a lado */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <DropZone
           kind="real"
           icon={Database}
@@ -279,6 +323,19 @@ export function UploadQueue({
           inputRef={budgetInput}
           busy={busy}
           onFiles={(f) => enqueueFiles("budget", f)}
+        />
+        <DropZone
+          kind="forecast"
+          icon={TrendingUp}
+          title="Adicionar arquivos Forecast"
+          subtitle="Arraste XLSX ou clique"
+          accent="forecast"
+          accept=".xlsx,.xls"
+          drag={drag === "forecast"}
+          onDragChange={(d) => setDrag(d ? "forecast" : null)}
+          inputRef={forecastInput}
+          busy={busy}
+          onFiles={(f) => enqueueFiles("forecast", f)}
         />
       </div>
 
@@ -368,7 +425,7 @@ function DropZone({
   icon: typeof Database;
   title: string;
   subtitle: string;
-  accent: "primary" | "accent";
+  accent: "primary" | "accent" | "forecast";
   accept: string;
   drag: boolean;
   onDragChange: (d: boolean) => void;
@@ -379,7 +436,9 @@ function DropZone({
   const accentClasses =
     accent === "primary"
       ? "hover:border-primary/50 hover:bg-primary/5 [&.is-drag]:border-primary [&.is-drag]:bg-primary/10 [&_.icon-bg]:bg-primary/10 [&_.icon-bg]:group-hover:bg-primary/20 [&_.icon]:text-primary"
-      : "hover:border-accent/50 hover:bg-accent/5 [&.is-drag]:border-accent [&.is-drag]:bg-accent/10 [&_.icon-bg]:bg-accent/10 [&_.icon-bg]:group-hover:bg-accent/20 [&_.icon]:text-accent";
+      : accent === "accent"
+      ? "hover:border-accent/50 hover:bg-accent/5 [&.is-drag]:border-accent [&.is-drag]:bg-accent/10 [&_.icon-bg]:bg-accent/10 [&_.icon-bg]:group-hover:bg-accent/20 [&_.icon]:text-accent"
+      : "hover:border-emerald-500/50 hover:bg-emerald-500/5 [&.is-drag]:border-emerald-500 [&.is-drag]:bg-emerald-500/10 [&_.icon-bg]:bg-emerald-500/10 [&_.icon-bg]:group-hover:bg-emerald-500/20 [&_.icon]:text-emerald-500";
 
   return (
     <div
@@ -440,10 +499,10 @@ function QueueRow({
   onRemove: () => void;
   isElectron?: boolean;
   savedTypes?: Set<string>;
-  onSaveFile?: (tipo: "ke30" | "budget", file: File) => void;
-  onDeleteFile?: (tipo: "ke30" | "budget") => void;
+  onSaveFile?: (tipo: SavedBaseType, file: File) => void;
+  onDeleteFile?: (tipo: SavedBaseType) => void;
 }) {
-  const tipo = item.kind === "real" ? "ke30" : "budget";
+  const tipo: SavedBaseType = item.kind === "real" ? "ke30" : item.kind;
   const isSaved = savedTypes?.has(tipo) ?? false;
 
   const Icon =
@@ -459,7 +518,11 @@ function QueueRow({
     : "text-muted-foreground";
 
   const bgClass =
-    item.kind === "real" ? "border-primary/20 bg-primary/[0.04]" : "border-accent/20 bg-accent/[0.04]";
+    item.kind === "real"
+      ? "border-primary/20 bg-primary/[0.04]"
+      : item.kind === "budget"
+      ? "border-accent/20 bg-accent/[0.04]"
+      : "border-emerald-500/20 bg-emerald-500/[0.04]";
 
   return (
     <li className={cn("rounded-lg border px-3 py-2.5", bgClass)}>
@@ -476,9 +539,13 @@ function QueueRow({
             <span className="truncate text-sm font-medium">{item.fileName}</span>
             <span className={cn(
               "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
-              item.kind === "real" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent",
+              item.kind === "real"
+                ? "bg-primary/15 text-primary"
+                : item.kind === "budget"
+                ? "bg-accent/15 text-accent"
+                : "bg-emerald-500/15 text-emerald-500",
             )}>
-              {item.kind === "real" ? "Real" : "Budget"}
+              {item.kind === "real" ? "Real" : item.kind === "budget" ? "Budget" : "Forecast"}
             </span>
             <span className={cn("shrink-0 text-[10px] font-medium uppercase tracking-wider", colorClass)}>
               {labelForStatus(item.status)}

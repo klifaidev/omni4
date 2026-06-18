@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-export type TipoBase = "ke30" | "budget" | "demanda";
+export type TipoBase = "ke30" | "budget" | "forecast" | "demanda";
 
 export interface InfoBase {
   quantidade: number;
