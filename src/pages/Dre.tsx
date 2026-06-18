@@ -8,20 +8,42 @@ import {
 } from "@/components/pricing/DreTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { GlassCard } from "@/components/pricing/GlassCard";
+import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { Topbar } from "@/components/pricing/Topbar";
-import { applyFilters } from "@/lib/analytics";
+import { applyFilters, uniqueValues } from "@/lib/analytics";
+import { getDeParaBySku } from "@/lib/depara";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useMonthsInfo } from "@/store/selectors";
 import { useMemo, useState } from "react";
-import { Calendar, Download, Sigma } from "lucide-react";
+import { Briefcase, Calendar, ChevronDown, Download, Filter, Package, Sigma, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { BudgetRow } from "@/lib/budget";
-import type { Filters } from "@/lib/types";
+import type { FilterKey, Filters, PricingRow } from "@/lib/types";
 import { usePageTitle } from "@/hooks/use-page-title";
 import * as XLSX from "xlsx";
+
+const PRODUCT_FILTER_FIELDS: { key: FilterKey; label: string }[] = [
+  { key: "categoria", label: "Categoria" },
+  { key: "subcategoria", label: "Subcategoria" },
+  { key: "marca", label: "Marca" },
+  { key: "tecnologia", label: "Tecnologia" },
+  { key: "formato", label: "Formato" },
+  { key: "mercado", label: "Mercado" },
+  { key: "faixaPeso", label: "Faixa de Peso" },
+  { key: "sabor", label: "Sabor" },
+  { key: "sku", label: "Artigo (SKU)" },
+];
+
+const COMMERCIAL_FILTER_FIELDS: { key: FilterKey; label: string }[] = [
+  { key: "canalAjustado", label: "Canal Ajustado" },
+  { key: "mercadoAjustado", label: "Mercado Ajustado" },
+  { key: "regional", label: "Regional" },
+  { key: "uf", label: "UF" },
+  { key: "gestorResp", label: "Gestor Resp." },
+];
 
 function applyBudgetFilters(rows: BudgetRow[], filters: Filters): BudgetRow[] {
   return rows.filter((r) => {
@@ -38,15 +60,28 @@ export default function Dre() {
   usePageTitle("DRE");
   const rows = usePricing((s) => s.rows);
   const filters = usePricing((s) => s.filters);
+  const setFilter = usePricing((s) => s.setFilter);
+  const clearFilters = usePricing((s) => s.clearFilters);
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
   const budgetRowsAll = useBudget((s) => s.rows);
   const months = useMonthsInfo();
   const [mode, setMode] = useState<DrePeriodMode>("month");
+  const [showFilters, setShowFilters] = useState(false);
+  const [exportDelta, setExportDelta] = useState(false);
+  const [exportBudget, setExportBudget] = useState(false);
 
   const filtered = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
   const filteredBudget = useMemo(
     () => applyBudgetFilters(budgetRowsAll, filters),
     [budgetRowsAll, filters],
+  );
+  const filterBaseRows = useMemo(
+    () => applyFilters(rows, {}, selectedPeriods).filter((r) => getDeParaBySku(r.sku)),
+    [rows, selectedPeriods],
+  );
+  const activeFiltersCount = useMemo(
+    () => Object.values(filters).reduce((sum, values) => sum + (values?.length ?? 0), 0),
+    [filters],
   );
 
   if (rows.length === 0) {
@@ -81,6 +116,16 @@ export default function Dre() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <PeriodModeToggle mode={mode} onChange={setMode} />
+              <ExportOptionToggle
+                label="Delta"
+                active={exportDelta}
+                onClick={() => setExportDelta((v) => !v)}
+              />
+              <ExportOptionToggle
+                label="Budget"
+                active={exportBudget}
+                onClick={() => setExportBudget((v) => !v)}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -93,6 +138,8 @@ export default function Dre() {
                       mode,
                       selectedPeriods,
                       budgetRows: filteredBudget,
+                      showDelta: exportDelta,
+                      showBudget: exportBudget,
                     });
                     toast.success("DRE exportado em XLSX.");
                   } catch (err) {
@@ -105,6 +152,15 @@ export default function Dre() {
               </Button>
             </div>
           </header>
+          <DreFiltersPanel
+            open={showFilters}
+            onToggle={() => setShowFilters((v) => !v)}
+            rows={filterBaseRows}
+            filters={filters}
+            onChange={setFilter}
+            onClear={clearFilters}
+            activeCount={activeFiltersCount}
+          />
           <DreTable
             rows={filtered}
             months={months}
@@ -153,6 +209,172 @@ function PeriodModeToggle({
         );
       })}
     </div>
+  );
+}
+
+function ExportOptionToggle({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border/50 bg-background/40 text-muted-foreground hover:text-foreground",
+      )}
+      title={active ? `${label} entrará no XLSX` : `${label} não entrará no XLSX`}
+    >
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full",
+          active ? "bg-primary" : "bg-muted-foreground/30",
+        )}
+      />
+      {label}
+    </button>
+  );
+}
+
+function DreFiltersPanel({
+  open,
+  onToggle,
+  rows,
+  filters,
+  onChange,
+  onClear,
+  activeCount,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  rows: PricingRow[];
+  filters: Filters;
+  onChange: (key: FilterKey, values: string[]) => void;
+  onClear: () => void;
+  activeCount: number;
+}) {
+  const renderField = (
+    field: { key: FilterKey; label: string },
+    variant: "sku" | "comercial",
+  ) => {
+    const options = uniqueValues(rows, field.key as keyof PricingRow);
+    if (options.length === 0) return null;
+
+    const items = options
+      .map((value) => {
+        if (field.key !== "sku") return { value, label: value };
+        const desc = rows.find((row) => row.sku === value)?.skuDesc;
+        return { value, label: desc ? `${value} - ${desc}` : value };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+    return (
+      <div key={field.key}>
+        <label
+          className={cn(
+            "mb-1 block text-[11px] font-medium uppercase tracking-wider",
+            variant === "comercial" ? "text-success" : "text-muted-foreground",
+          )}
+        >
+          {field.label}
+        </label>
+        <MultiSelectFilter
+          options={items}
+          selected={filters[field.key] ?? []}
+          onChange={(values) => onChange(field.key, values)}
+          placeholder="Todos"
+          variant={variant}
+        />
+      </div>
+    );
+  };
+
+  return (
+    <section className="mb-4 rounded-xl border border-border/50 bg-secondary/15">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="rounded-md bg-primary/10 p-1.5 text-primary">
+            <Filter className="h-4 w-4" />
+          </span>
+          <span>
+            <span className="block text-sm font-medium">Filtros da aba</span>
+            <span className="block text-xs text-muted-foreground">
+              Produto e Comercial aplicados ao DRE e ao XLSX
+            </span>
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          {activeCount > 0 && (
+            <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
+              {activeCount} selecionado{activeCount > 1 ? "s" : ""}
+            </span>
+          )}
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <div className="space-y-4 border-t border-border/40 px-4 pb-4 pt-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Filtre direto por esta tela sem precisar sair do DRE.
+            </p>
+            {activeCount > 0 && (
+              <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={onClear}>
+                <X className="h-3 w-3" />
+                Limpar
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Produto
+                </h4>
+                <div className="h-px flex-1 bg-border/40" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                {PRODUCT_FILTER_FIELDS.map((field) => renderField(field, "sku"))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-success/20 bg-success/5 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <Briefcase className="h-3.5 w-3.5 text-success" />
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-success">
+                  Comercial
+                </h4>
+                <div className="h-px flex-1 bg-success/20" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                {COMMERCIAL_FILTER_FIELDS.map((field) => renderField(field, "comercial"))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -211,6 +433,8 @@ function buildDreExportColumns(args: {
   mode: DrePeriodMode;
   selectedPeriods: string[] | null;
   budgetRows: BudgetRow[];
+  showDelta: boolean;
+  showBudget: boolean;
 }): DreExportColumn[] {
   const sortedMonths = [...args.months].sort((a, b) =>
     a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
@@ -243,7 +467,7 @@ function buildDreExportColumns(args: {
       : `${first.label} -> ${last.label} - ${visibleMonths.length} meses${
           fySpan.length > 1 ? ` - ${fySpan.join(" + ")}` : ` - ${fySpan[0]}`
         }`;
-    const budgetAgg = budgetRs.length ? aggregateBudgetForExport(budgetRs) : undefined;
+    const budgetAgg = args.showBudget && budgetRs.length ? aggregateBudgetForExport(budgetRs) : undefined;
     return [{
       key: "acumulado",
       label: "Acumulado",
@@ -257,12 +481,16 @@ function buildDreExportColumns(args: {
   let previousAgg: PeriodAgg | undefined;
   return visibleMonths.map((m) => {
     const agg = aggregate(args.rows.filter((r) => r.periodo === m.periodo));
-    const budgetAgg = budgetByPeriod.get(m.periodo);
+    const budgetAgg = args.showBudget ? budgetByPeriod.get(m.periodo) : undefined;
     const col: DreExportColumn = {
       key: m.periodo,
       label: m.label,
       sublabel: m.fy,
-      subCols: ["value", ...(previousAgg ? ["delta" as const] : []), ...(budgetAgg ? ["budget" as const] : [])],
+      subCols: [
+        "value",
+        ...(args.showDelta && previousAgg ? ["delta" as const] : []),
+        ...(budgetAgg ? ["budget" as const] : []),
+      ],
       agg,
       previousAgg,
       budgetAgg,
@@ -278,6 +506,8 @@ function exportDreXlsx(args: {
   mode: DrePeriodMode;
   selectedPeriods: string[] | null;
   budgetRows: BudgetRow[];
+  showDelta: boolean;
+  showBudget: boolean;
 }) {
   const columns = buildDreExportColumns(args);
   if (columns.length === 0) throw new Error("Nenhum periodo disponivel para exportar.");
