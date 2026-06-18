@@ -35,6 +35,7 @@ import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
 import { monthLabel, formatBRL } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
@@ -42,6 +43,7 @@ import {
 import { KPI_MEASURES } from "@/lib/customSlide";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
@@ -50,13 +52,15 @@ function useDataSource(
   dataSource: BlockDataSource | undefined,
   pricing: PricingRow[],
   budget: BudgetRow[],
+  forecast: import("@/lib/forecast").ForecastRow[],
 ): PricingRow[] {
   return useMemo(() => {
     if (!dataSource || dataSource === "ke30") return pricing;
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
     return pricing;
-  }, [dataSource, pricing, budget]);
+  }, [dataSource, pricing, budget, forecast]);
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
@@ -426,10 +430,11 @@ function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEdi
 function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
+  const forecast = useForecast((s) => s.rows);
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
-  const baseRows = useDataSource(b.dataSource, pricing, budget);
+  const baseRows = useDataSource(b.dataSource, pricing, budget, forecast);
 
   // Split incoming filters into "period" (special: format-tolerant + overrides
   // the block's own periodMode/periodValue) and "dimensional" (other dims).
@@ -657,7 +662,8 @@ function BridgeRender({ block: b }: { block: BridgeBlock }) {
 function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boolean }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const sourceRows = useDataSource(b.dataSource, pricing, budget);
+  const forecast = useForecast((s) => s.rows);
+  const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast);
 
   const data = useMemo(() => {
     const unified = buildUnifiedRows(sourceRows, [], "real");
@@ -1036,7 +1042,8 @@ function ChartRender({ block }: { block: ChartBlock }) {
 function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const rows = useDataSource(b.dataSource, pricing, budget);
+  const forecast = useForecast((s) => s.rows);
+  const rows = useDataSource(b.dataSource, pricing, budget, forecast);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
     () => computeTopRanking(rows, b.filters, b.dim, b.measure, 9999, b.periodMode, b.periodValue),
@@ -1148,7 +1155,8 @@ function conditionalColor(
 function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boolean }) {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
+  const forecastRows = useForecast((s) => s.rows);
+  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows, forecastRows);
   const months = useMonthsInfo();
 
   const filteredRows = useMemo(

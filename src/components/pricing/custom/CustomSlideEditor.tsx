@@ -47,7 +47,8 @@ import {
   CANVAS_W, CANVAS_H, FOOTER_H,
   newBlock, newChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  isFromBudgetBase,
+  FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
+  isFromBudgetBase, isFromForecastBase,
   type BlockDataSource,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
@@ -85,6 +86,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { resolveTableFit, type FitInfo } from "@/lib/customCapacity";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
 import type { Filters } from "@/lib/types";
@@ -96,6 +98,46 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+function dataSourceLabel(ds: BlockDataSource | undefined): string {
+  if (ds === "budget") return "Budget";
+  if (ds === "forecast") return "Forecast";
+  if (ds === "budget_real") return "Real Bud.";
+  return "KE30";
+}
+
+function dataSourceBadgeClass(ds: BlockDataSource | undefined): string {
+  if (ds === "budget") return "bg-purple-500/15 text-purple-600 dark:text-purple-300";
+  if (ds === "forecast") return "bg-amber-500/15 text-amber-700 dark:text-amber-200";
+  if (ds === "budget_real") return "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
+  return "bg-blue-500/15 text-blue-600 dark:text-blue-300";
+}
+
+function dataSourceActiveClass(ds: BlockDataSource): string {
+  if (ds === "budget") return "bg-purple-500/20 text-purple-700 dark:text-purple-200";
+  if (ds === "forecast") return "bg-amber-500/20 text-amber-800 dark:text-amber-100";
+  if (ds === "budget_real") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200";
+  return "bg-blue-500/20 text-blue-700 dark:text-blue-200";
+}
+
+function dataSourceDescription(ds: BlockDataSource | undefined): string {
+  if (ds === "budget") return "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissao.";
+  if (ds === "forecast") return "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto.";
+  if (ds === "budget_real") return "Realizado da planilha Budget (legado). Sem MB/Frete/Comissao.";
+  return "Detalhada (KE30): receita, custos, margens, frete, comissao.";
+}
+
+function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
+  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
+  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
+  return [];
+}
+
+function unavailableHintForSource(ds: BlockDataSource | undefined): string | undefined {
+  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
+  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
+  return undefined;
+}
 import {
   useEditorBinding, useUndoRedoState,
   addBlockAction, addChartBlockAction, deleteBlockAction, duplicateBlockAction,
@@ -1789,6 +1831,7 @@ function FilteredInspector({
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const hasBudget = useBudget((s) => s.rows.length > 0);
+  const hasForecast = useForecast((s) => s.rows.length > 0);
 
   // Bridge não tem fonte selecionável (sempre KE30 — usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
@@ -1800,36 +1843,37 @@ function FilteredInspector({
 
   const confirmSwitch = () => {
     if (!pendingSource) return;
-    const isBudgetBase = isFromBudgetBase(pendingSource);
+    const unavailable = unavailableMeasuresForSource(pendingSource);
     // Reset filtros + medida quando a fonte muda — campos podem não existir.
     const patch: Partial<CustomBlock> = {
       dataSource: pendingSource,
       filters: {},
     } as never;
-    if (block.kind === "kpi" && isBudgetBase) {
+    if (block.kind === "kpi" && unavailable.length > 0) {
       const m = (block as KpiBlock).measure;
-      if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
-        (patch as Partial<KpiBlock>).measure = "rol";
+      if (unavailable.includes(m)) {
+        (patch as Partial<KpiBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
       }
     }
-    if (block.kind === "chart" && isBudgetBase) {
+    if (block.kind === "chart" && unavailable.length > 0) {
       const m = (block as ChartBlock).measure;
-      if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
-        (patch as Partial<ChartBlock>).measure = "rol";
+      if (unavailable.includes(m)) {
+        (patch as Partial<ChartBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
       }
     }
-    if (block.kind === "topSku" && isBudgetBase) {
+    if (block.kind === "topSku" && unavailable.length > 0) {
       const m = (block as TopSkuBlock).measure;
-      if (m === "mb" || m === "mbPct" || m === "frete" || m === "comissao") {
-        (patch as Partial<TopSkuBlock>).measure = "rol";
+      if (unavailable.includes(m)) {
+        (patch as Partial<TopSkuBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
       }
     }
-    if (block.kind === "table" && isBudgetBase) {
+    if (block.kind === "table" && unavailable.length > 0) {
       const tb = block as Extract<CustomBlock, { kind: "table" }>;
-      const filtered = tb.measures.filter((m) => !BUDGET_UNAVAILABLE_MEASURES.includes(m));
+      const filtered = tb.measures.filter((m) => !unavailable.includes(m));
       if (filtered.length !== tb.measures.length) {
-        (patch as Partial<typeof tb>).measures = filtered;
-        if (tb.sortMeasure && BUDGET_UNAVAILABLE_MEASURES.includes(tb.sortMeasure)) {
+        const fallback = filtered.length ? filtered : ["vol_real"];
+        (patch as Partial<typeof tb>).measures = fallback;
+        if (tb.sortMeasure && unavailable.includes(tb.sortMeasure)) {
           (patch as Partial<typeof tb>).sortMeasure = filtered[0] ?? undefined;
         }
       }
@@ -1838,13 +1882,22 @@ function FilteredInspector({
     setPendingSource(null);
   };
 
-  const dsBadgeLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
-  const dsBadgeCls = ds === "ke30"
+  const dsBadgeLabel = dataSourceLabel(ds);
+  const dsBadgeCls = ds === "forecast"
+    ? "bg-amber-500/15 text-amber-700 dark:text-amber-200"
+    : ds === "ke30"
     ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
     : ds === "budget"
       ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
       : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
-  const dsDesc = ds === "ke30"
+  const sourceOptions: BlockDataSource[] = [
+    "ke30",
+    ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
+    ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
+  ];
+  const dsDesc = ds === "forecast"
+    ? "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto."
+    : ds === "ke30"
     ? "Detalhada (KE30): receita, custos, margens, frete, comissão."
     : ds === "budget"
       ? "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissão."
@@ -1862,26 +1915,14 @@ function FilteredInspector({
               {dsBadgeLabel}
             </Badge>
           </div>
-          {hasBudget ? (
-            <div className="grid grid-cols-3 gap-1">
-              <button type="button" onClick={() => applySwitch("ke30")}
-                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                  ds === "ke30"
-                    ? "bg-blue-500/20 text-blue-700 dark:text-blue-200"
-                    : "bg-card hover:bg-secondary text-muted-foreground",
-                )}>KE30</button>
-              <button type="button" onClick={() => applySwitch("budget")}
-                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                  ds === "budget"
-                    ? "bg-purple-500/20 text-purple-700 dark:text-purple-200"
-                    : "bg-card hover:bg-secondary text-muted-foreground",
-                )}>Budget</button>
-              <button type="button" onClick={() => applySwitch("budget_real")}
-                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                  ds === "budget_real"
-                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200"
-                    : "bg-card hover:bg-secondary text-muted-foreground",
-                )}>Real Bud.</button>
+          {sourceOptions.length > 1 ? (
+            <div className={cn("grid gap-1", sourceOptions.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
+              {sourceOptions.map((opt) => (
+                <button key={opt} type="button" onClick={() => applySwitch(opt)}
+                  className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
+                    ds === opt ? dataSourceActiveClass(opt) : "bg-card hover:bg-secondary text-muted-foreground",
+                  )}>{dataSourceLabel(opt)}</button>
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-1">
@@ -1890,7 +1931,7 @@ function FilteredInspector({
                   "bg-blue-500/20 text-blue-700 dark:text-blue-200",
                 )}>KE30</button>
               <p className="mt-1 text-[9px] text-muted-foreground italic">
-                Carregue a base Budget para mais opções.
+                Carregue Budget ou Forecast para mais opcoes.
               </p>
             </div>
           )}
@@ -1922,7 +1963,7 @@ function FilteredInspector({
           </p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPendingSource(null)}>Cancelar</Button>
-            <Button onClick={confirmSwitch}>Trocar para {pendingSource === "ke30" ? "KE30" : pendingSource === "budget" ? "Budget" : "Real Bud."}</Button>
+            <Button onClick={confirmSwitch}>Trocar para {dataSourceLabel(pendingSource ?? "ke30")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2029,20 +2070,21 @@ function KpiInspector({ block, onChange }: {
               <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {KPI_MEASURES.map((m) => {
-                  const disabled = isFromBudgetBase(block.dataSource)
-                    && BUDGET_UNAVAILABLE_MEASURES.includes(m.id);
+                  const unavailable = unavailableMeasuresForSource(block.dataSource);
+                  const hint = unavailableHintForSource(block.dataSource);
+                  const disabled = unavailable.includes(m.id);
                   return (
                     <SelectItem key={m.id} value={m.id} disabled={disabled}
-                      title={disabled ? BUDGET_UNAVAILABLE_HINT : undefined}>
+                      title={disabled ? hint : undefined}>
                       {m.label}{disabled ? " — indisponível" : ""}
                     </SelectItem>
                   );
                 })}
               </SelectContent>
             </Select>
-            {isFromBudgetBase(block.dataSource) && (
+            {unavailableHintForSource(block.dataSource) && (
               <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                {BUDGET_UNAVAILABLE_HINT}
+                {unavailableHintForSource(block.dataSource)}
               </p>
             )}
           </div>
@@ -2251,13 +2293,14 @@ function TableBlockEditor({ block, onChange }: {
         <Label className="text-[10px] uppercase text-muted-foreground">Medidas</Label>
         <div className="space-y-1">
           {CUSTOM_TABLE_MEASURES.map((m) => {
-            const disabled = block.dataSource === "budget"
-              && BUDGET_UNAVAILABLE_MEASURES.includes(m.id);
+            const unavailable = unavailableMeasuresForSource(block.dataSource);
+            const hint = unavailableHintForSource(block.dataSource);
+            const disabled = unavailable.includes(m.id);
             return (
               <button key={m.id}
                 onClick={() => { if (!disabled) toggleMeasure(m.id); }}
                 disabled={disabled}
-                title={disabled ? BUDGET_UNAVAILABLE_HINT : undefined}
+                title={disabled ? hint : undefined}
                 className={cn(
                   "flex w-full items-center justify-between rounded px-2 py-1 text-xs hover:bg-secondary",
                   block.measures.includes(m.id) && "bg-primary/10 text-primary",
@@ -2270,9 +2313,9 @@ function TableBlockEditor({ block, onChange }: {
             );
           })}
         </div>
-        {block.dataSource === "budget" && (
+        {unavailableHintForSource(block.dataSource) && (
           <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-            {BUDGET_UNAVAILABLE_HINT}
+            {unavailableHintForSource(block.dataSource)}
           </p>
         )}
       </div>
@@ -2433,20 +2476,21 @@ function TopSkuBlockEditor({ block, onChange }: {
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {KPI_MEASURES.map((m) => {
-                const disabled = block.dataSource === "budget"
-                  && BUDGET_UNAVAILABLE_MEASURES.includes(m.id);
+                const unavailable = unavailableMeasuresForSource(block.dataSource);
+                const hint = unavailableHintForSource(block.dataSource);
+                const disabled = unavailable.includes(m.id);
                 return (
                   <SelectItem key={m.id} value={m.id} disabled={disabled}
-                    title={disabled ? BUDGET_UNAVAILABLE_HINT : undefined}>
+                    title={disabled ? hint : undefined}>
                     {m.label}{disabled ? " — indisponível" : ""}
                   </SelectItem>
                 );
               })}
             </SelectContent>
           </Select>
-          {block.dataSource === "budget" && (
+          {unavailableHintForSource(block.dataSource) && (
             <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-              {BUDGET_UNAVAILABLE_HINT}
+              {unavailableHintForSource(block.dataSource)}
             </p>
           )}
         </div>
@@ -2690,14 +2734,16 @@ function DreSourcePicker({ block, onChange }: {
   onChange: (patch: Partial<DreBlock>) => void;
 }) {
   const hasBudget = useBudget((s) => s.rows.length > 0);
+  const hasForecast = useForecast((s) => s.rows.length > 0);
   const ds = block.dataSource ?? "ke30";
-  const dsBadgeLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
-  const dsBadgeCls = ds === "ke30"
-    ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
-    : ds === "budget"
-      ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
-      : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
-  if (!hasBudget) return null;
+  const dsBadgeLabel = dataSourceLabel(ds);
+  const dsBadgeCls = dataSourceBadgeClass(ds);
+  const sourceOptions: BlockDataSource[] = [
+    "ke30",
+    ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
+    ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
+  ];
+  if (sourceOptions.length <= 1) return null;
   return (
     <div className="rounded-md border border-border/60 bg-secondary/30 p-2">
       <div className="mb-1.5 flex items-center justify-between">
@@ -2708,14 +2754,10 @@ function DreSourcePicker({ block, onChange }: {
           {dsBadgeLabel}
         </Badge>
       </div>
-      <div className="grid grid-cols-3 gap-1">
-        {(["ke30", "budget", "budget_real"] as BlockDataSource[]).map((opt) => {
-          const label = opt === "ke30" ? "KE30" : opt === "budget" ? "Budget" : "Real Bud.";
-          const activeCls = opt === "ke30"
-            ? "bg-blue-500/20 text-blue-700 dark:text-blue-200"
-            : opt === "budget"
-              ? "bg-purple-500/20 text-purple-700 dark:text-purple-200"
-              : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200";
+      <div className={cn("grid gap-1", sourceOptions.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
+        {sourceOptions.map((opt) => {
+          const label = dataSourceLabel(opt);
+          const activeCls = dataSourceActiveClass(opt);
           return (
             <button key={opt} type="button"
               onClick={() => { if (opt !== ds) onChange({ dataSource: opt, periodos: null }); }}
@@ -2961,8 +3003,10 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
     ? "rgba(37,99,235,0.92)"
     : ds === "budget"
       ? "rgba(147,51,234,0.92)"
+      : ds === "forecast"
+        ? "rgba(217,119,6,0.92)"
       : "rgba(5,150,105,0.92)";
-  const dsLabel = ds === "ke30" ? "KE30" : ds === "budget" ? "Budget" : "Real Bud.";
+  const dsLabel = dataSourceLabel(ds);
   return (
     <div
       data-edit-only="true"

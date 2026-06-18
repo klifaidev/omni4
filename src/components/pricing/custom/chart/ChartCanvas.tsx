@@ -20,7 +20,9 @@ const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
 );
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
@@ -221,11 +223,13 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
+  const forecast = useForecast((s) => s.rows);
   const rawDsRows = useMemo(() => {
     if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    if (block.dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
     return pricing;
-  }, [block.dataSource, pricing, budget]);
+  }, [block.dataSource, pricing, budget, forecast]);
   const xDim = block.fieldWells?.xDim ?? null;
   // C1 — colorDim overrides breakdown as series-key generator
   const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
@@ -1649,9 +1653,11 @@ function WaterfallChart({
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const budget = useBudget((s) => s.rows);
+  const forecast = useForecast((s) => s.rows);
   const dsRows = dsRowsProp
     ?? (block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
       : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
+      : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
       : pricing);
 
   const wfMode = style.waterfall.mode ?? "pvm";

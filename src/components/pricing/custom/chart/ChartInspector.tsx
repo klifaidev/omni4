@@ -5,6 +5,8 @@
 import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
+  FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
+  isFromBudgetBase, isFromForecastBase,
 } from "@/lib/customSlide";
 import {
   ensureChartStyle, defaultChartStyle, DEFAULT_PALETTE,
@@ -23,7 +25,9 @@ import { ChartTypePicker } from "./ChartTypePicker";
 import { STYLE_PRESETS, buildStylePresetPatch, type StylePresetId } from "./stylePresets";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { useMemo } from "react";
@@ -45,6 +49,18 @@ const PRESET_THUMB_COLORS: Record<StylePresetId, string[]> = {
   monochrome: ["#0B1220", "#334155", "#64748B", "#94A3B8"],
   harald: ["#C8102E", "#1C2430", "#0F766E", "#EA580C"],
 };
+
+function unavailableMeasuresForSource(ds: ChartBlock["dataSource"]): readonly string[] {
+  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
+  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
+  return [];
+}
+
+function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefined {
+  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
+  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
+  return undefined;
+}
 
 function PresetThumbnail({ id }: { id: StylePresetId }) {
   const colors = PRESET_THUMB_COLORS[id];
@@ -162,8 +178,10 @@ export function ChartInspector({
   // Detect actual series/categories present on canvas to drive per-item editors
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
+  const forecast = useForecast((s) => s.rows);
   const dsRows = block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
     : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
+    : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
     : pricing;
   const detectedSeries = useMemo(() => {
     try {
@@ -216,15 +234,16 @@ export function ChartInspector({
         <Row label="Medida">
           <SelectField value={block.measure}
             onChange={(v) => onChange({ measure: v as KpiMeasureId })}
-            options={KPI_MEASURES.map((m) => ({
-              value: m.id,
-              label: m.label,
-              disabled: block.dataSource === "budget"
-                && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
-              title: block.dataSource === "budget"
-                && BUDGET_UNAVAILABLE_MEASURES.includes(m.id)
-                ? BUDGET_UNAVAILABLE_HINT : undefined,
-            }))} />
+            options={KPI_MEASURES.map((m) => {
+              const unavailable = unavailableMeasuresForSource(block.dataSource);
+              const disabled = unavailable.includes(m.id);
+              return {
+                value: m.id,
+                label: m.label,
+                disabled,
+                title: disabled ? unavailableHintForSource(block.dataSource) : undefined,
+              };
+            })} />
         </Row>
         {S.isCombo && (
           <>
@@ -235,8 +254,7 @@ export function ChartInspector({
                   { value: "__none__", label: "— Nenhuma —" },
                   ...KPI_MEASURES.map((m) => ({
                     value: m.id, label: m.label,
-                    disabled: block.dataSource === "budget"
-                      && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
+                    disabled: unavailableMeasuresForSource(block.dataSource).includes(m.id),
                   })),
                 ]} />
             </Row>
@@ -257,8 +275,7 @@ export function ChartInspector({
                   { value: "__none__", label: "— Índice —" },
                   ...KPI_MEASURES.map((m) => ({
                     value: m.id, label: m.label,
-                    disabled: block.dataSource === "budget"
-                      && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
+                    disabled: unavailableMeasuresForSource(block.dataSource).includes(m.id),
                   })),
                 ]} />
             </Row>
@@ -269,8 +286,7 @@ export function ChartInspector({
                   { value: "__none__", label: "— Medida principal —" },
                   ...KPI_MEASURES.map((m) => ({
                     value: m.id, label: m.label,
-                    disabled: block.dataSource === "budget"
-                      && BUDGET_UNAVAILABLE_MEASURES.includes(m.id),
+                    disabled: unavailableMeasuresForSource(block.dataSource).includes(m.id),
                   })),
                 ]} />
             </Row>
@@ -287,9 +303,9 @@ export function ChartInspector({
             )}
           </>
         )}
-        {block.dataSource === "budget" && (
+        {unavailableHintForSource(block.dataSource) && (
           <p className="text-[10px] leading-snug text-muted-foreground">
-            {BUDGET_UNAVAILABLE_HINT}
+            {unavailableHintForSource(block.dataSource)}
           </p>
         )}
         {(ct !== "waterfall" || (style.waterfall.mode ?? "pvm") === "manual") && (
