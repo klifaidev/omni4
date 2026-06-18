@@ -739,7 +739,9 @@ function PriceUfMapSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, base, comp, periodMode, brazilStates, labelPointByUf]);
 
-  const activeData = data.filter((point) => point.volumeKg > 0 && point.x && point.y);
+  const canColorState = (point: { volumeKg: number; x: number; y: number }) =>
+    point.volumeKg > 0 && point.x > 0 && point.y > 0;
+  const activeData = data.filter(canColorState);
   const explicitSelection = activeData.find((point) => point.uf === selectedUf) ?? null;
   const selected = explicitSelection ?? [...activeData].sort((a, b) => b.volumeKg - a.volumeKg)[0] ?? null;
   const margins = activeData.map((point) => point.margemPct).filter(Number.isFinite);
@@ -836,7 +838,7 @@ function PriceUfMapSection({
               </defs>
               {brazilStates.map((state) => {
                 const stateData = dataByUf.get(state.uf);
-                const hasVolume = Boolean(stateData && stateData.volumeKg > 0);
+                const hasVolume = Boolean(stateData && canColorState(stateData));
                 const selectedState = explicitSelection?.uf === state.uf;
                 const labelPoint = labelPointByUf.get(state.uf);
                 const transform =
@@ -867,7 +869,7 @@ function PriceUfMapSection({
               })}
               {labelPoints.map((point) => {
                 const stateData = dataByUf.get(point.uf);
-                const hasVolume = Boolean(stateData && stateData.volumeKg > 0);
+                const hasVolume = Boolean(stateData && canColorState(stateData));
                 return (
                   <g
                     key={point.uf}
