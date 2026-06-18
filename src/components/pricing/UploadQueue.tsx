@@ -208,6 +208,32 @@ export function UploadQueue({
 
   const clearQueue = () => setItems((prev) => prev.filter((it) => it.status === "applied"));
 
+  const updateForecastCycle = useCallback((id: string, cycle: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== id || it.kind !== "forecast" || !it.forecastPayload) return it;
+        const cycleLabel = formatPeriodLabel(cycle);
+        const rows = it.forecastPayload.rows.map((row) => ({
+          ...row,
+          forecastCycle: cycle,
+          forecastCycleLabel: cycleLabel,
+        }));
+        return {
+          ...it,
+          duplicateMonths: forecastExisting.has(cycle) ? [cycle] : [],
+          forecastPayload: {
+            ...it.forecastPayload,
+            rows,
+            file: {
+              ...it.forecastPayload.file,
+              cycles: [cycle],
+            },
+          },
+        };
+      }),
+    );
+  }, [forecastExisting]);
+
   const readyItems = items.filter((it) => it.status === "ready");
   const errorCount = items.filter((it) => it.status === "error").length;
   const parsingCount = items.filter((it) => it.status === "parsing").length;
@@ -224,7 +250,7 @@ export function UploadQueue({
     if (hasDuplicates) {
       const labels = Array.from(new Set(allDuplicateMonths.map((d) => `${d.kind}:${formatPeriodLabel(d.periodo)}`))).join(", ");
       confirmReplace = window.confirm(
-        `Alguns meses já estão carregados (${labels}). Sobrescrever?`,
+        `Alguns meses/ciclos já estão carregados (${labels}). Sobrescrever?`,
       );
       if (!confirmReplace) return;
     }
@@ -399,6 +425,7 @@ export function UploadQueue({
                 savedTypes={savedTypes}
                 onSaveFile={onSaveFile}
                 onDeleteFile={onDeleteFile}
+                onForecastCycleChange={(cycle) => updateForecastCycle(it.id, cycle)}
               />
             ))}
           </ul>
@@ -494,6 +521,7 @@ function QueueRow({
   savedTypes,
   onSaveFile,
   onDeleteFile,
+  onForecastCycleChange,
 }: {
   item: QueueItem;
   onRemove: () => void;
@@ -501,6 +529,7 @@ function QueueRow({
   savedTypes?: Set<string>;
   onSaveFile?: (tipo: SavedBaseType, file: File) => void;
   onDeleteFile?: (tipo: SavedBaseType) => void;
+  onForecastCycleChange?: (cycle: string) => void;
 }) {
   const tipo: SavedBaseType = item.kind === "real" ? "ke30" : item.kind;
   const isSaved = savedTypes?.has(tipo) ?? false;
@@ -574,6 +603,27 @@ function QueueRow({
           {item.status === "error" && (
             <div className="mt-0.5 text-[11px] text-destructive">
               {item.errorMsg ?? "Falha ao processar."}
+            </div>
+          )}
+          {item.kind === "forecast" && item.status === "ready" && item.forecastPayload && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Confirmar ciclo
+              </label>
+              <select
+                value={item.forecastPayload.file.cycles[0] ?? ""}
+                onChange={(event) => onForecastCycleChange?.(event.target.value)}
+                className="h-7 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground outline-none focus:border-emerald-500"
+              >
+                {item.months.map((periodo) => (
+                  <option key={periodo} value={periodo}>
+                    {formatPeriodLabel(periodo)}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] text-muted-foreground">
+                Use esta confirmação se o nome do arquivo não indicar o mês do ciclo.
+              </span>
             </div>
           )}
           {item.warnings.length > 0 && item.status === "ready" && (
