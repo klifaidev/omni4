@@ -3,7 +3,7 @@
 import * as XLSX from "xlsx";
 import deparaPrincipal from "@/data/depara.json";
 import deparaComercial from "@/data/depara_comercial.json";
-import deparaInovacao from "@/data/depara_inovacao.json";
+import { getInovacaoMap } from "./deparaInovacao";
 
 interface DeParaPrincipalEntry {
   categoria: string;
@@ -83,7 +83,7 @@ export function exportDeparasXlsx() {
   );
 
   // 2) De Para Inovação (SKU → classificação + legado)
-  const inov = deparaInovacao as Record<string, DeParaInovacaoEntry>;
+  const inov = getInovacaoMap() as Record<string, DeParaInovacaoEntry>;
   const inovRows = Object.entries(inov)
     .map(([sku, v]) => ({
       SKU: sku,

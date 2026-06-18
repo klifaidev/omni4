@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Filters, LoadedFile, Metric, PricingRow } from "@/lib/types";
 import type { MissingMappings } from "@/lib/csv";
+import { getInovacao, getLegado } from "@/lib/deparaInovacao";
 
 interface PricingState {
   rows: PricingRow[];
@@ -35,6 +36,7 @@ interface PricingState {
   removeFile: (name: string) => void;
   clearAll: () => void;
   dismissMissing: () => void;
+  reclassifyInovacao: () => void;
 
   setPvm: (base: string | null, comp: string | null) => void;
   setPvmMode: (mode: "fy" | "month") => void;
@@ -143,6 +145,15 @@ export const usePricing = create<PricingState>((set, get) => ({
     }),
 
   dismissMissing: () => set({ missing: EMPTY_MISSING }),
+
+  reclassifyInovacao: () =>
+    set((s) => ({
+      rows: s.rows.map((r) => ({
+        ...r,
+        inovacao: getInovacao(r.sku),
+        legado: getLegado(r.sku),
+      })),
+    })),
 
   setPvm: (base, comp) => set({ pvmBase: base, pvmComp: comp }),
   setPvmMode: (mode) => set({ pvmMode: mode, pvmBase: null, pvmComp: null }),

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { BudgetFile, BudgetRow } from "@/lib/budget";
+import { getInovacao, getLegado } from "@/lib/deparaInovacao";
 
 interface BudgetState {
   rows: BudgetRow[];
@@ -8,6 +9,7 @@ interface BudgetState {
   addBudget: (rows: BudgetRow[], file: BudgetFile, replaceMonths: boolean) => void;
   removeBudgetFile: (name: string) => void;
   clearBudget: () => void;
+  reclassifyInovacao: () => void;
 }
 
 export const useBudget = create<BudgetState>((set) => ({
@@ -45,6 +47,15 @@ export const useBudget = create<BudgetState>((set) => ({
     }),
 
   clearBudget: () => set({ rows: [], files: [] }),
+
+  reclassifyInovacao: () =>
+    set((s) => ({
+      rows: s.rows.map((r) => ({
+        ...r,
+        inovacao: getInovacao(r.sku),
+        legado: getLegado(r.sku),
+      })),
+    })),
 }));
 
 // Selectors --------------------------------------------------------

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ForecastFile, ForecastRow } from "@/lib/forecast";
+import { getInovacao, getLegado } from "@/lib/deparaInovacao";
 
 interface ForecastState {
   rows: ForecastRow[];
@@ -8,6 +9,7 @@ interface ForecastState {
   addForecast: (rows: ForecastRow[], file: ForecastFile, replaceCycles: boolean) => void;
   removeForecastFile: (name: string) => void;
   clearForecast: () => void;
+  reclassifyInovacao: () => void;
 }
 
 export const useForecast = create<ForecastState>((set) => ({
@@ -45,6 +47,15 @@ export const useForecast = create<ForecastState>((set) => ({
     }),
 
   clearForecast: () => set({ rows: [], files: [] }),
+
+  reclassifyInovacao: () =>
+    set((s) => ({
+      rows: s.rows.map((r) => ({
+        ...r,
+        inovacao: getInovacao(r.sku),
+        legado: getLegado(r.sku),
+      })),
+    })),
 }));
 
 export function getForecastMonthsInfo(rows: ForecastRow[]) {

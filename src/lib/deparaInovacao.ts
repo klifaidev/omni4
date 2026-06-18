@@ -4,13 +4,26 @@ import raw from "@/data/depara_inovacao.json";
 
 export type InovacaoClass = "Inovação" | "Regular";
 
-interface InovacaoEntry {
+export interface InovacaoEntry {
   classificacao: string;
   anoLancamento?: number | string | null;
   legado?: string | null;
 }
 
-const MAP = raw as Record<string, InovacaoEntry>;
+const DEFAULT_MAP = raw as Record<string, InovacaoEntry>;
+let MAP: Record<string, InovacaoEntry> = { ...DEFAULT_MAP };
+
+export function setInovacaoMap(next: Record<string, InovacaoEntry>) {
+  MAP = { ...next };
+}
+
+export function resetInovacaoMap() {
+  MAP = { ...DEFAULT_MAP };
+}
+
+export function getInovacaoMap() {
+  return MAP;
+}
 
 export function getInovacao(sku: string | undefined | null): InovacaoClass {
   if (!sku) return "Regular";
