@@ -303,7 +303,7 @@ export function ChartInspector({
             )}
           </>
         )}
-        {unavailableHintForSource(block.dataSource) && (
+        {unavailableMeasuresForSource(block.dataSource).includes(block.measure) && (
           <p className="text-[10px] leading-snug text-muted-foreground">
             {unavailableHintForSource(block.dataSource)}
           </p>

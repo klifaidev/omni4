@@ -297,7 +297,7 @@ class BlockErrorBoundary extends React.Component<
   }
 
   componentDidUpdate(prevProps: { block: CustomBlock }) {
-    if (prevProps.block.id !== this.props.block.id && this.state.hasError) {
+    if (prevProps.block !== this.props.block && this.state.hasError) {
       this.setState({ hasError: false });
     }
   }

@@ -2102,7 +2102,7 @@ function KpiInspector({ block, onChange }: {
                 })}
               </SelectContent>
             </Select>
-            {unavailableHintForSource(block.dataSource) && (
+            {unavailableMeasuresForSource(block.dataSource).includes(block.measure ?? "rol") && (
               <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
                 {unavailableHintForSource(block.dataSource)}
               </p>
@@ -2333,7 +2333,7 @@ function TableBlockEditor({ block, onChange }: {
             );
           })}
         </div>
-        {unavailableHintForSource(block.dataSource) && (
+        {block.measures.some((m) => unavailableMeasuresForSource(block.dataSource).includes(m)) && (
           <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
             {unavailableHintForSource(block.dataSource)}
           </p>
@@ -2508,7 +2508,7 @@ function TopSkuBlockEditor({ block, onChange }: {
               })}
             </SelectContent>
           </Select>
-          {unavailableHintForSource(block.dataSource) && (
+          {unavailableMeasuresForSource(block.dataSource).includes(block.measure) && (
             <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
               {unavailableHintForSource(block.dataSource)}
             </p>

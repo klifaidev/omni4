@@ -5,8 +5,19 @@ import { BUDGET_FILTER_DIMS } from "./budgetAdapter";
 
 function periodRank(periodo: string | undefined): number {
   if (!periodo) return -Infinity;
-  const [year, month] = periodo.split("-").map(Number);
-  if (!Number.isFinite(year) || !Number.isFinite(month)) return -Infinity;
+  const text = String(periodo).trim();
+  let year = 0;
+  let month = 0;
+  const appFormat = text.match(/^0*(\d{1,2})[.\/-](\d{4})$/);
+  const isoFormat = text.match(/^(\d{4})-(\d{1,2})$/);
+  if (appFormat) {
+    month = Number(appFormat[1]);
+    year = Number(appFormat[2]);
+  } else if (isoFormat) {
+    year = Number(isoFormat[1]);
+    month = Number(isoFormat[2]);
+  }
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return -Infinity;
   return year * 12 + month;
 }
 
@@ -15,7 +26,7 @@ export function getLatestForecastCycle(rows: ForecastRow[]): string | null {
   let latestRank = -Infinity;
   for (const row of rows) {
     const rank = periodRank(row.forecastCycle);
-    if (rank > latestRank) {
+    if (!latest || rank > latestRank) {
       latest = row.forecastCycle;
       latestRank = rank;
     }
