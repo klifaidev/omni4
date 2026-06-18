@@ -10,14 +10,26 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ReferenceLine, ReferenceArea,
 } from "recharts";
-import type { ChartBlock } from "@/lib/customSlide";
-import { KPI_MEASURES } from "@/lib/customSlide";
+import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
+import { KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
 
 const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
   KPI_MEASURES.map((m) => [m.id, m.label]),
 );
+
+function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeasureId {
+  return dataSource === "forecast" ? "volume" : "rol";
+}
+
+function safeMeasureForSource(
+  measure: KpiMeasureId | null | undefined,
+  dataSource: ChartBlock["dataSource"],
+): KpiMeasureId | undefined {
+  if (!measure) return undefined;
+  return isMeasureAvailable(measure, dataSource) ? measure : undefined;
+}
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
@@ -219,7 +231,13 @@ function mapPos(family: Family, p: string): string {
 // -- main ------------------------------------------------------------------
 export function ChartCanvas({ block }: { block: ChartBlock }) {
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
-  const measureFmt = inferFormat(block.measure);
+  const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
+    ?? fallbackMeasureForSource(block.dataSource);
+  const safeMeasureLine = safeMeasureForSource(style.measureLine, block.dataSource);
+  const safeMeasureX = safeMeasureForSource(style.measureX, block.dataSource);
+  const safeMeasureY = safeMeasureForSource(style.measureY, block.dataSource);
+  const safeTooltipMeasure = safeMeasureForSource(block.fieldWells?.tooltipMeasure ?? undefined, block.dataSource);
+  const measureFmt = inferFormat(effectiveMeasure);
 
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
@@ -378,8 +396,8 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
   };
 
   const raw = useMemo(
-    () => computeChartSeries(dsRows, block.filters, block.measure, seriesDim, xDim),
-    [dsRows, block.filters, block.measure, seriesDim, xDim],
+    () => computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim),
+    [dsRows, block.filters, effectiveMeasure, seriesDim, xDim],
   );
   const data = useMemo(() => {
     const seriesSum = (ser: (typeof raw.series)[number]) =>
@@ -418,7 +436,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   // C2 — tooltipMeasure: extra measure value per X label
   const tooltipExtra = useMemo(() => {
-    const tm = block.fieldWells?.tooltipMeasure;
+    const tm = safeTooltipMeasure;
     if (!tm) return null;
     try {
       const r = computeChartSeries(dsRows, block.filters, tm, null, xDim);
@@ -431,17 +449,22 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       const fmt = inferFormat(tm);
       return { map, label, fmt, measure: tm };
     } catch { return null; }
-  }, [block.fieldWells?.tooltipMeasure, dsRows, block.filters, xDim]);
+  }, [safeTooltipMeasure, dsRows, block.filters, xDim]);
 
   // Combo: optional second measure for line series
   const lineSeriesData = useMemo(() => {
-    if (block.chartType !== "combo" || !style.measureLine) return null;
-    return computeChartSeries(dsRows, block.filters, style.measureLine, seriesDim);
-  }, [block.chartType, style.measureLine, dsRows, block.filters, seriesDim]);
+    if (block.chartType !== "combo" || !safeMeasureLine) return null;
+    try {
+      return computeChartSeries(dsRows, block.filters, safeMeasureLine, seriesDim);
+    } catch {
+      return null;
+    }
+  }, [block.chartType, safeMeasureLine, dsRows, block.filters, seriesDim]);
 
   const budgetGap = useMemo(() => {
     if (!block.budgetGap?.enabled || block.dataSource !== "budget_real") return null;
-    const measure = block.budgetGap.measure ?? block.measure;
+    const measure = safeMeasureForSource(block.budgetGap.measure ?? effectiveMeasure, block.dataSource)
+      ?? effectiveMeasure;
     const realRows = applyFilters(budgetRowsAsPricingFiltered(budget, "real"), block.filters ?? {}, null);
     const realizedPeriods = new Set(realRows
       .filter((r) => Math.abs(pickMeasure(aggregateKpi([r]), measure)) > 0)
@@ -456,7 +479,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       value: gap,
       text: block.budgetGap.label ?? compactGapLabel(gap, measure),
     };
-  }, [block.budgetGap, block.dataSource, block.filters, block.measure, budget]);
+  }, [block.budgetGap, block.dataSource, block.filters, effectiveMeasure, budget]);
 
   // ---- ranking-style data for pie/donut/bubble/scatter/funnel/treemap ----
   const rankingTypes = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"];
@@ -465,7 +488,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     const base = computeTopRanking(
       dsRows, block.filters,
       seriesDim ?? "marca",
-      block.measure, 50, "all", null,
+      effectiveMeasure, 50, "all", null,
     );
     // FIX 2 — apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
     const sc = block.sortConfig;
@@ -478,7 +501,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       return sc.dir === "asc" ? [...base].reverse() : base;
     }
     return base;
-  }, [dsRows, block.filters, seriesDim, block.measure, block.chartType, block.sortConfig, block.fieldWells?.colorDim]);
+  }, [dsRows, block.filters, seriesDim, effectiveMeasure, block.chartType, block.sortConfig, block.fieldWells?.colorDim]);
 
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
@@ -621,7 +644,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   // 1.3 Secondary Y axis for combo
   const hasSecondary = ct === "combo"
-    && (style.series.some((s) => s.secondaryAxis) || !!style.measureLine);
+    && (style.series.some((s) => s.secondaryAxis) || !!safeMeasureLine);
   const yAxisRight = hasSecondary ? (
     <YAxis
       yAxisId="right" orientation="right"
@@ -1012,11 +1035,11 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     // A.4 — bubble/scatter use measureX/measureY/measure(size) when set
     const dim = seriesDim ?? "marca";
     const sizeRanking = ranking; // ranks by primary measure (drives size)
-    const xRanking = style.measureX
-      ? computeTopRanking(dsRows, block.filters, dim, style.measureX, 50, "all", null)
+    const xRanking = safeMeasureX
+      ? computeTopRanking(dsRows, block.filters, dim, safeMeasureX, 50, "all", null)
       : null;
-    const yRanking = style.measureY
-      ? computeTopRanking(dsRows, block.filters, dim, style.measureY, 50, "all", null)
+    const yRanking = safeMeasureY
+      ? computeTopRanking(dsRows, block.filters, dim, safeMeasureY, 50, "all", null)
       : null;
     const xByName = new Map(xRanking?.map((r) => [r.name, r.value]) ?? []);
     const yByName = new Map(yRanking?.map((r) => [r.name, r.value]) ?? []);
@@ -1044,23 +1067,27 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       ? KPI_MEASURES_LABEL[style.measureY] : KPI_MEASURES_LABEL[block.measure];
     const xFmt = style.measureX ? inferFormat(style.measureX) : measureFmt;
     const yFmt = style.measureY ? inferFormat(style.measureY) : measureFmt;
+    const xLabelSafe = safeMeasureX ? KPI_MEASURES_LABEL[safeMeasureX] : xLabel;
+    const yLabelSafe = safeMeasureY ? KPI_MEASURES_LABEL[safeMeasureY] : KPI_MEASURES_LABEL[effectiveMeasure];
+    const xFmtSafe = safeMeasureX ? inferFormat(safeMeasureX) : xFmt;
+    const yFmtSafe = safeMeasureY ? inferFormat(safeMeasureY) : yFmt;
     chart = (
       <ScatterChart onClick={chartOnClick} margin={chartMargin}>
         {renderGrid}
-        <XAxis type="number" dataKey="x" name={xLabel}
+        <XAxis type="number" dataKey="x" name={xLabelSafe}
           domain={xDomain}
           tick={{ fontSize: xAx.labelSize, fill: xAx.labelColor }}
-          tickFormatter={style.measureX ? axisFmt({ ...xAx, format: xAx.format }, xFmt) : undefined}
-          label={(xAx.titleText || style.measureX) ? {
-            value: xAx.titleText || xLabel, position: "insideBottom", offset: -5,
+          tickFormatter={safeMeasureX ? axisFmt({ ...xAx, format: xAx.format }, xFmtSafe) : undefined}
+          label={(xAx.titleText || safeMeasureX) ? {
+            value: xAx.titleText || xLabelSafe, position: "insideBottom", offset: -5,
             style: { fontSize: xAx.titleSize, fill: xAx.titleColor },
           } : undefined} />
-        <YAxis type="number" dataKey="y" name={yLabel}
+        <YAxis type="number" dataKey="y" name={yLabelSafe}
           domain={[yAx.min ?? "auto", yAx.max ?? "auto"]}
           tick={{ fontSize: yAx.labelSize, fill: yAx.labelColor }}
-          tickFormatter={axisFmt({ ...yAx, format: yAx.format }, yFmt)}
-          label={(yAx.titleText || style.measureY) ? {
-            value: yAx.titleText || yLabel, angle: -90, position: "insideLeft",
+          tickFormatter={axisFmt({ ...yAx, format: yAx.format }, yFmtSafe)}
+          label={(yAx.titleText || safeMeasureY) ? {
+            value: yAx.titleText || yLabelSafe, angle: -90, position: "insideLeft",
             style: { fontSize: yAx.titleSize, fill: yAx.titleColor },
           } : undefined} />
         {ct === "bubble" && (
@@ -1649,7 +1676,9 @@ function WaterfallChart({
   series: { name: string; values: number[] }[];
   dsRows?: PricingRow[];
 }) {
-  const measureFmt = inferFormat(block.measure);
+  const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
+    ?? fallbackMeasureForSource(block.dataSource);
+  const measureFmt = inferFormat(effectiveMeasure);
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const budget = useBudget((s) => s.rows);
@@ -1795,7 +1824,7 @@ function WaterfallChart({
   const items = useMemo(() => {
     if (wfMode === "pvm") return pvmItems ?? [];
     if (cols && cols.length > 0) {
-      const resolved = resolveBridgeColumns(cols, dsRows, block.filters, block.measure);
+      const resolved = resolveBridgeColumns(cols, dsRows, block.filters, effectiveMeasure);
       return resolved.map((r) => ({ label: r.label, value: r.value, type: r.type }));
     }
     const s0 = series[0];
@@ -1806,7 +1835,7 @@ function WaterfallChart({
       type: (style.waterfall.classify[`P${i + 1}`] ?? (v >= 0 ? "positive" : "negative")) as
         "start" | "positive" | "negative" | "total" | "subtotal",
     }));
-  }, [wfMode, pvmItems, cols, dsRows, block.filters, block.measure, series, style.waterfall.classify]);
+  }, [wfMode, pvmItems, cols, dsRows, block.filters, effectiveMeasure, series, style.waterfall.classify]);
 
   const wfRows = useMemo(() => {
     let acc = 0;

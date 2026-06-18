@@ -1860,6 +1860,26 @@ function FilteredInspector({
       if (unavailable.includes(m)) {
         (patch as Partial<ChartBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
       }
+      const chart = block as ChartBlock;
+      const stylePatch: NonNullable<ChartBlock["style"]> = { ...(chart.style ?? {}) };
+      if (stylePatch.measureLine && unavailable.includes(stylePatch.measureLine)) {
+        stylePatch.measureLine = undefined;
+      }
+      if (stylePatch.measureX && unavailable.includes(stylePatch.measureX)) {
+        stylePatch.measureX = undefined;
+      }
+      if (stylePatch.measureY && unavailable.includes(stylePatch.measureY)) {
+        stylePatch.measureY = undefined;
+      }
+      const tooltipMeasure = chart.fieldWells?.tooltipMeasure;
+      if (tooltipMeasure && unavailable.includes(tooltipMeasure)) {
+        (patch as Partial<ChartBlock>).fieldWells = { ...chart.fieldWells, tooltipMeasure: null };
+      }
+      if (stylePatch.measureLine !== chart.style?.measureLine
+        || stylePatch.measureX !== chart.style?.measureX
+        || stylePatch.measureY !== chart.style?.measureY) {
+        (patch as Partial<ChartBlock>).style = stylePatch;
+      }
     }
     if (block.kind === "topSku" && unavailable.length > 0) {
       const m = (block as TopSkuBlock).measure;
