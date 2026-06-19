@@ -30,6 +30,11 @@ function safeMeasureForSource(
   if (!measure) return undefined;
   return isMeasureAvailable(measure, dataSource) ? measure : undefined;
 }
+function dataSourceLabel(ds: ChartBlock["dataSource"]) {
+  if (ds === "budget") return "Budget";
+  if (ds === "forecast") return "Forecast";
+  return "Real";
+}
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
@@ -291,6 +296,30 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       return true;
     });
   }, [rawDsRows, incoming]);
+  const rowsForDataSource = useMemo(() => {
+    const sourceRows = (dataSource: ChartBlock["dataSource"]) => {
+      if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+      if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+      if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
+      return pricing;
+    };
+    const applyIncoming = (base: PricingRow[]) => {
+      if (incoming.length === 0) return base;
+      return base.filter((r) => {
+        for (const f of incoming) {
+          if (f.dimension === "period") {
+            const lbl = monthLabel((r as any).mes, (r as any).ano);
+            if (!f.values.includes(lbl) && !f.values.includes(String((r as any).periodo))) return false;
+          } else {
+            const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
+            if (!f.values.includes(v)) return false;
+          }
+        }
+        return true;
+      });
+    };
+    return (dataSource: ChartBlock["dataSource"]) => applyIncoming(sourceRows(dataSource));
+  }, [pricing, budget, forecast, incoming]);
 
   // Determine the dimension this block emits
   const emitDim: string = (xDim && xDim !== "period" ? xDim
@@ -395,9 +424,52 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     return !ownFilter.values.includes(seriesName);
   };
 
+  const manualComboRaw = useMemo(() => {
+    if (block.chartType !== "combo" || !block.comboSeries?.length) return null;
+    const defs = block.comboSeries
+      .map((s) => {
+        const measure = safeMeasureForSource(s.measure, s.dataSource);
+        return measure ? { ...s, measure } : null;
+      })
+      .filter((s): s is NonNullable<typeof s> => !!s);
+    if (!defs.length) return null;
+
+    const periodInfo = new Map<string, { label: string; mes: number; ano: number }>();
+    const valuesBySeries = new Map<string, Map<string, number>>();
+
+    for (const def of defs) {
+      const computed = computeChartSeries(
+        rowsForDataSource(def.dataSource),
+        block.filters,
+        def.measure,
+        null,
+        xDim,
+      );
+      const key = def.name?.trim() || `${dataSourceLabel(def.dataSource)} - ${KPI_MEASURES_LABEL[def.measure] ?? def.measure}`;
+      const valueMap = new Map<string, number>();
+      computed.periodos.forEach((p, i) => {
+        const [mesRaw, anoRaw] = p.key.split(".");
+        const mes = Number(mesRaw) || i + 1;
+        const ano = Number(anoRaw) || 0;
+        periodInfo.set(p.key, { label: p.label, mes, ano });
+        valueMap.set(p.key, computed.series.reduce((sum, ser) => sum + (ser.values[i] ?? 0), 0));
+      });
+      valuesBySeries.set(key, valueMap);
+    }
+
+    const periodos = Array.from(periodInfo.entries())
+      .sort((a, b) => a[1].ano - b[1].ano || a[1].mes - b[1].mes)
+      .map(([key, info]) => ({ key, label: info.label }));
+    const series = Array.from(valuesBySeries.entries()).map(([name, map]) => ({
+      name,
+      values: periodos.map((p) => map.get(p.key) ?? 0),
+    }));
+    return { periodos, series };
+  }, [block.chartType, block.comboSeries, block.filters, rowsForDataSource, xDim]);
+
   const raw = useMemo(
-    () => computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim),
-    [dsRows, block.filters, effectiveMeasure, seriesDim, xDim],
+    () => manualComboRaw ?? computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim),
+    [manualComboRaw, dsRows, block.filters, effectiveMeasure, seriesDim, xDim],
   );
   const data = useMemo(() => {
     const seriesSum = (ser: (typeof raw.series)[number]) =>
@@ -453,13 +525,13 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   // Combo: optional second measure for line series
   const lineSeriesData = useMemo(() => {
-    if (block.chartType !== "combo" || !safeMeasureLine) return null;
+    if (manualComboRaw || block.chartType !== "combo" || !safeMeasureLine) return null;
     try {
       return computeChartSeries(dsRows, block.filters, safeMeasureLine, seriesDim);
     } catch {
       return null;
     }
-  }, [block.chartType, safeMeasureLine, dsRows, block.filters, seriesDim]);
+  }, [manualComboRaw, block.chartType, safeMeasureLine, dsRows, block.filters, seriesDim]);
 
   const budgetGap = useMemo(() => {
     if (!block.budgetGap?.enabled || block.dataSource !== "budget_real") return null;
@@ -644,7 +716,9 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   // 1.3 Secondary Y axis for combo
   const hasSecondary = ct === "combo"
-    && (style.series.some((s) => s.secondaryAxis) || !!safeMeasureLine);
+    && (style.series.some((s) => s.secondaryAxis)
+      || block.comboSeries?.some((s) => s.secondaryAxis)
+      || !!safeMeasureLine);
   const yAxisRight = hasSecondary ? (
     <YAxis
       yAxisId="right" orientation="right"
@@ -743,9 +817,14 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
           ))}
         {renderLegend}
         {data.series.map((s, i) => {
+          const comboCfg = block.comboSeries?.find((item) => item.name === s.name);
           const cfg = style.series.find((x) => x.key === s.name);
           const color = cfg?.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
           const dash = dashArr(cfg?.lineStyle);
+          const asLine = comboCfg?.asLine ?? cfg?.asLine ?? true;
+          const secondaryAxis = comboCfg?.secondaryAxis ?? cfg?.secondaryAxis ?? false;
+          const renderAsBar = ct === "combo" && !asLine;
+          const yAxisId = ct === "combo" && secondaryAxis ? "right" : "left";
           // Series-level dim: own-emitted legend filter OR cross-block legend filter.
           const seriesNotMatched = hasLegendFilter && !activeLegendValues.has(s.name);
           const sDim = seriesDimmed(s.name) || seriesNotMatched;
@@ -774,13 +853,27 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
                 )
               : { r: baseR, fill: dotFill, stroke: dotStroke, fillOpacity: sStrokeOp })
             : false;
+          if (renderAsBar) {
+            return (
+              <Bar key={s.name} isAnimationActive={false} dataKey={s.name}
+                fill={color} yAxisId={yAxisId}
+                radius={style.bar.cornerRadius}
+                fillOpacity={sFillOp}
+                stroke={style.bar.borderColor} strokeWidth={style.bar.borderWidth}>
+                {style.dataLabels.show && (
+                  <LabelList dataKey={s.name} position={mapPos("bar-vertical", dlPos) as never}
+                    content={makeLabelContent({ style, measureFmt, seriesName: s.name, categories: cats, seriesColor: color }) as never} />
+                )}
+              </Bar>
+            );
+          }
           return (
             <Line key={s.name} isAnimationActive={false} dataKey={s.name}
               type={cfg?.smooth ? "monotone" : "linear"}
               stroke={color} strokeWidth={cfg?.thickness ?? 2.5}
               strokeOpacity={sStrokeOp}
               strokeDasharray={dash}
-              yAxisId={ct === "combo" && cfg?.secondaryAxis ? "right" : "left"}
+              yAxisId={yAxisId}
               dot={dotProp}
               connectNulls>
               {style.dataLabels.show && (

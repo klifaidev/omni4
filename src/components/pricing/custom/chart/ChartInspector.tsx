@@ -2,7 +2,7 @@
 // Sections shown depend on chartType. Filters live in a separate tab (already
 // handled by FilteredInspector wrapper outside).
 
-import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
+import type { BlockDataSource, ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
@@ -60,6 +60,20 @@ function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefi
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
+}
+
+function dataSourceLabel(ds: BlockDataSource): string {
+  if (ds === "budget") return "Budget";
+  if (ds === "forecast") return "Forecast";
+  return "Real";
+}
+
+function availableMeasuresForSource(ds: BlockDataSource) {
+  return KPI_MEASURES.map((m) => ({
+    value: m.id,
+    label: m.label,
+    disabled: unavailableMeasuresForSource(ds).includes(m.id),
+  }));
 }
 
 function PresetThumbnail({ id }: { id: StylePresetId }) {
@@ -184,11 +198,14 @@ export function ChartInspector({
     : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
     : pricing;
   const detectedSeries = useMemo(() => {
+    if (ct === "combo" && block.comboSeries?.length) {
+      return block.comboSeries.map((s) => s.name?.trim() || dataSourceLabel(s.dataSource));
+    }
     try {
       const r = computeChartSeries(dsRows, block.filters, block.measure, block.breakdown);
       return r.series.map((s) => s.name);
     } catch { return []; }
-  }, [dsRows, block.filters, block.measure, block.breakdown]);
+  }, [ct, block.comboSeries, dsRows, block.filters, block.measure, block.breakdown]);
   const detectedCategories = useMemo(() => {
     try {
       const r = computeChartSeries(dsRows, block.filters, block.measure, block.breakdown);
@@ -212,6 +229,63 @@ export function ChartInspector({
   };
   const getSeriesCfg = (key: string): SeriesStyle =>
     style.series.find((x) => x.key === key) ?? { key };
+  const setComboSeries = (next: NonNullable<ChartBlock["comboSeries"]>) =>
+    onChange({ comboSeries: next } as Patch);
+  const patchComboSeries = (
+    id: string,
+    patch: Partial<NonNullable<ChartBlock["comboSeries"]>[number]>,
+  ) => {
+    const current = block.comboSeries ?? [];
+    const next = current.map((item) => {
+      if (item.id !== id) return item;
+      const merged = { ...item, ...patch };
+      if (patch.name && patch.name !== item.name) {
+        const cfg = style.series.find((s) => s.key === item.name);
+        if (cfg) {
+          updStyle({
+            series: [
+              ...style.series.filter((s) => s.key !== item.name),
+              { ...cfg, key: patch.name },
+            ],
+          });
+        }
+      }
+      return merged;
+    });
+    setComboSeries(next);
+  };
+  const addComboSeries = (dataSource: BlockDataSource = "ke30", measure: KpiMeasureId = "volume") => {
+    const label = `${dataSourceLabel(dataSource)} - ${KPI_MEASURES.find((m) => m.id === measure)?.label ?? measure}`;
+    const id = rid();
+    setComboSeries([
+      ...(block.comboSeries ?? []),
+      { id, name: label, dataSource, measure, asLine: true, secondaryAxis: false },
+    ]);
+  };
+  const removeComboSeries = (id: string) => {
+    const removed = block.comboSeries?.find((s) => s.id === id);
+    setComboSeries((block.comboSeries ?? []).filter((s) => s.id !== id));
+    if (removed) updStyle({ series: style.series.filter((s) => s.key !== removed.name) });
+  };
+  const installVolumeScenario = () => {
+    const defaults: NonNullable<ChartBlock["comboSeries"]> = [
+      { id: rid(), name: "Volume Real", dataSource: "ke30", measure: "volume", asLine: true },
+      { id: rid(), name: "Volume Budget", dataSource: "budget", measure: "volume", asLine: true },
+      { id: rid(), name: "Volume Forecast", dataSource: "forecast", measure: "volume", asLine: true },
+    ];
+    onChange({
+      comboSeries: defaults,
+      style: {
+        ...block.style,
+        series: [
+          ...style.series.filter((s) => !defaults.some((d) => d.name === s.key)),
+          { key: "Volume Real", color: "#C8102E", asLine: true },
+          { key: "Volume Budget", color: "#1C2430", asLine: true, lineStyle: "dashed" },
+          { key: "Volume Forecast", color: "#2563EB", asLine: true, lineStyle: "dotted" },
+        ],
+      },
+    } as Patch);
+  };
 
   return (
     <div className="space-y-3">
@@ -265,6 +339,115 @@ export function ChartInspector({
               </p>
             )}
           </>
+        )}
+        {S.isCombo && (
+          <div className="space-y-2 rounded-lg border border-primary/15 bg-primary/5 p-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[12px] font-medium text-foreground/85">Séries multi-base</div>
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Use para comparar Real, Budget e Forecast no mesmo gráfico.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                onClick={installVolumeScenario}>
+                Volume R/B/F
+              </Button>
+            </div>
+
+            {(block.comboSeries ?? []).length === 0 && (
+              <div className="rounded-md border border-dashed border-border/50 bg-background/50 p-2 text-[11px] text-muted-foreground">
+                Nenhuma série multi-base configurada. O combo continua usando a fonte principal do bloco.
+              </div>
+            )}
+
+            {(block.comboSeries ?? []).map((series) => {
+              const unavailable = unavailableMeasuresForSource(series.dataSource).includes(series.measure);
+              return (
+                <div key={series.id} className="space-y-2 rounded-md border border-border/40 bg-background/70 p-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={series.name}
+                      onChange={(e) => patchComboSeries(series.id, { name: e.target.value })}
+                      className="h-8 min-w-0 text-[12px]"
+                    />
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0"
+                      onClick={() => removeComboSeries(series.id)}
+                      title="Remover série">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <Row label="Base">
+                    <SelectField value={series.dataSource}
+                      onChange={(v) => {
+                        const nextSource = v as BlockDataSource;
+                        const nextMeasure = isFromForecastBase(nextSource) ? "volume" : series.measure;
+                        patchComboSeries(series.id, {
+                          dataSource: nextSource,
+                          measure: unavailableMeasuresForSource(nextSource).includes(nextMeasure) ? "volume" : nextMeasure,
+                        });
+                      }}
+                      options={[
+                        { value: "ke30", label: "Real" },
+                        { value: "budget", label: "Budget" },
+                        { value: "forecast", label: "Forecast" },
+                      ]} />
+                  </Row>
+                  <Row label="Medida">
+                    <SelectField value={series.measure}
+                      onChange={(v) => patchComboSeries(series.id, { measure: v as KpiMeasureId })}
+                      options={availableMeasuresForSource(series.dataSource)} />
+                  </Row>
+                  {unavailable && (
+                    <p className="text-[10px] leading-snug text-amber-500">
+                      Medida indisponível para esta base. Troque a medida ou a base.
+                    </p>
+                  )}
+                  <Row label="Renderizar">
+                    <Segmented value={series.asLine === false ? "bar" : "line"}
+                      onChange={(v) => {
+                        patchComboSeries(series.id, { asLine: v === "line" });
+                        updSeries(series.name, { asLine: v === "line" });
+                      }}
+                      options={[
+                        { value: "line", label: "Linha" },
+                        { value: "bar", label: "Barra" },
+                      ]} />
+                  </Row>
+                  <ToggleField label="Eixo Y secundário"
+                    value={!!series.secondaryAxis}
+                    onChange={(v) => {
+                      patchComboSeries(series.id, { secondaryAxis: v });
+                      updSeries(series.name, { secondaryAxis: v });
+                    }} />
+                </div>
+              );
+            })}
+
+            <div className="flex flex-wrap gap-1.5">
+              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
+                onClick={() => addComboSeries("ke30", "volume")}>
+                <Plus className="mr-1 h-3 w-3" />
+                Real
+              </Button>
+              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
+                onClick={() => addComboSeries("budget", "volume")}>
+                <Plus className="mr-1 h-3 w-3" />
+                Budget
+              </Button>
+              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
+                onClick={() => addComboSeries("forecast", "volume")}>
+                <Plus className="mr-1 h-3 w-3" />
+                Forecast
+              </Button>
+              {(block.comboSeries ?? []).length > 0 && (
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]"
+                  onClick={() => onChange({ comboSeries: [] } as Patch)}>
+                  Limpar
+                </Button>
+              )}
+            </div>
+          </div>
         )}
         {(ct === "bubble" || ct === "scatter") && (
           <>

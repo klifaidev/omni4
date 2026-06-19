@@ -364,6 +364,15 @@ export interface ChartBlock extends BaseBlock {
   style?: Partial<ChartStyle>;
   /** Fonte de dados — default "ke30". */
   dataSource?: BlockDataSource;
+  /** Combo only: series explicitas, cada uma podendo ler de uma base diferente. */
+  comboSeries?: Array<{
+    id: string;
+    name: string;
+    dataSource: BlockDataSource;
+    measure: KpiMeasureId;
+    asLine?: boolean;
+    secondaryAxis?: boolean;
+  }>;
   /** Anotacao opcional para mostrar gap acumulado Real vs Budget no canvas. */
   budgetGap?: {
     enabled: boolean;
