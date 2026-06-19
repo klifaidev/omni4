@@ -99,10 +99,6 @@ export const LINES: DreLine[] = [
   { id: "cvKg", label: "Custo Variável (R$/Kg)", kind: "perKg", bold: true, get: (a) => -safe(Math.abs(a.custoVariavel), a.volume) },
   { id: "mp", label: "Matéria Prima Ajustado", kind: "value", get: (a) => a.hasMP ? -Math.abs(a.materiaPrima) : null },
   { id: "emb", label: "Embalagem Ajustado", kind: "value", get: (a) => a.hasEmb ? -Math.abs(a.embalagem) : null },
-  { id: "cf", label: "Custo Fixo", kind: "value", get: (a) => -Math.abs(a.custoFixo) },
-  { id: "cfKg", label: "Custo Fixo (R$/Kg)", kind: "perKg", bold: true, get: (a) => -safe(Math.abs(a.custoFixo), a.volume) },
-  { id: "mod", label: "MOD", kind: "value", get: (a) => a.hasMod ? -Math.abs(a.mod) : null },
-  { id: "cif", label: "CIF", kind: "value", get: (a) => a.hasCif ? -Math.abs(a.cif) : null },
   { id: "frete", label: "Frete sobre Vendas Ajustado", kind: "value", get: (a) => -Math.abs(a.frete) },
   { id: "freteKg", label: "Frete (R$/Kg)", kind: "perKg", get: (a) => -safe(Math.abs(a.frete), a.volume) },
   { id: "com", label: "Comissão Repres Ajustado", kind: "value", get: (a) => -Math.abs(a.comissao) },
@@ -111,6 +107,10 @@ export const LINES: DreLine[] = [
   { id: "cm", label: "Contrib. Marginal", kind: "value", bold: true, get: (a) => a.cm },
   { id: "cmPct", label: "Contrib. Marginal (%/ROL)", kind: "pct", bold: true, anomaly: true, get: (a) => safe(a.cm, a.rol) },
   { id: "cmKg", label: "Contrib. Marginal (R$/Kg)", kind: "perKg", bold: true, get: (a) => safe(a.cm, a.volume) },
+  { id: "cf", label: "Custo Fixo", kind: "value", get: (a) => -Math.abs(a.custoFixo) },
+  { id: "cfKg", label: "Custo Fixo (R$/Kg)", kind: "perKg", bold: true, get: (a) => -safe(Math.abs(a.custoFixo), a.volume) },
+  { id: "mod", label: "MOD", kind: "value", get: (a) => a.hasMod ? -Math.abs(a.mod) : null },
+  { id: "cif", label: "CIF", kind: "value", get: (a) => a.hasCif ? -Math.abs(a.cif) : null },
 ];
 
 export function fmt(value: number | null, kind: RowKind) {
