@@ -18,9 +18,11 @@ import {
 import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
 import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
 import { parseForecastFile, type ParsedForecast } from "@/lib/forecast";
+import { parseRollingFile, type ParsedRolling } from "@/lib/rolling";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { useExistingPeriods } from "@/store/selectors";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -28,7 +30,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/format";
 
-type Kind = "real" | "budget" | "forecast";
+type Kind = "real" | "budget" | "forecast" | "rolling";
 type Status = "parsing" | "ready" | "error" | "applied";
 
 interface QueueItem {
@@ -45,10 +47,11 @@ interface QueueItem {
   realPayload?: ParsedCsv;
   budgetPayload?: ParsedBudget;
   forecastPayload?: ParsedForecast;
+  rollingPayload?: ParsedRolling;
   originalFile?: File;
 }
 
-type SavedBaseType = "ke30" | "budget" | "forecast";
+type SavedBaseType = "ke30" | "budget" | "forecast" | "rolling";
 
 let _idSeq = 0;
 const nextId = () => `q_${Date.now()}_${++_idSeq}`;
@@ -73,16 +76,20 @@ export function UploadQueue({
   const realInput = useRef<HTMLInputElement>(null);
   const budgetInput = useRef<HTMLInputElement>(null);
   const forecastInput = useRef<HTMLInputElement>(null);
+  const rollingInput = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState<Kind | null>(null);
 
   const addParsedReal = usePricing((s) => s.addParsed);
   const addBudget = useBudget((s) => s.addBudget);
   const addForecast = useForecast((s) => s.addForecast);
+  const addRolling = useRolling((s) => s.addRolling);
   const realExisting = useExistingPeriods();
   const budgetRows = useBudget((s) => s.rows);
   const budgetExisting = useMemo(() => new Set(budgetRows.map((r) => r.periodo)), [budgetRows]);
   const forecastRows = useForecast((s) => s.rows);
   const forecastExisting = useMemo(() => new Set(forecastRows.map((r) => r.forecastCycle)), [forecastRows]);
+  const rollingRows = useRolling((s) => s.rows);
+  const rollingExisting = useMemo(() => new Set(rollingRows.map((r) => r.rollingCycle)), [rollingRows]);
 
   const enqueueFiles = useCallback(
     async (kind: Kind, files: FileList | File[]) => {
@@ -157,7 +164,7 @@ export function UploadQueue({
                   : it,
               ),
             );
-          } else {
+          } else if (kind === "forecast") {
             const lower = file.name.toLowerCase();
             if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
               throw new Error("Apenas .xlsx/.xls aceito para Forecast.");
@@ -183,6 +190,32 @@ export function UploadQueue({
                   : it,
               ),
             );
+          } else {
+            const lower = file.name.toLowerCase();
+            if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+              throw new Error("Apenas .xlsx/.xls aceito para Rolling.");
+            }
+            const parsed = await parseRollingFile(file);
+            if (parsed.rows.length === 0) {
+              throw new Error(parsed.warnings[0] ?? "nenhuma linha valida.");
+            }
+            const dup = parsed.file.cycles.filter((m) => rollingExisting.has(m));
+            setItems((prev) =>
+              prev.map((it) =>
+                it.id === placeholder.id
+                  ? {
+                      ...it,
+                      status: "ready",
+                      warnings: parsed.warnings,
+                      rowCount: parsed.rows.length,
+                      months: parsed.file.months,
+                      duplicateMonths: dup,
+                      rollingPayload: parsed,
+                      originalFile: file,
+                    }
+                  : it,
+              ),
+            );
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Falha ao processar arquivo.";
@@ -199,8 +232,9 @@ export function UploadQueue({
       if (realInput.current) realInput.current.value = "";
       if (budgetInput.current) budgetInput.current.value = "";
       if (forecastInput.current) forecastInput.current.value = "";
+      if (rollingInput.current) rollingInput.current.value = "";
     },
-    [realExisting, budgetExisting, forecastExisting],
+    [realExisting, budgetExisting, forecastExisting, rollingExisting],
   );
 
   const removeItem = (id: string) =>
@@ -233,6 +267,32 @@ export function UploadQueue({
       }),
     );
   }, [forecastExisting]);
+
+  const updateRollingCycle = useCallback((id: string, cycle: string) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== id || it.kind !== "rolling" || !it.rollingPayload) return it;
+        const cycleLabel = formatPeriodLabel(cycle);
+        const rows = it.rollingPayload.rows.map((row) => ({
+          ...row,
+          rollingCycle: cycle,
+          rollingCycleLabel: cycleLabel,
+        }));
+        return {
+          ...it,
+          duplicateMonths: rollingExisting.has(cycle) ? [cycle] : [],
+          rollingPayload: {
+            ...it.rollingPayload,
+            rows,
+            file: {
+              ...it.rollingPayload.file,
+              cycles: [cycle],
+            },
+          },
+        };
+      }),
+    );
+  }, [rollingExisting]);
 
   const readyItems = items.filter((it) => it.status === "ready");
   const errorCount = items.filter((it) => it.status === "error").length;
@@ -280,6 +340,12 @@ export function UploadQueue({
             it.duplicateMonths.length > 0 ? confirmReplace : false,
           );
           if (it.originalFile) successfullyApplied.push({ tipo: "forecast", file: it.originalFile });
+        } else if (it.kind === "rolling" && it.rollingPayload) {
+          addRolling(
+            it.rollingPayload.rows,
+            it.rollingPayload.file,
+          );
+          if (it.originalFile) successfullyApplied.push({ tipo: "rolling", file: it.originalFile });
         }
       }
       const counts = readyItems.reduce(
@@ -288,10 +354,10 @@ export function UploadQueue({
           acc.rows += it.rowCount;
           return acc;
         },
-        { real: 0, budget: 0, forecast: 0, rows: 0 },
+        { real: 0, budget: 0, forecast: 0, rolling: 0, rows: 0 },
       );
       toast.success(
-        `Aplicado: ${counts.real} Real + ${counts.budget} Budget + ${counts.forecast} Forecast · ${counts.rows.toLocaleString("pt-BR")} linhas.`,
+        `Aplicado: ${counts.real} Real + ${counts.budget} Budget + ${counts.forecast} Forecast + ${counts.rolling} Rolling · ${counts.rows.toLocaleString("pt-BR")} linhas.`,
       );
       setItems((prev) =>
         prev.map((it) =>
@@ -323,7 +389,7 @@ export function UploadQueue({
   return (
     <div className="space-y-4">
       {/* Drop zones lado a lado */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         <DropZone
           kind="real"
           icon={Database}
@@ -362,6 +428,19 @@ export function UploadQueue({
           inputRef={forecastInput}
           busy={busy}
           onFiles={(f) => enqueueFiles("forecast", f)}
+        />
+        <DropZone
+          kind="rolling"
+          icon={TrendingUp}
+          title="Adicionar arquivos Rolling"
+          subtitle="Arraste XLSX ou clique"
+          accent="rolling"
+          accept=".xlsx,.xls"
+          drag={drag === "rolling"}
+          onDragChange={(d) => setDrag(d ? "rolling" : null)}
+          inputRef={rollingInput}
+          busy={busy}
+          onFiles={(f) => enqueueFiles("rolling", f)}
         />
       </div>
 
@@ -426,6 +505,7 @@ export function UploadQueue({
                 onSaveFile={onSaveFile}
                 onDeleteFile={onDeleteFile}
                 onForecastCycleChange={(cycle) => updateForecastCycle(it.id, cycle)}
+                onRollingCycleChange={(cycle) => updateRollingCycle(it.id, cycle)}
               />
             ))}
           </ul>
@@ -452,7 +532,7 @@ function DropZone({
   icon: typeof Database;
   title: string;
   subtitle: string;
-  accent: "primary" | "accent" | "forecast";
+  accent: "primary" | "accent" | "forecast" | "rolling";
   accept: string;
   drag: boolean;
   onDragChange: (d: boolean) => void;
@@ -465,7 +545,9 @@ function DropZone({
       ? "hover:border-primary/50 hover:bg-primary/5 [&.is-drag]:border-primary [&.is-drag]:bg-primary/10 [&_.icon-bg]:bg-primary/10 [&_.icon-bg]:group-hover:bg-primary/20 [&_.icon]:text-primary"
       : accent === "accent"
       ? "hover:border-accent/50 hover:bg-accent/5 [&.is-drag]:border-accent [&.is-drag]:bg-accent/10 [&_.icon-bg]:bg-accent/10 [&_.icon-bg]:group-hover:bg-accent/20 [&_.icon]:text-accent"
-      : "hover:border-emerald-500/50 hover:bg-emerald-500/5 [&.is-drag]:border-emerald-500 [&.is-drag]:bg-emerald-500/10 [&_.icon-bg]:bg-emerald-500/10 [&_.icon-bg]:group-hover:bg-emerald-500/20 [&_.icon]:text-emerald-500";
+      : accent === "forecast"
+      ? "hover:border-emerald-500/50 hover:bg-emerald-500/5 [&.is-drag]:border-emerald-500 [&.is-drag]:bg-emerald-500/10 [&_.icon-bg]:bg-emerald-500/10 [&_.icon-bg]:group-hover:bg-emerald-500/20 [&_.icon]:text-emerald-500"
+      : "hover:border-amber-500/50 hover:bg-amber-500/5 [&.is-drag]:border-amber-500 [&.is-drag]:bg-amber-500/10 [&_.icon-bg]:bg-amber-500/10 [&_.icon-bg]:group-hover:bg-amber-500/20 [&_.icon]:text-amber-500";
 
   return (
     <div
@@ -522,6 +604,7 @@ function QueueRow({
   onSaveFile,
   onDeleteFile,
   onForecastCycleChange,
+  onRollingCycleChange,
 }: {
   item: QueueItem;
   onRemove: () => void;
@@ -530,6 +613,7 @@ function QueueRow({
   onSaveFile?: (tipo: SavedBaseType, file: File) => void;
   onDeleteFile?: (tipo: SavedBaseType) => void;
   onForecastCycleChange?: (cycle: string) => void;
+  onRollingCycleChange?: (cycle: string) => void;
 }) {
   const tipo: SavedBaseType = item.kind === "real" ? "ke30" : item.kind;
   const isSaved = savedTypes?.has(tipo) ?? false;
@@ -551,7 +635,9 @@ function QueueRow({
       ? "border-primary/20 bg-primary/[0.04]"
       : item.kind === "budget"
       ? "border-accent/20 bg-accent/[0.04]"
-      : "border-emerald-500/20 bg-emerald-500/[0.04]";
+      : item.kind === "forecast"
+      ? "border-emerald-500/20 bg-emerald-500/[0.04]"
+      : "border-amber-500/20 bg-amber-500/[0.04]";
 
   return (
     <li className={cn("rounded-lg border px-3 py-2.5", bgClass)}>
@@ -572,9 +658,11 @@ function QueueRow({
                 ? "bg-primary/15 text-primary"
                 : item.kind === "budget"
                 ? "bg-accent/15 text-accent"
-                : "bg-emerald-500/15 text-emerald-500",
+                : item.kind === "forecast"
+                ? "bg-emerald-500/15 text-emerald-500"
+                : "bg-amber-500/15 text-amber-500",
             )}>
-              {item.kind === "real" ? "Real" : item.kind === "budget" ? "Budget" : "Forecast"}
+              {item.kind === "real" ? "Real" : item.kind === "budget" ? "Budget" : item.kind === "forecast" ? "Forecast" : "Rolling"}
             </span>
             <span className={cn("shrink-0 text-[10px] font-medium uppercase tracking-wider", colorClass)}>
               {labelForStatus(item.status)}
@@ -623,6 +711,27 @@ function QueueRow({
               </select>
               <span className="text-[10px] text-muted-foreground">
                 Use esta confirmação se o nome do arquivo não indicar o mês do ciclo.
+              </span>
+            </div>
+          )}
+          {item.kind === "rolling" && item.status === "ready" && item.rollingPayload && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Confirmar ciclo
+              </label>
+              <select
+                value={item.rollingPayload.file.cycles[0] ?? ""}
+                onChange={(event) => onRollingCycleChange?.(event.target.value)}
+                className="h-7 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground outline-none focus:border-amber-500"
+              >
+                {item.months.map((periodo) => (
+                  <option key={periodo} value={periodo}>
+                    {formatPeriodLabel(periodo)}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] text-muted-foreground">
+                O Rolling sera aplicado deste mes em diante; meses anteriores ficam preservados.
               </span>
             </div>
           )}

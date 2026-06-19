@@ -6,7 +6,8 @@ import type { BlockDataSource, ChartBlock, KpiMeasureId } from "@/lib/customSlid
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
-  isFromBudgetBase, isFromForecastBase,
+  ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
+  isFromBudgetBase, isFromForecastBase, isFromRollingBase,
 } from "@/lib/customSlide";
 import {
   ensureChartStyle, defaultChartStyle, DEFAULT_PALETTE,
@@ -26,8 +27,10 @@ import { STYLE_PRESETS, buildStylePresetPatch, type StylePresetId } from "./styl
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { useMemo } from "react";
@@ -52,12 +55,14 @@ const PRESET_THUMB_COLORS: Record<StylePresetId, string[]> = {
 
 function unavailableMeasuresForSource(ds: ChartBlock["dataSource"]): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
+  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_MEASURES;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
   return [];
 }
 
 function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefined {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
+  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
 }
@@ -65,6 +70,7 @@ function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefi
 function dataSourceLabel(ds: BlockDataSource): string {
   if (ds === "budget") return "Budget";
   if (ds === "forecast") return "Forecast";
+  if (ds === "rolling") return "Rolling";
   return "Real";
 }
 
@@ -193,9 +199,11 @@ export function ChartInspector({
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
+  const rolling = useRolling((s) => s.rows);
   const dsRows = block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
     : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
     : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
+    : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
     : pricing;
   const detectedSeries = useMemo(() => {
     if (ct === "combo" && block.comboSeries?.length) {
@@ -272,6 +280,7 @@ export function ChartInspector({
       { id: rid(), name: "Volume Real", dataSource: "ke30", measure: "volume", asLine: true },
       { id: rid(), name: "Volume Budget", dataSource: "budget", measure: "volume", asLine: true },
       { id: rid(), name: "Volume Forecast", dataSource: "forecast", measure: "volume", asLine: true },
+      { id: rid(), name: "Volume Rolling", dataSource: "rolling", measure: "volume", asLine: true },
     ];
     onChange({
       comboSeries: defaults,
@@ -282,6 +291,7 @@ export function ChartInspector({
           { key: "Volume Real", color: "#C8102E", asLine: true },
           { key: "Volume Budget", color: "#1C2430", asLine: true, lineStyle: "dashed" },
           { key: "Volume Forecast", color: "#2563EB", asLine: true, lineStyle: "dotted" },
+          { key: "Volume Rolling", color: "#F59E0B", asLine: true, lineStyle: "dashed" },
         ],
       },
     } as Patch);
@@ -346,12 +356,12 @@ export function ChartInspector({
               <div>
                 <div className="text-[12px] font-medium text-foreground/85">Séries multi-base</div>
                 <p className="text-[10px] leading-snug text-muted-foreground">
-                  Use para comparar Real, Budget e Forecast no mesmo gráfico.
+                  Use para comparar Real, Budget, Forecast e Rolling no mesmo gráfico.
                 </p>
               </div>
               <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]"
                 onClick={installVolumeScenario}>
-                Volume R/B/F
+                Volume R/B/F/R
               </Button>
             </div>
 
@@ -391,6 +401,7 @@ export function ChartInspector({
                         { value: "ke30", label: "Real" },
                         { value: "budget", label: "Budget" },
                         { value: "forecast", label: "Forecast" },
+                        { value: "rolling", label: "Rolling" },
                       ]} />
                   </Row>
                   <Row label="Medida">
@@ -439,6 +450,11 @@ export function ChartInspector({
                 onClick={() => addComboSeries("forecast", "volume")}>
                 <Plus className="mr-1 h-3 w-3" />
                 Forecast
+              </Button>
+              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
+                onClick={() => addComboSeries("rolling", "volume")}>
+                <Plus className="mr-1 h-3 w-3" />
+                Rolling
               </Button>
               {(block.comboSeries ?? []).length > 0 && (
                 <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]"

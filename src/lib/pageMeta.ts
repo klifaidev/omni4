@@ -32,6 +32,7 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/custos": { label: "Custos", icon: Coins },
   "/abc": { label: "Portfólio de SKUs", icon: LineChart },
   "/budget": { label: "Budget", icon: Target },
+  "/rolling": { label: "Rolling", icon: TrendingUp },
   "/detalhe": { label: "Tabela Dinâmica", icon: TableProperties },
   "/slides": { label: "Slides", icon: Presentation },
   "/atividades": { label: "Atividades", icon: KanbanSquare },

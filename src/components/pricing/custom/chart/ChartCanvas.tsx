@@ -33,13 +33,16 @@ function safeMeasureForSource(
 function dataSourceLabel(ds: ChartBlock["dataSource"]) {
   if (ds === "budget") return "Budget";
   if (ds === "forecast") return "Forecast";
+  if (ds === "rolling") return "Rolling";
   return "Real";
 }
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
@@ -247,12 +250,14 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
+  const rolling = useRolling((s) => s.rows);
   const rawDsRows = useMemo(() => {
     if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     if (block.dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
+    if (block.dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [block.dataSource, pricing, budget, forecast]);
+  }, [block.dataSource, pricing, budget, forecast, rolling]);
   const xDim = block.fieldWells?.xDim ?? null;
   // C1 — colorDim overrides breakdown as series-key generator
   const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
@@ -301,6 +306,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
       if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
       if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
+      if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
       return pricing;
     };
     const applyIncoming = (base: PricingRow[]) => {
@@ -319,7 +325,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       });
     };
     return (dataSource: ChartBlock["dataSource"]) => applyIncoming(sourceRows(dataSource));
-  }, [pricing, budget, forecast, incoming]);
+  }, [pricing, budget, forecast, rolling, incoming]);
 
   // Determine the dimension this block emits
   const emitDim: string = (xDim && xDim !== "period" ? xDim
@@ -1776,10 +1782,12 @@ function WaterfallChart({
   const metric = usePricing((s) => s.metric);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
+  const rolling = useRolling((s) => s.rows);
   const dsRows = dsRowsProp
     ?? (block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
       : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
       : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
+      : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
       : pricing);
 
   const wfMode = style.waterfall.mode ?? "pvm";

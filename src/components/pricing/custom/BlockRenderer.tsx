@@ -36,6 +36,7 @@ import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { monthLabel, formatBRL } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
@@ -44,6 +45,7 @@ import { KPI_MEASURES } from "@/lib/customSlide";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
@@ -53,14 +55,16 @@ function useDataSource(
   pricing: PricingRow[],
   budget: BudgetRow[],
   forecast: import("@/lib/forecast").ForecastRow[],
+  rolling: import("@/lib/rolling").RollingRow[],
 ): PricingRow[] {
   return useMemo(() => {
     if (!dataSource || dataSource === "ke30") return pricing;
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
+    if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [dataSource, pricing, budget, forecast]);
+  }, [dataSource, pricing, budget, forecast, rolling]);
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
@@ -431,10 +435,11 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
+  const rolling = useRolling((s) => s.rows);
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
-  const baseRows = useDataSource(b.dataSource, pricing, budget, forecast);
+  const baseRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
 
   // Split incoming filters into "period" (special: format-tolerant + overrides
   // the block's own periodMode/periodValue) and "dimensional" (other dims).
@@ -663,7 +668,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
-  const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast);
+  const rolling = useRolling((s) => s.rows);
+  const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
 
   const data = useMemo(() => {
     const unified = buildUnifiedRows(sourceRows, [], "real");
@@ -1043,7 +1049,8 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
-  const rows = useDataSource(b.dataSource, pricing, budget, forecast);
+  const rolling = useRolling((s) => s.rows);
+  const rows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
     () => computeTopRanking(rows, b.filters, b.dim, b.measure, 9999, b.periodMode, b.periodValue),
@@ -1156,7 +1163,8 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
   const forecastRows = useForecast((s) => s.rows);
-  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows, forecastRows);
+  const rollingRows = useRolling((s) => s.rows);
+  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows, forecastRows, rollingRows);
   const months = useMonthsInfo();
 
   const filteredRows = useMemo(

@@ -48,7 +48,8 @@ import {
   newBlock, newChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
-  isFromBudgetBase, isFromForecastBase,
+  ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
+  isFromBudgetBase, isFromForecastBase, isFromRollingBase,
   type BlockDataSource,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
@@ -87,6 +88,7 @@ import { resolveTableFit, type FitInfo } from "@/lib/customCapacity";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
 import type { Filters } from "@/lib/types";
@@ -102,6 +104,7 @@ import {
 function dataSourceLabel(ds: BlockDataSource | undefined): string {
   if (ds === "budget") return "Budget";
   if (ds === "forecast") return "Forecast";
+  if (ds === "rolling") return "Rolling";
   if (ds === "budget_real") return "Real Bud.";
   return "KE30";
 }
@@ -109,6 +112,7 @@ function dataSourceLabel(ds: BlockDataSource | undefined): string {
 function dataSourceBadgeClass(ds: BlockDataSource | undefined): string {
   if (ds === "budget") return "bg-purple-500/15 text-purple-600 dark:text-purple-300";
   if (ds === "forecast") return "bg-amber-500/15 text-amber-700 dark:text-amber-200";
+  if (ds === "rolling") return "bg-orange-500/15 text-orange-700 dark:text-orange-200";
   if (ds === "budget_real") return "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
   return "bg-blue-500/15 text-blue-600 dark:text-blue-300";
 }
@@ -116,6 +120,7 @@ function dataSourceBadgeClass(ds: BlockDataSource | undefined): string {
 function dataSourceActiveClass(ds: BlockDataSource): string {
   if (ds === "budget") return "bg-purple-500/20 text-purple-700 dark:text-purple-200";
   if (ds === "forecast") return "bg-amber-500/20 text-amber-800 dark:text-amber-100";
+  if (ds === "rolling") return "bg-orange-500/20 text-orange-800 dark:text-orange-100";
   if (ds === "budget_real") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200";
   return "bg-blue-500/20 text-blue-700 dark:text-blue-200";
 }
@@ -123,18 +128,21 @@ function dataSourceActiveClass(ds: BlockDataSource): string {
 function dataSourceDescription(ds: BlockDataSource | undefined): string {
   if (ds === "budget") return "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissao.";
   if (ds === "forecast") return "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto.";
+  if (ds === "rolling") return "Rolling: DRE por SKU/mes com receita, volume, custos, frete, comissao e CM.";
   if (ds === "budget_real") return "Realizado da planilha Budget (legado). Sem MB/Frete/Comissao.";
   return "Detalhada (KE30): receita, custos, margens, frete, comissao.";
 }
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
+  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_MEASURES;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
   return [];
 }
 
 function unavailableHintForSource(ds: BlockDataSource | undefined): string | undefined {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
+  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
 }
@@ -1832,6 +1840,7 @@ function FilteredInspector({
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const hasBudget = useBudget((s) => s.rows.length > 0);
   const hasForecast = useForecast((s) => s.rows.length > 0);
+  const hasRolling = useRolling((s) => s.rows.length > 0);
 
   // Bridge não tem fonte selecionável (sempre KE30 — usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
@@ -1914,6 +1923,7 @@ function FilteredInspector({
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
     ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
+    ...(hasRolling ? (["rolling"] as BlockDataSource[]) : []),
   ];
   const dsDesc = ds === "forecast"
     ? "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto."
@@ -2755,6 +2765,7 @@ function DreSourcePicker({ block, onChange }: {
 }) {
   const hasBudget = useBudget((s) => s.rows.length > 0);
   const hasForecast = useForecast((s) => s.rows.length > 0);
+  const hasRolling = useRolling((s) => s.rows.length > 0);
   const ds = block.dataSource ?? "ke30";
   const dsBadgeLabel = dataSourceLabel(ds);
   const dsBadgeCls = dataSourceBadgeClass(ds);
@@ -2762,6 +2773,7 @@ function DreSourcePicker({ block, onChange }: {
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
     ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
+    ...(hasRolling ? (["rolling"] as BlockDataSource[]) : []),
   ];
   if (sourceOptions.length <= 1) return null;
   return (

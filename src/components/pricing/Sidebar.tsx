@@ -59,6 +59,7 @@ const dashItems = [
   { to: "/custos", label: "Custos", icon: Coins },
   { to: "/abc", label: "Portfólio de SKUs", icon: LineChart },
   { to: "/budget", label: "Budget", icon: Target },
+  { to: "/rolling", label: "Rolling", icon: TrendingUp },
   { to: "/detalhe", label: "Tabela Dinâmica", icon: TableProperties },
 ];
 
