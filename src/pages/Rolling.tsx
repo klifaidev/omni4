@@ -11,6 +11,7 @@ import { useRolling, getRollingCyclesInfo, getRollingMonthsInfo } from "@/store/
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, monthLabel } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { PricingRow } from "@/lib/types";
 
 function sum(rows: PricingRow[]) {
@@ -45,20 +46,20 @@ const DRE_LINES = [
   { id: "volume", label: "Volume (Tons)", value: (rows: PricingRow[]) => sum(rows).volumeKg / 1000, format: "number" },
   { id: "rol", label: "Receita Liquida", value: (rows: PricingRow[]) => sum(rows).rol, format: "currency" },
   { id: "pm", label: "ROL R$/Kg", value: (rows: PricingRow[]) => sum(rows).precoMedio, format: "currency2" },
-  { id: "cv", label: "Custo Variavel", value: (rows: PricingRow[]) => sum(rows).cv, format: "currency" },
+  { id: "cv", label: "Custo Variavel", value: (rows: PricingRow[]) => -sum(rows).cv, format: "currency" },
   { id: "cvkg", label: "Custo Variavel R$/Kg", value: (rows: PricingRow[]) => {
     const s = sum(rows);
-    return s.volumeKg ? s.cv / s.volumeKg : 0;
+    return s.volumeKg ? -(s.cv / s.volumeKg) : 0;
   }, format: "currency2" },
-  { id: "frete", label: "Frete", value: (rows: PricingRow[]) => sum(rows).frete, format: "currency" },
+  { id: "frete", label: "Frete", value: (rows: PricingRow[]) => -sum(rows).frete, format: "currency" },
   { id: "fretekg", label: "Frete R$/Kg", value: (rows: PricingRow[]) => {
     const s = sum(rows);
-    return s.volumeKg ? s.frete / s.volumeKg : 0;
+    return s.volumeKg ? -(s.frete / s.volumeKg) : 0;
   }, format: "currency2" },
-  { id: "comissao", label: "Comissao", value: (rows: PricingRow[]) => sum(rows).comissao, format: "currency" },
+  { id: "comissao", label: "Comissao", value: (rows: PricingRow[]) => -sum(rows).comissao, format: "currency" },
   { id: "comissaopct", label: "Comissao %/ROL", value: (rows: PricingRow[]) => {
     const s = sum(rows);
-    return s.rol ? s.comissao / s.rol : 0;
+    return s.rol ? -(s.comissao / s.rol) : 0;
   }, format: "percent" },
   { id: "cm", label: "Contrib. Marginal", value: (rows: PricingRow[]) => sum(rows).cm, format: "currency" },
   { id: "cmpct", label: "Contrib. Marginal %/ROL", value: (rows: PricingRow[]) => sum(rows).cmPct, format: "percent" },
@@ -194,11 +195,17 @@ export default function Rolling() {
                 {DRE_LINES.map((line) => (
                   <tr key={line.id} className="border-t border-border/40 odd:bg-muted/20">
                     <td className="sticky left-0 bg-background px-3 py-2 font-medium">{line.label}</td>
-                    {monthly.map((m) => (
-                      <td key={`${line.id}-${m.periodo}`} className="px-3 py-2 text-right tabular-nums">
-                        {fmt(line.value(m.rows), line.format)}
-                      </td>
-                    ))}
+                    {monthly.map((m) => {
+                      const value = line.value(m.rows);
+                      return (
+                        <td
+                          key={`${line.id}-${m.periodo}`}
+                          className={cn("px-3 py-2 text-right tabular-nums", value < 0 && "text-destructive")}
+                        >
+                          {fmt(value, line.format)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

@@ -174,7 +174,7 @@ export async function parseRollingFile(file: File): Promise<ParsedRolling> {
 
     for (let i = 0; i < periodByOffset.length; i++) {
       const period = periodByOffset[i];
-      const volumeTons = parseDecimal(row[BLOCKS.volume.start + i]);
+      const volumeKg = parseDecimal(row[BLOCKS.volume.start + i]);
       const receitaLiquida = parseDecimal(row[BLOCKS.receitaLiquida.start + i]);
       const custoVariavel = parseDecimal(row[BLOCKS.custoVariavel.start + i]);
       const frete = parseDecimal(row[BLOCKS.frete.start + i]);
@@ -203,7 +203,7 @@ export async function parseRollingFile(file: File): Promise<ParsedRolling> {
         sabor: dep?.sabor,
         inovacao: getInovacao(sku),
         legado: getLegado(sku),
-        volumeKg: volumeTons * 1000,
+        volumeKg,
         receitaLiquida,
         custoVariavel,
         frete,
@@ -216,7 +216,7 @@ export async function parseRollingFile(file: File): Promise<ParsedRolling> {
 
   if (skippedRows) warnings.push(`${skippedRows} linha(s) sem SKU ou Canal foram ignoradas.`);
   warnings.push(`Rolling identificado como ${cycleLabel}; ao aplicar, o app atualiza apenas o mes seguinte em diante.`);
-  warnings.push("Volume convertido de toneladas para kg para manter consistencia interna.");
+  warnings.push("Volume importado sem multiplicador adicional.");
 
   return {
     rows,
