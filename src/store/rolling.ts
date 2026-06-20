@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { RollingFile, RollingRow } from "@/lib/rolling";
-import { isRollingMonthOnOrAfterCycle } from "@/lib/rolling";
+import { isRollingMonthAfterCycle } from "@/lib/rolling";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
 
 interface RollingState {
@@ -25,11 +25,11 @@ export const useRolling = create<RollingState>((set) => ({
   addRolling: (newRows, file) => {
     const cycle = file.cycles[0] ?? newRows[0]?.rollingCycle;
     const cycleRank = cycle ? rank(cycle) : -Infinity;
-    const rowsToApply = newRows.filter(isRollingMonthOnOrAfterCycle);
+    const rowsToApply = newRows.filter(isRollingMonthAfterCycle);
 
     set((s) => ({
       rows: [
-        ...s.rows.filter((r) => rank(r.periodo) < cycleRank),
+        ...s.rows.filter((r) => rank(r.periodo) <= cycleRank),
         ...rowsToApply,
       ],
       files: [

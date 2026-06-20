@@ -731,7 +731,7 @@ function QueueRow({
                 ))}
               </select>
               <span className="text-[10px] text-muted-foreground">
-                O Rolling sera aplicado deste mes em diante; meses anteriores ficam preservados.
+                O Rolling sera aplicado do mes seguinte em diante; o mes do arquivo fica preservado.
               </span>
             </div>
           )}

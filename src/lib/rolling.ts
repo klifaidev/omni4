@@ -109,8 +109,8 @@ function periodRank(periodo: string) {
   return parsed ? parsed.ano * 12 + parsed.mes : -Infinity;
 }
 
-export function isRollingMonthOnOrAfterCycle(row: RollingRow): boolean {
-  return periodRank(row.periodo) >= periodRank(row.rollingCycle);
+export function isRollingMonthAfterCycle(row: RollingRow): boolean {
+  return periodRank(row.periodo) > periodRank(row.rollingCycle);
 }
 
 export async function parseRollingFile(file: File): Promise<ParsedRolling> {
@@ -215,7 +215,7 @@ export async function parseRollingFile(file: File): Promise<ParsedRolling> {
   }
 
   if (skippedRows) warnings.push(`${skippedRows} linha(s) sem SKU ou Canal foram ignoradas.`);
-  warnings.push(`Rolling identificado como ${cycleLabel}; ao aplicar, o app atualiza deste mes em diante.`);
+  warnings.push(`Rolling identificado como ${cycleLabel}; ao aplicar, o app atualiza apenas o mes seguinte em diante.`);
   warnings.push("Volume convertido de toneladas para kg para manter consistencia interna.");
 
   return {
