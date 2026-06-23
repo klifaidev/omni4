@@ -170,7 +170,7 @@ import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target } from "lucide-react";
 import {
   brandStyleTargetLabel,
   buildBrandStylePatch,
@@ -436,6 +436,201 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         padding: 8,
         backgroundColor: "FFE4E6",
         borderRadius: 8,
+      } as CustomBlock,
+    ];
+    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    if (ids.length > 0) {
+      groupBlocksAction(ids);
+      setSelection(ids);
+    }
+  };
+  const addDecisionCard = () => {
+    const x = 610;
+    const y = 150;
+    const blocks: CustomBlock[] = [
+      {
+        id: localId(), kind: "shape",
+        x, y, w: 520, h: 235, z: 1,
+        shape: "roundRect",
+        fill: "F8FAFC",
+        fillOpacity: 100,
+        strokeColor: "CBD5E1",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        radius: 14,
+        rotation: 0,
+        lineThickness: 2,
+        lineDirection: "horizontal",
+        arrowStart: false,
+        arrowEnd: false,
+        shadowEnabled: true,
+        shadowColor: "000000",
+        shadowOpacity: 10,
+        shadowBlur: 12,
+        shadowX: 0,
+        shadowY: 4,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "title",
+        x: x + 28, y: y + 22, w: 460, h: 38, z: 2,
+        text: "Decisao requerida",
+        size: 24,
+        bold: true,
+        italic: false,
+        color: "1C2430",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.05,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 28, y: y + 76, w: 462, h: 70, z: 3,
+        text: "Recomendacao: descreva a decisao em uma frase.\nImpacto esperado: margem, volume ou preco.\nTrade-off: o que abrimos mao para capturar o ganho.",
+        size: 16,
+        italic: false,
+        color: "334155",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.32,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 28, y: y + 168, w: 142, h: 42, z: 4,
+        text: "Dono\nComercial",
+        size: 14,
+        italic: false,
+        color: "0F172A",
+        align: "center",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.22,
+        textTransform: "none",
+        padding: 7,
+        backgroundColor: "E0F2FE",
+        borderRadius: 8,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 190, y: y + 168, w: 142, h: 42, z: 5,
+        text: "Prazo\n30 dias",
+        size: 14,
+        italic: false,
+        color: "0F172A",
+        align: "center",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.22,
+        textTransform: "none",
+        padding: 7,
+        backgroundColor: "E0F2FE",
+        borderRadius: 8,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 352, y: y + 168, w: 138, h: 42, z: 6,
+        text: "Status\nAberto",
+        size: 14,
+        italic: false,
+        color: "7F1022",
+        align: "center",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.22,
+        textTransform: "none",
+        padding: 7,
+        backgroundColor: "FFE4E6",
+        borderRadius: 8,
+      } as CustomBlock,
+    ];
+    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    if (ids.length > 0) {
+      groupBlocksAction(ids);
+      setSelection(ids);
+    }
+  };
+  const addRiskOpportunityCard = () => {
+    const x = 60;
+    const y = 420;
+    const blocks: CustomBlock[] = [
+      {
+        id: localId(), kind: "shape",
+        x, y, w: 520, h: 190, z: 1,
+        shape: "roundRect",
+        fill: "F8FAFC",
+        fillOpacity: 100,
+        strokeColor: "CBD5E1",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        radius: 14,
+        rotation: 0,
+        lineThickness: 2,
+        lineDirection: "horizontal",
+        arrowStart: false,
+        arrowEnd: false,
+        shadowEnabled: true,
+        shadowColor: "000000",
+        shadowOpacity: 10,
+        shadowBlur: 12,
+        shadowX: 0,
+        shadowY: 4,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 24, y: y + 22, w: 216, h: 130, z: 2,
+        text: "Risco\n\nO que pode piorar o resultado se nada for feito.",
+        size: 17,
+        italic: false,
+        color: "991B1B",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.28,
+        textTransform: "none",
+        padding: 14,
+        backgroundColor: "FEE2E2",
+        borderRadius: 10,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 280, y: y + 22, w: 216, h: 130, z: 3,
+        text: "Oportunidade\n\nO que pode capturar ganho de margem, volume ou mix.",
+        size: 17,
+        italic: false,
+        color: "075985",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.28,
+        textTransform: "none",
+        padding: 14,
+        backgroundColor: "E0F2FE",
+        borderRadius: 10,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 24, y: y + 160, w: 472, h: 20, z: 4,
+        text: "Priorize pelo impacto financeiro e pela velocidade de execucao.",
+        size: 14,
+        italic: false,
+        color: "64748B",
+        align: "center",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.1,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
       } as CustomBlock,
     ];
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
@@ -729,6 +924,16 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               icon={StickyNote}
               label="Insight"
               onClick={addInsightCard}
+            />
+            <PaletteButton
+              icon={Target}
+              label="Decisao"
+              onClick={addDecisionCard}
+            />
+            <PaletteButton
+              icon={Gauge}
+              label="Risco/Oportun."
+              onClick={addRiskOpportunityCard}
             />
             {ELEMENT_PALETTE.map((it) => (
               <PaletteButton
