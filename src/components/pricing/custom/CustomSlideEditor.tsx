@@ -32,7 +32,7 @@ import {
   AlignStartVertical, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
-  Play, Paintbrush, StickyNote,
+  Play, Paintbrush, Search, StickyNote,
   Eye, EyeOff, GripVertical, Minus,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -190,6 +190,13 @@ function localId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function normalizePaletteText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 // Group 1 — Charts (and chart-like data viz: KPI Card + Table + Bridge)
 const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
   | { kind: "chart"; chartType: CustomChartType }
@@ -274,6 +281,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [paletteSearch, setPaletteSearch] = useState("");
   const [canvasHovered, setCanvasHovered] = useState(false);
 
   const [fitScale, setFitScale] = useState(1);
@@ -767,6 +775,26 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const sendToBack = (id: string) => sendToBackAction(id);
   const toggleLock = (id: string) => toggleLockAction(id);
 
+  const paletteQuery = normalizePaletteText(paletteSearch.trim());
+  const matchesPalette = useCallback((...parts: Array<string | undefined | null>) => {
+    if (!paletteQuery) return true;
+    return normalizePaletteText(parts.filter(Boolean).join(" ")).includes(paletteQuery);
+  }, [paletteQuery]);
+  const storytellingPalette = [
+    { id: "summary", icon: ListChecks, label: "Resumo Exec.", keywords: "resumo executivo leitura abertura resultado causa acao", onClick: addExecutiveSummaryCard },
+    { id: "insight", icon: StickyNote, label: "Insight", keywords: "insight executivo storytelling narrativa acao", onClick: addInsightCard },
+    { id: "decision", icon: Target, label: "Decisao", keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
+    { id: "risk", icon: Gauge, label: "Risco/Oportun.", keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
+  ];
+  const visibleStorytellingPalette = storytellingPalette.filter((it) => matchesPalette(it.label, it.keywords));
+  const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
+  const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
+  const visibleOmniPalette = OMNI_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.group));
+  const hasPaletteResults = visibleStorytellingPalette.length > 0
+    || visibleChartPalette.length > 0
+    || visibleElementPalette.length > 0
+    || visibleOmniPalette.length > 0;
+
   // Helper: ids that move together when dragging `id`.
   // If id belongs to a group (and we're not in group-edit mode for it),
   // and the selection includes any group member, drag the whole group.
@@ -1018,10 +1046,24 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             onClick={() => setAssetsOpen(true)}>
             <Images className="h-3.5 w-3.5" /> Assets
           </Button>
+          <div className="relative px-1 pt-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={paletteSearch}
+              onChange={(e) => setPaletteSearch(e.target.value)}
+              placeholder="Buscar blocos..."
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
           <Separator className="my-2" />
 
           <PaletteGroup title="Gráficos" defaultOpen>
-            {CHART_PALETTE.map((it) => (
+            {!hasPaletteResults && (
+              <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-[11px] text-muted-foreground">
+                Nenhum bloco encontrado.
+              </div>
+            )}
+            {visibleChartPalette.map((it) => (
               <PaletteButton
                 key={it.id}
                 icon={it.icon}
@@ -1034,32 +1076,20 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           <Separator className="my-2" />
 
           <PaletteGroup title="Storytelling" defaultOpen>
-            <PaletteButton
-              icon={ListChecks}
-              label="Resumo Exec."
-              onClick={addExecutiveSummaryCard}
-            />
-            <PaletteButton
-              icon={StickyNote}
-              label="Insight"
-              onClick={addInsightCard}
-            />
-            <PaletteButton
-              icon={Target}
-              label="Decisao"
-              onClick={addDecisionCard}
-            />
-            <PaletteButton
-              icon={Gauge}
-              label="Risco/Oportun."
-              onClick={addRiskOpportunityCard}
-            />
+            {visibleStorytellingPalette.map((it) => (
+              <PaletteButton
+                key={it.id}
+                icon={it.icon}
+                label={it.label}
+                onClick={it.onClick}
+              />
+            ))}
           </PaletteGroup>
 
           <Separator className="my-2" />
 
           <PaletteGroup title="Elementos" defaultOpen>
-            {ELEMENT_PALETTE.map((it) => (
+            {visibleElementPalette.map((it) => (
               <PaletteButton
                 key={it.id}
                 icon={it.icon}
@@ -1077,7 +1107,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   {group}
                 </div>
-                {OMNI_PALETTE.filter((it) => it.group === group).map((it) => (
+                {visibleOmniPalette.filter((it) => it.group === group).map((it) => (
                   <PaletteButton
                     key={it.id}
                     icon={it.icon}
