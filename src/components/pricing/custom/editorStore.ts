@@ -210,6 +210,15 @@ export function insertBlockAction(blk: CustomBlock, label: EditorActionLabel = "
   return next.id;
 }
 
+export function insertBlocksAction(blocks: CustomBlock[], label: EditorActionLabel = "Adicionar bloco"): string[] {
+  const cur = baseStore.getState().config;
+  if (!cur || blocks.length === 0) return [];
+  const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
+  const next = blocks.map((blk, idx) => ({ ...blk, z: zTop + idx + 1 }) as CustomBlock);
+  mutate(label, (c) => ({ ...c, blocks: [...c.blocks, ...next] }));
+  return next.map((blk) => blk.id);
+}
+
 export function patchBlockAction(id: string, patch: Partial<CustomBlock>, label: EditorActionLabel) {
   mutate(label, (c) => ({
     ...c,

@@ -161,7 +161,7 @@ import {
   alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction,
   copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction, useCopiedElementStyle,
-  insertBlockAction,
+  insertBlockAction, insertBlocksAction,
   type AlignKind,
 } from "./editorStore";
 import { useEditorPrefs, snapToGrid, type GridSize, setEditorPrefs, getEditorPrefs } from "./editorPrefs";
@@ -184,6 +184,11 @@ import {
 let crossSlideClipboard: CustomBlock | null = null;
 
 type Icon = React.ComponentType<{ className?: string }>;
+
+function localId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // Group 1 — Charts (and chart-like data viz: KPI Card + Table + Bridge)
 const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
@@ -356,6 +361,88 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const addChart = (chartType: CustomChartType) => {
     const id = addChartBlockAction(chartType);
     if (id) setSelection([id]);
+  };
+  const addInsightCard = () => {
+    const x = 60;
+    const y = 150;
+    const blocks: CustomBlock[] = [
+      {
+        id: localId(), kind: "shape",
+        x, y, w: 520, h: 235, z: 1,
+        shape: "roundRect",
+        fill: "FFF7F8",
+        fillOpacity: 100,
+        strokeColor: "FDA4AF",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        radius: 14,
+        rotation: 0,
+        lineThickness: 2,
+        lineDirection: "horizontal",
+        arrowStart: false,
+        arrowEnd: false,
+        shadowEnabled: true,
+        shadowColor: "000000",
+        shadowOpacity: 10,
+        shadowBlur: 12,
+        shadowX: 0,
+        shadowY: 4,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "title",
+        x: x + 28, y: y + 22, w: 460, h: 38, z: 2,
+        text: "Insight executivo",
+        size: 24,
+        bold: true,
+        italic: false,
+        color: "C8102E",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.05,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 28, y: y + 74, w: 462, h: 88, z: 3,
+        text: "O que aconteceu: descreva o movimento principal.\nPor que importa: conecte com margem, volume ou preco.\nAcao sugerida: indique a decisao esperada.",
+        size: 17,
+        italic: false,
+        color: "1C2430",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.35,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 28, y: y + 178, w: 462, h: 34, z: 4,
+        text: "Proxima acao: validar plano com Comercial",
+        size: 16,
+        italic: false,
+        color: "7F1022",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.2,
+        textTransform: "none",
+        padding: 8,
+        backgroundColor: "FFE4E6",
+        borderRadius: 8,
+      } as CustomBlock,
+    ];
+    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    if (ids.length > 0) {
+      groupBlocksAction(ids);
+      setSelection(ids);
+    }
   };
   const removeBlock = (id: string) => {
     deleteBlockAction(id);
@@ -638,6 +725,11 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           <Separator className="my-2" />
 
           <PaletteGroup title="Elementos" defaultOpen>
+            <PaletteButton
+              icon={StickyNote}
+              label="Insight"
+              onClick={addInsightCard}
+            />
             {ELEMENT_PALETTE.map((it) => (
               <PaletteButton
                 key={it.id}
