@@ -170,7 +170,14 @@ import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles } from "lucide-react";
+import {
+  brandStyleTargetLabel,
+  buildBrandStylePatch,
+  getBrandStyleTarget,
+  getBrandStylesForBlock,
+  type SlideBrandStyle,
+} from "@/lib/slideBrandKit";
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -1377,6 +1384,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
+          <BrandKitPopover selected={selected} />
           <PalettePopover
             theme={getTheme(config.theme)}
             blocks={config.blocks}
@@ -3462,6 +3470,100 @@ function collectUsedColors(blocks: CustomBlock[]): string[] {
     else if (b.kind === "shape") set.add(b.fill);
   }
   return Array.from(set).filter(Boolean).slice(0, 7);
+}
+
+function BrandKitPopover({ selected }: { selected: CustomBlock | null }) {
+  const target = getBrandStyleTarget(selected);
+  const styles = getBrandStylesForBlock(selected);
+
+  const apply = (style: SlideBrandStyle) => {
+    if (!selected) {
+      toast.info("Selecione um bloco para aplicar um estilo.");
+      return;
+    }
+    patchBlockAction(selected.id, buildBrandStylePatch(style, selected), "Alterar estilo");
+    toast.success(`Estilo aplicado: ${style.name}`);
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 gap-1 px-2 text-[11px]"
+          title="Brand Kit"
+        >
+          <Sparkles className="h-3.5 w-3.5" /> Brand Kit
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3" align="start">
+        <div className="space-y-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Estilos oficiais
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {selected
+                ? `${brandStyleTargetLabel(target)} selecionado`
+                : "Selecione um texto, KPI, forma, tabela ou DRE."}
+            </div>
+          </div>
+
+          {styles.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
+              Este tipo de bloco ainda nao tem estilos de Brand Kit.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {styles.map((style) => (
+                <BrandStyleButton
+                  key={style.id}
+                  style={style}
+                  onClick={() => apply(style)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function BrandStyleButton({
+  style,
+  onClick,
+}: {
+  style: SlideBrandStyle;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-background/80 p-2 text-left transition hover:border-primary/50 hover:bg-accent/40"
+    >
+      <div
+        className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md border border-border/50"
+        style={{ background: `#${style.preview.bg}`, color: `#${style.preview.fg}` }}
+      >
+        <div className="flex items-center gap-1.5">
+          <span
+            className="h-6 w-1.5 rounded-full"
+            style={{ background: `#${style.preview.accent}` }}
+          />
+          <span className="text-[13px] font-bold">Aa</span>
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-xs font-semibold text-foreground">{style.name}</div>
+        <div className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+          {style.description}
+        </div>
+      </div>
+    </button>
+  );
 }
 
 function PalettePopover({
