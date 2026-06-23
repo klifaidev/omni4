@@ -184,6 +184,7 @@ import {
 let crossSlideClipboard: CustomBlock | null = null;
 
 type Icon = React.ComponentType<{ className?: string }>;
+const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
 
 function localId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -282,6 +283,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
+  const [recentPaletteIds, setRecentPaletteIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(PALETTE_RECENTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string").slice(0, 6) : [];
+    } catch {
+      return [];
+    }
+  });
   const [canvasHovered, setCanvasHovered] = useState(false);
 
   const [fitScale, setFitScale] = useState(1);
@@ -775,17 +785,61 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const sendToBack = (id: string) => sendToBackAction(id);
   const toggleLock = (id: string) => toggleLockAction(id);
 
+  const rememberPaletteUse = useCallback((id: string) => {
+    setRecentPaletteIds((prev) => {
+      const next = [id, ...prev.filter((item) => item !== id)].slice(0, 6);
+      try {
+        localStorage.setItem(PALETTE_RECENTS_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore storage failures; recents are a convenience only.
+      }
+      return next;
+    });
+  }, []);
+  const runPaletteAction = useCallback((id: string, action: () => void) => {
+    rememberPaletteUse(id);
+    action();
+  }, [rememberPaletteUse]);
   const paletteQuery = normalizePaletteText(paletteSearch.trim());
   const matchesPalette = useCallback((...parts: Array<string | undefined | null>) => {
     if (!paletteQuery) return true;
     return normalizePaletteText(parts.filter(Boolean).join(" ")).includes(paletteQuery);
   }, [paletteQuery]);
   const storytellingPalette = [
-    { id: "summary", icon: ListChecks, label: "Resumo Exec.", keywords: "resumo executivo leitura abertura resultado causa acao", onClick: addExecutiveSummaryCard },
-    { id: "insight", icon: StickyNote, label: "Insight", keywords: "insight executivo storytelling narrativa acao", onClick: addInsightCard },
-    { id: "decision", icon: Target, label: "Decisao", keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
-    { id: "risk", icon: Gauge, label: "Risco/Oportun.", keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
+    { id: "story:summary", icon: ListChecks, label: "Resumo Exec.", keywords: "resumo executivo leitura abertura resultado causa acao", onClick: addExecutiveSummaryCard },
+    { id: "story:insight", icon: StickyNote, label: "Insight", keywords: "insight executivo storytelling narrativa acao", onClick: addInsightCard },
+    { id: "story:decision", icon: Target, label: "Decisao", keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
+    { id: "story:risk", icon: Gauge, label: "Risco/Oportun.", keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
   ];
+  const paletteActions = [
+    ...storytellingPalette,
+    ...CHART_PALETTE.map((it) => ({
+      id: `chart:${it.id}`,
+      icon: it.icon,
+      label: it.label,
+      keywords: `${it.id} ${it.kind}`,
+      onClick: () => { if (it.kind === "chart") addChart(it.chartType); else addBlock(it.kind); },
+    })),
+    ...ELEMENT_PALETTE.map((it) => ({
+      id: `element:${it.id}`,
+      icon: it.icon,
+      label: it.label,
+      keywords: `${it.id} ${it.kind}`,
+      onClick: () => addBlock(it.kind),
+    })),
+    ...OMNI_PALETTE.map((it) => ({
+      id: `omni:${it.id}`,
+      icon: it.icon,
+      label: it.label,
+      keywords: `${it.id} ${it.kind} ${it.group}`,
+      onClick: () => addBlock(it.kind),
+    })),
+  ];
+  const recentPalette = paletteSearch.trim()
+    ? []
+    : recentPaletteIds
+        .map((id) => paletteActions.find((it) => it.id === id))
+        .filter((it): it is typeof paletteActions[number] => Boolean(it));
   const visibleStorytellingPalette = storytellingPalette.filter((it) => matchesPalette(it.label, it.keywords));
   const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
@@ -1058,6 +1112,22 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           <Separator className="my-2" />
 
           <PaletteGroup title="Gráficos" defaultOpen>
+            {recentPalette.length > 0 && (
+              <>
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Recentes
+                </div>
+                {recentPalette.map((it) => (
+                  <PaletteButton
+                    key={it.id}
+                    icon={it.icon}
+                    label={it.label}
+                    onClick={() => runPaletteAction(it.id, it.onClick)}
+                  />
+                ))}
+                <Separator className="my-2" />
+              </>
+            )}
             {!hasPaletteResults && (
               <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-[11px] text-muted-foreground">
                 Nenhum bloco encontrado.
@@ -1068,7 +1138,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 key={it.id}
                 icon={it.icon}
                 label={it.label}
-                onClick={() => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind)}
+                onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind))}
               />
             ))}
           </PaletteGroup>
@@ -1081,7 +1151,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 key={it.id}
                 icon={it.icon}
                 label={it.label}
-                onClick={it.onClick}
+                onClick={() => runPaletteAction(it.id, it.onClick)}
               />
             ))}
           </PaletteGroup>
@@ -1094,7 +1164,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 key={it.id}
                 icon={it.icon}
                 label={it.label}
-                onClick={() => addBlock(it.kind)}
+                onClick={() => runPaletteAction(`element:${it.id}`, () => addBlock(it.kind))}
               />
             ))}
           </PaletteGroup>
@@ -1112,7 +1182,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     key={it.id}
                     icon={it.icon}
                     label={it.label}
-                    onClick={() => addBlock(it.kind)}
+                    onClick={() => runPaletteAction(`omni:${it.id}`, () => addBlock(it.kind))}
                   />
                 ))}
               </div>
