@@ -18,11 +18,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     deletar: (tipo, nomeArquivo) =>
       ipcRenderer.invoke("bases:delete", { tipo, nomeArquivo }),
   },
-  // IA local embutida
-  ai: {
-    info: () => ipcRenderer.invoke("ai:info"),
-    gerar: (prompt) => ipcRenderer.invoke("ai:generate", { prompt }),
-  },
   // Utilitarios
   isElectron: true,
 });

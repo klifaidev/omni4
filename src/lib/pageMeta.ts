@@ -1,7 +1,6 @@
 import {
   BarChart3,
   BellRing,
-  BrainCircuit,
   Coins,
   FileSpreadsheet,
   Home,
@@ -42,7 +41,6 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/demanda": { label: "Demanda", icon: TrendingUp },
   "/estoque": { label: "Estoque", icon: PackageSearch },
   "/positivacao": { label: "Positivação", icon: UserCheck },
-  "/inteligencia": { label: "Inteligencia", icon: BrainCircuit },
   "/farol": { label: "Farol de Cadastro", icon: Radar },
 };
 

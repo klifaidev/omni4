@@ -43,7 +43,6 @@ const NAV_ITEMS: { path: string; label: string }[] = [
   { path: "/rolling", label: "Rolling" },
   { path: "/positivacao", label: "Positivação" },
   { path: "/detalhe", label: "Tabela Dinâmica" },
-  { path: "/inteligencia", label: "Inteligencia" },
   { path: "/slides", label: "Slides" },
   { path: "/atividades", label: "Atividades" },
   { path: "/upload", label: "Upload" },

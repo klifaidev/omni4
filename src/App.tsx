@@ -23,7 +23,6 @@ import Demanda from "./pages/Demanda.tsx";
 import Estoque from "./pages/Estoque.tsx";
 import Positivacao from "./pages/Positivacao.tsx";
 import FarolCadastro from "./pages/FarolCadastro.tsx";
-import Inteligencia from "./pages/Inteligencia.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const App = () => (
@@ -50,7 +49,6 @@ const App = () => (
           <Route path="/demanda" element={<Demanda />} />
           <Route path="/estoque" element={<Estoque />} />
           <Route path="/positivacao" element={<Positivacao />} />
-          <Route path="/inteligencia" element={<Inteligencia />} />
           <Route path="/farol" element={<FarolCadastro />} />
           <Route path="/slides" element={<SlidesBeta />} />
           <Route path="/upload" element={<Upload />} />
