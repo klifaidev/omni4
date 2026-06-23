@@ -170,7 +170,7 @@ import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
 import {
   brandStyleTargetLabel,
   buildBrandStylePatch,
@@ -436,6 +436,120 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         padding: 8,
         backgroundColor: "FFE4E6",
         borderRadius: 8,
+      } as CustomBlock,
+    ];
+    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    if (ids.length > 0) {
+      groupBlocksAction(ids);
+      setSelection(ids);
+    }
+  };
+  const addExecutiveSummaryCard = () => {
+    const x = 60;
+    const y = 90;
+    const blocks: CustomBlock[] = [
+      {
+        id: localId(), kind: "shape",
+        x, y, w: 1180, h: 230, z: 1,
+        shape: "roundRect",
+        fill: "F8FAFC",
+        fillOpacity: 100,
+        strokeColor: "E2E8F0",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        radius: 14,
+        rotation: 0,
+        lineThickness: 2,
+        lineDirection: "horizontal",
+        arrowStart: false,
+        arrowEnd: false,
+        shadowEnabled: true,
+        shadowColor: "000000",
+        shadowOpacity: 8,
+        shadowBlur: 14,
+        shadowX: 0,
+        shadowY: 5,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "title",
+        x: x + 30, y: y + 24, w: 430, h: 42, z: 2,
+        text: "Resumo executivo",
+        size: 28,
+        bold: true,
+        italic: false,
+        color: "C8102E",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.05,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 30, y: y + 78, w: 1100, h: 38, z: 3,
+        text: "Mensagem-chave: escreva em uma frase o principal recado do slide.",
+        size: 22,
+        italic: false,
+        color: "1C2430",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.15,
+        textTransform: "none",
+        padding: 0,
+        backgroundColor: "",
+        borderRadius: 0,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 30, y: y + 135, w: 340, h: 68, z: 4,
+        text: "1. Resultado\nO indicador principal ficou acima/abaixo do esperado.",
+        size: 16,
+        italic: false,
+        color: "334155",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.28,
+        textTransform: "none",
+        padding: 12,
+        backgroundColor: "FFFFFF",
+        borderRadius: 10,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 420, y: y + 135, w: 340, h: 68, z: 5,
+        text: "2. Causa\nExplique o driver: preco, volume, mix, custo ou canal.",
+        size: 16,
+        italic: false,
+        color: "334155",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.28,
+        textTransform: "none",
+        padding: 12,
+        backgroundColor: "FFFFFF",
+        borderRadius: 10,
+      } as CustomBlock,
+      {
+        id: localId(), kind: "text",
+        x: x + 810, y: y + 135, w: 320, h: 68, z: 6,
+        text: "3. Acao\nIndique a decisao ou o proximo passo recomendado.",
+        size: 16,
+        italic: false,
+        color: "334155",
+        align: "left",
+        fontFamily: "Inter",
+        letterSpacing: 0,
+        lineHeight: 1.28,
+        textTransform: "none",
+        padding: 12,
+        backgroundColor: "FFFFFF",
+        borderRadius: 10,
       } as CustomBlock,
     ];
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
@@ -919,7 +1033,12 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
           <Separator className="my-2" />
 
-          <PaletteGroup title="Elementos" defaultOpen>
+          <PaletteGroup title="Storytelling" defaultOpen>
+            <PaletteButton
+              icon={ListChecks}
+              label="Resumo Exec."
+              onClick={addExecutiveSummaryCard}
+            />
             <PaletteButton
               icon={StickyNote}
               label="Insight"
@@ -935,6 +1054,11 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               label="Risco/Oportun."
               onClick={addRiskOpportunityCard}
             />
+          </PaletteGroup>
+
+          <Separator className="my-2" />
+
+          <PaletteGroup title="Elementos" defaultOpen>
             {ELEMENT_PALETTE.map((it) => (
               <PaletteButton
                 key={it.id}
