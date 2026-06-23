@@ -62,7 +62,28 @@ export interface OllamaResult {
   text: string;
   model: string;
   elapsedMs: number;
-  mode: "llm" | "local";
+  mode: "embedded" | "llm" | "local";
+  error?: string;
+}
+
+export interface EmbeddedAiInfo {
+  ok: boolean;
+  available: boolean;
+  engine?: string;
+  modelName?: string;
+  modelBytes?: number;
+  reason?: string;
+  runtimeDir?: string;
+  error?: string;
+}
+
+export interface EmbeddedAiGenerateResult {
+  ok: boolean;
+  available: boolean;
+  text?: string;
+  elapsedMs?: number;
+  modelName?: string;
+  reason?: string;
   error?: string;
 }
 
@@ -290,6 +311,67 @@ export function buildOllamaPrompt(context: OmniAiContext, question: string) {
     "Contexto estruturado:",
     compactContext,
   ].join("\n");
+}
+
+export async function getEmbeddedAiInfo(): Promise<EmbeddedAiInfo> {
+  const aiApi = (window as unknown as { electronAPI?: { ai?: { info: () => Promise<EmbeddedAiInfo> } } }).electronAPI?.ai;
+  if (!aiApi) {
+    return { ok: false, available: false, reason: "not_electron" };
+  }
+  try {
+    return await aiApi.info();
+  } catch (error) {
+    return {
+      ok: false,
+      available: false,
+      reason: "ipc_error",
+      error: error instanceof Error ? error.message : "Falha ao consultar IA embutida.",
+    };
+  }
+}
+
+export async function askEmbeddedAi(prompt: string): Promise<OllamaResult> {
+  const started = performance.now();
+  const aiApi = (window as unknown as { electronAPI?: { ai?: { gerar: (prompt: string) => Promise<EmbeddedAiGenerateResult> } } }).electronAPI?.ai;
+  if (!aiApi) {
+    return {
+      ok: false,
+      text: "",
+      model: "embedded",
+      elapsedMs: Math.round(performance.now() - started),
+      mode: "local",
+      error: "Ambiente Electron indisponivel.",
+    };
+  }
+  try {
+    const result = await aiApi.gerar(prompt);
+    if (!result.ok || !result.text) {
+      return {
+        ok: false,
+        text: "",
+        model: result.modelName ?? "embedded",
+        elapsedMs: result.elapsedMs ?? Math.round(performance.now() - started),
+        mode: "local",
+        error: result.error ?? result.reason ?? "IA embutida indisponivel.",
+      };
+    }
+    return {
+      ok: true,
+      text: result.text.trim(),
+      model: result.modelName ?? "embedded",
+      elapsedMs: result.elapsedMs ?? Math.round(performance.now() - started),
+      mode: "embedded",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      text: "",
+      model: "embedded",
+      elapsedMs: Math.round(performance.now() - started),
+      mode: "local",
+      error: error instanceof Error ? error.message : "Falha ao chamar IA embutida.",
+    };
+  }
 }
 
 export async function askOllamaLocal(input: {

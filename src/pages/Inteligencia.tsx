@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BrainCircuit,
-  Cpu,
   Database,
   FileText,
   Lightbulb,
@@ -16,7 +15,6 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
@@ -27,10 +25,12 @@ import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import {
-  askOllamaLocal,
+  askEmbeddedAi,
   buildLocalExecutiveReading,
   buildOllamaPrompt,
   buildOmniAiContext,
+  getEmbeddedAiInfo,
+  type EmbeddedAiInfo,
   type AiRankItem,
   type OllamaResult,
 } from "@/lib/aiInsights";
@@ -54,9 +54,9 @@ export default function Inteligencia() {
   const rollingRows = useRolling((s) => s.rows);
 
   const [question, setQuestion] = useState("Faca uma leitura executiva dos dados atuais.");
-  const [model, setModel] = useState("llama3.2:3b");
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<OllamaResult | null>(null);
+  const [aiInfo, setAiInfo] = useState<EmbeddedAiInfo | null>(null);
 
   const context = useMemo(
     () =>
@@ -75,11 +75,15 @@ export default function Inteligencia() {
   const hasAnyData = context.sources.length > 0;
   const real = context.sources.find((source) => source.key === "real");
 
+  useEffect(() => {
+    getEmbeddedAiInfo().then(setAiInfo);
+  }, []);
+
   async function generate() {
     if (!hasAnyData) return;
     setBusy(true);
     const prompt = buildOllamaPrompt(context, question);
-    const result = await askOllamaLocal({ model, prompt });
+    const result = await askEmbeddedAi(prompt);
     if (!result.ok) {
       const local: OllamaResult = {
         ...result,
@@ -88,7 +92,7 @@ export default function Inteligencia() {
         mode: "local",
       };
       setAnswer(local);
-      toast.info("IA local indisponivel. Usei a leitura interna do OMNI4.");
+      toast.info("IA embutida indisponivel. Usei a leitura interna do OMNI4.");
     } else {
       setAnswer(result);
     }
@@ -104,7 +108,7 @@ export default function Inteligencia() {
   if (!hasAnyData) {
     return (
       <>
-        <Topbar title="Inteligencia" subtitle="Analise executiva local dos dados do OMNI4" />
+        <Topbar title="Inteligencia" subtitle="Analise executiva offline dos dados do OMNI4" />
         <div className="px-8 py-6">
           <EmptyState
             title="Sem dados para analisar"
@@ -120,7 +124,7 @@ export default function Inteligencia() {
 
   return (
     <>
-      <Topbar title="Inteligencia" subtitle="IA local e leitura executiva dos dados carregados" />
+      <Topbar title="Inteligencia" subtitle="IA embutida e leitura executiva dos dados carregados" />
       <div className="space-y-6 px-8 py-6">
         <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <GlassCard className="overflow-hidden">
@@ -133,18 +137,15 @@ export default function Inteligencia() {
                 <div>
                   <h2 className="text-lg font-semibold">Analista OMNI4</h2>
                   <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-                    A resposta usa os indicadores ja calculados no app. A LLM local e opcional.
+                    A resposta usa os indicadores ja calculados no app. Quando o pacote de IA estiver embutido, nada precisa ser instalado pelo usuario.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-                <Cpu className="h-4 w-4 text-primary" />
-                <Input
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                  className="h-7 w-[150px] border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-                  aria-label="Modelo local"
-                />
+              <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                <BrainCircuit className="h-4 w-4 text-primary" />
+                <span className="font-medium">
+                  {aiInfo?.available ? aiInfo.modelName ?? "Modelo embutido" : "Modelo embutido pendente"}
+                </span>
               </div>
             </div>
 
@@ -173,10 +174,10 @@ export default function Inteligencia() {
                 </Button>
                 {answer && (
                   <Badge
-                    variant={answer.mode === "llm" ? "default" : "secondary"}
+                    variant={answer.mode === "embedded" ? "default" : "secondary"}
                     className={cn("ml-auto", answer.mode === "local" && "text-muted-foreground")}
                   >
-                    {answer.mode === "llm" ? `LLM local - ${answer.elapsedMs} ms` : "Leitura interna OMNI4"}
+                    {answer.mode === "embedded" ? `LLM embutida - ${answer.elapsedMs} ms` : "Leitura interna OMNI4"}
                   </Badge>
                 )}
               </div>
@@ -209,7 +210,7 @@ export default function Inteligencia() {
             {answer?.error && (
               <Badge variant="secondary" className="gap-1.5 text-muted-foreground">
                 <TriangleAlert className="h-3.5 w-3.5" />
-                Ollama indisponivel
+                Modelo embutido indisponivel
               </Badge>
             )}
           </div>

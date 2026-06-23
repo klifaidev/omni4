@@ -3,6 +3,8 @@ const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
+const { spawn } = require("child_process");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 // Configurar electron-log
@@ -220,6 +222,127 @@ ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
   } catch (err) {
     return { ok: false, erro: err.message };
   }
+});
+
+// IA local embutida ---------------------------------------------------------
+function getAiRuntimeDir() {
+  if (app.isPackaged) return path.join(process.resourcesPath, "ai-runtime");
+  return path.join(__dirname, "..", "ai-runtime");
+}
+
+function readAiManifest() {
+  const runtimeDir = getAiRuntimeDir();
+  const manifestPath = path.join(runtimeDir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, runtimeDir, reason: "manifest_not_found" };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    const binaryName = process.platform === "win32"
+      ? manifest.binaryWin
+      : process.platform === "darwin"
+        ? manifest.binaryMac
+        : manifest.binaryLinux;
+    const binaryPath = binaryName ? path.join(runtimeDir, binaryName) : "";
+    const modelPath = manifest.model ? path.join(runtimeDir, manifest.model) : "";
+
+    if (!binaryPath || !fs.existsSync(binaryPath)) {
+      return { ok: false, runtimeDir, manifest, reason: "binary_not_found" };
+    }
+    if (!modelPath || !fs.existsSync(modelPath)) {
+      return { ok: false, runtimeDir, manifest, reason: "model_not_found" };
+    }
+
+    return { ok: true, runtimeDir, manifest, binaryPath, modelPath };
+  } catch (err) {
+    return { ok: false, runtimeDir, reason: "invalid_manifest", error: err.message };
+  }
+}
+
+ipcMain.handle("ai:info", async () => {
+  const resolved = readAiManifest();
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      available: false,
+      reason: resolved.reason,
+      runtimeDir: resolved.runtimeDir,
+      error: resolved.error,
+    };
+  }
+  const modelStats = fs.statSync(resolved.modelPath);
+  return {
+    ok: true,
+    available: true,
+    engine: resolved.manifest.engine ?? "llama.cpp",
+    modelName: resolved.manifest.modelName ?? path.basename(resolved.modelPath),
+    modelBytes: modelStats.size,
+  };
+});
+
+ipcMain.handle("ai:generate", async (event, { prompt }) => {
+  const resolved = readAiManifest();
+  if (!resolved.ok) {
+    return { ok: false, available: false, reason: resolved.reason, error: resolved.error };
+  }
+
+  const started = Date.now();
+  const promptPath = path.join(os.tmpdir(), `omni4-ai-${Date.now()}.txt`);
+  fs.writeFileSync(promptPath, prompt ?? "", "utf8");
+
+  const argsTemplate = Array.isArray(resolved.manifest.args)
+    ? resolved.manifest.args
+    : ["-m", "{model}", "-f", "{promptFile}", "-n", "700", "--temp", "0.2", "--ctx-size", "8192", "--no-display-prompt"];
+  const args = argsTemplate.map((arg) =>
+    String(arg)
+      .replaceAll("{model}", resolved.modelPath)
+      .replaceAll("{promptFile}", promptPath)
+  );
+
+  return await new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(resolved.binaryPath, args, {
+      cwd: resolved.runtimeDir,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      child.kill();
+      resolve({
+        ok: false,
+        available: true,
+        reason: "timeout",
+        error: "A IA embutida demorou demais para responder.",
+      });
+    }, Number(resolved.manifest.timeoutMs ?? 90000));
+
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      try { fs.unlinkSync(promptPath); } catch {}
+      resolve({ ok: false, available: true, reason: "spawn_error", error: err.message });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      try { fs.unlinkSync(promptPath); } catch {}
+      if (code !== 0 && !stdout.trim()) {
+        resolve({ ok: false, available: true, reason: "runtime_error", error: stderr || `Processo finalizado com codigo ${code}` });
+        return;
+      }
+      resolve({
+        ok: true,
+        available: true,
+        text: stdout.trim(),
+        elapsedMs: Date.now() - started,
+        modelName: resolved.manifest.modelName ?? path.basename(resolved.modelPath),
+        stderr: stderr.trim(),
+      });
+    });
+  });
 });
 
 app.whenReady().then(createWindow);
