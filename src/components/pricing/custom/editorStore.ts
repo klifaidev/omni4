@@ -773,3 +773,262 @@ export function useCopiedStyle() {
   }, []);
   return { hasCopy: !!_copiedStyle, sourceId: _copiedStyle?.sourceId ?? null };
 }
+
+// ----- Element style copy / paste -----------------------------------------
+
+type StyleGroup = "text" | "kpi" | "shape" | "chart" | "image" | "table" | "topSku" | "dre" | "omni";
+
+interface CopiedElementStyle {
+  sourceId: string;
+  sourceKind: CustomBlockKind;
+  group: StyleGroup;
+  patch: Partial<CustomBlock>;
+}
+
+let _copiedElementStyle: CopiedElementStyle | null = null;
+const elementStyleListeners = new Set<() => void>();
+function emitElementStyleCopy() { elementStyleListeners.forEach((fn) => fn()); }
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function pickStylePatch(block: CustomBlock): { group: StyleGroup; patch: Partial<CustomBlock> } | null {
+  const common = {
+    enterAnimation: block.enterAnimation,
+    hidden: block.hidden,
+  } as Partial<CustomBlock>;
+
+  if (block.kind === "title" || block.kind === "text") {
+    const b = block as Extract<CustomBlock, { kind: "title" | "text" }>;
+    return {
+      group: "text",
+      patch: {
+        ...common,
+        size: b.size,
+        bold: "bold" in b ? b.bold : undefined,
+        italic: b.italic,
+        color: b.color,
+        align: b.align,
+        fontFamily: b.fontFamily,
+        letterSpacing: b.letterSpacing,
+        lineHeight: b.lineHeight,
+        textShadow: b.textShadow,
+        opacity: b.opacity,
+        textTransform: b.textTransform,
+        padding: b.padding,
+        backgroundColor: b.backgroundColor,
+        borderRadius: b.borderRadius,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "kpi") {
+    const b = block as Extract<CustomBlock, { kind: "kpi" }>;
+    return {
+      group: "kpi",
+      patch: {
+        ...common,
+        valueSize: b.valueSize,
+        color: b.color,
+        cardBg: b.cardBg,
+        format: b.format,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "shape") {
+    const b = block as Extract<CustomBlock, { kind: "shape" }>;
+    return {
+      group: "shape",
+      patch: {
+        ...common,
+        fill: b.fill,
+        fillOpacity: b.fillOpacity,
+        strokeColor: b.strokeColor,
+        strokeWidth: b.strokeWidth,
+        strokeStyle: b.strokeStyle,
+        radius: b.radius,
+        lineThickness: b.lineThickness,
+        arrowStart: b.arrowStart,
+        arrowEnd: b.arrowEnd,
+        shadowEnabled: b.shadowEnabled,
+        shadowColor: b.shadowColor,
+        shadowOpacity: b.shadowOpacity,
+        shadowBlur: b.shadowBlur,
+        shadowX: b.shadowX,
+        shadowY: b.shadowY,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "chart") {
+    const b = block as Extract<CustomBlock, { kind: "chart" }>;
+    return {
+      group: "chart",
+      patch: {
+        ...common,
+        showGrid: b.showGrid,
+        showLegend: b.showLegend,
+        showLabels: b.showLabels,
+        autoFit: b.autoFit,
+        maxSeries: b.maxSeries,
+        showOthers: b.showOthers,
+        exportNote: b.exportNote,
+        style: cloneValue(b.style ?? {}),
+        budgetGap: cloneValue(b.budgetGap),
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "image") {
+    const b = block as Extract<CustomBlock, { kind: "image" }>;
+    return {
+      group: "image",
+      patch: {
+        ...common,
+        fit: b.fit,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "table") {
+    const b = block as Extract<CustomBlock, { kind: "table" }>;
+    return {
+      group: "table",
+      patch: {
+        ...common,
+        autoFit: b.autoFit,
+        maxRows: b.maxRows,
+        showOthers: b.showOthers,
+        exportNote: b.exportNote,
+        valueAlign: b.valueAlign,
+        conditionalFormats: cloneValue(b.conditionalFormats),
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "topSku") {
+    const b = block as Extract<CustomBlock, { kind: "topSku" }>;
+    return {
+      group: "topSku",
+      patch: {
+        ...common,
+        topN: b.topN,
+        showShare: b.showShare,
+        title: b.title,
+        autoFit: b.autoFit,
+        showOthers: b.showOthers,
+        exportNote: b.exportNote,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind === "dre") {
+    const b = block as Extract<CustomBlock, { kind: "dre" }>;
+    return {
+      group: "dre",
+      patch: {
+        ...common,
+        showBudget: b.showBudget,
+        fontSize: b.fontSize,
+        headerColor: b.headerColor,
+        textColor: b.textColor,
+        showTotal: b.showTotal,
+        showVariacao: b.showVariacao,
+        variacaoTipo: b.variacaoTipo,
+        conditionalFormat: cloneValue(b.conditionalFormat),
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  if (block.kind.startsWith("omni_")) {
+    const b = block as CustomBlock & {
+      showTitle?: boolean;
+      showLegend?: boolean;
+      title?: string;
+      topN?: number;
+      variant?: string;
+      sortBy?: string;
+      viewMode?: string;
+      showCustoVariavel?: boolean;
+      showCustoFixo?: boolean;
+      showGauge?: boolean;
+      showTable?: boolean;
+    };
+    return {
+      group: "omni",
+      patch: {
+        ...common,
+        showTitle: b.showTitle,
+        showLegend: b.showLegend,
+        title: b.title,
+        topN: b.topN,
+        variant: b.variant,
+        sortBy: b.sortBy,
+        viewMode: b.viewMode,
+        showCustoVariavel: b.showCustoVariavel,
+        showCustoFixo: b.showCustoFixo,
+        showGauge: b.showGauge,
+        showTable: b.showTable,
+      } as Partial<CustomBlock>,
+    };
+  }
+
+  return null;
+}
+
+function styleGroupOf(block: CustomBlock): StyleGroup | null {
+  return pickStylePatch(block)?.group ?? null;
+}
+
+export function copyElementStyleAction(blockId: string): boolean {
+  const cur = baseStore.getState().config;
+  if (!cur) return false;
+  const block = cur.blocks.find((b) => b.id === blockId);
+  if (!block) return false;
+  const style = pickStylePatch(block);
+  if (!style) return false;
+  _copiedElementStyle = {
+    sourceId: blockId,
+    sourceKind: block.kind,
+    group: style.group,
+    patch: cloneValue(style.patch),
+  };
+  emitElementStyleCopy();
+  return true;
+}
+
+export function canPasteElementStyleAction(blockId: string): boolean {
+  const cur = baseStore.getState().config;
+  if (!_copiedElementStyle || !cur) return false;
+  const target = cur.blocks.find((b) => b.id === blockId);
+  if (!target) return false;
+  return styleGroupOf(target) === _copiedElementStyle.group;
+}
+
+export function pasteElementStyleAction(blockId: string): boolean {
+  if (!_copiedElementStyle || !canPasteElementStyleAction(blockId)) return false;
+  patchBlockAction(blockId, cloneValue(_copiedElementStyle.patch), "Colar estilo");
+  return true;
+}
+
+export function clearCopiedElementStyle() {
+  _copiedElementStyle = null;
+  emitElementStyleCopy();
+}
+
+export function useCopiedElementStyle() {
+  const [, setT] = useState(0);
+  useEffect(() => {
+    const fn = () => setT((n) => n + 1);
+    elementStyleListeners.add(fn);
+    return () => { elementStyleListeners.delete(fn); };
+  }, []);
+  return {
+    hasCopy: !!_copiedElementStyle,
+    sourceId: _copiedElementStyle?.sourceId ?? null,
+    group: _copiedElementStyle?.group ?? null,
+    sourceKind: _copiedElementStyle?.sourceKind ?? null,
+  };
+}

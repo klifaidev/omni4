@@ -160,7 +160,7 @@ import {
   patchBlocksAction, nudgeBlocksAction,
   alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction,
-  copyChartStyleAction, pasteChartStyleAction, useCopiedStyle,
+  copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction, useCopiedElementStyle,
   insertBlockAction,
   type AlignKind,
 } from "./editorStore";
@@ -258,7 +258,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const undoRedo = useUndoRedoState();
   const { selectedIds, groupEditMemberId } = useSelection();
   const prefs = useEditorPrefs();
-  const copiedStyle = useCopiedStyle();
+  const copiedStyle = useCopiedElementStyle();
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
@@ -1168,23 +1168,19 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     <ContextMenuItem onSelect={() => toggleLock(blk.id)}>
                       {blk.locked ? "Desbloquear posição" : "Bloquear posição"}
                     </ContextMenuItem>
-                    {blk.kind === "chart" && (
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => {
-                          if (copyChartStyleAction(blk.id)) toast.success("Estilo copiado");
-                        }}>
-                          Copiar estilo
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          disabled={!copiedStyle.hasCopy}
-                          onSelect={() => {
-                            if (pasteChartStyleAction(blk.id)) toast.success("Estilo colado");
-                          }}>
-                          Colar estilo
-                        </ContextMenuItem>
-                      </>
-                    )}
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onSelect={() => {
+                      if (copyElementStyleAction(blk.id)) toast.success("Estilo copiado");
+                    }}>
+                      Copiar estilo
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      disabled={!canPasteElementStyleAction(blk.id)}
+                      onSelect={() => {
+                        if (pasteElementStyleAction(blk.id)) toast.success("Estilo colado");
+                      }}>
+                      Colar estilo
+                    </ContextMenuItem>
                     {selectedIds.length >= 2 && (
                       <>
                         <ContextMenuSeparator />
@@ -1487,21 +1483,22 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicateBlock(selected.id)} title="Duplicar">
                     <CopyIcon className="h-3.5 w-3.5" />
                   </Button>
-                  {selected.kind === "chart" && (
+                  {(
                     <Button
                       size="icon"
                       variant={copiedStyle.hasCopy && copiedStyle.sourceId === selected.id ? "default" : "ghost"}
                       className="h-7 w-7"
+                      disabled={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && !canPasteElementStyleAction(selected.id)}
                       onClick={() => {
-                        if (copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id) {
-                          if (pasteChartStyleAction(selected.id)) toast.success("Estilo colado");
+                        if (copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && canPasteElementStyleAction(selected.id)) {
+                          if (pasteElementStyleAction(selected.id)) toast.success("Estilo colado");
                         } else {
-                          if (copyChartStyleAction(selected.id)) toast.success("Estilo copiado");
+                          if (copyElementStyleAction(selected.id)) toast.success("Estilo copiado");
                         }
                       }}
                       title={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id
-                        ? "Colar estilo neste gráfico"
-                        : "Copiar estilo deste gráfico"}>
+                        ? "Colar estilo neste bloco"
+                        : "Copiar estilo deste bloco"}>
                       <Paintbrush className="h-3.5 w-3.5" />
                     </Button>
                   )}
