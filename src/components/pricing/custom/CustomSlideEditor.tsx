@@ -32,7 +32,7 @@ import {
   AlignStartVertical, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
-  Play, Paintbrush, Search, StickyNote,
+  Play, Paintbrush, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Minus,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -185,6 +185,7 @@ let crossSlideClipboard: CustomBlock | null = null;
 
 type Icon = React.ComponentType<{ className?: string }>;
 const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
+const PALETTE_FAVORITES_KEY = "omni4.customSlide.paletteFavorites";
 
 function localId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -288,6 +289,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       const raw = localStorage.getItem(PALETTE_RECENTS_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string").slice(0, 6) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [favoritePaletteIds, setFavoritePaletteIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(PALETTE_FAVORITES_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string").slice(0, 12) : [];
     } catch {
       return [];
     }
@@ -800,6 +810,18 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     rememberPaletteUse(id);
     action();
   }, [rememberPaletteUse]);
+  const togglePaletteFavorite = useCallback((id: string) => {
+    setFavoritePaletteIds((prev) => {
+      const exists = prev.includes(id);
+      const next = exists ? prev.filter((item) => item !== id) : [id, ...prev].slice(0, 12);
+      try {
+        localStorage.setItem(PALETTE_FAVORITES_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore storage failures; favorites remain available in memory.
+      }
+      return next;
+    });
+  }, []);
   const paletteQuery = normalizePaletteText(paletteSearch.trim());
   const matchesPalette = useCallback((...parts: Array<string | undefined | null>) => {
     if (!paletteQuery) return true;
@@ -838,6 +860,11 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const recentPalette = paletteSearch.trim()
     ? []
     : recentPaletteIds
+        .map((id) => paletteActions.find((it) => it.id === id))
+        .filter((it): it is typeof paletteActions[number] => Boolean(it));
+  const favoritePalette = paletteSearch.trim()
+    ? []
+    : favoritePaletteIds
         .map((id) => paletteActions.find((it) => it.id === id))
         .filter((it): it is typeof paletteActions[number] => Boolean(it));
   const visibleStorytellingPalette = storytellingPalette.filter((it) => matchesPalette(it.label, it.keywords));
@@ -1112,6 +1139,24 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           <Separator className="my-2" />
 
           <PaletteGroup title="Gráficos" defaultOpen>
+            {favoritePalette.length > 0 && (
+              <>
+                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Favoritos
+                </div>
+                {favoritePalette.map((it) => (
+                  <PaletteButton
+                    key={it.id}
+                    icon={it.icon}
+                    label={it.label}
+                    onClick={() => runPaletteAction(it.id, it.onClick)}
+                    favorite
+                    onToggleFavorite={() => togglePaletteFavorite(it.id)}
+                  />
+                ))}
+                <Separator className="my-2" />
+              </>
+            )}
             {recentPalette.length > 0 && (
               <>
                 <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1123,6 +1168,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     icon={it.icon}
                     label={it.label}
                     onClick={() => runPaletteAction(it.id, it.onClick)}
+                    favorite={favoritePaletteIds.includes(it.id)}
+                    onToggleFavorite={() => togglePaletteFavorite(it.id)}
                   />
                 ))}
                 <Separator className="my-2" />
@@ -1139,6 +1186,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 icon={it.icon}
                 label={it.label}
                 onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind))}
+                favorite={favoritePaletteIds.includes(`chart:${it.id}`)}
+                onToggleFavorite={() => togglePaletteFavorite(`chart:${it.id}`)}
               />
             ))}
           </PaletteGroup>
@@ -1152,6 +1201,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 icon={it.icon}
                 label={it.label}
                 onClick={() => runPaletteAction(it.id, it.onClick)}
+                favorite={favoritePaletteIds.includes(it.id)}
+                onToggleFavorite={() => togglePaletteFavorite(it.id)}
               />
             ))}
           </PaletteGroup>
@@ -1165,6 +1216,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 icon={it.icon}
                 label={it.label}
                 onClick={() => runPaletteAction(`element:${it.id}`, () => addBlock(it.kind))}
+                favorite={favoritePaletteIds.includes(`element:${it.id}`)}
+                onToggleFavorite={() => togglePaletteFavorite(`element:${it.id}`)}
               />
             ))}
           </PaletteGroup>
@@ -1183,6 +1236,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     icon={it.icon}
                     label={it.label}
                     onClick={() => runPaletteAction(`omni:${it.id}`, () => addBlock(it.kind))}
+                    favorite={favoritePaletteIds.includes(`omni:${it.id}`)}
+                    onToggleFavorite={() => togglePaletteFavorite(`omni:${it.id}`)}
                   />
                 ))}
               </div>
@@ -3626,15 +3681,47 @@ function PaletteGroup({
 }
 
 function PaletteButton({
-  icon: Icon, label, onClick,
-}: { icon: Icon; label: string; onClick: () => void }) {
+  icon: Icon, label, onClick, favorite = false, onToggleFavorite,
+}: {
+  icon: Icon;
+  label: string;
+  onClick: () => void;
+  favorite?: boolean;
+  onToggleFavorite?: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium text-left hover:bg-secondary"
+      className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium text-left hover:bg-secondary"
     >
       <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
       <span className="truncate">{label}</span>
+      {onToggleFavorite && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+          className={cn(
+            "ml-auto rounded p-0.5 transition-colors",
+            favorite
+              ? "text-amber-500"
+              : "text-muted-foreground/40 opacity-0 hover:text-amber-500 group-hover:opacity-100",
+          )}
+        >
+          <Star className={cn("h-3.5 w-3.5", favorite && "fill-current")} />
+        </span>
+      )}
     </button>
   );
 }
