@@ -572,6 +572,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     [config.blocks],
   );
   const hiddenCount = config.blocks.filter((b) => b.hidden).length;
+  const lockedCount = config.blocks.filter((b) => b.locked).length;
   const handleLayerDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -594,7 +595,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[180px_160px_minmax(0,1fr)_380px]" : "grid-cols-[180px_minmax(0,1fr)_380px]")}>
+    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[180px_240px_minmax(0,1fr)_380px]" : "grid-cols-[180px_minmax(0,1fr)_380px]")}>
       {/* ====== Paleta ====== */}
       <ScrollArea className="rounded-lg border border-border/40 bg-card/40">
         <div className="flex flex-col gap-1 p-2">
@@ -682,13 +683,41 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       {/* ====== Layers Panel ====== */}
       {showLayers && (
         <div className="flex min-h-0 flex-col rounded-lg border border-border/40 bg-card/40">
-          <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Camadas</span>
-            {hiddenCount > 0 && (
+          <div className="shrink-0 border-b border-border/40 px-2 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Camadas</span>
               <Badge variant="secondary" className="text-[9px] uppercase">
-                {hiddenCount} oculto{hiddenCount > 1 ? "s" : ""}
+                {config.blocks.length} itens
               </Badge>
-            )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {hiddenCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 gap-1 px-2 text-[10px]"
+                  onClick={() => patchBlocksAction(
+                    config.blocks.filter((b) => b.hidden).map((b) => ({ id: b.id, patch: { hidden: false } as Partial<CustomBlock> })),
+                    "Mostrar blocos",
+                  )}
+                >
+                  <Eye className="h-3 w-3" /> Mostrar {hiddenCount}
+                </Button>
+              )}
+              {lockedCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 gap-1 px-2 text-[10px]"
+                  onClick={() => patchBlocksAction(
+                    config.blocks.filter((b) => b.locked).map((b) => ({ id: b.id, patch: { locked: false } as Partial<CustomBlock> })),
+                    "Desbloquear blocos",
+                  )}
+                >
+                  <Unlock className="h-3 w-3" /> Desbloquear {lockedCount}
+                </Button>
+              )}
+            </div>
           </div>
           <ScrollArea className="flex-1">
             <div className="space-y-0.5 p-1">
@@ -707,6 +736,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                           blk.hidden ? "Mostrar bloco" : "Ocultar bloco",
                         )
                       }
+                      onToggleLock={() => toggleLock(blk.id)}
+                      onToFront={() => bringToFront(blk.id)}
+                      onToBack={() => sendToBack(blk.id)}
+                      zIndex={blk.z}
                       onDelete={() => deleteBlockAction(blk.id)}
                     />
                   ))}
@@ -1626,13 +1659,17 @@ function blockLayerName(blk: CustomBlock): string {
 }
 
 function SortableLayerItem({
-  blk, isSelected, onSelect, onToggleHidden, onDelete,
+  blk, isSelected, onSelect, onToggleHidden, onToggleLock, onToFront, onToBack, onDelete, zIndex,
 }: {
   blk: CustomBlock;
   isSelected: boolean;
   onSelect: () => void;
   onToggleHidden: () => void;
+  onToggleLock: () => void;
+  onToFront: () => void;
+  onToBack: () => void;
   onDelete: () => void;
+  zIndex: number;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: blk.id });
   return (
@@ -1640,38 +1677,89 @@ function SortableLayerItem({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       className={cn(
-        "group flex items-center gap-1 rounded px-1 py-1 text-[10px] cursor-pointer select-none",
-        isSelected ? "bg-secondary" : "hover:bg-secondary/60",
+        "group rounded-md border border-transparent px-1.5 py-1.5 text-[10px] cursor-pointer select-none transition-colors",
+        isSelected ? "border-primary/40 bg-primary/10" : "hover:border-border/60 hover:bg-secondary/60",
         blk.hidden && "opacity-50",
       )}
       onClick={onSelect}
     >
-      <span
-        {...attributes}
-        {...listeners}
-        className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-3 w-3" />
-      </span>
-      <span className="shrink-0 text-muted-foreground">{blockIcon(blk)}</span>
-      <span className="min-w-0 flex-1 truncate text-foreground">{blockLayerName(blk)}</span>
-      <button
-        type="button"
-        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-        onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
-        title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
-      >
-        {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-      </button>
-      <button
-        type="button"
-        className="shrink-0 ml-0.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/20 transition-colors opacity-0 group-hover:opacity-100"
-        title="Excluir bloco"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      <div className="flex items-center gap-1">
+        <span
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+          onClick={(e) => e.stopPropagation()}
+          title="Arrastar camada"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-background/70 text-muted-foreground">
+          {blockIcon(blk)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{blockLayerName(blk)}</span>
+            <span className="shrink-0 rounded bg-muted px-1 text-[9px] tabular-nums text-muted-foreground">z{zIndex}</span>
+          </div>
+          <div className="mt-0.5 flex items-center gap-1 text-[9px] text-muted-foreground">
+            <span className="truncate">{BLOCK_LABELS[blk.kind]}</span>
+            {blk.locked && <span className="rounded bg-amber-500/15 px-1 text-amber-700 dark:text-amber-200">bloq.</span>}
+            {blk.hidden && <span className="rounded bg-slate-500/15 px-1">oculto</span>}
+          </div>
+        </div>
+      </div>
+      <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
+          title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
+        >
+          {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
+          title={blk.locked ? "Desbloquear posicao" : "Bloquear posicao"}
+        >
+          {blk.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={(e) => { e.stopPropagation(); onToFront(); }}
+          title="Trazer para frente de tudo"
+        >
+          <ChevronsUp className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          onClick={(e) => { e.stopPropagation(); onToBack(); }}
+          title="Enviar para o fundo"
+        >
+          <ChevronsDown className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6 hover:bg-destructive/20 hover:text-destructive"
+          title="Excluir bloco"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }
