@@ -425,7 +425,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "C8102E",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.05,
         textTransform: "none",
@@ -441,7 +440,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "1C2430",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.35,
         textTransform: "none",
@@ -457,7 +455,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "7F1022",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.2,
         textTransform: "none",
@@ -507,7 +504,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "C8102E",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.05,
         textTransform: "none",
@@ -523,7 +519,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "1C2430",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.15,
         textTransform: "none",
@@ -539,7 +534,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "334155",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.28,
         textTransform: "none",
@@ -555,7 +549,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "334155",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.28,
         textTransform: "none",
@@ -571,7 +564,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "334155",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.28,
         textTransform: "none",
@@ -621,7 +613,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "1C2430",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.05,
         textTransform: "none",
@@ -637,7 +628,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "334155",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.32,
         textTransform: "none",
@@ -653,7 +643,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "0F172A",
         align: "center",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.22,
         textTransform: "none",
@@ -669,7 +658,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "0F172A",
         align: "center",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.22,
         textTransform: "none",
@@ -685,7 +673,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "7F1022",
         align: "center",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.22,
         textTransform: "none",
@@ -734,7 +721,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "991B1B",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.28,
         textTransform: "none",
@@ -750,7 +736,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "075985",
         align: "left",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.28,
         textTransform: "none",
@@ -766,7 +751,6 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         italic: false,
         color: "64748B",
         align: "center",
-        fontFamily: "Inter",
         letterSpacing: 0,
         lineHeight: 1.1,
         textTransform: "none",
@@ -1155,12 +1139,15 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           </div>
           <Separator className="my-2" />
 
-          <PaletteGroup title="Gráficos" defaultOpen>
-            {favoritePalette.length > 0 && (
-              <>
-                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Favoritos
-                </div>
+          {!hasPaletteResults && (
+            <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-[11px] text-muted-foreground">
+              Nenhum bloco encontrado.
+            </div>
+          )}
+
+          {favoritePalette.length > 0 && (
+            <>
+              <PaletteGroup title="Favoritos" defaultOpen>
                 {favoritePalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1171,14 +1158,14 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     onToggleFavorite={() => togglePaletteFavorite(it.id)}
                   />
                 ))}
-                <Separator className="my-2" />
-              </>
-            )}
-            {recentPalette.length > 0 && (
-              <>
-                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Recentes
-                </div>
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
+
+          {recentPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Recentes" defaultOpen>
                 {recentPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1189,79 +1176,93 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     onToggleFavorite={() => togglePaletteFavorite(it.id)}
                   />
                 ))}
-                <Separator className="my-2" />
-              </>
-            )}
-            {!hasPaletteResults && (
-              <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-[11px] text-muted-foreground">
-                Nenhum bloco encontrado.
-              </div>
-            )}
-            {visibleChartPalette.map((it) => (
-              <PaletteButton
-                key={it.id}
-                icon={it.icon}
-                label={it.label}
-                onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind))}
-                favorite={favoritePaletteIds.includes(`chart:${it.id}`)}
-                onToggleFavorite={() => togglePaletteFavorite(`chart:${it.id}`)}
-              />
-            ))}
-          </PaletteGroup>
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
 
-          <Separator className="my-2" />
-
-          <PaletteGroup title="Storytelling" defaultOpen>
-            {visibleStorytellingPalette.map((it) => (
-              <PaletteButton
-                key={it.id}
-                icon={it.icon}
-                label={it.label}
-                onClick={() => runPaletteAction(it.id, it.onClick)}
-                favorite={favoritePaletteIds.includes(it.id)}
-                onToggleFavorite={() => togglePaletteFavorite(it.id)}
-              />
-            ))}
-          </PaletteGroup>
-
-          <Separator className="my-2" />
-
-          <PaletteGroup title="Elementos" defaultOpen>
-            {visibleElementPalette.map((it) => (
-              <PaletteButton
-                key={it.id}
-                icon={it.icon}
-                label={it.label}
-                onClick={() => runPaletteAction(`element:${it.id}`, () => addBlock(it.kind))}
-                favorite={favoritePaletteIds.includes(`element:${it.id}`)}
-                onToggleFavorite={() => togglePaletteFavorite(`element:${it.id}`)}
-              />
-            ))}
-          </PaletteGroup>
-
-          <Separator className="my-2" />
-
-          <PaletteGroup title="Omni Analytics">
-            {OMNI_GROUPS.map((group) => (
-              <div key={group}>
-                <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                  {group}
-                </div>
-                {visibleOmniPalette.filter((it) => it.group === group).map((it) => (
+          {visibleChartPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Gráficos" defaultOpen>
+                {visibleChartPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
                     icon={it.icon}
                     label={it.label}
-                    onClick={() => runPaletteAction(`omni:${it.id}`, () => addBlock(it.kind))}
-                    favorite={favoritePaletteIds.includes(`omni:${it.id}`)}
-                    onToggleFavorite={() => togglePaletteFavorite(`omni:${it.id}`)}
+                    onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind))}
+                    favorite={favoritePaletteIds.includes(`chart:${it.id}`)}
+                    onToggleFavorite={() => togglePaletteFavorite(`chart:${it.id}`)}
                   />
                 ))}
-              </div>
-            ))}
-          </PaletteGroup>
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
 
-          <Separator className="my-2" />
+          {visibleStorytellingPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Storytelling" defaultOpen>
+                {visibleStorytellingPalette.map((it) => (
+                  <PaletteButton
+                    key={it.id}
+                    icon={it.icon}
+                    label={it.label}
+                    onClick={() => runPaletteAction(it.id, it.onClick)}
+                    favorite={favoritePaletteIds.includes(it.id)}
+                    onToggleFavorite={() => togglePaletteFavorite(it.id)}
+                  />
+                ))}
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
+
+          {visibleElementPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Elementos" defaultOpen>
+                {visibleElementPalette.map((it) => (
+                  <PaletteButton
+                    key={it.id}
+                    icon={it.icon}
+                    label={it.label}
+                    onClick={() => runPaletteAction(`element:${it.id}`, () => addBlock(it.kind))}
+                    favorite={favoritePaletteIds.includes(`element:${it.id}`)}
+                    onToggleFavorite={() => togglePaletteFavorite(`element:${it.id}`)}
+                  />
+                ))}
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
+
+          {visibleOmniPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Omni Analytics">
+                {OMNI_GROUPS.map((group) => {
+                  const groupItems = visibleOmniPalette.filter((it) => it.group === group);
+                  if (groupItems.length === 0) return null;
+                  return (
+                    <div key={group}>
+                      <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                        {group}
+                      </div>
+                      {groupItems.map((it) => (
+                        <PaletteButton
+                          key={it.id}
+                          icon={it.icon}
+                          label={it.label}
+                          onClick={() => runPaletteAction(`omni:${it.id}`, () => addBlock(it.kind))}
+                          favorite={favoritePaletteIds.includes(`omni:${it.id}`)}
+                          onToggleFavorite={() => togglePaletteFavorite(`omni:${it.id}`)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
           <div className="px-2">
             <Label className="text-[10px] uppercase text-muted-foreground">Fundo do slide</Label>
             <BgField label="" value={config.background}
@@ -3707,39 +3708,34 @@ function PaletteButton({
   onToggleFavorite?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[11px] font-medium text-left hover:bg-secondary"
-    >
-      <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
-      <span className="truncate">{label}</span>
+    <div className="group flex items-center rounded-md hover:bg-secondary">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium"
+      >
+        <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+        <span className="truncate">{label}</span>
+      </button>
       {onToggleFavorite && (
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
           onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleFavorite();
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
             e.stopPropagation();
             onToggleFavorite();
           }}
           className={cn(
-            "ml-auto rounded p-0.5 transition-colors",
+            "mr-1 rounded p-0.5 transition-colors",
             favorite
               ? "text-amber-500"
               : "text-muted-foreground/40 opacity-0 hover:text-amber-500 group-hover:opacity-100",
           )}
         >
           <Star className={cn("h-3.5 w-3.5", favorite && "fill-current")} />
-        </span>
+        </button>
       )}
-    </button>
+    </div>
   );
 }
 
