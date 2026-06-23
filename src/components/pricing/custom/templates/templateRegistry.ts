@@ -10,6 +10,7 @@ export type TemplateCategory =
   | "todos"
   | "visao-geral"
   | "analise-resultado"
+  | "narrativa-executiva"
   | "causa-efeito"
   | "comparativo"
   | "detalhamento"
@@ -37,6 +38,7 @@ export const CATEGORY_LABELS: Record<TemplateCategory, string> = {
   todos: "Todos",
   "visao-geral": "Visão geral",
   "analise-resultado": "Análise de resultado",
+  "narrativa-executiva": "Narrativa executiva",
   "causa-efeito": "Causa e efeito",
   comparativo: "Comparativo",
   detalhamento: "Detalhamento",
@@ -50,6 +52,42 @@ export const CATEGORY_LABELS: Record<TemplateCategory, string> = {
 const TITLE = (text: string, z = 1): TemplateBlock => ({
   kind: "title", z, x: 40, y: 30, w: 1240, h: 60,
   text, size: 32, bold: true, color: "C8102E", align: "left",
+});
+
+const TEXT = (
+  text: string,
+  x: number, y: number, w: number, h: number, z: number,
+  size = 18, color = "475569", align: "left" | "center" | "right" = "left",
+): TemplateBlock => ({
+  kind: "text", z, x, y, w, h,
+  text, size, color, align,
+  fontFamily: "Inter",
+  letterSpacing: 0,
+  lineHeight: 1.28,
+  textTransform: "none",
+  padding: 0,
+  backgroundColor: "",
+  borderRadius: 0,
+});
+
+const SHAPE = (
+  x: number, y: number, w: number, h: number, z: number,
+  fill = "F8FAFC", strokeColor = "E2E8F0", radius = 12,
+): TemplateBlock => ({
+  kind: "shape", z, x, y, w, h,
+  shape: "roundRect",
+  fill,
+  fillOpacity: 100,
+  strokeColor,
+  strokeWidth: 1,
+  strokeStyle: "solid",
+  radius,
+  shadowEnabled: true,
+  shadowColor: "000000",
+  shadowOpacity: 10,
+  shadowBlur: 12,
+  shadowX: 0,
+  shadowY: 4,
 });
 
 const KPI = (
@@ -531,6 +569,79 @@ const T22: SlideTemplate = {
 };
 
 // ---------------------------------------------------------------------------
+// NARRATIVA EXECUTIVA
+// ---------------------------------------------------------------------------
+const T25: SlideTemplate = {
+  id: "T25", name: "Highlights do Mes", category: "narrativa-executiva",
+  description: "Resumo pronto para diretoria: mensagem-chave, KPIs e evolucao principal.",
+  tags: ["Storytelling", "Highlights", "Diretoria"], isDeck: false,
+  slides: [{
+    title: "Highlights do Mes",
+    blocks: [
+      TITLE("Month Highlights"),
+      TEXT("Use este espaco para escrever a leitura executiva do mes em 3 bullets: o que aconteceu, por que aconteceu e qual decisao precisa ser tomada.", 40, 105, 520, 120, 2, 17, "475569"),
+      KPI("Volume (Tons)", "volume", 610, 80, 250, 120, 3, "C8102E"),
+      KPI("Contrib. Marg.", "cm", 885, 80, 250, 120, 4, "C8102E"),
+      KPI("CM %", "cmPct", 1160, 80, 130, 120, 5, "C8102E"),
+      TOP({ x: 610, y: 245, w: 320, h: 430, z: 6,
+        title: "Heroes - Volume", measure: "volume", dim: "skuDesc", topN: 5,
+        sortConfig: { field: "value", dir: "desc" } }),
+      TOP({ x: 965, y: 245, w: 325, h: 430, z: 7,
+        title: "Heroes - Contr. Marg.", measure: "cm", dim: "skuDesc", topN: 5,
+        sortConfig: { field: "value", dir: "desc" } }),
+      TEXT("Decisao sugerida", 40, 280, 520, 32, 8, 20, "C8102E"),
+      SHAPE(40, 325, 520, 210, 9, "FFF1F2", "FDA4AF", 12),
+      TEXT("1. Priorizar os SKUs com maior impacto positivo.\n2. Enderecar os ofensores com plano comercial.\n3. Revisar preco/mix onde houver perda de margem.", 65, 355, 470, 140, 10, 18, "7F1022"),
+    ],
+  }],
+};
+
+const T26: SlideTemplate = {
+  id: "T26", name: "O que mudou e por que", category: "narrativa-executiva",
+  description: "Diagnostico visual com evolucao, bridge e ranking de causas.",
+  tags: ["Diagnostico", "Bridge", "Causas"], isDeck: false,
+  slides: [{
+    title: "O que mudou e por que",
+    blocks: [
+      TITLE("O que mudou e por que"),
+      TEXT("Comece pela variacao total, depois mostre a causa e finalize com os itens responsaveis.", 40, 88, 760, 38, 2, 16, "64748B"),
+      KPI("Variacao de ROL", "rol", 40, 145, 300, 115, 3, "C8102E"),
+      KPI("Variacao de Volume", "volume", 360, 145, 300, 115, 4, "1C2430"),
+      KPI("Variacao de CM", "cm", 680, 145, 300, 115, 5, "1C2430"),
+      { kind: "bridge", z: 6, x: 40, y: 290, w: 760, h: 400,
+        base: null, comp: null, mode: "month", filters: {} },
+      TOP({ x: 835, y: 145, w: 455, h: 545, z: 7,
+        title: "Principais causas por SKU", measure: "cm", dim: "skuDesc", topN: 8,
+        sortConfig: { field: "value", dir: "asc" } }),
+    ],
+  }],
+};
+
+const T27: SlideTemplate = {
+  id: "T27", name: "Decisao e plano de acao", category: "narrativa-executiva",
+  description: "Slide de fechamento com decisao, dono, impacto e acompanhamento.",
+  tags: ["Plano", "Acao", "Decisao"], isDeck: false,
+  slides: [{
+    title: "Decisao e plano de acao",
+    blocks: [
+      TITLE("Decisao e plano de acao"),
+      TEXT("Objetivo da decisao", 45, 115, 360, 28, 2, 18, "C8102E"),
+      TEXT("Descreva em uma frase qual decisao precisa ser tomada e qual resultado esperado.", 45, 150, 520, 70, 3, 22, "1C2430"),
+      SHAPE(610, 100, 210, 120, 4, "F8FAFC", "E2E8F0", 12),
+      TEXT("Impacto", 635, 125, 160, 22, 5, 14, "64748B", "center"),
+      KPI("CM", "cm", 625, 145, 180, 70, 6, "C8102E"),
+      SHAPE(840, 100, 210, 120, 7, "F8FAFC", "E2E8F0", 12),
+      TEXT("Prazo", 865, 125, 160, 22, 8, 14, "64748B", "center"),
+      TEXT("30 dias", 875, 155, 140, 42, 9, 30, "1C2430", "center"),
+      SHAPE(1070, 100, 210, 120, 10, "F8FAFC", "E2E8F0", 12),
+      TEXT("Dono", 1095, 125, 160, 22, 11, 14, "64748B", "center"),
+      TEXT("Comercial", 1090, 155, 170, 42, 12, 28, "1C2430", "center"),
+      TABLE(40, 270, 1250, 390, 13, "marca", ["rol_real", "vol_real", "cm_real", "cmPct_real"]),
+    ],
+  }],
+};
+
+// ---------------------------------------------------------------------------
 // DECK COMPLETO (T23, T24)
 // ---------------------------------------------------------------------------
 function slidesFrom(...tpls: SlideTemplate[]): TemplateSlide[] {
@@ -553,16 +664,25 @@ const T24: SlideTemplate = {
   slides: slidesFrom(T04, T14, T21, T19),
 };
 
+const T28: SlideTemplate = {
+  id: "T28", name: "Deck Executivo de Decisao", category: "deck-completo",
+  description: "3 slides para abrir a conversa, explicar a causa e fechar com plano.",
+  tags: ["Deck", "Narrativa", "Diretoria", "Decisao"],
+  isDeck: true,
+  slides: slidesFrom(T25, T26, T27),
+};
+
 // ---------------------------------------------------------------------------
 // REGISTRY
 // ---------------------------------------------------------------------------
 export const TEMPLATE_REGISTRY: SlideTemplate[] = [
   T01, T02, T03, T04, T05,
   T06, T07, T08, T09, T10,
+  T25, T26, T27,
   T11, T12, T13, T14,
   T15, T16, T17, T18,
   T19, T20, T21, T22,
-  T23, T24,
+  T23, T24, T28,
 ];
 
 function rid(): string {

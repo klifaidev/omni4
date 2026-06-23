@@ -77,7 +77,7 @@ export function TemplatePicker({ open, onOpenChange, onApply, onApplyDeck }: Pro
   }, [all.length, userTpls.length]);
 
   const visibleCategories: TemplateCategory[] = [
-    "todos", "visao-geral", "analise-resultado", "causa-efeito",
+    "todos", "visao-geral", "analise-resultado", "narrativa-executiva", "causa-efeito",
     "comparativo", "detalhamento", "deck-completo", "meus-modelos",
   ];
 
