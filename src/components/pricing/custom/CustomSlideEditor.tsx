@@ -1132,9 +1132,26 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             <Input
               value={paletteSearch}
               onChange={(e) => setPaletteSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setPaletteSearch("");
+                }
+              }}
               placeholder="Buscar blocos..."
-              className="h-8 pl-7 text-xs"
+              className="h-8 pl-7 pr-7 text-xs"
             />
+            {paletteSearch && (
+              <button
+                type="button"
+                onClick={() => setPaletteSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                aria-label="Limpar busca"
+                title="Limpar busca"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <Separator className="my-2" />
 
