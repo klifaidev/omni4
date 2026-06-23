@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   BellRing,
+  BrainCircuit,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -69,6 +70,7 @@ const workItems = [
   { to: "/demanda", label: "Demanda", icon: TrendingUp },
   { to: "/estoque", label: "Estoque", icon: PackageSearch },
   { to: "/positivacao", label: "Positivação", icon: UserCheck },
+  { to: "/inteligencia", label: "Inteligencia", icon: BrainCircuit },
   { to: "/slides", label: "Slides", icon: Presentation },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];
 
