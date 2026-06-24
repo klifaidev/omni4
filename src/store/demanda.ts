@@ -26,13 +26,14 @@ function loadFromSession(nomeArquivo: string): DemandaEdit | null {
 
 interface DemandaState {
   deck: DemandaDeck | null;
+  originalFile: File | null;
   edits: DemandaEdit;
   config: DemandaConfig;
   canalAtivo: string | null;
   skuDrawerOpen: string | null;
   sessionRestored: boolean;
 
-  loadDeck: (deck: DemandaDeck) => void;
+  loadDeck: (deck: DemandaDeck, originalFile?: File | null) => void;
   clearDeck: () => void;
   setEdit: (canal: string, cod: number, mesIdx: number, valor: number) => void;
   setEditsForSku: (canal: string, cod: number, values: Record<number, number>) => void;
@@ -47,23 +48,24 @@ interface DemandaState {
 
 export const useDemanda = create<DemandaState>((set, get) => ({
   deck: null,
+  originalFile: null,
   edits: {},
   config: { fatorCrescimento: 1.05, mesesTendencia: 4 },
   canalAtivo: null,
   skuDrawerOpen: null,
   sessionRestored: false,
 
-  loadDeck: (deck) => {
+  loadDeck: (deck, originalFile = null) => {
     const saved = loadFromSession(deck.nomeArquivo);
     const edits = saved ?? {};
     const sessionRestored = saved !== null;
     const canais = Array.from(new Set(deck.rows.map((r) => r.sku.regional))).sort();
-    set({ deck, edits, canalAtivo: canais[0] ?? null, skuDrawerOpen: null, sessionRestored });
+    set({ deck, originalFile, edits, canalAtivo: canais[0] ?? null, skuDrawerOpen: null, sessionRestored });
   },
 
   clearDeck: () => {
     try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-    set({ deck: null, edits: {}, canalAtivo: null, skuDrawerOpen: null, sessionRestored: false });
+    set({ deck: null, originalFile: null, edits: {}, canalAtivo: null, skuDrawerOpen: null, sessionRestored: false });
   },
 
   setEdit: (canal, cod, mesIdx, valor) =>

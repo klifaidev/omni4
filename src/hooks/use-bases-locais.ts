@@ -4,6 +4,7 @@ export type TipoBase = "ke30" | "budget" | "forecast" | "rolling" | "demanda" | 
 
 export interface InfoBase {
   quantidade: number;
+  nomeArquivo?: string;
   nomeArquivos: string[];
   tamanhoTotal: number;
   ultimaModificacao: string;

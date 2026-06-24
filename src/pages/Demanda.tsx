@@ -160,6 +160,7 @@ export default function Demanda() {
   usePageTitle("Demanda");
 
   const deck = useDemanda((s) => s.deck);
+  const originalFile = useDemanda((s) => s.originalFile);
   const edits = useDemanda((s) => s.edits);
   const config = useDemanda((s) => s.config);
   const canalAtivo = useDemanda((s) => s.canalAtivo);
@@ -191,6 +192,10 @@ export default function Demanda() {
   const basesLocais = useBasesLocais();
   const autoLoadedRef = useRef(false);
   const [savedDemandaBanner, setSavedDemandaBanner] = useState<{ nomeArquivo: string; data: string } | null>(null);
+
+  useEffect(() => {
+    if (originalFile) originalFileRef.current = originalFile;
+  }, [originalFile]);
 
   // Canal fade animation on canal change
   useEffect(() => {
@@ -364,10 +369,11 @@ export default function Demanda() {
     toast.info("Carregando base de Demanda salva...");
     try {
       const file = await basesLocais.carregarBase("demanda");
-      if (file) {
-        const parsed = await parseDemandaXlsx(file);
-        originalFileRef.current = file;
-        loadDeck(parsed);
+      const latest = file[file.length - 1];
+      if (latest) {
+        const parsed = await parseDemandaXlsx(latest);
+        originalFileRef.current = latest;
+        loadDeck(parsed, latest);
         toast.success(`${parsed.rows.length} SKUs carregados de ${parsed.nomeArquivo}`);
       }
     } catch (e) {
@@ -380,7 +386,7 @@ export default function Demanda() {
       originalFileRef.current = file;
       try {
         const parsed = await parseDemandaXlsx(file);
-        loadDeck(parsed);
+        loadDeck(parsed, file);
         toast.success(`${parsed.rows.length} SKUs carregados de ${parsed.nomeArquivo}`);
         if (basesLocais.isElectron) {
           await basesLocais.salvarBase("demanda", file);

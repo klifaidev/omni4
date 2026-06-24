@@ -158,7 +158,11 @@ ipcMain.handle("bases:load", async (event, { tipo }) => {
   try {
     const subDir = path.join(getBasesDir(), tipo);
     if (!fs.existsSync(subDir)) return { ok: false, motivo: "nenhum_arquivo" };
-    const arquivos = fs.readdirSync(subDir);
+    const arquivos = fs.readdirSync(subDir).sort((a, b) => {
+      const aTime = fs.statSync(path.join(subDir, a)).mtime.getTime();
+      const bTime = fs.statSync(path.join(subDir, b)).mtime.getTime();
+      return aTime - bTime;
+    });
     if (arquivos.length === 0) return { ok: false, motivo: "nenhum_arquivo" };
     const resultado = arquivos.map(nomeArquivo => {
       const caminho = path.join(subDir, nomeArquivo);
@@ -183,14 +187,19 @@ ipcMain.handle("bases:info", async () => {
     const dir = getBasesDir();
     if (!fs.existsSync(dir)) return { ok: true, bases: {} };
     const bases = {};
-    for (const tipo of ["ke30", "budget", "demanda"]) {
+    for (const tipo of ["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao"]) {
       const subDir = path.join(dir, tipo);
       if (!fs.existsSync(subDir)) continue;
-      const arquivos = fs.readdirSync(subDir);
+      const arquivos = fs.readdirSync(subDir).sort((a, b) => {
+        const aTime = fs.statSync(path.join(subDir, a)).mtime.getTime();
+        const bTime = fs.statSync(path.join(subDir, b)).mtime.getTime();
+        return aTime - bTime;
+      });
       if (arquivos.length > 0) {
         const stats = arquivos.map(f => fs.statSync(path.join(subDir, f)));
         bases[tipo] = {
           quantidade: arquivos.length,
+          nomeArquivo: arquivos[arquivos.length - 1],
           nomeArquivos: arquivos,
           tamanhoTotal: stats.reduce((s, st) => s + st.size, 0),
           ultimaModificacao: new Date(Math.max(...stats.map(st => st.mtime.getTime()))).toISOString(),

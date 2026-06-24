@@ -2,6 +2,7 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppPreloader } from "@/components/pricing/AppPreloader";
 import AppShell from "./layouts/AppShell";
 import Index from "./pages/Index.tsx";
 import VisaoGeral from "./pages/VisaoGeral.tsx";
@@ -29,34 +30,36 @@ const App = () => (
   <TooltipProvider>
     <Toaster />
     <Sonner />
-    <HashRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/" element={<Index />} />
-          <Route path="/visao-geral" element={<VisaoGeral />} />
-          <Route path="/bridge-pvm" element={<BridgePvm />} />
-          <Route path="/preco" element={<Preco />} />
-          <Route path="/dre" element={<Dre />} />
-          <Route path="/canais" element={<Canais />} />
-          <Route path="/custos" element={<Custos />} />
-          <Route path="/budget" element={<Budget />} />
-          <Route path="/rolling" element={<Rolling />} />
-          <Route path="/abc" element={<Abc />} />
-          <Route path="/detalhe" element={<Detalhe />} />
-          <Route path="/atividades" element={<Atividades />} />
-          <Route path="/alertas" element={<Alertas />} />
-          <Route path="/filtros" element={<Filtros />} />
-          <Route path="/demanda" element={<Demanda />} />
-          <Route path="/estoque" element={<Estoque />} />
-          <Route path="/positivacao" element={<Positivacao />} />
-          <Route path="/farol" element={<FarolCadastro />} />
-          <Route path="/slides" element={<SlidesBeta />} />
-          <Route path="/upload" element={<Upload />} />
-        </Route>
-        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </HashRouter>
+    <AppPreloader>
+      <HashRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/" element={<Index />} />
+            <Route path="/visao-geral" element={<VisaoGeral />} />
+            <Route path="/bridge-pvm" element={<BridgePvm />} />
+            <Route path="/preco" element={<Preco />} />
+            <Route path="/dre" element={<Dre />} />
+            <Route path="/canais" element={<Canais />} />
+            <Route path="/custos" element={<Custos />} />
+            <Route path="/budget" element={<Budget />} />
+            <Route path="/rolling" element={<Rolling />} />
+            <Route path="/abc" element={<Abc />} />
+            <Route path="/detalhe" element={<Detalhe />} />
+            <Route path="/atividades" element={<Atividades />} />
+            <Route path="/alertas" element={<Alertas />} />
+            <Route path="/filtros" element={<Filtros />} />
+            <Route path="/demanda" element={<Demanda />} />
+            <Route path="/estoque" element={<Estoque />} />
+            <Route path="/positivacao" element={<Positivacao />} />
+            <Route path="/farol" element={<FarolCadastro />} />
+            <Route path="/slides" element={<SlidesBeta />} />
+            <Route path="/upload" element={<Upload />} />
+          </Route>
+          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </HashRouter>
+    </AppPreloader>
   </TooltipProvider>
 );
 
