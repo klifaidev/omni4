@@ -45,7 +45,7 @@ import { toast } from "sonner";
 
 import {
   CANVAS_W, CANVAS_H, FOOTER_H,
-  newBlock, newChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
+  newBlock, newChartBlock, newPositivacaoChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
   ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
@@ -201,10 +201,11 @@ function normalizePaletteText(value: string): string {
 
 // Group 1 — Charts (and chart-like data viz: KPI Card + Table + Bridge)
 const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
-  | { kind: "chart"; chartType: CustomChartType }
+  | { kind: "chart"; chartType: CustomChartType; preset?: "positivacao" }
   | { kind: Exclude<CustomBlockKind, "chart"> }
 ))[] = [
   { id: "line",          kind: "chart", chartType: "line",          label: "Linha",            icon: LineChartIcon },
+  { id: "positivacao",   kind: "chart", chartType: "line",          label: "Positivação",      icon: LineChartIcon, preset: "positivacao" },
   { id: "column",        kind: "chart", chartType: "column",        label: "Coluna",           icon: BarChart3 },
   { id: "stackedColumn", kind: "chart", chartType: "stackedColumn", label: "Coluna Empilhada", icon: BarChart3 },
   { id: "hbar",          kind: "chart", chartType: "hbar",          label: "Barra",            icon: BarChartHorizontal },
@@ -386,8 +387,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
   };
-  const addChart = (chartType: CustomChartType) => {
-    const id = addChartBlockAction(chartType);
+  const addChart = (chartType: CustomChartType, preset?: "positivacao") => {
+    const id = preset === "positivacao"
+      ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
+      : addChartBlockAction(chartType);
     if (id) setSelection([id]);
   };
   const addInsightCard = () => {
@@ -824,7 +827,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       icon: it.icon,
       label: it.label,
       keywords: `${it.id} ${it.kind}`,
-      onClick: () => { if (it.kind === "chart") addChart(it.chartType); else addBlock(it.kind); },
+      onClick: () => { if (it.kind === "chart") addChart(it.chartType, it.preset); else addBlock(it.kind); },
     })),
     ...ELEMENT_PALETTE.map((it) => ({
       id: `element:${it.id}`,
@@ -1189,7 +1192,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     key={it.id}
                     icon={it.icon}
                     label={it.label}
-                    onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType) : addBlock(it.kind))}
+                    onClick={() => runPaletteAction(`chart:${it.id}`, () => it.kind === "chart" ? addChart(it.chartType, it.preset) : addBlock(it.kind))}
                     favorite={favoritePaletteIds.includes(`chart:${it.id}`)}
                     onToggleFavorite={() => togglePaletteFavorite(`chart:${it.id}`)}
                   />
@@ -4724,24 +4727,103 @@ function OmniBridgePvmInspector({ block, onChange }: {
   );
 }
 
+function buildFarolSkuOptions(rows: import("@/lib/types").PricingRow[]) {
+  const map = new Map<string, { desc: string; volume: number }>();
+  for (const r of rows) {
+    if (!r.sku) continue;
+    const cur = map.get(r.sku);
+    if (cur) cur.volume += r.volumeKg || 0;
+    else map.set(r.sku, { desc: r.skuDesc || r.sku, volume: r.volumeKg || 0 });
+  }
+  return Array.from(map, ([sku, v]) => ({
+    sku,
+    label: v.desc ? `${sku} - ${v.desc}` : sku,
+    volume: v.volume,
+  })).sort((a, b) => b.volume - a.volume);
+}
+
+function FarolSkuField({
+  id,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  value: string | null;
+  options: { sku: string; label: string }[];
+  onChange: (sku: string | null) => void;
+}) {
+  return (
+    <>
+      <Input
+        className="h-7 px-2 text-xs"
+        list={id}
+        placeholder="auto"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value.trim() || null)}
+      />
+      <datalist id={id}>
+        {options.slice(0, 600).map((o) => (
+          <option key={o.sku} value={o.sku}>{o.label}</option>
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 /** Farol */
 function OmniFarolInspector({ block, onChange }: {
   block: OmniFarolBlock;
   onChange: (p: Partial<OmniFarolBlock>) => void;
 }) {
+  const rows = usePricing((s) => s.rows);
+  const skuOptions = useMemo(() => buildFarolSkuOptions(rows), [rows]);
+
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Farol de Positivação" onChange={onChange} />
+      <Section label="Comparação">
+        <Row label="SKU base">
+          <FarolSkuField id={`farol-sku-ref-${block.id}`} value={block.skuRef ?? null} options={skuOptions} onChange={(skuRef) => onChange({ skuRef })} />
+        </Row>
+        <Row label="SKU comparado">
+          <FarolSkuField id={`farol-sku-comp-${block.id}`} value={block.skuComp ?? null} options={skuOptions} onChange={(skuComp) => onChange({ skuComp })} />
+        </Row>
+        <Row label="Janela">
+          <SelectField
+            value={String(block.periodoMeses ?? 3)}
+            options={[
+              { value: "3", label: "Últimos 3 meses" },
+              { value: "6", label: "Últimos 6 meses" },
+              { value: "12", label: "Últimos 12 meses" },
+            ]}
+            onChange={(v) => onChange({ periodoMeses: Number(v) || 3 })}
+          />
+        </Row>
+      </Section>
       <Section label="Exibição">
         <Row label="Gauge">
           <ToggleField value={block.showGauge} onChange={(v) => onChange({ showGauge: v })} label="" />
         </Row>
-      </Section>
-      <Section label="Período">
-        <Row label="Período Ref."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
-          value={block.periodoRef ?? ""} onChange={(e) => onChange({ periodoRef: e.target.value || null })} /></Row>
-        <Row label="Período Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto (último)"
-          value={block.periodoComp ?? ""} onChange={(e) => onChange({ periodoComp: e.target.value || null })} /></Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showCaption ?? true} onChange={(v) => onChange({ showCaption: v })} label="" />
+        </Row>
+        <Row label="Números">
+          <ToggleField value={block.showStats ?? true} onChange={(v) => onChange({ showStats: v })} label="" />
+        </Row>
+        <Row label="Tema">
+          <Segmented
+            value={block.gaugeTheme ?? "dark"}
+            onChange={(v) => onChange({ gaugeTheme: v as "dark" | "light" })}
+            options={[
+              { value: "dark", label: "Escuro" },
+              { value: "light", label: "Claro" },
+            ]}
+          />
+        </Row>
+        <Row label="Tamanho">
+          <Slider value={block.gaugeScale ?? 55} min={40} max={75} step={5} onChange={(v) => onChange({ gaugeScale: v })} suffix="%" />
+        </Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>

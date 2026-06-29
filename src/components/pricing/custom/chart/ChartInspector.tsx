@@ -40,6 +40,13 @@ import { useSlideFilters } from "../SlideFilterContext";
 
 type Patch = Partial<ChartBlock>;
 
+const POSITIVACAO_BREAKDOWN_OPTIONS = [
+  { value: "categoria", label: "Categoria" },
+  { value: "marca", label: "Marca" },
+  { value: "canalAjustado", label: "Canal" },
+  { value: "gestorResp", label: "Gestor Resp." },
+];
+
 function rid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -516,11 +523,16 @@ export function ChartInspector({
               }}
               options={[
                 { value: "__none__", label: "— Série única —" },
-                { value: "marca", label: "Marca" },
-                { value: "canalAjustado", label: "Canal" },
-                { value: "categoria", label: "Categoria" },
-                { value: "mercado", label: "Mercado" },
-                { value: "inovacao", label: "Inovação" },
+                ...(block.measure === "positivacao"
+                  ? POSITIVACAO_BREAKDOWN_OPTIONS
+                  : [
+                      { value: "marca", label: "Marca" },
+                      { value: "canalAjustado", label: "Canal" },
+                      { value: "gestorResp", label: "Gestor Resp." },
+                      { value: "categoria", label: "Categoria" },
+                      { value: "mercado", label: "Mercado" },
+                      { value: "inovacao", label: "Inovação" },
+                    ]),
               ]} />
           </Row>
         )}
@@ -587,11 +599,16 @@ export function ChartInspector({
                   }}
                   options={[
                     { value: "__none__", label: "— Nenhum —" },
-                    { value: "marca", label: "Marca" },
-                    { value: "canalAjustado", label: "Canal" },
-                    { value: "categoria", label: "Categoria" },
-                    { value: "mercado", label: "Mercado" },
-                    { value: "inovacao", label: "Inovação" },
+                    ...(block.measure === "positivacao"
+                      ? POSITIVACAO_BREAKDOWN_OPTIONS
+                      : [
+                          { value: "marca", label: "Marca" },
+                          { value: "canalAjustado", label: "Canal" },
+                          { value: "gestorResp", label: "Gestor Resp." },
+                          { value: "categoria", label: "Categoria" },
+                          { value: "mercado", label: "Mercado" },
+                          { value: "inovacao", label: "Inovação" },
+                        ]),
                   ]} />
               </Row>
             )}
@@ -614,11 +631,16 @@ export function ChartInspector({
                   })}
                   options={[
                     { value: "__none__", label: "— Nenhum —" },
-                    { value: "marca", label: "Marca" },
-                    { value: "canalAjustado", label: "Canal" },
-                    { value: "categoria", label: "Categoria" },
-                    { value: "mercado", label: "Mercado" },
-                    { value: "inovacao", label: "Inovação" },
+                    ...(block.measure === "positivacao"
+                      ? POSITIVACAO_BREAKDOWN_OPTIONS
+                      : [
+                          { value: "marca", label: "Marca" },
+                          { value: "canalAjustado", label: "Canal" },
+                          { value: "gestorResp", label: "Gestor Resp." },
+                          { value: "categoria", label: "Categoria" },
+                          { value: "mercado", label: "Mercado" },
+                          { value: "inovacao", label: "Inovação" },
+                        ]),
                   ]} />
               </Row>
             )}

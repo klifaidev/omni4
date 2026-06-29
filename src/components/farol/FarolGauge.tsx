@@ -27,9 +27,24 @@ const TICK_ANGLES = [
 interface FarolGaugeProps {
   value: number; // 0..1
   size?: number;
+  label?: string;
+  textColor?: string;
+  mutedTextColor?: string;
+  trackColor?: string;
+  innerTrackColor?: string;
+  glow?: boolean;
 }
 
-export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
+export function FarolGauge({
+  value,
+  size = 200,
+  label = "positivado",
+  textColor = "white",
+  mutedTextColor = "rgba(255,255,255,0.5)",
+  trackColor = "rgba(255,255,255,0.12)",
+  innerTrackColor = "rgba(255,255,255,0.03)",
+  glow = true,
+}: FarolGaugeProps) {
   const cx = 100;
   const cy = 100;
   const r  = 80;
@@ -94,7 +109,7 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
         <circle
           cx={cx} cy={cy} r={r}
           fill="none"
-          stroke="rgba(255,255,255,0.12)"
+          stroke={trackColor}
           strokeWidth={sw}
         />
 
@@ -102,7 +117,7 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
         <circle
           cx={cx} cy={cy} r={68}
           fill="none"
-          stroke="rgba(255,255,255,0.03)"
+          stroke={innerTrackColor}
           strokeWidth={1}
         />
 
@@ -115,7 +130,7 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
               fill="none"
               stroke={color}
               strokeWidth={sw}
-              filter="url(#farolGlow)"
+              filter={glow ? "url(#farolGlow)" : undefined}
             />
           ) : (
             <path
@@ -124,7 +139,7 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
               stroke={color}
               strokeWidth={sw}
               strokeLinecap="round"
-              filter="url(#farolGlow)"
+              filter={glow ? "url(#farolGlow)" : undefined}
             />
           )
         )}
@@ -136,7 +151,7 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
           textAnchor="middle"
           fontSize={36}
           fontWeight={700}
-          fill="white"
+          fill={textColor}
         >
           {pct}%
         </text>
@@ -145,9 +160,9 @@ export function FarolGauge({ value, size = 200 }: FarolGaugeProps) {
           y={124}
           textAnchor="middle"
           fontSize={10}
-          fill="rgba(255,255,255,0.5)"
+          fill={mutedTextColor}
         >
-          positivado
+          {label}
         </text>
       </svg>
     </div>

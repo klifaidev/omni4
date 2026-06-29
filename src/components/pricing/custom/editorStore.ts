@@ -968,6 +968,10 @@ function pickStylePatch(block: CustomBlock): { group: StyleGroup; patch: Partial
       showCustoVariavel?: boolean;
       showCustoFixo?: boolean;
       showGauge?: boolean;
+      showCaption?: boolean;
+      showStats?: boolean;
+      gaugeTheme?: string;
+      gaugeScale?: number;
       showTable?: boolean;
     };
     return {
@@ -984,6 +988,10 @@ function pickStylePatch(block: CustomBlock): { group: StyleGroup; patch: Partial
         showCustoVariavel: b.showCustoVariavel,
         showCustoFixo: b.showCustoFixo,
         showGauge: b.showGauge,
+        showCaption: b.showCaption,
+        showStats: b.showStats,
+        gaugeTheme: b.gaugeTheme,
+        gaugeScale: b.gaugeScale,
         showTable: b.showTable,
       } as Partial<CustomBlock>,
     };

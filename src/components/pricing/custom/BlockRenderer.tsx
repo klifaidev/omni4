@@ -41,6 +41,7 @@ import { monthLabel, formatBRL } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
 } from "@/lib/customKpi";
+import { calcFarol } from "@/lib/farol";
 import { KPI_MEASURES } from "@/lib/customSlide";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -80,6 +81,17 @@ function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] 
     if (blk.uf && r.uf !== blk.uf) return false;
     return true;
   });
+}
+
+function topFarolSkus(rows: PricingRow[]): { sku: string; desc: string; volume: number }[] {
+  const map = new Map<string, { desc: string; volume: number }>();
+  for (const r of rows) {
+    if (!r.sku) continue;
+    const cur = map.get(r.sku);
+    if (cur) cur.volume += r.volumeKg || 0;
+    else map.set(r.sku, { desc: r.skuDesc || r.sku, volume: r.volumeKg || 0 });
+  }
+  return Array.from(map, ([sku, v]) => ({ sku, ...v })).sort((a, b) => b.volume - a.volume);
 }
 
 export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
@@ -2051,35 +2063,80 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
 function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
   const pricing = usePricing((s) => s.rows);
 
-  const { filtered, allClients, value } = useMemo(() => {
-    const all = applyOmniFilters(pricing, b);
-    const allClients = new Set(all.map((r) => r.cliente).filter(Boolean));
-    let subset = all;
-    if (b.periodoComp) {
-      subset = all.filter((r) => r.periodo === b.periodoComp || r.fy === b.periodoComp);
-    } else {
-      const periods = Array.from(new Set(all.map((r) => r.periodo))).sort();
-      const lastPeriod = periods[periods.length - 1];
-      if (lastPeriod) subset = all.filter((r) => r.periodo === lastPeriod);
-    }
-    const activeClients = new Set(subset.map((r) => r.cliente).filter(Boolean));
-    const value = allClients.size > 0 ? activeClients.size / allClients.size : 0;
-    return { filtered: subset, allClients, value };
+  const { result, skuRefLabel, skuCompLabel } = useMemo(() => {
+    const rows = applyOmniFilters(pricing, b);
+    const ranked = topFarolSkus(rows);
+    const skuRef = b.skuRef || ranked[0]?.sku || "";
+    const skuComp = b.skuComp || ranked.find((s) => s.sku !== skuRef)?.sku || "";
+    const result = calcFarol(
+      rows,
+      skuRef,
+      skuComp,
+      { canal: null, categoria: null, periodoMeses: b.periodoMeses || 3 },
+      b.metric === "mb" ? "mb" : "cm",
+    );
+    return {
+      result,
+      skuRefLabel: ranked.find((s) => s.sku === skuRef)?.desc || skuRef,
+      skuCompLabel: ranked.find((s) => s.sku === skuComp)?.desc || skuComp,
+    };
   }, [pricing, b]);
 
-  const activeCount = useMemo(() => new Set(filtered.map((r) => r.cliente).filter(Boolean)).size, [filtered]);
+  const isLight = (b.gaugeTheme ?? "dark") === "light";
+  const fg = isLight ? "#111827" : "#FFFFFF";
+  const muted = isLight ? "rgba(17,24,39,0.58)" : "rgba(255,255,255,0.62)";
+  const track = isLight ? "rgba(17,24,39,0.12)" : "rgba(255,255,255,0.12)";
+  const innerTrack = isLight ? "rgba(17,24,39,0.05)" : "rgba(255,255,255,0.04)";
+  const gaugeSize = Math.max(120, Math.min(b.w, b.h) * ((b.gaugeScale ?? 55) / 100));
+
+  if (!result) {
+    return (
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 10 }}>
+        {b.showTitle && omniTitle(b.title || "Farol de Positivação")}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 12, padding: 16 }}>
+          Escolha SKU base e SKU comparado com dados suficientes para exibir o velocímetro.
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 8 }}>
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 10, gap: 6 }}>
       {b.showTitle && omniTitle(b.title || "Farol de Positivação")}
       {b.showGauge && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <FarolGauge value={value} size={Math.min(b.w, b.h) * 0.55} />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <FarolGauge
+            value={result.indicePositivacao}
+            size={gaugeSize}
+            textColor={fg}
+            mutedTextColor={muted}
+            trackColor={track}
+            innerTrackColor={innerTrack}
+            glow={!isLight}
+          />
         </div>
       )}
-      <div style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>
-        {activeCount.toLocaleString("pt-BR")} clientes ativos / {allClients.size.toLocaleString("pt-BR")} total
-      </div>
+      {b.showCaption && (
+        <div style={{ maxWidth: "92%", fontSize: 11, lineHeight: 1.25, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>
+          <strong style={{ color: "hsl(var(--foreground))" }}>{result.skuComp.skuDesc || skuCompLabel}</strong>
+          {" "}positivado nos clientes do{" "}
+          <strong style={{ color: "hsl(var(--foreground))" }}>{result.skuRef.skuDesc || skuRefLabel}</strong>
+        </div>
+      )}
+      {b.showStats && (
+        <div style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, fontSize: 10 }}>
+          {[
+            ["Base", result.skuRef.clientesAtivos],
+            ["Comparado", result.skuComp.clientesAtivos],
+            ["Comum", result.clientesAmbos.length],
+          ].map(([label, value]) => (
+            <div key={label} style={{ border: "1px solid hsl(var(--border))", borderRadius: 6, padding: "5px 6px", textAlign: "center", background: "hsl(var(--card) / 0.38)" }}>
+              <div style={{ color: "hsl(var(--muted-foreground))" }}>{label}</div>
+              <div style={{ color: "hsl(var(--foreground))", fontWeight: 700, fontSize: 12 }}>{Number(value).toLocaleString("pt-BR")}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

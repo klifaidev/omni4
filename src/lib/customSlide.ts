@@ -546,11 +546,18 @@ export interface OmniBridgePvmBlock extends OmniBaseBlock {
 
 export interface OmniFarolBlock extends OmniBaseBlock {
   kind: "omni_farol";
+  skuRef: string | null;
+  skuComp: string | null;
+  periodoMeses: number;
   /** Período referência. null = auto (último período disponível) */
   periodoRef: string | null;
   /** Período comparação. null = auto */
   periodoComp: string | null;
   showGauge: boolean;
+  showCaption: boolean;
+  showStats: boolean;
+  gaugeTheme: "dark" | "light";
+  gaugeScale: number;
 }
 
 export interface OmniAbcCurvaBlock extends OmniBaseBlock {
@@ -780,7 +787,9 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
     case "omni_farol":
       return { id, kind, z, x: 200, y: 160, w: 500, h: 420,
         showTitle: true, showLegend: false, title: "Farol de Positivação",
-        metric: "cm", periodoRef: null, periodoComp: null, showGauge: true,
+        metric: "cm", skuRef: null, skuComp: null, periodoMeses: 3,
+        periodoRef: null, periodoComp: null, showGauge: true,
+        showCaption: true, showStats: true, gaugeTheme: "dark", gaugeScale: 55,
         periodos: null, canal: null, canalAjustado: null, categoria: null,
         subcategoria: null, marca: null, formato: null, regional: null, uf: null,
       } as OmniFarolBlock;
@@ -825,6 +834,45 @@ export function newChartBlock(chartType: CustomChartType, zTop: number): ChartBl
     };
   }
   return out;
+}
+
+export function newPositivacaoChartBlock(zTop: number): ChartBlock {
+  const block = newChartBlock("line", zTop);
+  return {
+    ...block,
+    title: "Evolutivo de Positivação",
+    measure: "positivacao",
+    breakdown: "categoria",
+    autoFit: false,
+    maxSeries: 8,
+    showOthers: false,
+    style: {
+      ...(block.style ?? {}),
+      general: {
+        ...((block.style as Partial<ChartStyle> | undefined)?.general ?? {}),
+        titleShow: true,
+        titleSize: 16,
+        titleColor: "#C8102E",
+        legendShow: true,
+        legendPos: "bottom",
+      },
+      dataLabels: {
+        ...((block.style as Partial<ChartStyle> | undefined)?.dataLabels ?? {}),
+        format: "number",
+        decimals: 0,
+      },
+      yAxis: {
+        ...((block.style as Partial<ChartStyle> | undefined)?.yAxis ?? {}),
+        titleText: "Clientes",
+        format: "number",
+        decimals: 0,
+      },
+      xAxis: {
+        ...((block.style as Partial<ChartStyle> | undefined)?.xAxis ?? {}),
+        titleText: "",
+      },
+    },
+  };
 }
 
 export const CHART_TYPE_LABELS: Record<CustomChartType, string> = {

@@ -6,6 +6,7 @@ import { applyFilters } from "./analytics";
 import { clienteId } from "./farol";
 import type { KpiBlock, KpiMeasureId, KpiPeriodMode, KpiFormat } from "./customSlide";
 import { formatBRL, formatNum, formatPct, monthLabel } from "./format";
+import { POSITIVACAO_DIMS } from "./positivacao";
 
 function periodFilter(rows: PricingRow[], mode: KpiPeriodMode, value?: string | null): PricingRow[] {
   if (mode === "all" || !value) return rows;
@@ -54,10 +55,17 @@ function addToKpiAgg(acc: KpiAgg, r: PricingRow) {
   acc.cv += r.custoVariavel;
   acc.frete += r.frete;
   acc.comissao += r.comissao;
-  if (r.volumeKg > 0) {
+  if ((r.volumeKg ?? 0) > 0 || (r.rol ?? 0) > 0) {
     const cliente = clienteId(r.cliente);
     if (cliente) acc.clientesPositivados.add(cliente);
   }
+}
+
+function dimValue(row: PricingRow, dim: string): string {
+  const value = (row as unknown as Record<string, unknown>)[dim];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  const meta = POSITIVACAO_DIMS.find((d) => d.key === dim);
+  return meta?.emptyLabel ?? "—";
 }
 
 export function pickMeasure(agg: KpiAgg, measure: KpiMeasureId): number {
@@ -126,10 +134,10 @@ export function computeChartSeries(
     const seriesMap = new Map<string, Map<string, KpiAgg>>();
     let ord = 0;
     for (const r of filtered) {
-      const xKey = String((r as unknown as Record<string, unknown>)[xDim] ?? "—");
+      const xKey = dimValue(r, xDim);
       if (!xMap.has(xKey)) xMap.set(xKey, { ord: ord++ });
       const seriesName = breakdown
-        ? String((r as unknown as Record<string, unknown>)[breakdown] ?? "—")
+        ? dimValue(r, breakdown)
         : "Total";
       let pm = seriesMap.get(seriesName);
       if (!pm) { pm = new Map(); seriesMap.set(seriesName, pm); }
@@ -157,7 +165,7 @@ export function computeChartSeries(
   for (const r of filtered) {
     if (!periodoMap.has(r.periodo)) periodoMap.set(r.periodo, { mes: r.mes, ano: r.ano });
     const seriesName = breakdown
-      ? String((r as unknown as Record<string, unknown>)[breakdown] ?? "—")
+      ? dimValue(r, breakdown)
       : "Total";
     let pm = seriesMap.get(seriesName);
     if (!pm) { pm = new Map(); seriesMap.set(seriesName, pm); }
@@ -193,7 +201,7 @@ export function computeTopRanking(
   const filtered = periodFilter(applyFilters(rows, filters, null), periodMode, periodValue);
   const map = new Map<string, KpiAgg>();
   for (const r of filtered) {
-    const k = String((r as unknown as Record<string, unknown>)[dim] ?? "—");
+    const k = dimValue(r, dim);
     let a = map.get(k);
     if (!a) { a = emptyKpiAgg(); map.set(k, a); }
     addToKpiAgg(a, r);
