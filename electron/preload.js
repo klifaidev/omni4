@@ -2,9 +2,36 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   // Auto-update
-  onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (_, version) => callback(version)),
-  onUpdateProgress: (callback) => ipcRenderer.on("update-progress", (_, percent) => callback(percent)),
-  onUpdateDownloaded: (callback) => ipcRenderer.on("update-downloaded", (_, version) => callback(version)),
+  onUpdateStatus: (callback) => {
+    const handler = (_, status) => callback(status);
+    ipcRenderer.on("update-status", handler);
+    return () => ipcRenderer.removeListener("update-status", handler);
+  },
+  onUpdateAvailable: (callback) => {
+    const handler = (_, version) => callback(version);
+    ipcRenderer.on("update-available", handler);
+    return () => ipcRenderer.removeListener("update-available", handler);
+  },
+  onUpdateProgress: (callback) => {
+    const handler = (_, percent) => callback(percent);
+    ipcRenderer.on("update-progress", handler);
+    return () => ipcRenderer.removeListener("update-progress", handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (_, version) => callback(version);
+    ipcRenderer.on("update-downloaded", handler);
+    return () => ipcRenderer.removeListener("update-downloaded", handler);
+  },
+  onUpdateNotAvailable: (callback) => {
+    const handler = (_, version) => callback(version);
+    ipcRenderer.on("update-not-available", handler);
+    return () => ipcRenderer.removeListener("update-not-available", handler);
+  },
+  onUpdateError: (callback) => {
+    const handler = (_, message) => callback(message);
+    ipcRenderer.on("update-error", handler);
+    return () => ipcRenderer.removeListener("update-error", handler);
+  },
   installUpdate: () => ipcRenderer.send("install-update"),
   checkForUpdates: () => ipcRenderer.send("check-for-updates"),
   // Bases locais

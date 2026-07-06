@@ -57,9 +57,6 @@ function createWindow() {
   // Mostrar quando estiver pronto para evitar flash branco
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
-    if (!isDev) {
-      checkForUpdates();
-    }
   });
 
   mainWindow.on("closed", () => {
@@ -87,35 +84,37 @@ function checkForUpdates() {
     autoUpdater.checkForUpdatesAndNotify();
   } catch (err) {
     log.error("=== ERRO NO CHECK FOR UPDATES:", err.message, "===");
+    if (mainWindow) if (mainWindow) mainWindow.webContents.send("update-error", err.message);
   }
 }
 
 autoUpdater.on("checking-for-update", () => {
   log.info("=== VERIFICANDO ATUALIZAÇÕES ===");
-  mainWindow.webContents.send("update-status", "Verificando atualizações...");
+  if (mainWindow) mainWindow.webContents.send("update-status", "Verificando atualizações...");
 });
 
 autoUpdater.on("update-available", (info) => {
   log.info("=== ATUALIZAÇÃO DISPONÍVEL:", info.version, "===");
-  mainWindow.webContents.send("update-available", info.version);
+  if (mainWindow) mainWindow.webContents.send("update-available", info.version);
 });
 
 autoUpdater.on("update-not-available", (info) => {
   log.info("=== SEM ATUALIZAÇÃO. Versão atual:", info.version, "===");
+  if (mainWindow) mainWindow.webContents.send("update-not-available", info.version);
 });
 
 autoUpdater.on("download-progress", (progress) => {
-  mainWindow.webContents.send("update-progress", Math.round(progress.percent));
+  if (mainWindow) mainWindow.webContents.send("update-progress", Math.round(progress.percent));
 });
 
 autoUpdater.on("update-downloaded", (info) => {
   log.info("Atualização baixada:", info.version);
-  mainWindow.webContents.send("update-downloaded", info.version);
+  if (mainWindow) mainWindow.webContents.send("update-downloaded", info.version);
 });
 
 autoUpdater.on("error", (err) => {
   log.error("=== ERRO NO AUTO-UPDATE:", err.message, "===");
-  mainWindow.webContents.send("update-error", err.message);
+  if (mainWindow) mainWindow.webContents.send("update-error", err.message);
 });
 
 // IPC: instalar atualização ao comando do usuário
@@ -125,7 +124,11 @@ ipcMain.on("install-update", () => {
 
 // IPC: verificar atualização manualmente
 ipcMain.on("check-for-updates", () => {
-  if (!isDev) checkForUpdates();
+  if (!isDev) {
+    checkForUpdates();
+  } else {
+    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
+  }
 });
 
 // Bases locais: armazenamento de arquivos de dados
