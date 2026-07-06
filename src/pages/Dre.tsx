@@ -18,6 +18,14 @@ import { useMonthsInfo } from "@/store/selectors";
 import { useMemo, useState } from "react";
 import { Briefcase, Calendar, ChevronDown, Download, Filter, Package, Sigma, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { BudgetRow } from "@/lib/budget";
@@ -45,6 +53,18 @@ const COMMERCIAL_FILTER_FIELDS: { key: FilterKey; label: string }[] = [
   { key: "gestorResp", label: "Gestor Resp." },
 ];
 
+const BATCH_EXPORT_FIELDS: { key: FilterKey; label: string; group: "Produto" | "Comercial" }[] = [
+  { key: "categoria", label: "Categoria", group: "Produto" },
+  { key: "subcategoria", label: "Subcategoria", group: "Produto" },
+  { key: "marca", label: "Marca", group: "Produto" },
+  { key: "sku", label: "Artigo (SKU)", group: "Produto" },
+  { key: "canalAjustado", label: "Canal Ajustado", group: "Comercial" },
+  { key: "mercadoAjustado", label: "Mercado Ajustado", group: "Comercial" },
+  { key: "regional", label: "Regional", group: "Comercial" },
+  { key: "uf", label: "UF", group: "Comercial" },
+  { key: "gestorResp", label: "Gestor Resp.", group: "Comercial" },
+];
+
 function applyBudgetFilters(rows: BudgetRow[], filters: Filters): BudgetRow[] {
   return rows.filter((r) => {
     for (const [k, vals] of Object.entries(filters)) {
@@ -69,6 +89,10 @@ export default function Dre() {
   const [showFilters, setShowFilters] = useState(false);
   const [exportDelta, setExportDelta] = useState(false);
   const [exportBudget, setExportBudget] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchDim, setBatchDim] = useState<FilterKey>("categoria");
+  const [batchValues, setBatchValues] = useState<string[]>([]);
+  const [batchIncludeTotal, setBatchIncludeTotal] = useState(true);
 
   const filtered = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
   const filteredBudget = useMemo(
@@ -82,6 +106,14 @@ export default function Dre() {
   const activeFiltersCount = useMemo(
     () => Object.values(filters).reduce((sum, values) => sum + (values?.length ?? 0), 0),
     [filters],
+  );
+  const batchBaseRows = useMemo(
+    () => applyFilters(rows, omitFilter(filters, batchDim), selectedPeriods),
+    [rows, filters, batchDim, selectedPeriods],
+  );
+  const batchOptions = useMemo(
+    () => buildBatchOptions(batchBaseRows, batchDim),
+    [batchBaseRows, batchDim],
   );
 
   if (rows.length === 0) {
@@ -150,8 +182,39 @@ export default function Dre() {
                 <Download className="h-4 w-4" />
                 Exportar XLSX
               </Button>
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-2"
+                onClick={() => setBatchOpen(true)}
+              >
+                <Download className="h-4 w-4" />
+                Exportar em lote
+              </Button>
             </div>
           </header>
+          <BatchExportDialog
+            open={batchOpen}
+            onOpenChange={setBatchOpen}
+            dimension={batchDim}
+            onDimensionChange={(dim) => {
+              setBatchDim(dim);
+              setBatchValues([]);
+            }}
+            selectedValues={batchValues}
+            onSelectedValuesChange={setBatchValues}
+            includeTotal={batchIncludeTotal}
+            onIncludeTotalChange={setBatchIncludeTotal}
+            options={batchOptions}
+            filters={filters}
+            rows={rows}
+            budgetRows={budgetRowsAll}
+            months={months}
+            mode={mode}
+            selectedPeriods={selectedPeriods}
+            showDelta={exportDelta}
+            showBudget={exportBudget}
+          />
           <DreFiltersPanel
             open={showFilters}
             onToggle={() => setShowFilters((v) => !v)}
@@ -171,6 +234,276 @@ export default function Dre() {
         </GlassCard>
       </div>
     </>
+  );
+}
+
+interface BatchOption {
+  value: string;
+  label: string;
+  rows: number;
+  rol: number;
+  volume: number;
+}
+
+function omitFilter(filters: Filters, key: FilterKey): Filters {
+  const next: Filters = { ...filters };
+  delete next[key];
+  return next;
+}
+
+function safeSheetName(raw: string, fallback: string): string {
+  const clean = (raw || fallback)
+    .replace(/[\\/?*\[\]:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31);
+  return clean || fallback.slice(0, 31);
+}
+
+function uniqueSheetName(raw: string, used: Set<string>, fallback: string): string {
+  const base = safeSheetName(raw, fallback);
+  let name = base;
+  let i = 2;
+  while (used.has(name.toLowerCase())) {
+    const suffix = ` ${i}`;
+    name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    i += 1;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}
+
+function clusterValue(row: PricingRow, key: FilterKey): string | null {
+  const value = row[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function buildBatchOptions(rows: PricingRow[], dimension: FilterKey): BatchOption[] {
+  const map = new Map<string, BatchOption>();
+  for (const row of rows) {
+    const value = clusterValue(row, dimension);
+    if (!value) continue;
+    const current = map.get(value);
+    if (current) {
+      current.rows += 1;
+      current.rol += row.rol || 0;
+      current.volume += row.volumeKg || 0;
+      continue;
+    }
+    const desc = dimension === "sku" && row.skuDesc ? `${value} - ${row.skuDesc}` : value;
+    map.set(value, {
+      value,
+      label: desc,
+      rows: 1,
+      rol: row.rol || 0,
+      volume: row.volumeKg || 0,
+    });
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    const byRol = Math.abs(b.rol) - Math.abs(a.rol);
+    return byRol !== 0 ? byRol : a.label.localeCompare(b.label, "pt-BR");
+  });
+}
+
+function compactCurrency(value: number): string {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: Math.abs(value) >= 1_000_000 ? "compact" : "standard",
+    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 1 : 0,
+  });
+}
+
+function BatchExportDialog({
+  open,
+  onOpenChange,
+  dimension,
+  onDimensionChange,
+  selectedValues,
+  onSelectedValuesChange,
+  includeTotal,
+  onIncludeTotalChange,
+  options,
+  filters,
+  rows,
+  budgetRows,
+  months,
+  mode,
+  selectedPeriods,
+  showDelta,
+  showBudget,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  dimension: FilterKey;
+  onDimensionChange: (dimension: FilterKey) => void;
+  selectedValues: string[];
+  onSelectedValuesChange: (values: string[]) => void;
+  includeTotal: boolean;
+  onIncludeTotalChange: (include: boolean) => void;
+  options: BatchOption[];
+  filters: Filters;
+  rows: PricingRow[];
+  budgetRows: BudgetRow[];
+  months: ReturnType<typeof useMonthsInfo>;
+  mode: DrePeriodMode;
+  selectedPeriods: string[] | null;
+  showDelta: boolean;
+  showBudget: boolean;
+}) {
+  const selectedSet = new Set(selectedValues);
+  const selectedOptions = options.filter((option) => selectedSet.has(option.value));
+  const selectedRows = selectedOptions.reduce((sum, option) => sum + option.rows, 0);
+  const selectedRol = selectedOptions.reduce((sum, option) => sum + option.rol, 0);
+  const sheetCount = selectedOptions.length + (includeTotal ? 1 : 0);
+  const dimMeta = BATCH_EXPORT_FIELDS.find((field) => field.key === dimension) ?? BATCH_EXPORT_FIELDS[0];
+
+  const quickSelect = (count: number) => {
+    onSelectedValuesChange(options.slice(0, count).map((option) => option.value));
+  };
+
+  const handleExport = () => {
+    try {
+      exportDreBatchXlsx({
+        rows,
+        budgetRows,
+        filters,
+        dimension,
+        clusters: selectedOptions,
+        includeTotal,
+        months,
+        mode,
+        selectedPeriods,
+        showDelta,
+        showBudget,
+      });
+      toast.success(`${sheetCount} aba${sheetCount > 1 ? "s" : ""} exportada${sheetCount > 1 ? "s" : ""}.`);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error("Erro ao exportar lote: " + (err as Error).message);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Exportar DRE em lote</DialogTitle>
+          <DialogDescription>
+            Gere um único XLSX com uma aba para cada cluster selecionado, mantendo os filtros ativos como base.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+          <div className="space-y-4 rounded-xl border border-border/50 bg-secondary/15 p-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Quebrar por
+              </label>
+              <select
+                className="h-9 w-full rounded-md border border-border/60 bg-background px-2 text-sm"
+                value={dimension}
+                onChange={(event) => onDimensionChange(event.target.value as FilterKey)}
+              >
+                {BATCH_EXPORT_FIELDS.map((field) => (
+                  <option key={field.key} value={field.key}>
+                    {field.group} - {field.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border/40 bg-background/50 px-3 py-2 text-sm">
+              <span>
+                <span className="block font-medium">Incluir consolidado</span>
+                <span className="block text-xs text-muted-foreground">Primeira aba com os filtros atuais</span>
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                checked={includeTotal}
+                onChange={(event) => onIncludeTotalChange(event.target.checked)}
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button type="button" className="rounded-md border border-border/50 px-2 py-1.5 text-muted-foreground hover:text-foreground" onClick={() => quickSelect(10)}>
+                Top 10
+              </button>
+              <button type="button" className="rounded-md border border-border/50 px-2 py-1.5 text-muted-foreground hover:text-foreground" onClick={() => quickSelect(25)}>
+                Top 25
+              </button>
+              <button type="button" className="rounded-md border border-border/50 px-2 py-1.5 text-muted-foreground hover:text-foreground" onClick={() => onSelectedValuesChange(options.map((option) => option.value))}>
+                Todos
+              </button>
+              <button type="button" className="rounded-md border border-border/50 px-2 py-1.5 text-muted-foreground hover:text-foreground" onClick={() => onSelectedValuesChange([])}>
+                Limpar
+              </button>
+            </div>
+
+            <div className="rounded-lg bg-background/60 p-3 text-xs">
+              <div className="font-medium text-foreground">{sheetCount} aba{sheetCount !== 1 ? "s" : ""}</div>
+              <div className="mt-1 text-muted-foreground">{selectedRows.toLocaleString("pt-BR")} linhas selecionadas</div>
+              <div className="text-muted-foreground">{compactCurrency(selectedRol)} em ROL</div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium">{dimMeta.label}</p>
+                <p className="text-xs text-muted-foreground">
+                  {options.length.toLocaleString("pt-BR")} cluster{options.length !== 1 ? "s" : ""} disponível{options.length !== 1 ? "is" : ""}.
+                </p>
+              </div>
+              {selectedValues.length > 0 && (
+                <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                  {selectedValues.length} selecionado{selectedValues.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <MultiSelectFilter
+              options={options.map((option) => ({
+                value: option.value,
+                label: `${option.label} · ${compactCurrency(option.rol)} · ${option.rows.toLocaleString("pt-BR")} linhas`,
+              }))}
+              selected={selectedValues}
+              onChange={onSelectedValuesChange}
+              placeholder="Selecione os clusters"
+              variant={dimMeta.group === "Comercial" ? "comercial" : "sku"}
+            />
+            <div className="max-h-56 overflow-auto rounded-lg border border-border/40">
+              {selectedOptions.length === 0 ? (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Selecione um ou mais clusters para montar o lote.
+                </div>
+              ) : (
+                selectedOptions.map((option) => (
+                  <div key={option.value} className="flex items-center justify-between gap-3 border-b border-border/30 px-3 py-2 last:border-b-0">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{option.label}</div>
+                      <div className="text-xs text-muted-foreground">{option.rows.toLocaleString("pt-BR")} linhas</div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-medium tabular-nums">
+                      {compactCurrency(option.rol)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleExport} disabled={sheetCount === 0 || selectedOptions.length === 0}>
+            Exportar lote
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -500,7 +833,7 @@ function buildDreExportColumns(args: {
   });
 }
 
-function exportDreXlsx(args: {
+function buildDreWorksheet(args: {
   rows: import("@/lib/types").PricingRow[];
   months: ReturnType<typeof useMonthsInfo>;
   mode: DrePeriodMode;
@@ -508,7 +841,7 @@ function exportDreXlsx(args: {
   budgetRows: BudgetRow[];
   showDelta: boolean;
   showBudget: boolean;
-}) {
+}): XLSX.WorkSheet {
   const columns = buildDreExportColumns(args);
   if (columns.length === 0) throw new Error("Nenhum periodo disponivel para exportar.");
 
@@ -627,7 +960,128 @@ function exportDreXlsx(args: {
     }
   }
 
+  return ws;
+}
+
+function exportDreXlsx(args: {
+  rows: import("@/lib/types").PricingRow[];
+  months: ReturnType<typeof useMonthsInfo>;
+  mode: DrePeriodMode;
+  selectedPeriods: string[] | null;
+  budgetRows: BudgetRow[];
+  showDelta: boolean;
+  showBudget: boolean;
+}) {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "DRE");
+  XLSX.utils.book_append_sheet(wb, buildDreWorksheet(args), "DRE");
   XLSX.writeFile(wb, `dre_${args.mode === "month" ? "mensal" : "acumulado"}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportDreBatchXlsx(args: {
+  rows: PricingRow[];
+  budgetRows: BudgetRow[];
+  filters: Filters;
+  dimension: FilterKey;
+  clusters: BatchOption[];
+  includeTotal: boolean;
+  months: ReturnType<typeof useMonthsInfo>;
+  mode: DrePeriodMode;
+  selectedPeriods: string[] | null;
+  showDelta: boolean;
+  showBudget: boolean;
+}) {
+  const totalSheets = args.clusters.length + (args.includeTotal ? 1 : 0);
+  if (args.clusters.length === 0) throw new Error("Selecione pelo menos um cluster.");
+  if (totalSheets > 80) {
+    throw new Error("Selecione até 80 abas por vez para manter o arquivo leve.");
+  }
+
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set<string>();
+  const dimLabel = BATCH_EXPORT_FIELDS.find((field) => field.key === args.dimension)?.label ?? args.dimension;
+  const indexRows: (string | number | null)[][] = [
+    ["DRE em lote", null, null, null],
+    ["Dimensão", dimLabel, "Modo", args.mode === "month" ? "Mensal" : "Acumulado"],
+    ["Gerado em", new Date().toLocaleString("pt-BR"), "Abas", totalSheets],
+    [],
+    ["Aba", "Cluster", "Linhas", "ROL"],
+  ];
+
+  const appendSheet = (label: string, sheetLabel: string, clusterFilters: Filters, option?: BatchOption) => {
+    const sheetRows = applyFilters(args.rows, clusterFilters, null);
+    const sheetBudgetRows = applyBudgetFilters(args.budgetRows, clusterFilters);
+    const ws = buildDreWorksheet({
+      rows: sheetRows,
+      months: args.months,
+      mode: args.mode,
+      selectedPeriods: args.selectedPeriods,
+      budgetRows: sheetBudgetRows,
+      showDelta: args.showDelta,
+      showBudget: args.showBudget,
+    });
+    const sheetName = uniqueSheetName(sheetLabel, usedNames, "DRE");
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    indexRows.push([
+      sheetName,
+      label,
+      option?.rows ?? sheetRows.length,
+      option?.rol ?? sheetRows.reduce((sum, row) => sum + (row.rol || 0), 0),
+    ]);
+  };
+
+  if (args.includeTotal) {
+    const baseRows = applyFilters(args.rows, args.filters, null);
+    appendSheet("Consolidado com filtros ativos", "Consolidado", args.filters, {
+      value: "__total__",
+      label: "Consolidado",
+      rows: baseRows.length,
+      rol: baseRows.reduce((sum, row) => sum + (row.rol || 0), 0),
+      volume: baseRows.reduce((sum, row) => sum + (row.volumeKg || 0), 0),
+    });
+  }
+
+  for (const option of args.clusters) {
+    appendSheet(
+      option.label,
+      option.label,
+      { ...args.filters, [args.dimension]: [option.value] },
+      option,
+    );
+  }
+
+  const indexWs = XLSX.utils.aoa_to_sheet(indexRows);
+  indexWs["!cols"] = [{ wch: 28 }, { wch: 54 }, { wch: 14 }, { wch: 18 }];
+  const range = XLSX.utils.decode_range(indexWs["!ref"] ?? "A1");
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = indexWs[addr];
+      if (!cell) continue;
+      if (r === 4 && c === 3 && cell.t === "n") cell.z = '"R$" #,##0;[Red]-"R$" #,##0';
+      if (r > 4 && c === 3 && cell.t === "n") cell.z = '"R$" #,##0;[Red]-"R$" #,##0';
+      cell.s = {
+        font: {
+          bold: r === 0 || r === 4,
+          color: { rgb: r === 0 || r === 4 ? "FFFFFF" : "111827" },
+          sz: r === 0 ? 14 : 10,
+        },
+        fill: {
+          fgColor: { rgb: r === 0 || r === 4 ? "D0102F" : r % 2 === 0 ? "FFFFFF" : "F8FAFC" },
+        },
+        alignment: { horizontal: c >= 2 ? "right" : "left", vertical: "center", wrapText: true },
+        border: {
+          top: { style: "thin", color: { rgb: "E5E7EB" } },
+          bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+          left: { style: "thin", color: { rgb: "E5E7EB" } },
+          right: { style: "thin", color: { rgb: "E5E7EB" } },
+        },
+      };
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, indexWs, "Índice");
+  wb.SheetNames = ["Índice", ...wb.SheetNames.filter((name) => name !== "Índice")];
+  XLSX.writeFile(
+    wb,
+    `dre_lote_${String(args.dimension)}_${args.mode === "month" ? "mensal" : "acumulado"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
 }
