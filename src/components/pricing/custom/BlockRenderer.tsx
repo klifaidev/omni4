@@ -29,6 +29,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { SLIDE_CHART_PALETTE, SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 import { formatPct, formatTon, formatNum } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
@@ -212,7 +213,7 @@ function ExportPositionedCell({
   );
 }
 
-function cssColor(value: React.CSSProperties["color"], fallback = "#1C2430"): string {
+function cssColor(value: React.CSSProperties["color"], fallback = SLIDE_HEX.chart2): string {
   return typeof value === "string" ? value : fallback;
 }
 
@@ -259,7 +260,7 @@ function SvgExportCell({
         width={w}
         height={h}
         fill={bg}
-        stroke="#E2E8F0"
+        stroke={SLIDE_HEX.grid}
         strokeWidth={0.6}
       />
       <text
@@ -329,9 +330,9 @@ class BlockErrorBoundary extends React.Component<
         justifyContent: "center",
         padding: 12,
         boxSizing: "border-box",
-        background: "#FEF2F2",
-        border: "1px dashed #FCA5A5",
-        color: "#991B1B",
+        background: SLIDE_HEX.dangerWash,
+        border: `1px dashed ${SLIDE_HEX.dangerBorder}`,
+        color: SLIDE_HEX.dangerDark,
         fontFamily: "Calibri, Arial, sans-serif",
         fontSize: 12,
         textAlign: "center",
@@ -523,7 +524,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     : b.valueSize;
   if (readOnly) {
     const fill = isTransparent ? "transparent" : `#${cardBg}`;
-    const stroke = isTransparent ? "transparent" : "#E2E8F0";
+    const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
     const labelText = b.label || measureLabel || "KPI";
     const footerText = b.source === "dynamic"
       ? `${measureLabel ?? ""}${b.periodMode && b.periodMode !== "all" && b.periodValue
@@ -542,7 +543,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
           fontFamily="Calibri, Arial, sans-serif"
           fontSize={14}
           letterSpacing={1}
-          fill="#64748B"
+          fill={SLIDE_HEX.slate500}
         >
           {labelText.toUpperCase()}
         </text>
@@ -568,7 +569,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
             textAnchor="start"
             fontFamily="Calibri, Arial, sans-serif"
             fontSize={11}
-            fill="#94A3B8"
+            fill={SLIDE_HEX.slate400}
           >
             {footerText}
           </text>
@@ -583,10 +584,10 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       boxSizing: "border-box",
       padding: 12, borderRadius: isTransparent ? 0 : 12,
       background: isTransparent ? "transparent" : `#${cardBg}`,
-      border: isTransparent ? "none" : "1px solid #E2E8F0",
+      border: isTransparent ? "none" : `1px solid ${SLIDE_HEX.grid}`,
       fontFamily: "Calibri, sans-serif",
     }}>
-      <div style={{ fontSize: 14, color: "#64748B", textTransform: "uppercase", letterSpacing: 1 }}>
+      <div style={{ fontSize: 14, color: SLIDE_HEX.slate500, textTransform: "uppercase", letterSpacing: 1 }}>
         {b.label || measureLabel || "KPI"}
       </div>
       <div style={{
@@ -601,7 +602,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         {value}
       </div>
       {b.source === "dynamic" && (
-        <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: SLIDE_HEX.slate400, marginTop: 6 }}>
           {measureLabel}
           {b.periodMode && b.periodMode !== "all" && b.periodValue
             ? ` · ${b.periodValue}`
@@ -618,8 +619,8 @@ function ImageRender({ block: b }: { block: ImageBlock }) {
       <div style={{
         width: "100%", height: "100%", display: "flex",
         alignItems: "center", justifyContent: "center",
-        background: "#F1F5F9", border: "1px dashed #94A3B8",
-        color: "#64748B", fontFamily: "Calibri", fontSize: 14,
+        background: SLIDE_HEX.gridSoft, border: `1px dashed ${SLIDE_HEX.slate400}`,
+        color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
         Faça upload de uma imagem
       </div>
@@ -660,8 +661,8 @@ function BridgeRender({ block: b }: { block: BridgeBlock }) {
       <div style={{
         width: "100%", height: "100%",
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "#F8FAFC", border: "1px dashed #CBD5E1",
-        color: "#64748B", fontFamily: "Calibri", fontSize: 14,
+        background: SLIDE_HEX.paper, border: `1px dashed ${SLIDE_HEX.slate300}`,
+        color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
         {pvmResult.kind === "unconfigured"
           ? "Configure base e comparação para a Bridge"
@@ -712,8 +713,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       <div style={{
         width: "100%", height: "100%",
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "#F8FAFC", border: "1px dashed #CBD5E1",
-        color: "#64748B", fontFamily: "Calibri", fontSize: 14,
+        background: SLIDE_HEX.paper, border: `1px dashed ${SLIDE_HEX.slate300}`,
+        color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
         Configure dimensões e medidas da tabela
       </div>
@@ -853,18 +854,18 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       }
       return {
         backgroundColor: `#${bgHex}`,
-        color: luminanceOf(bgHex) > 0.6 ? "#1C2430" : "#FFFFFF",
+        color: luminanceOf(bgHex) > 0.6 ? SLIDE_HEX.chart2 : SLIDE_HEX.white,
       };
     }
     if (rule.mode === "above_avg") {
       const avg = pool.reduce((s, x) => s + x, 0) / pool.length;
-      if (value > avg) return { backgroundColor: "#D1FAE5", color: "#065F46" };
-      if (value < avg) return { backgroundColor: "#FEE2E2", color: "#991B1B" };
+      if (value > avg) return { backgroundColor: SLIDE_HEX.successSoft, color: SLIDE_HEX.successDark };
+      if (value < avg) return { backgroundColor: SLIDE_HEX.dangerSoft, color: SLIDE_HEX.dangerDark };
       return {};
     }
     if (rule.mode === "data_bar") {
       const pct = Math.round(t * 100);
-      return { background: `linear-gradient(90deg, #BFDBFE ${pct}%, transparent ${pct}%)` };
+      return { background: `linear-gradient(90deg, ${SLIDE_HEX.blueSoft} ${pct}%, transparent ${pct}%)` };
     }
     return {};
   };
@@ -945,7 +946,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       ? [
           <ExportPositionedCell
             key="others-label"
-            style={{ ...cellLabel, fontStyle: "italic", background: "#F1F5F9" }}
+            style={{ ...cellLabel, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
             left={0}
             top={(rowCount - 1) * rowH}
             width={firstColW}
@@ -958,7 +959,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             ? cols.flatMap((c, ci) => measures.map((m, mi) => (
                 <ExportPositionedCell
                   key={`oth-${c.key}-${m.id}`}
-                  style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}
+                  style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
                   left={leftForValue(ci * measures.length + mi)}
                   top={(rowCount - 1) * rowH}
                   width={valueColW}
@@ -971,7 +972,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             : measures.map((m, mi) => (
                 <ExportPositionedCell
                   key={`oth-${m.id}`}
-                  style={{ ...cellValDyn, fontStyle: "italic", background: "#F1F5F9" }}
+                  style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
                   left={leftForValue(mi)}
                   top={(rowCount - 1) * rowH}
                   width={valueColW}
@@ -1028,7 +1029,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             </tr>
           ))}
           {othersRow && (
-            <tr style={{ background: "#F1F5F9" }}>
+            <tr style={{ background: SLIDE_HEX.gridSoft }}>
               {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
               {showCols
                 ? cols.flatMap((c) => measures.map((m) => (
@@ -1084,14 +1085,14 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri" }}>
       {b.title && (
-        <div style={{ fontSize: 16, fontWeight: 700, color: "#C8102E", padding: "4px 8px" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: SLIDE_HEX.chart1, padding: "4px 8px" }}>
           {b.title}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "0 8px" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
-            <tr style={{ background: "#C8102E", color: "#fff" }}>
+            <tr style={{ background: SLIDE_HEX.chart1, color: SLIDE_HEX.white }}>
               <th style={topHead}>#</th>
               <th style={{ ...topHead, textAlign: "left" }}>Item</th>
               <th style={{ ...topHead, textAlign: "right" }}>Valor</th>
@@ -1102,21 +1103,21 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
             {items.map((it, i) => {
               const isOthers = b.showOthers && i === items.length - 1 && hidden.length > 0;
               return (
-                <tr key={it.name} style={{ borderBottom: "1px solid #E2E8F0", background: isOthers ? "#F1F5F9" : undefined }}>
-                  <td style={{ padding: "4px 6px", color: "#64748B", fontWeight: 600 }}>{isOthers ? "—" : i + 1}</td>
+                <tr key={it.name} style={{ borderBottom: `1px solid ${SLIDE_HEX.grid}`, background: isOthers ? SLIDE_HEX.gridSoft : undefined }}>
+                  <td style={{ padding: "4px 6px", color: SLIDE_HEX.slate500, fontWeight: 600 }}>{isOthers ? "—" : i + 1}</td>
                   <td style={{ padding: "4px 6px", maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isOthers ? "italic" : undefined }}>
                     <div style={{ position: "relative" }}>
                       <div style={{
                         position: "absolute", left: 0, top: 0, bottom: 0,
                         width: `${(it.value / max) * 100}%`,
-                        background: "rgba(200,16,46,0.08)", zIndex: 0,
+                        background: SLIDE_RGBA.haraldWash, zIndex: 0,
                       }} />
                       <span style={{ position: "relative", zIndex: 1 }}>{it.name}</span>
                     </div>
                   </td>
                   <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, fontStyle: isOthers ? "italic" : undefined }}>{fmt(it.value)}</td>
                   {b.showShare && (
-                    <td style={{ padding: "4px 6px", textAlign: "right", color: "#64748B" }}>
+                    <td style={{ padding: "4px 6px", textAlign: "right", color: SLIDE_HEX.slate500 }}>
                       {(it.share * 100).toFixed(1)}%
                     </td>
                   )}
@@ -1135,17 +1136,17 @@ const topHead: React.CSSProperties = {
 };
 
 const cellHead: React.CSSProperties = {
-  background: "#C8102E", color: "#fff", padding: "6px 8px", textAlign: "center",
-  fontWeight: 700, fontSize: 11, border: "1px solid #fff", verticalAlign: "middle", lineHeight: 1.15,
+  background: SLIDE_HEX.chart1, color: SLIDE_HEX.white, padding: "6px 8px", textAlign: "center",
+  fontWeight: 700, fontSize: 11, border: `1px solid ${SLIDE_HEX.white}`, verticalAlign: "middle", lineHeight: 1.15,
 };
 const cellLabel: React.CSSProperties = {
   padding: "5px 8px", textAlign: "left", fontWeight: 600,
-  color: "#1C2430", borderBottom: "1px solid #E2E8F0", background: "#fff",
+  color: SLIDE_HEX.chart2, borderBottom: `1px solid ${SLIDE_HEX.grid}`, background: SLIDE_HEX.white,
   verticalAlign: "middle", lineHeight: 1.15,
 };
 const cellVal: React.CSSProperties = {
-  padding: "5px 8px", textAlign: "right", color: "#1C2430",
-  borderBottom: "1px solid #E2E8F0", background: "#fff",
+  padding: "5px 8px", textAlign: "right", color: SLIDE_HEX.chart2,
+  borderBottom: `1px solid ${SLIDE_HEX.grid}`, background: SLIDE_HEX.white,
   verticalAlign: "middle", lineHeight: 1.15,
 };
 
@@ -1245,7 +1246,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: "100%", height: "100%", color: "#94A3B8",
+        width: "100%", height: "100%", color: SLIDE_HEX.slate400,
         fontSize: blk.fontSize, fontFamily: "Calibri, Arial, sans-serif",
       }}>
         Configure os períodos para exibir o DRE
@@ -1287,7 +1288,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
     const headerBase: React.CSSProperties = {
       background: blk.headerColor,
-      color: "#FFFFFF",
+      color: SLIDE_HEX.white,
       fontWeight: 600,
       fontSize: fs + 1,
       whiteSpace: "nowrap",
@@ -1329,7 +1330,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
 
     const bodyCells = visibleLines.flatMap((line, idx) => {
       const isEven = idx % 2 === 0;
-      const rowBg = isEven ? "#F8FAFC" : "#FFFFFF";
+      const rowBg = isEven ? SLIDE_HEX.paper : SLIDE_HEX.white;
       const top = (idx + 1) * rowH;
       const lineCells: React.ReactNode[] = [
         <ExportPositionedCell key={`${line.id}-label`} style={{
@@ -1371,8 +1372,8 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             padding: padVal,
             textAlign: "center",
             fontWeight: line.bold ? 600 : 400,
-            color: cfColor ?? (isNeg ? "#DC2626"
-              : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
+            color: cfColor ?? (isNeg ? SLIDE_HEX.danger
+              : (line.id === "cm" || line.id === "cmPct") ? SLIDE_HEX.success
               : blk.textColor),
             background: cfBg ?? rowBg,
             borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
@@ -1391,7 +1392,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
         const isCusto = LINHAS_CUSTO.includes(line.id);
         const isPositivo = varPct !== null && varPct > 0;
         const cor = varPct === null ? blk.textColor
-          : (isPositivo !== isCusto) ? "#16A34A" : "#DC2626";
+          : (isPositivo !== isCusto) ? SLIDE_HEX.success : SLIDE_HEX.danger;
         const tipo = blk.variacaoTipo ?? "percentual";
         let display: React.ReactNode = "—";
         if (tipo === "percentual") {
@@ -1452,7 +1453,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
         <thead>
           <tr>
             <th style={{
-              background: blk.headerColor, color: "#FFFFFF",
+              background: blk.headerColor, color: SLIDE_HEX.white,
               padding: pad, textAlign: "left", fontWeight: 600,
               fontSize: fs + 1, whiteSpace: "nowrap",
               verticalAlign: "middle", lineHeight: 1.15,
@@ -1461,7 +1462,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             </th>
             {cols.map((col) => (
               <th key={col.periodo} style={{
-                background: blk.headerColor, color: "#FFFFFF",
+                background: blk.headerColor, color: SLIDE_HEX.white,
                 padding: padVal, textAlign: "center", fontWeight: 600,
                 fontSize: fs + 1,
                 verticalAlign: "middle", lineHeight: 1.15,
@@ -1471,7 +1472,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
             ))}
             {showVar && ultimoCol && penultimoCol && (
               <th style={{
-                background: blk.headerColor, color: "#FFFFFF",
+                background: blk.headerColor, color: SLIDE_HEX.white,
                 padding: padVal, textAlign: "center", fontWeight: 600,
                 fontSize: fs + 1,
                 borderLeft: "1px solid rgba(255,255,255,0.3)",
@@ -1488,7 +1489,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
           {visibleLines.map((line, idx) => {
             const isEven = idx % 2 === 0;
             return (
-              <tr key={line.id} style={{ background: isEven ? "#F8FAFC" : "#FFFFFF" }}>
+              <tr key={line.id} style={{ background: isEven ? SLIDE_HEX.paper : SLIDE_HEX.white }}>
                 {dreCell("td", dreLineLabel(line), {
                   padding: pad,
                   fontWeight: line.bold ? 600 : 400,
@@ -1520,8 +1521,8 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
                     <td key={col.periodo} style={{
                       padding: readOnly ? 0 : padVal, textAlign: "center",
                       fontWeight: line.bold ? 600 : 400,
-                      color: cfColor ?? (isNeg ? "#DC2626"
-                        : (line.id === "cm" || line.id === "cmPct") ? "#16A34A"
+                      color: cfColor ?? (isNeg ? SLIDE_HEX.danger
+                        : (line.id === "cm" || line.id === "cmPct") ? SLIDE_HEX.success
                         : blk.textColor),
                       background: cfBg,
                       borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
@@ -1546,7 +1547,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
                   const isCusto = LINHAS_CUSTO.includes(line.id);
                   const isPositivo = varPct !== null && varPct > 0;
                   const cor = varPct === null ? blk.textColor
-                    : (isPositivo !== isCusto) ? "#16A34A" : "#DC2626";
+                    : (isPositivo !== isCusto) ? SLIDE_HEX.success : SLIDE_HEX.danger;
                   const tipo = blk.variacaoTipo ?? "percentual";
                   let display: React.ReactNode = "—";
                   if (tipo === "percentual") {
@@ -1570,7 +1571,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
                       borderLeft: `1px solid ${blk.headerColor}20`,
                       borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
                       fontSize: fs,
-                      background: isEven ? "#F8FAFC" : "#FFFFFF",
+                      background: isEven ? SLIDE_HEX.paper : SLIDE_HEX.white,
                       verticalAlign: "middle", lineHeight: 1.15,
                     }}>
                       {readOnly
@@ -1596,7 +1597,16 @@ function labelOfDim(id: string): string {
 // Omni Analytics Renderers
 // ---------------------------------------------------------------------------
 
-const OMNI_COLORS = ["#C8102E", "#1C2430", "#2563EB", "#16A34A", "#D97706", "#7C3AED", "#0891B2", "#BE185D"];
+const OMNI_COLORS = [
+  SLIDE_HEX.chart1,
+  SLIDE_HEX.chart2,
+  SLIDE_HEX.chart5,
+  SLIDE_HEX.chart7,
+  SLIDE_HEX.warningDark,
+  SLIDE_HEX.chart6,
+  SLIDE_HEX.cyanDark,
+  SLIDE_HEX.pinkDark,
+];
 
 function omniEmpty(msg = "Sem dados.") {
   return (
@@ -1608,7 +1618,7 @@ function omniEmpty(msg = "Sem dados.") {
 
 function omniTitle(title: string) {
   return (
-    <div style={{ fontSize: 12, fontWeight: 700, color: "#1C2430", marginBottom: 6, paddingLeft: 2 }}>
+    <div style={{ fontSize: 12, fontWeight: 700, color: SLIDE_HEX.chart2, marginBottom: 6, paddingLeft: 2 }}>
       {title}
     </div>
   );
@@ -1683,7 +1693,7 @@ function heatColorOmni(v: number | null, min: number, max: number): { bg: string
   const h = t * 158;
   const s = 80;
   const l = 65 - t * 13;
-  return { bg: `hsl(${h.toFixed(0)} ${s}% ${l.toFixed(0)}%)`, color: l < 58 ? "#fff" : "#1C2430" };
+  return { bg: `hsl(${h.toFixed(0)} ${s}% ${l.toFixed(0)}%)`, color: l < 58 ? SLIDE_HEX.white : SLIDE_HEX.chart2 };
 }
 
 function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonalidadeBlock }) {
@@ -1753,7 +1763,7 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
         <tbody>
           {matrix.map((row) => (
             <tr key={row.fy}>
-              <td style={{ padding: "2px 4px", fontWeight: 600, fontSize: fs, color: "#1C2430", whiteSpace: "nowrap" }}>{row.fy}</td>
+              <td style={{ padding: "2px 4px", fontWeight: 600, fontSize: fs, color: SLIDE_HEX.chart2, whiteSpace: "nowrap" }}>{row.fy}</td>
               {row.cells.map((v, i) => {
                 const { bg, color } = heatColorOmni(v, min, max);
                 return (
@@ -2004,7 +2014,7 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
 
   if (!result) return omniEmpty("Selecione dois períodos para comparar.");
 
-  const signColor = (v: number) => v >= 0 ? "#16A34A" : "#C8102E";
+  const signColor = (v: number) => v >= 0 ? SLIDE_HEX.success : SLIDE_HEX.chart1;
   const fmtBRL2 = (v: number) => formatBRL(v, { compact: false, digits: 2 });
 
   return (
@@ -2012,8 +2022,8 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
       {b.showTitle && omniTitle(b.title || "Decomposição de Preço")}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {[
-          { label: "Preço Médio Base", value: fmtBRL2(result.precoMedioBase), color: "#1C2430" },
-          { label: "Preço Médio Comp", value: fmtBRL2(result.precoMedioComp), color: "#1C2430" },
+          { label: "Preço Médio Base", value: fmtBRL2(result.precoMedioBase), color: SLIDE_HEX.chart2 },
+          { label: "Preço Médio Comp", value: fmtBRL2(result.precoMedioComp), color: SLIDE_HEX.chart2 },
           { label: "Variação Total",   value: `${formatPct(result.variacaoPct)}`, color: signColor(result.variacaoPct) },
           { label: "Efeito Preço",     value: `${formatPct(result.pctPreco)}`,    color: signColor(result.pctPreco) },
           { label: "Efeito Mix",       value: `${formatPct(result.pctMix)}`,      color: signColor(result.pctMix) },
@@ -2083,7 +2093,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
   }, [pricing, b]);
 
   const isLight = (b.gaugeTheme ?? "dark") === "light";
-  const fg = isLight ? "#111827" : "#FFFFFF";
+  const fg = isLight ? SLIDE_HEX.neutralDark : SLIDE_HEX.white;
   const muted = isLight ? "rgba(17,24,39,0.58)" : "rgba(255,255,255,0.62)";
   const track = isLight ? "rgba(17,24,39,0.12)" : "rgba(255,255,255,0.12)";
   const innerTrack = isLight ? "rgba(17,24,39,0.05)" : "rgba(255,255,255,0.04)";
@@ -2246,10 +2256,10 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
             <Tooltip formatter={(v: number) => formatPct(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {b.showCustoVariavel && (
-              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke="#C8102E" fill="#C8102E" fillOpacity={0.7} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke={SLIDE_HEX.chart1} fill={SLIDE_HEX.chart1} fillOpacity={0.7} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
             {b.showCustoFixo && (
-              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke="#1C2430" fill="#1C2430" fillOpacity={0.5} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke={SLIDE_HEX.chart2} fill={SLIDE_HEX.chart2} fillOpacity={0.5} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
           </ComposedChart>
         </ResponsiveContainer>

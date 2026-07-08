@@ -22,6 +22,7 @@ import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock 
 import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
+import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 
 interface Props {
   /** Editor's current slide id — used as initial slide. */
@@ -137,7 +138,7 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
-        background: "#000", color: "#fff",
+        background: "hsl(0 0% 0%)", color: SLIDE_HEX.white,
         userSelect: "none",
       }}
       onClick={(e) => {
@@ -212,8 +213,8 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
           style={{
             position: "absolute", top: 16, left: 16,
             height: 36, padding: "0 12px", borderRadius: 18,
-            background: "rgba(255,255,255,0.1)", color: "#fff",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: "hsl(0 0% 100% / 0.1)", color: SLIDE_HEX.white,
+            border: "1px solid hsl(0 0% 100% / 0.2)",
             display: "flex", alignItems: "center", gap: 6,
             cursor: "pointer", zIndex: 10, fontSize: 12,
           }}
@@ -231,9 +232,9 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
           style={{
             position: "absolute", top: 16, left: 152,
             height: 36, padding: "0 12px", borderRadius: 18,
-            background: presenterMode ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.1)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: presenterMode ? "hsl(var(--editor-selection) / 0.5)" : "hsl(0 0% 100% / 0.1)",
+            color: SLIDE_HEX.white,
+            border: "1px solid hsl(0 0% 100% / 0.2)",
             display: "flex", alignItems: "center", gap: 6,
             cursor: "pointer", zIndex: 10, fontSize: 12,
           }}
@@ -250,14 +251,14 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
           style={{
             position: "absolute", top: 16, left: 232,
             height: 36, padding: "0 12px", borderRadius: 18,
-            background: laser ? "rgba(220, 38, 38, 0.6)" : "rgba(255,255,255,0.1)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: laser ? "hsl(var(--editor-preflight-error) / 0.6)" : "hsl(0 0% 100% / 0.1)",
+            color: SLIDE_HEX.white,
+            border: "1px solid hsl(0 0% 100% / 0.2)",
             display: "flex", alignItems: "center", gap: 6,
             cursor: "pointer", zIndex: 10, fontSize: 12,
           }}
         >
-          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: "#ef4444" }} />
+          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: SLIDE_HEX.danger }} />
           Laser
         </button>
 
@@ -269,9 +270,9 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
           style={{
             position: "absolute", top: 16, left: 312,
             height: 36, padding: "0 12px", borderRadius: 18,
-            background: thumbsOpen ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.1)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: thumbsOpen ? "hsl(var(--editor-selection) / 0.5)" : "hsl(0 0% 100% / 0.1)",
+            color: SLIDE_HEX.white,
+            border: "1px solid hsl(0 0% 100% / 0.2)",
             display: "flex", alignItems: "center", gap: 6,
             cursor: "pointer", zIndex: 10, fontSize: 12,
           }}
@@ -287,8 +288,8 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
             style={{
               position: "absolute", top: 60, left: 16,
               padding: "6px 12px", borderRadius: 8,
-              background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.12)",
-              color: "#fff", fontSize: 13, fontVariantNumeric: "tabular-nums",
+              background: SLIDE_RGBA.darkOverlay, border: `1px solid ${SLIDE_RGBA.whiteOverlay}`,
+              color: SLIDE_HEX.white, fontSize: 13, fontVariantNumeric: "tabular-nums",
               display: "flex", alignItems: "center", gap: 6,
               zIndex: 10,
             }}
@@ -305,8 +306,8 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
           style={{
             position: "absolute", top: 16, right: 16,
             width: 36, height: 36, borderRadius: 18,
-            background: "rgba(255,255,255,0.1)", color: "#fff",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: "hsl(0 0% 100% / 0.1)", color: SLIDE_HEX.white,
+            border: "1px solid hsl(0 0% 100% / 0.2)",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer", zIndex: 10,
           }}
@@ -360,7 +361,7 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
                     flex: "0 0 auto",
                     width: 144, height: 81,
                     borderRadius: 4, overflow: "hidden",
-                    background: "#fff",
+                    background: SLIDE_HEX.white,
                     border: active ? "2px solid hsl(var(--primary))" : "2px solid rgba(255,255,255,0.15)",
                     cursor: "pointer", padding: 0,
                     boxShadow: active ? "0 0 0 2px rgba(255,255,255,0.2)" : "none",
@@ -370,7 +371,7 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
                   <ScaledPreview item={s as never} targetWidth={140} />
                   <span style={{
                     position: "absolute", bottom: 2, left: 4,
-                    fontSize: 9, fontWeight: 600, color: "#fff",
+                    fontSize: 9, fontWeight: 600, color: SLIDE_HEX.white,
                     background: "rgba(0,0,0,0.6)", padding: "1px 4px", borderRadius: 2,
                     fontVariantNumeric: "tabular-nums",
                   }}>{i + 1}</span>
@@ -401,7 +402,7 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
             data-export-hide="true"
             onClick={() => setBlackout(false)}
             style={{
-              position: "fixed", inset: 0, background: "#000",
+              position: "fixed", inset: 0, background: "hsl(0 0% 0%)",
               zIndex: 9997, cursor: "pointer",
             }}
           />
@@ -422,8 +423,8 @@ function NavArrow({ side, disabled, onClick }: { side: "left" | "right"; disable
       style={{
         position: "absolute", top: "50%", transform: "translateY(-50%)",
         [side]: 16, width: 56, height: 96, borderRadius: 12,
-        background: "rgba(255,255,255,0.06)", color: "#fff",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: "hsl(0 0% 100% / 0.06)", color: SLIDE_HEX.white,
+        border: "1px solid hsl(0 0% 100% / 0.1)",
         display: "flex", alignItems: "center", justifyContent: "center",
         cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.25 : 0.7,
         transition: "opacity 150ms", zIndex: 10,
@@ -443,7 +444,7 @@ function ClearFiltersFloater() {
     <div style={{
       position: "absolute", bottom: 18, right: 16,
       padding: "6px 12px", borderRadius: 999,
-      background: "rgba(200, 16, 46, 0.85)", color: "#fff",
+      background: "hsl(var(--chart-1) / 0.85)", color: SLIDE_HEX.white,
       display: "flex", alignItems: "center", gap: 8, fontSize: 12,
       zIndex: 10,
     }}>
@@ -488,9 +489,9 @@ function SlideRenderArea({
   const customCfg = slide.kind === "custom"
     ? (liveConfig ?? (slide.config as CustomSlideConfig | undefined))
     : undefined;
-  const slideBg = customCfg?.background === "transparent" ? "#FFFFFF"
+  const slideBg = customCfg?.background === "transparent" ? SLIDE_HEX.white
     : customCfg ? `#${customCfg.background}`
-    : "#FFFFFF";
+    : SLIDE_HEX.white;
 
   return (
     <div style={{
@@ -521,7 +522,7 @@ export function CustomCanvasReadOnly({
       ref={ref}
       style={{
         width: CANVAS_W, height: CANVAS_H,
-        background: config.background === "transparent" ? "#FFFFFF" : `#${config.background}`,
+        background: config.background === "transparent" ? SLIDE_HEX.white : `#${config.background}`,
         position: "relative", overflow: "hidden",
       }}
     >
@@ -619,8 +620,8 @@ function SpeakerNotesBar({ notes }: { notes: string }) {
         position: "absolute", left: 16, right: 16, bottom: 60,
         maxHeight: "22vh", overflowY: "auto",
         padding: "12px 16px", borderRadius: 8,
-        background: "rgba(0,0,0,0.72)", color: "#fff",
-        border: "1px solid rgba(255,255,255,0.12)",
+        background: SLIDE_RGBA.darkOverlayStrong, color: SLIDE_HEX.white,
+        border: `1px solid ${SLIDE_RGBA.whiteOverlay}`,
         fontSize: 14, lineHeight: 1.5,
         zIndex: 9,
         whiteSpace: "pre-wrap",

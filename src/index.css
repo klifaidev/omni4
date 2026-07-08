@@ -61,6 +61,27 @@
     --pvm-mix: 38 92% 60%;
     --pvm-base: 0 0% 8%;
 
+    /* Slide editor and chart palettes */
+    --chart-1: 352 85% 42%;
+    --chart-2: 216 26% 15%;
+    --chart-3: 176 78% 26%;
+    --chart-4: 24 95% 48%;
+    --chart-5: 217 91% 53%;
+    --chart-6: 262 83% 58%;
+    --chart-7: 142 71% 45%;
+    --chart-8: 328 73% 47%;
+
+    --data-source-ke30: 217 91% 60%;
+    --data-source-budget: 262 83% 58%;
+    --data-source-forecast: 38 92% 50%;
+    --data-source-rolling: 24 95% 48%;
+    --data-source-budget-real: 158 64% 42%;
+
+    --editor-selection: 217 91% 60%;
+    --editor-hover: 217 91% 60%;
+    --editor-guide: 217 91% 60%;
+    --editor-preflight-error: 0 84% 55%;
+
     /* Gradients */
     --gradient-bg: radial-gradient(ellipse at top left, hsl(240 40% 12%) 0%, hsl(240 30% 6%) 60%);
     --gradient-glow-blue: radial-gradient(circle at center, hsl(217 91% 60% / 0.18), transparent 70%);
@@ -125,6 +146,26 @@
     --glass-bg: 0 0% 100%;
     --glass-border: 220 20% 10%;
     --glass-border-opacity: 0.12;
+
+    --chart-1: 352 85% 42%;
+    --chart-2: 216 26% 15%;
+    --chart-3: 176 78% 26%;
+    --chart-4: 24 95% 48%;
+    --chart-5: 217 91% 53%;
+    --chart-6: 262 83% 58%;
+    --chart-7: 142 71% 45%;
+    --chart-8: 328 73% 47%;
+
+    --data-source-ke30: 217 91% 50%;
+    --data-source-budget: 262 83% 52%;
+    --data-source-forecast: 38 92% 45%;
+    --data-source-rolling: 24 95% 45%;
+    --data-source-budget-real: 158 64% 38%;
+
+    --editor-selection: 217 91% 50%;
+    --editor-hover: 217 91% 50%;
+    --editor-guide: 217 91% 50%;
+    --editor-preflight-error: 0 84% 55%;
 
     --gradient-bg: linear-gradient(135deg, hsl(220 30% 97%), hsl(220 20% 94%));
     --gradient-card: linear-gradient(135deg, hsl(0 0% 100% / 0.85), hsl(220 20% 98% / 0.7));

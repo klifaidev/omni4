@@ -290,22 +290,17 @@ export interface ChartStyle {
   analytics?: AnalyticsCfg;
 }
 
-export const DEFAULT_PALETTE = [
-  "#C8102E", "#1C2430", "#0F766E", "#7C3AED",
-  "#EA580C", "#2563EB", "#0EA5E9", "#16A34A",
-  "#DB2777", "#CA8A04", "#475569", "#9333EA",
-];
+import { SLIDE_BRAND_COLORS, SLIDE_CHART_PALETTE, SLIDE_HEX } from "@/lib/slideDesignTokens";
 
-export const BRAND_COLORS = [
-  "#C8102E", "#1C2430", "#FFFFFF", "#F8FAFC",
-  "#64748B", "#0F766E", "#2563EB", "#EA580C",
-];
+export const DEFAULT_PALETTE = SLIDE_CHART_PALETTE;
+
+export const BRAND_COLORS = SLIDE_BRAND_COLORS;
 
 function defaultAxis(title = ""): AxisStyle {
   return {
-    show: true, labelSize: 11, labelColor: "#64748B",
-    titleText: title, titleSize: 12, titleColor: "#1C2430",
-    ticks: true, lineColor: "#CBD5E1", lineWidth: 1,
+    show: true, labelSize: 11, labelColor: SLIDE_HEX.slate500,
+    titleText: title, titleSize: 12, titleColor: SLIDE_HEX.chart2,
+    ticks: true, lineColor: SLIDE_HEX.slate300, lineWidth: 1,
     min: null, max: null, format: "auto", decimals: 0,
   };
 }
@@ -313,34 +308,34 @@ function defaultAxis(title = ""): AxisStyle {
 export function defaultChartStyle(): ChartStyle {
   return {
     general: {
-      titleShow: true, titleSize: 16, titleColor: "#C8102E",
+      titleShow: true, titleSize: 16, titleColor: SLIDE_HEX.chart1,
       titleBold: true, titleItalic: false,
-      background: "#FFFFFF", borderColor: "#E2E8F0", borderWidth: 0,
+      background: SLIDE_HEX.white, borderColor: SLIDE_HEX.grid, borderWidth: 0,
       padding: 8, legendShow: true, legendPos: "bottom",
     },
     xAxis: defaultAxis(),
     yAxis: defaultAxis(),
     yAxis2: defaultAxis(),
-    grid: { show: true, color: "#E2E8F0", style: "dashed" },
+    grid: { show: true, color: SLIDE_HEX.grid, style: "dashed" },
     dataLabels: {
-      show: false, position: "above", size: 10, color: "#1C2430",
+      show: false, position: "above", size: 10, color: SLIDE_HEX.chart2,
       autoContrast: false, bold: false, italic: false,
       format: "auto", decimals: 0,
       showSeries: false, showCategory: false,
-      bgColor: "#FFFFFF", bgOpacity: 0,
-      borderColor: "#E2E8F0", borderWidth: 0,
+      bgColor: SLIDE_HEX.white, bgOpacity: 0,
+      borderColor: SLIDE_HEX.grid, borderWidth: 0,
     },
     series: [],
     bar: { mode: "grouped", gapPct: 20, cornerRadius: 0,
-           borderColor: "#FFFFFF", borderWidth: 0 },
+           borderColor: SLIDE_HEX.white, borderWidth: 0 },
     pie: { donutHolePct: 0, startAngle: 0, explodePct: 0,
            labelMode: "name-percent", slices: {} },
     bubble: { minSize: 60, maxSize: 600, fillOpacity: 0.6,
-              borderColor: "#1C2430", borderWidth: 1, showSizeLabel: false },
+              borderColor: SLIDE_HEX.chart2, borderWidth: 1, showSizeLabel: false },
     area: { stacked: false, lineOnTop: true },
     waterfall: {
-      positiveColor: "#16A34A", negativeColor: "#C8102E", totalColor: "#1C2430",
-      connectors: true, connectorColor: "#94A3B8", connectorStyle: "dashed",
+      positiveColor: SLIDE_HEX.chart7, negativeColor: SLIDE_HEX.chart1, totalColor: SLIDE_HEX.chart2,
+      connectors: true, connectorColor: SLIDE_HEX.slate400, connectorStyle: "dashed",
       showRunningTotal: false, labelPos: "above", gapPct: 30, classify: {},
       mode: "pvm",
       pvm: { base: null, comp: null, periodMode: "month", decomposition: "effects", topN: 6, comparisonMode: "prev-month" },
@@ -348,25 +343,25 @@ export function defaultChartStyle(): ChartStyle {
     funnel: { direction: "ttb", gapPct: 4, labelMode: "name-percent", labelPos: "right", slices: {} },
     treemap: {
       colorScheme: "categorical",
-      gradientFrom: "#C8102E", gradientTo: "#1C2430",
+      gradientFrom: SLIDE_HEX.chart1, gradientTo: SLIDE_HEX.chart2,
       showCategoryLabel: true, showValueLabel: false,
-      labelSize: 11, labelColor: "#FFFFFF",
-      borderColor: "#FFFFFF", borderWidth: 1,
+      labelSize: 11, labelColor: SLIDE_HEX.white,
+      borderColor: SLIDE_HEX.white, borderWidth: 1,
     },
     radar: {
       fillArea: true, fillOpacity: 0.35,
-      gridShape: "polygon", gridColor: "#E2E8F0",
-      axisLabelSize: 11, axisLabelColor: "#64748B",
+      gridShape: "polygon", gridColor: SLIDE_HEX.grid,
+      axisLabelSize: 11, axisLabelColor: SLIDE_HEX.slate500,
     },
     histogram: {
       bins: 10, binWidth: null,
-      barColor: "#C8102E", borderColor: "#FFFFFF", borderWidth: 0,
+      barColor: SLIDE_HEX.chart1, borderColor: SLIDE_HEX.white, borderWidth: 0,
       cumulative: false,
     },
     boxplot: {
-      boxFillColor: "#C8102E",
-      whiskerColor: "#1C2430", whiskerWidth: 1.5,
-      medianColor: "#FFFFFF", medianWidth: 2,
+      boxFillColor: SLIDE_HEX.chart1,
+      whiskerColor: SLIDE_HEX.chart2, whiskerWidth: 1.5,
+      medianColor: SLIDE_HEX.white, medianWidth: 2,
       showMean: false, showOutliers: true,
     },
     conditionalRules: [],
@@ -374,7 +369,7 @@ export function defaultChartStyle(): ChartStyle {
     analytics: {
       refLines: [],
       trendline: { enabled: false, type: "linear", maWindow: 3,
-                   color: "#7C3AED", thickness: 2, style: "dashed", showR2: false },
+                   color: SLIDE_HEX.chart6, thickness: 2, style: "dashed", showR2: false },
       forecast: { enabled: false, periods: 3, band: false },
     },
   };

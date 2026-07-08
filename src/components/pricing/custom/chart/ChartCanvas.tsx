@@ -14,6 +14,8 @@ import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import { KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
+import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
+import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 
 const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
   KPI_MEASURES.map((m) => [m.id, m.label]),
@@ -29,12 +31,6 @@ function safeMeasureForSource(
 ): KpiMeasureId | undefined {
   if (!measure) return undefined;
   return isMeasureAvailable(measure, dataSource) ? measure : undefined;
-}
-function dataSourceLabel(ds: ChartBlock["dataSource"]) {
-  if (ds === "budget") return "Budget";
-  if (ds === "forecast") return "Forecast";
-  if (ds === "rolling") return "Rolling";
-  return "Real";
 }
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
@@ -134,13 +130,13 @@ function makeLabelContent(opts: {
     if (dl.autoContrast) {
       const insidePos = ["inside-end", "inside-base", "center", "inside"].includes(dl.position);
       const bgRef = (cs.general?.background && cs.general.background !== "transparent")
-        ? cs.general.background : "#FFFFFF";
+        ? cs.general.background : SLIDE_HEX.white;
       const ref = dl.bgOpacity > 0
         ? dl.bgColor
         : insidePos && seriesColor
           ? seriesColor
           : bgRef;
-      color = luminance(ref) > 0.55 ? "#000000" : "#FFFFFF";
+      color = luminance(ref) > 0.55 ? SLIDE_HEX.black : SLIDE_HEX.white;
     }
     const fs = dl.size;
     const padX = 3, padY = 2;
@@ -598,7 +594,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "center",
             justifyContent: "center", height: "100%", gap: 6, opacity: 0.45,
-            color: "#1d4ed8",
+            color: SLIDE_HEX.blueDark,
           }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -663,7 +659,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
 
   const renderLegend = style.general.legendShow ? (
     <Legend verticalAlign={legendVerticalAlign} align={legendAlign} layout={legendLayout}
-      wrapperStyle={{ fontSize: 11, color: "#1C2430" }}
+      wrapperStyle={{ fontSize: 11, color: SLIDE_HEX.chart2 }}
       content={legendDim ? (
         <CustomLegend
           ownFilter={ownFilter}
@@ -817,8 +813,8 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
           .filter((p) => chartRows.some((r) => String(r.__period) === p))
           .map((p) => (
             <ReferenceArea key={`__pf_${p}`} x1={p} x2={p} yAxisId="left"
-              fill="#3b82f6" fillOpacity={0.10}
-              stroke="#3b82f6" strokeOpacity={0.35} strokeDasharray="3 3"
+              fill={SLIDE_HEX.blue} fillOpacity={0.10}
+              stroke={SLIDE_HEX.blue} strokeOpacity={0.35} strokeDasharray="3 3"
               ifOverflow="extendDomain" />
           ))}
         {renderLegend}
@@ -1076,9 +1072,9 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       const anchor: "start" | "end" | "middle" = inside ? "middle" : (x > cx ? "start" : "end");
       let color = dl.color;
       if (dl.autoContrast) {
-        const sb = (style.general?.background && style.general.background !== "transparent") ? style.general.background : "#FFFFFF";
-        const ref = dl.bgOpacity > 0 ? dl.bgColor : (inside ? (props.fill ?? "#FFFFFF") : sb);
-        color = luminance(ref) > 0.55 ? "#000000" : "#FFFFFF";
+        const sb = (style.general?.background && style.general.background !== "transparent") ? style.general.background : SLIDE_HEX.white;
+        const ref = dl.bgOpacity > 0 ? dl.bgColor : (inside ? (props.fill ?? SLIDE_HEX.white) : sb);
+        color = luminance(ref) > 0.55 ? SLIDE_HEX.black : SLIDE_HEX.white;
       }
       const padX = 3, padY = 2;
       const approxW = text.length * dl.size * 0.55 + padX * 2;
@@ -1337,7 +1333,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
     const max = allFlat.length ? allFlat.reduce((a, b) => a > b ? a : b, -Infinity) : 1;
     if (min === max && allFlat.length > 0) {
       chart = (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 13, color: "#94A3B8" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 13, color: SLIDE_HEX.slate400 }}>
           Sem variação nos dados
         </div>
       );
@@ -1415,14 +1411,14 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
         display: "flex", flexDirection: "column", gap: 2, pointerEvents: "none" }}>
         {incoming.map((f) => (
           <span key={f.sourceBlockId + f.dimension} style={{
-            background: "rgba(30,58,138,0.85)", color: "#fff", fontSize: 10,
+            background: SLIDE_RGBA.incomingBadgeBg, color: SLIDE_HEX.white, fontSize: 10,
             padding: "2px 6px", borderRadius: 9999, fontWeight: 600,
           }}>
             {dimensionLabel(f.dimension)}: {f.values.join(", ")}
           </span>
         ))}
         {!participates && (
-          <span style={{ background: "#475569", color: "#fff", fontSize: 9,
+          <span style={{ background: SLIDE_HEX.slate, color: SLIDE_HEX.white, fontSize: 9,
             padding: "1px 5px", borderRadius: 4 }}>🔒 sem filtro</span>
         )}
       </div>
@@ -1432,17 +1428,17 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
           style={{
             position: "absolute", top: 4, right: 4, zIndex: 10,
             display: "flex", alignItems: "center", gap: 4,
-            background: "rgba(59,130,246,0.12)",
-            border: "1px solid rgba(59,130,246,0.35)",
+            background: SLIDE_RGBA.editorSelectionPillBg,
+            border: `1px solid ${SLIDE_RGBA.editorSelectionPillBorder}`,
             borderRadius: 20, padding: "2px 8px",
             fontSize: 10, fontFamily: "Calibri,sans-serif",
-            color: "#1d4ed8", cursor: "pointer",
+            color: SLIDE_HEX.blueDark, cursor: "pointer",
             backdropFilter: "blur(2px)",
           }}
           onClick={(e) => { e.stopPropagation(); cf.clearFilter(block.id); }}
           title="Clique para limpar o filtro"
         >
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6" }} />
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: SLIDE_HEX.blue }} />
           {ownFilter.values.length === 1 ? ownFilter.values[0] : `${ownFilter.values.length} selecionados`}
           <span style={{ marginLeft: 2, opacity: 0.7 }}>×</span>
         </div>
@@ -1467,7 +1463,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
             fontFamily: "Calibri, sans-serif",
             fontSize: 12,
             fontWeight: 700,
-            color: budgetGap.value >= 0 ? "#16A34A" : "#C8102E",
+            color: budgetGap.value >= 0 ? SLIDE_HEX.chart7 : SLIDE_HEX.chart1,
             pointerEvents: "none",
             lineHeight: 1,
           }}>
@@ -1492,7 +1488,7 @@ function Wrapper({ children, style, hasIncoming }: {
     : undefined;
   // Subtle blue border when this chart is receiving filters from another block.
   // Honors any user-defined border first.
-  const incomingBorder = hasIncoming ? "1.5px solid rgba(59,130,246,0.4)" : undefined;
+  const incomingBorder = hasIncoming ? "1.5px solid hsl(var(--editor-selection) / 0.4)" : undefined;
   return (
     <div
       data-chart-canvas=""
@@ -1557,14 +1553,14 @@ function ActivePeriodTick(props: any) {
         height={h}
         rx={rx}
         ry={rx}
-        fill="#C8102E"
+        fill={SLIDE_HEX.chart1}
       />
       <text
         x={x}
         y={y + 4 + h / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        fill="#FFFFFF"
+        fill={SLIDE_HEX.white}
         fontSize={fs}
         fontWeight={600}
       >
@@ -1588,7 +1584,7 @@ function CrossingDot(props: any) {
   if (cx == null || cy == null || index == null) return null;
   const period = String(props.payload?.__period ?? "");
   const isCross = activePeriods.has(period);
-  const HIGHLIGHT = "#C8102E";
+  const HIGHLIGHT = SLIDE_HEX.chart1;
   const r = isCross ? Math.max(baseR + 3, 6) : baseR;
   return (
     <circle cx={cx} cy={cy} r={r}
@@ -1597,7 +1593,7 @@ function CrossingDot(props: any) {
       strokeWidth={isCross ? 2 : 1}
       fillOpacity={isCross ? 1 : strokeOpacity}
       style={isCross
-        ? { filter: "drop-shadow(0 0 4px rgba(200,16,46,0.65))" }
+        ? { filter: `drop-shadow(0 0 4px ${SLIDE_RGBA.haraldGlow})` }
         : undefined} />
   );
 }
@@ -1613,7 +1609,7 @@ interface SegmentOverlayProps {
 class SegmentOverlay extends React.Component<SegmentOverlayProps> {
   render() {
     const { activePeriods, formattedGraphicalItems = [],
-            highlightColor = "#C8102E" } = this.props;
+            highlightColor = SLIDE_HEX.chart1 } = this.props;
     if (!activePeriods || activePeriods.size === 0) return null;
     const segW = 4;
     const lines: JSX.Element[] = [];
@@ -1690,7 +1686,7 @@ function CustomLegend({ payload, ownFilter, legendDim, onLegendClick, emits, col
               cursor: emits ? "pointer" : "default",
               transition: "opacity 0.15s, border-color 0.15s, background 0.15s",
               fontSize: 11, fontFamily: "Calibri, sans-serif",
-              color: "#1C2430",
+              color: SLIDE_HEX.chart2,
             }}
           >
             <span style={{
@@ -1731,7 +1727,7 @@ function TreemapTile({ cfg, dl, fmt, dimmedNames, ...props }: any) {
   const fontWeight = dl?.bold ? 700 : 400;
   const fontStyle = dl?.italic ? "italic" : "normal";
   const fs = dl?.size ?? 11;
-  const fc = dl?.color ?? "#FFFFFF";
+  const fc = dl?.color ?? SLIDE_HEX.white;
   const op = dimmedNames && dimmedNames.has(name) ? 0.4 : 1;
   return (
     <g opacity={op}>

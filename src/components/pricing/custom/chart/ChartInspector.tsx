@@ -37,6 +37,8 @@ import { useMemo } from "react";
 import { Trash2, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSlideFilters } from "../SlideFilterContext";
+import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
+import { SLIDE_HEX } from "@/lib/slideDesignTokens";
 
 type Patch = Partial<ChartBlock>;
 
@@ -53,11 +55,11 @@ function rid(): string {
 }
 
 const PRESET_THUMB_COLORS: Record<StylePresetId, string[]> = {
-  default: ["#C8102E", "#1C2430", "#0F766E", "#7C3AED"],
-  minimal: ["#E2E8F0", "#CBD5E1", "#94A3B8", "#64748B"],
-  bold: ["#0B1220", "#C8102E", "#EA580C", "#2563EB"],
-  monochrome: ["#0B1220", "#334155", "#64748B", "#94A3B8"],
-  harald: ["#C8102E", "#1C2430", "#0F766E", "#EA580C"],
+  default: [SLIDE_HEX.chart1, SLIDE_HEX.chart2, SLIDE_HEX.chart3, SLIDE_HEX.chart6],
+  minimal: [SLIDE_HEX.grid, SLIDE_HEX.slate300, SLIDE_HEX.slate400, SLIDE_HEX.slate500],
+  bold: [SLIDE_HEX.ink, SLIDE_HEX.chart1, SLIDE_HEX.chart4, SLIDE_HEX.chart5],
+  monochrome: [SLIDE_HEX.ink, SLIDE_HEX.slate700, SLIDE_HEX.slate500, SLIDE_HEX.slate400],
+  harald: [SLIDE_HEX.chart1, SLIDE_HEX.chart2, SLIDE_HEX.chart3, SLIDE_HEX.chart4],
 };
 
 function unavailableMeasuresForSource(ds: ChartBlock["dataSource"]): readonly string[] {
@@ -72,13 +74,6 @@ function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefi
   if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
-}
-
-function dataSourceLabel(ds: BlockDataSource): string {
-  if (ds === "budget") return "Budget";
-  if (ds === "forecast") return "Forecast";
-  if (ds === "rolling") return "Rolling";
-  return "Real";
 }
 
 function availableMeasuresForSource(ds: BlockDataSource) {
@@ -295,10 +290,10 @@ export function ChartInspector({
         ...block.style,
         series: [
           ...style.series.filter((s) => !defaults.some((d) => d.name === s.key)),
-          { key: "Volume Real", color: "#C8102E", asLine: true },
-          { key: "Volume Budget", color: "#1C2430", asLine: true, lineStyle: "dashed" },
-          { key: "Volume Forecast", color: "#2563EB", asLine: true, lineStyle: "dotted" },
-          { key: "Volume Rolling", color: "#F59E0B", asLine: true, lineStyle: "dashed" },
+          { key: "Volume Real", color: SLIDE_HEX.chart1, asLine: true },
+          { key: "Volume Budget", color: SLIDE_HEX.chart2, asLine: true, lineStyle: "dashed" },
+          { key: "Volume Forecast", color: SLIDE_HEX.chart5, asLine: true, lineStyle: "dotted" },
+          { key: "Volume Rolling", color: SLIDE_HEX.forecastOrange, asLine: true, lineStyle: "dashed" },
         ],
       },
     } as Patch);
@@ -1399,7 +1394,7 @@ function AnalyticsSection({ analytics, onChange }: {
     if (refs.length >= 3) return;
     const nrl: ReferenceLineCfg = {
       id: rid(), value: 0, label: `Linha ${refs.length + 1}`,
-      color: "#7C3AED", style: "dashed", thickness: 1.5,
+      color: SLIDE_HEX.chart6, style: "dashed", thickness: 1.5,
     };
     onChange({ refLines: [...refs, nrl] });
   };
@@ -1516,7 +1511,7 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
 }) {
   const add = () => {
     if (rules.length >= 5) return;
-    onRules([...rules, { id: rid(), op: ">", threshold: 0, color: "#16A34A" }]);
+    onRules([...rules, { id: rid(), op: ">", threshold: 0, color: SLIDE_HEX.chart7 }]);
   };
   const upd = (i: number, p: Partial<ConditionalRule>) => {
     const next = [...rules]; next[i] = { ...next[i], ...p };
@@ -1577,7 +1572,7 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
         </div>
       ))}
       <Row label="Cor padrão">
-        <ColorField value={defaultColor || "#94A3B8"} onChange={onDefault} />
+        <ColorField value={defaultColor || SLIDE_HEX.slate400} onChange={onDefault} />
       </Row>
     </Section>
   );

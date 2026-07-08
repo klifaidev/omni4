@@ -100,38 +100,13 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-function dataSourceLabel(ds: BlockDataSource | undefined): string {
-  if (ds === "budget") return "Budget";
-  if (ds === "forecast") return "Forecast";
-  if (ds === "rolling") return "Rolling";
-  if (ds === "budget_real") return "Real Bud.";
-  return "KE30";
-}
-
-function dataSourceBadgeClass(ds: BlockDataSource | undefined): string {
-  if (ds === "budget") return "bg-purple-500/15 text-purple-600 dark:text-purple-300";
-  if (ds === "forecast") return "bg-amber-500/15 text-amber-700 dark:text-amber-200";
-  if (ds === "rolling") return "bg-orange-500/15 text-orange-700 dark:text-orange-200";
-  if (ds === "budget_real") return "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
-  return "bg-blue-500/15 text-blue-600 dark:text-blue-300";
-}
-
-function dataSourceActiveClass(ds: BlockDataSource): string {
-  if (ds === "budget") return "bg-purple-500/20 text-purple-700 dark:text-purple-200";
-  if (ds === "forecast") return "bg-amber-500/20 text-amber-800 dark:text-amber-100";
-  if (ds === "rolling") return "bg-orange-500/20 text-orange-800 dark:text-orange-100";
-  if (ds === "budget_real") return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-200";
-  return "bg-blue-500/20 text-blue-700 dark:text-blue-200";
-}
-
-function dataSourceDescription(ds: BlockDataSource | undefined): string {
-  if (ds === "budget") return "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissao.";
-  if (ds === "forecast") return "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto.";
-  if (ds === "rolling") return "Rolling: DRE por SKU/mes com receita, volume, custos, frete, comissao e CM.";
-  if (ds === "budget_real") return "Realizado da planilha Budget (legado). Sem MB/Frete/Comissao.";
-  return "Detalhada (KE30): receita, custos, margens, frete, comissao.";
-}
+import {
+  dataSourceActiveClass,
+  dataSourceBadgeClass,
+  dataSourceDescription,
+  dataSourceLabel,
+} from "@/lib/slideDataSourceTheme";
+import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
@@ -1482,7 +1457,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
               style={{
                 width: CANVAS_W,
                 height: CANVAS_H,
-                background: config.background === "transparent" ? "#FFFFFF" : `#${config.background}`,
+                background: config.background === "transparent" ? SLIDE_HEX.white : `#${config.background}`,
                 backgroundImage: config.backgroundImage ? `url(${config.backgroundImage})` : undefined,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
@@ -1526,17 +1501,17 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                   data-edit-only="true"
                   style={{
                     position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998,
-                    border: "2px solid rgba(59,130,246,0.55)",
+                    border: `2px solid ${SLIDE_RGBA.editorSelectionBorder}`,
                     borderRadius: 2,
                     animation: "omni-paste-pulse 2s ease-in-out infinite",
                   }}
                 >
-                  <style>{`@keyframes omni-paste-pulse{0%,100%{border-color:rgba(59,130,246,0.55)}50%{border-color:rgba(59,130,246,0.15)}}`}</style>
+                  <style>{`@keyframes omni-paste-pulse{0%,100%{border-color:hsl(var(--editor-selection) / 0.55)}50%{border-color:hsl(var(--editor-selection) / 0.15)}}`}</style>
                   <div style={{
                     position: "absolute", bottom: 10, left: "50%",
                     transform: "translateX(-50%)",
-                    background: "rgba(37,99,235,0.82)",
-                    color: "#fff", padding: "3px 10px",
+                    background: SLIDE_RGBA.editorSelectionBadge,
+                    color: SLIDE_HEX.white, padding: "3px 10px",
                     borderRadius: 4, fontSize: 10, whiteSpace: "nowrap",
                     letterSpacing: "0.02em",
                   }}>
@@ -1931,11 +1906,11 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
               >
                 {guides.v.map((x, i) => (
                   <line key={`gv-${i}`} x1={x} x2={x} y1={0} y2={CANVAS_H}
-                    stroke="#3B82F6" strokeWidth={1} />
+                    stroke={SLIDE_HEX.blue} strokeWidth={1} />
                 ))}
                 {guides.h.map((y, i) => (
                   <line key={`gh-${i}`} y1={y} y2={y} x1={0} x2={CANVAS_W}
-                    stroke="#3B82F6" strokeWidth={1} />
+                    stroke={SLIDE_HEX.blue} strokeWidth={1} />
                 ))}
               </svg>
 
@@ -1947,8 +1922,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                     position: "absolute",
                     left: marquee.x, top: marquee.y,
                     width: marquee.w, height: marquee.h,
-                    border: "1px dashed #3B82F6",
-                    background: "rgba(59,130,246,0.08)",
+                    border: `1px dashed ${SLIDE_HEX.blue}`,
+                    background: SLIDE_RGBA.editorSelectionBg,
                     pointerEvents: "none",
                     zIndex: 999999,
                   }}
@@ -1974,12 +1949,12 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                   >
                     <svg width={12} height={18} viewBox="0 0 12 18" style={{ display: "block" }}>
                       <path d="M0 0 L0 14 L4 10 L7 17 L9 16 L6 9 L11 9 Z"
-                        fill={c.color} stroke="#fff" strokeWidth={1} />
+                        fill={c.color} stroke={SLIDE_HEX.white} strokeWidth={1} />
                     </svg>
                     <span
                       style={{
                         position: "absolute", top: 14, left: 12,
-                        background: c.color, color: "#fff",
+                        background: c.color, color: SLIDE_HEX.white,
                         fontSize: 10, padding: "1px 6px",
                         borderRadius: 999, whiteSpace: "nowrap",
                         fontWeight: 500,
@@ -2765,7 +2740,7 @@ const CHECKER_BG: React.CSSProperties = {
     "linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.08) 75%)",
   backgroundSize: "8px 8px",
   backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0",
-  backgroundColor: "#FFFFFF",
+  backgroundColor: SLIDE_HEX.white,
 };
 
 /** Background color picker with "Sem fundo" toggle. value: hex sem '#' OR "transparent". */
@@ -3637,8 +3612,8 @@ function DreBlockInspector({ block, onChange }: {
       <Section title="Formatação Condicional" defaultOpen={false}>
         {(() => {
           const cf = block.conditionalFormat ?? {
-            enabled: false, scope: "row" as const, colorMin: "#DC2626",
-            colorMid: "#FFFFFF", colorMax: "#16A34A",
+            enabled: false, scope: "row" as const, colorMin: SLIDE_HEX.danger,
+            colorMid: SLIDE_HEX.white, colorMax: SLIDE_HEX.success,
             applyTo: "cell" as const, linhasAtivas: [],
           };
           const upd = (patch: Partial<NonNullable<DreBlock["conditionalFormat"]>>) =>
@@ -3797,12 +3772,12 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
   if (!kinds.includes(block.kind)) return null;
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
   const bgColor = ds === "ke30"
-    ? "rgba(37,99,235,0.92)"
+    ? SLIDE_RGBA.editorSelectionBadgeStrong
     : ds === "budget"
-      ? "rgba(147,51,234,0.92)"
+      ? "hsl(var(--data-source-budget) / 0.92)"
       : ds === "forecast"
-        ? "rgba(217,119,6,0.92)"
-      : "rgba(5,150,105,0.92)";
+        ? "hsl(var(--data-source-forecast) / 0.92)"
+      : "hsl(var(--data-source-budget-real) / 0.92)";
   const dsLabel = dataSourceLabel(ds);
   return (
     <div
@@ -3818,7 +3793,7 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
         fontWeight: 700,
         letterSpacing: 0.5,
         textTransform: "uppercase",
-        color: "#fff",
+        color: SLIDE_HEX.white,
         background: bgColor,
         boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
         pointerEvents: "none",
@@ -4088,7 +4063,7 @@ function GroupOverlay({
     right: right === "auto" ? "auto" : right,
     bottom: bottom === "auto" ? "auto" : bottom,
     width: 10, height: 10,
-    background: "#3B82F6",
+    background: SLIDE_HEX.blue,
     border: "1.5px solid white",
     borderRadius: 2,
     cursor,
@@ -4105,7 +4080,7 @@ function GroupOverlay({
           position: "absolute",
           left: bb.x - 4, top: bb.y - 4,
           width: bb.w + 8, height: bb.h + 8,
-          border: `1px dashed ${active ? "#3B82F6" : "rgba(59,130,246,0.35)"}`,
+          border: `1px dashed ${active ? SLIDE_HEX.blue : SLIDE_RGBA.editorSelectionBorderSoft}`,
           borderRadius: 4,
           pointerEvents: "none",
           zIndex: showHandles ? 999996 : 0,
