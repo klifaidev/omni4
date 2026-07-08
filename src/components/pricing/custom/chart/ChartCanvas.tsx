@@ -1674,6 +1674,9 @@ function CustomLegend({ payload, ownFilter, legendDim, onLegendClick, emits, col
           <button
             key={entry.value}
             type="button"
+            aria-label={emits ? `Filtrar série ${entry.value}` : `Série ${entry.value}`}
+            aria-pressed={emits && isFilterDim ? isActive : undefined}
+            disabled={!emits}
             onClick={(e) => { e.stopPropagation(); if (emits) onLegendClick(entry.value, e.shiftKey); }}
             style={{
               display: "flex", alignItems: "center", gap: 5,

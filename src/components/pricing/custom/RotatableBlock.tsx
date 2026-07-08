@@ -89,6 +89,8 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       const startY = e.clientY;
       const origX = x; const origY = y;
       const origW = w; const origH = h;
+      const lockAspect = e.shiftKey;
+      const aspect = origW / Math.max(1, origH);
       const rad = (rotation * Math.PI) / 180;
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
@@ -106,6 +108,10 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
         if (dir.includes("s")) nh = Math.max(30, origH + localDy);
         if (dir.includes("w")) nw = Math.max(50, origW - localDx);
         if (dir.includes("n")) nh = Math.max(30, origH - localDy);
+        if (lockAspect) {
+          if (dir.includes("e") || dir.includes("w")) nh = Math.max(30, nw / aspect);
+          else nw = Math.max(50, nh * aspect);
+        }
         const nx = centerX - nw / 2;
         const ny = centerY - nh / 2;
 
@@ -129,7 +135,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       <div
         ref={ref}
         {...rest}
-        className={cn("group/block transition-[outline,box-shadow] duration-150", className)}
+        className={cn("group/block transition-[outline,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background", className)}
         style={{
           position: "absolute",
           left: x,

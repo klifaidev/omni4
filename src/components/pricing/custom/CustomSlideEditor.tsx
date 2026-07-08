@@ -286,6 +286,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
 
   const [fitScale, setFitScale] = useState(1);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // Inline text editing (double-click no bloco title/text).
@@ -1145,7 +1146,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
           <div className="absolute left-[calc(100%+8px)] top-0 z-50 flex h-full w-[260px] flex-col rounded-lg border border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl">
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocos</span>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)}>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)} aria-label="Fechar painel de blocos">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -1628,6 +1629,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
                 const useRotatableBlock = isRotatable && rotation !== 0;
+                const blockAriaLabel = `${isSelected ? "Selecionado: " : ""}${BLOCK_LABELS[blk.kind]}`;
                 // Shape-specific Rnd config ? contextual handles override.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked && !readOnly;
                 let shapeDisableDrag = !!blk.locked || readOnly;
@@ -1677,6 +1679,16 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                           selectBlock(blk.id);
                         } : undefined}
                         style={{ zIndex: blk.z }}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={blockAriaLabel}
+                        aria-pressed={isSelected}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            selectBlock(blk.id, { additive: e.shiftKey });
+                          }
+                        }}
                       >
                         <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
@@ -1739,9 +1751,24 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                         position={{ x: blk.x, y: blk.y }}
                         bounds="parent"
                         scale={scale}
-                        lockAspectRatio={shapeLockAspect}
+                        lockAspectRatio={shapeLockAspect || aspectResizeIds.has(blk.id)}
                         disableDragging={shapeDisableDrag}
                         enableResizing={shapeResize}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={blockAriaLabel}
+                        aria-pressed={isSelected}
+                        onKeyDown={(e: React.KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            selectBlock(blk.id, { additive: e.shiftKey });
+                          }
+                        }}
+                        onResizeStart={(e) => {
+                          if ((e as MouseEvent).shiftKey) {
+                            setAspectResizeIds((prev) => new Set(prev).add(blk.id));
+                          }
+                        }}
                         onDragStart={(_e, _d) => {
                           if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
                         }}
@@ -1780,6 +1807,11 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                           }
                         }}
                         onResizeStop={(_, __, refEl, ___, pos) => {
+                          setAspectResizeIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(blk.id);
+                            return next;
+                          });
                           setGuides({ v: [], h: [] });
                           let w = parseInt(refEl.style.width, 10);
                           let h = parseInt(refEl.style.height, 10);
@@ -1817,7 +1849,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                         }}
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
                         className={cn(
-                          "group/block transition-[outline,box-shadow] duration-150",
+                          "group/block transition-[outline,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           isSelected
                             ? "outline outline-2 outline-offset-1 outline-primary"
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
@@ -2082,12 +2114,14 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         <div className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border/40 bg-card/40 px-2 py-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => { if (canEdit()) undoAction(); }} disabled={!undoRedo.canUndo || readOnly}
-            title={undoRedo.undoLabel ? `Desfazer: ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer (Ctrl+Z)"}>
+            title={undoRedo.undoLabel ? `Desfazer: ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer (Ctrl+Z)"}
+            aria-label={undoRedo.undoLabel ? `Desfazer ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer"}>
             <Undo2 className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => { if (canEdit()) redoAction(); }} disabled={!undoRedo.canRedo || readOnly}
-            title={undoRedo.redoLabel ? `Refazer: ${undoRedo.redoLabel.toLowerCase()}` : "Refazer (Ctrl+Shift+Z)"}>
+            title={undoRedo.redoLabel ? `Refazer: ${undoRedo.redoLabel.toLowerCase()}` : "Refazer (Ctrl+Shift+Z)"}
+            aria-label={undoRedo.redoLabel ? `Refazer ${undoRedo.redoLabel.toLowerCase()}` : "Refazer"}>
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
@@ -2129,12 +2163,13 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 className="min-w-[42px] rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
                 onClick={() => setZoomEditing(true)}
                 title="Editar zoom"
+                aria-label={`Editar zoom atual: ${Math.round(prefs.zoom * 100)}%`}
               >
                 {Math.round(prefs.zoom * 100)}%
               </button>
             )}
             <Button size="icon" variant="ghost" className="h-6 w-6"
-              onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela (Ctrl+0)">
+              onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela (Ctrl+0)" aria-label="Ajustar zoom à tela">
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -2142,7 +2177,9 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
           <Button size="icon" variant={prefs.gridEnabled ? "default" : "ghost"}
             className="h-7 w-7"
             onClick={() => prefs.setGridEnabled(!prefs.gridEnabled)}
-            title={prefs.gridEnabled ? "Grade ligada ? clique para desligar" : "Ativar grade"}>
+            title={prefs.gridEnabled ? "Grade ligada - clique para desligar" : "Ativar grade"}
+            aria-label={prefs.gridEnabled ? "Desativar grade" : "Ativar grade"}
+            aria-pressed={prefs.gridEnabled}>
             <Grid3x3 className="h-3.5 w-3.5" />
           </Button>
           {prefs.gridEnabled && (
@@ -2170,6 +2207,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
             className="relative h-7 w-7"
             onClick={() => setShowLayers((s) => !s)}
             title="Painel de camadas"
+            aria-label={showLayers ? "Ocultar painel de camadas" : "Mostrar painel de camadas"}
+            aria-pressed={showLayers}
           >
             <LayersIcon className="h-3.5 w-3.5" />
             {hiddenCount > 0 && (
@@ -2181,7 +2220,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => setShortcutsOpen(true)}
-            title="Atalhos de teclado (?)">
+            title="Atalhos de teclado (?)"
+            aria-label="Abrir ajuda de atalhos de teclado">
             <HelpCircle className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -2212,6 +2252,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
                 onClick={() => clearSelection()}
                 title="Fechar seleção"
+                aria-label="Limpar selecao"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -2243,13 +2284,13 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
               <div className="flex items-center justify-between">
                 <Badge variant="secondary" className="text-[10px]">{BLOCK_LABELS[selected.kind]}</Badge>
                 <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={readOnly} onClick={() => bringForward(selected.id)} title="Trazer pra frente">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={readOnly} onClick={() => bringForward(selected.id)} title="Trazer para frente" aria-label="Trazer bloco para frente">
                     <ArrowUp className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => sendBack(selected.id)} title="Enviar pra trás">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => sendBack(selected.id)} title="Enviar para tras" aria-label="Enviar bloco para tras">
                     <ArrowDown className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicateBlock(selected.id)} title="Duplicar">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicateBlock(selected.id)} title="Duplicar" aria-label="Duplicar bloco">
                     <CopyIcon className="h-3.5 w-3.5" />
                   </Button>
                   {(
@@ -2258,6 +2299,9 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                       variant={copiedStyle.hasCopy && copiedStyle.sourceId === selected.id ? "default" : "ghost"}
                       className="h-7 w-7"
                       disabled={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && !canPasteElementStyleAction(selected.id)}
+                      aria-label={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id
+                        ? "Colar estilo neste bloco"
+                        : "Copiar estilo deste bloco"}
                       onClick={() => {
                         if (copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && canPasteElementStyleAction(selected.id)) {
                           if (pasteElementStyleAction(selected.id)) toast.success("Estilo colado");
@@ -2273,12 +2317,14 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                   )}
                   <Button size="icon" variant="ghost" className="h-7 w-7"
                     onClick={() => toggleLock(selected.id)}
-                    title={selected.locked ? "Desbloquear posição" : "Bloquear posição"}>
+                    title={selected.locked ? "Desbloquear posicao" : "Bloquear posicao"}
+                    aria-label={selected.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
+                    aria-pressed={!!selected.locked}>
                     {selected.locked
                       ? <Unlock className="h-3.5 w-3.5" />
                       : <Lock className="h-3.5 w-3.5" />}
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={() => removeBlock(selected.id)} title="Remover">
+                  <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={() => removeBlock(selected.id)} title="Remover" aria-label="Remover bloco">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -2430,25 +2476,25 @@ function FloatingBlockToolbar({
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onStyle} title="Editar estilo">
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onStyle} title="Editar estilo" aria-label="Editar estilo do bloco">
         <Paintbrush className="h-3.5 w-3.5" />
       </Button>
       <Separator orientation="vertical" className="h-5" />
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onBack} title="Enviar para trás">
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onBack} title="Enviar para trás" aria-label="Enviar bloco para trás">
         <ArrowDown className="h-3.5 w-3.5" />
       </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onForward} title="Trazer para frente">
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onForward} title="Trazer para frente" aria-label="Trazer bloco para frente">
         <ArrowUp className="h-3.5 w-3.5" />
       </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDuplicate} title="Duplicar">
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDuplicate} title="Duplicar" aria-label="Duplicar bloco">
         <CopyIcon className="h-3.5 w-3.5" />
       </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onComment} title="Comentar">
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onComment} title="Comentar" aria-label="Comentar no bloco">
         <MessageSquare className="h-3.5 w-3.5" />
       </Button>
       <Popover>
         <PopoverTrigger asChild>
-          <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações">
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações" aria-label="Abrir mais ações do bloco">
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
@@ -2499,11 +2545,21 @@ function SortableLayerItem({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       className={cn(
-        "group rounded-md border border-transparent px-1.5 py-1.5 text-[10px] cursor-pointer select-none transition-colors",
+        "group rounded-md border border-transparent px-1.5 py-1.5 text-[10px] cursor-pointer select-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         isSelected ? "border-primary/40 bg-primary/10" : "hover:border-border/60 hover:bg-secondary/60",
         blk.hidden && "opacity-50",
       )}
       onClick={onSelect}
+      tabIndex={0}
+      role="button"
+      aria-label={`Camada ${blockLayerName(blk)}`}
+      aria-pressed={isSelected}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
     >
       <div className="flex items-center gap-1">
         <span
@@ -2538,6 +2594,8 @@ function SortableLayerItem({
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
           title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
+          aria-label={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
+          aria-pressed={!blk.hidden}
         >
           {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
         </Button>
@@ -2548,6 +2606,8 @@ function SortableLayerItem({
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
           title={blk.locked ? "Desbloquear posicao" : "Bloquear posicao"}
+          aria-label={blk.locked ? "Desbloquear posição do bloco" : "Bloquear posição do bloco"}
+          aria-pressed={!!blk.locked}
         >
           {blk.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
         </Button>
@@ -2558,6 +2618,7 @@ function SortableLayerItem({
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToFront(); }}
           title="Trazer para frente de tudo"
+          aria-label="Trazer bloco para a frente de tudo"
         >
           <ChevronsUp className="h-3 w-3" />
         </Button>
@@ -2568,6 +2629,7 @@ function SortableLayerItem({
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToBack(); }}
           title="Enviar para o fundo"
+          aria-label="Enviar bloco para o fundo"
         >
           <ChevronsDown className="h-3 w-3" />
         </Button>
@@ -2577,6 +2639,7 @@ function SortableLayerItem({
           variant="ghost"
           className="h-6 w-6 hover:bg-destructive/20 hover:text-destructive"
           title="Excluir bloco"
+          aria-label="Excluir bloco"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         >
           <Trash2 className="h-3 w-3" />
@@ -3617,14 +3680,14 @@ function TextTitleInspector({ block, onChange }: {
             onChange={(v) => onChange({ letterSpacing: v })} />
         </Row>
         <Row label="Altura linha">
-          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="?"
+          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="x"
             onChange={(v) => onChange({ lineHeight: v })} />
         </Row>
       </Section>
 
       <Section title="Rotação" defaultOpen={false}>
         <Row label="Girar">
-          <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="?"
+          <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="deg"
             onChange={(v) => onChange({ rotation: v })} />
         </Row>
         <Row label="">
@@ -4133,13 +4196,15 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
           <Button size="icon" variant="ghost" className="h-7 w-7"
             disabled={readOnly}
             onClick={() => { if (canEdit()) duplicateBlocksAction(selectedIds); }}
-            title="Duplicar todos (Ctrl+D)">
+            title="Duplicar todos (Ctrl+D)"
+            aria-label="Duplicar blocos selecionados">
             <CopyIcon className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive"
             disabled={readOnly}
             onClick={() => { if (canEdit()) deleteBlocksAction(selectedIds); }}
-            title="Excluir todos (Del)">
+            title="Excluir todos (Del)"
+            aria-label="Excluir blocos selecionados">
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -4150,22 +4215,22 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Alinhamento</Label>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          <Button size="icon" variant="outline" className="h-8" title="Esquerda" onClick={() => align("left")}>
+          <Button size="icon" variant="outline" className="h-8" title="Esquerda" aria-label="Alinhar à esquerda" onClick={() => align("left")}>
             <AlignStartVertical className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Centro horizontal" onClick={() => align("centerH")}>
+          <Button size="icon" variant="outline" className="h-8" title="Centro horizontal" aria-label="Centralizar horizontalmente" onClick={() => align("centerH")}>
             <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Direita" onClick={() => align("right")}>
+          <Button size="icon" variant="outline" className="h-8" title="Direita" aria-label="Alinhar à direita" onClick={() => align("right")}>
             <AlignEndVertical className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Topo" onClick={() => align("top")}>
+          <Button size="icon" variant="outline" className="h-8" title="Topo" aria-label="Alinhar ao topo" onClick={() => align("top")}>
             <AlignStartHorizontal className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Centro vertical" onClick={() => align("centerV")}>
+          <Button size="icon" variant="outline" className="h-8" title="Centro vertical" aria-label="Centralizar verticalmente" onClick={() => align("centerV")}>
             <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Base" onClick={() => align("bottom")}>
+          <Button size="icon" variant="outline" className="h-8" title="Base" aria-label="Alinhar à base" onClick={() => align("bottom")}>
             <AlignEndHorizontal className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -4192,12 +4257,14 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
       <div className="grid grid-cols-2 gap-1">
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly}
-          onClick={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}>
+          onClick={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}
+          aria-label="Agrupar blocos selecionados">
           <GroupIcon className="h-3.5 w-3.5" /> Agrupar
         </Button>
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly || !hasGroup}
-          onClick={() => { if (canEdit()) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); } }}>
+          onClick={() => { if (canEdit()) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); } }}
+          aria-label="Desagrupar blocos selecionados">
           <UngroupIcon className="h-3.5 w-3.5" /> Desagrupar
         </Button>
       </div>
@@ -4570,24 +4637,24 @@ function SpeakerNotesBar({ value, onChange }: { value: string; onChange: (v: str
 // ---------------------------------------------------------------------------
 // ShortcutsDialog ? painel de referência rápida dos atalhos do editor.
 function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "?" : "Ctrl";
   const sections: { title: string; items: [string, string][] }[] = [
     {
-      title: "Edição",
+      title: "Edicao",
       items: [
         [`${mod} + Z`, "Desfazer"],
-        [`${mod} + Y  ·  ${mod} + Shift + Z`, "Refazer"],
+        [`${mod} + Y  ?  ${mod} + Shift + Z`, "Refazer"],
         [`${mod} + D`, "Duplicar bloco selecionado"],
-        ["Delete  ·  Backspace", "Excluir bloco selecionado"],
+        ["Delete  ?  Backspace", "Excluir bloco selecionado"],
         [`${mod} + A`, "Selecionar todos os blocos"],
-        ["Esc", "Desselecionar / sair da edição inline"],
+        ["Esc", "Desselecionar / sair da edicao inline"],
       ],
     },
     {
-      title: "Área de transferência",
+      title: "Area de transferencia",
       items: [
         [`${mod} + C`, "Copiar bloco"],
-        [`${mod} + V`, "Colar bloco (mantém ao mudar de slide)"],
+        [`${mod} + V`, "Colar bloco (mant?m ao mudar de slide)"],
         [`${mod} + X`, "Cortar bloco"],
       ],
     },
@@ -4595,7 +4662,7 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
       title: "Camadas",
       items: [
         [`${mod} + ]`, "Trazer para frente"],
-        [`${mod} + [`, "Enviar para trás"],
+        [`${mod} + [`, "Enviar para tras"],
         [`${mod} + Shift + ]`, "Trazer para a frente de tudo"],
         [`${mod} + Shift + [`, "Enviar para o fundo"],
       ],
@@ -4610,15 +4677,24 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     {
       title: "Mover",
       items: [
-        ["← → ↑ ↓", "Mover 10 px"],
+        ["? ? ? ?", "Mover 10 px"],
         ["Shift + setas", "Mover 40 px"],
       ],
     },
     {
-      title: "Apresentação & ajuda",
+      title: "Canvas",
       items: [
-        ["F5", "Iniciar apresentação"],
-        [`${mod} + Shift + P`, "Iniciar apresentação"],
+        [`${mod} + 0`, "Resetar zoom para 100%"],
+        ["Shift + redimensionar", "Travar proporcao do bloco"],
+        ["Tab", "Navegar por blocos e pain?is"],
+        ["Enter / Espa?o", "Selecionar bloco focado"],
+      ],
+    },
+    {
+      title: "Apresentacao & ajuda",
+      items: [
+        ["F5", "Iniciar apresentacao"],
+        [`${mod} + Shift + P`, "Iniciar apresentacao"],
         ["?", "Abrir este painel"],
       ],
     },
