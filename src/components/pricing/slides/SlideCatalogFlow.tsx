@@ -2,14 +2,35 @@ import React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Copy, Filter as FilterIcon, GripVertical, Plus, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Filter as FilterIcon, GripVertical, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { cn } from "@/lib/utils";
 import { SLIDE_CATALOG, isItemReady, metaOf, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
+import type { SlidePreflightIssue, SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { SLIDE_ACCENT_BG, SLIDE_ICON_MAP } from "./slideUiTokens";
+
+const PREFLIGHT_SEVERITY_RANK: Record<SlidePreflightSeverity, number> = {
+  error: 3,
+  warning: 2,
+  info: 1,
+};
+
+function highestPreflightSeverity(issues: SlidePreflightIssue[]): SlidePreflightSeverity | null {
+  return issues.reduce<SlidePreflightSeverity | null>((highest, issue) => {
+    if (!highest) return issue.severity;
+    return PREFLIGHT_SEVERITY_RANK[issue.severity] > PREFLIGHT_SEVERITY_RANK[highest] ? issue.severity : highest;
+  }, null);
+}
+
+function preflightSeverityLabel(severity: SlidePreflightSeverity | null): string {
+  if (severity === "error") return "Incompleto";
+  if (severity === "warning") return "Com alerta";
+  if (severity === "info") return "Com observacao";
+  return "Pronto";
+}
 
 export function EmptyFlow({
   onAdd,
@@ -130,6 +151,7 @@ export const FlowCard = React.memo(function FlowCard({
   item,
   index,
   selected,
+  preflightIssues = [],
   onSelect,
   onRemove,
   onDuplicate,
@@ -137,6 +159,7 @@ export const FlowCard = React.memo(function FlowCard({
   item: SlideItem;
   index: number;
   selected: boolean;
+  preflightIssues?: SlidePreflightIssue[];
   onSelect: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
@@ -147,6 +170,7 @@ export const FlowCard = React.memo(function FlowCard({
   const filtersCount = (item.kind === "bridge_pvm" || item.kind === "budget_evo")
     ? Object.values(item.config.filters).filter((v) => v && v.length > 0).length
     : 0;
+  const preflightSeverity = highestPreflightSeverity(preflightIssues);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const style = {
@@ -167,6 +191,9 @@ export const FlowCard = React.memo(function FlowCard({
               selected
                 ? "border-primary/60 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.35),_0_8px_24px_-12px_hsl(var(--primary)/0.35)]"
                 : "border-border/40 hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_16px_-8px_hsl(0_0%_0%/0.4)]",
+              preflightSeverity === "error" && !selected && "border-destructive/50",
+              preflightSeverity === "warning" && !selected && "border-warning/50",
+              preflightSeverity === "info" && !selected && "border-primary/35",
             )}
             onClick={onSelect}
           >
@@ -207,6 +234,20 @@ export const FlowCard = React.memo(function FlowCard({
               {!ready.ok && (
                 <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
                   {ready.reason}
+                </span>
+              )}
+              {preflightSeverity && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]",
+                    preflightSeverity === "error" && "border-destructive/40 bg-destructive/10 text-destructive",
+                    preflightSeverity === "warning" && "border-warning/40 bg-warning/10 text-warning",
+                    preflightSeverity === "info" && "border-primary/30 bg-primary/10 text-primary",
+                  )}
+                  title={`${preflightSeverityLabel(preflightSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {preflightIssues.length}
                 </span>
               )}
             </div>

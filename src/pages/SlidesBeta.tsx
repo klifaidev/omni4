@@ -46,10 +46,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
-  ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
+  AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -62,7 +63,7 @@ import {
   SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
-import { buildSlidesPreflight, type SlidePreflightIssue } from "@/lib/slidesPreflight";
+import { buildSlidesPreflight, type SlidePreflightIssue, type SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -187,6 +188,33 @@ const FILTER_LABEL: Record<FilterKey, string> = {
   inovacao: "Inovação",
   legado: "Legado",
 };
+
+const PREFLIGHT_SEVERITY_RANK: Record<SlidePreflightSeverity, number> = {
+  error: 3,
+  warning: 2,
+  info: 1,
+};
+
+function highestPreflightSeverity(issues: SlidePreflightIssue[]): SlidePreflightSeverity | null {
+  return issues.reduce<SlidePreflightSeverity | null>((highest, issue) => {
+    if (!highest) return issue.severity;
+    return PREFLIGHT_SEVERITY_RANK[issue.severity] > PREFLIGHT_SEVERITY_RANK[highest] ? issue.severity : highest;
+  }, null);
+}
+
+function preflightSeverityLabel(severity: SlidePreflightSeverity | null): string {
+  if (severity === "error") return "Incompleto";
+  if (severity === "warning") return "Com alerta";
+  if (severity === "info") return "Com observacao";
+  return "Pronto";
+}
+
+function preflightSeverityClasses(severity: SlidePreflightSeverity | null): string {
+  if (severity === "error") return "border-destructive/50 bg-destructive/10 text-destructive";
+  if (severity === "warning") return "border-warning/50 bg-warning/10 text-warning";
+  if (severity === "info") return "border-primary/40 bg-primary/10 text-primary";
+  return "border-success/40 bg-success/10 text-success";
+}
 
 function uniqueValues(
   pricing: PricingRow[],
@@ -485,7 +513,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
-  currentUser, onAddComment,
+  currentUser, onAddComment, preflightIssues = [],
 }: {
   item: SlideItem;
   index: number;
@@ -494,6 +522,7 @@ function StripThumbnail({
   editingUsers?: CollabUser[];
   currentUser: { name: string; color: string };
   onAddComment?: (c: SlideComment) => void;
+  preflightIssues?: SlidePreflightIssue[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const editors = editingUsers ?? [];
@@ -507,6 +536,7 @@ function StripThumbnail({
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
+  const preflightSeverity = highestPreflightSeverity(preflightIssues);
 
   // Subscribe to comment changes so the badge updates live.
   const [, force] = useState(0);
@@ -524,8 +554,23 @@ function StripThumbnail({
       className={cn(
         "group relative cursor-pointer rounded-md border bg-card transition-colors",
         active ? "border-primary ring-2 ring-primary/40" : "border-border/40 hover:border-border/80",
+        preflightSeverity === "error" && !active && "border-destructive/50",
+        preflightSeverity === "warning" && !active && "border-warning/50",
+        preflightSeverity === "info" && !active && "border-primary/35",
+        preflightSeverity && "shadow-[0_0_0_1px_hsl(var(--background))]",
       )}
     >
+      {preflightSeverity && (
+        <div
+          className={cn(
+            "absolute left-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border bg-background shadow-sm",
+            preflightSeverityClasses(preflightSeverity),
+          )}
+          title={`${preflightSeverityLabel(preflightSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
+        >
+          <AlertTriangle className="h-2.5 w-2.5" />
+        </div>
+      )}
       {hasNotes && (
         <div
           className="absolute right-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-sm"
@@ -701,11 +746,12 @@ function CommentsThread({
 
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
-  currentUser, onAddComment, readOnly = false,
+  currentUser, onAddComment, preflightIssuesBySlide, readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   readOnly?: boolean;
+  preflightIssuesBySlide: Map<string, SlidePreflightIssue[]>;
   collaborators?: CollabUser[];
   isConnected?: boolean;
   updateCursor?: (x: number, y: number) => void;
@@ -906,6 +952,7 @@ function FullscreenCustomEditor({
                         editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
                         currentUser={currentUser}
                         onAddComment={onAddComment}
+                        preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
                         onClick={() => {
                           if (it.id === current?.id) return;
                           select(it.id);
@@ -968,7 +1015,43 @@ function FullscreenCustomEditor({
 // ----------------------------------------------------------------------------
 // Painel direito (inspector) ? depende do slide selecionado
 // ----------------------------------------------------------------------------
-function Inspector({ item, onOpenFullscreen, readOnly }: { item: SlideItem | null; onOpenFullscreen: () => void; readOnly: boolean }) {
+function InspectorSection({
+  value,
+  title,
+  description,
+  children,
+}: {
+  value: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <AccordionItem value={value} className="rounded-lg border border-border/50 bg-card/35 px-3">
+      <AccordionTrigger className="py-3 text-left hover:no-underline">
+        <div className="space-y-0.5">
+          <div className="text-sm font-semibold tracking-tight">{title}</div>
+          <p className="text-[11px] font-normal leading-snug text-muted-foreground">{description}</p>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pb-3 pt-0">
+        {children}
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
+function Inspector({
+  item,
+  onOpenFullscreen,
+  readOnly,
+  preflightIssues = [],
+}: {
+  item: SlideItem | null;
+  onOpenFullscreen: () => void;
+  readOnly: boolean;
+  preflightIssues?: SlidePreflightIssue[];
+}) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
@@ -991,6 +1074,15 @@ function Inspector({ item, onOpenFullscreen, readOnly }: { item: SlideItem | nul
 
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
+  const ready = isItemReady(item);
+  const preflightSeverity = highestPreflightSeverity(preflightIssues);
+  const statusSeverity: SlidePreflightSeverity | null = !ready.ok || preflightSeverity === "error"
+    ? "error"
+    : preflightSeverity;
+  const statusItems = [
+    ...(!ready.ok ? [{ title: "Config incompleta", detail: ready.reason }] : []),
+    ...preflightIssues.map((issue) => ({ title: issue.title, detail: issue.detail })),
+  ];
   const guardedUpdateItem = (updater: Parameters<typeof updateItem>[1]) => {
     if (readOnly) {
       toast.info("Modo somente leitura");
@@ -1021,45 +1113,108 @@ function Inspector({ item, onOpenFullscreen, readOnly }: { item: SlideItem | nul
 
         <Separator />
 
-        {/* Live preview */}
-        <SlidePreview item={item} />
+        <div className={cn("rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              {statusSeverity ? <AlertTriangle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+              {preflightSeverityLabel(statusSeverity)}
+            </div>
+            {statusItems.length > 0 && (
+              <Badge variant="outline" className="h-5 border-current/30 bg-background/50 px-1.5 text-[10px] text-current">
+                {statusItems.length} ponto(s)
+              </Badge>
+            )}
+          </div>
+          <div className="mt-2 space-y-1.5 text-[11px] leading-snug">
+            {statusItems.length === 0 ? (
+              <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
+            ) : (
+              statusItems.map((statusItem, idx) => (
+                <div key={`${statusItem.title}-${idx}`} className="rounded-md bg-background/55 px-2 py-1.5">
+                  <span className="font-medium">{statusItem.title}:</span>{" "}
+                  <span>{statusItem.detail}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
         <Separator />
 
-        {item.kind === "bridge_pvm" && (
-          <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
-        )}
-        {item.kind === "budget_evo" && (
-          <BudgetEvoConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
-        )}
-        {item.kind === "cover" && (
-          <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
-        )}
-        {item.kind === "custom" && (
-          <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
-        )}
+        <Accordion type="multiple" defaultValue={["preview", "period", "filters", "appearance", "notes"]} className="space-y-3">
+          <InspectorSection
+            value="preview"
+            title="Previa"
+            description="Mostra como este slide vai entrar na apresentacao."
+          >
+            <SlidePreview item={item} />
+          </InspectorSection>
 
-        {meta.supportsFilters && (item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
-          <>
-            <Separator />
-            <FiltersPanel
-              value={item.config.filters}
-              readOnly={readOnly}
-              onChange={(filters) => guardedUpdateItem((it) => {
-                if (it.kind !== "bridge_pvm" && it.kind !== "budget_evo") return it;
-                return { ...it, config: { ...it.config, filters } } as SlideItem;
-              })}
-              pricing={pricing}
-              budget={budget}
-            />
-          </>
-        )}
+          {(item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
+            <InspectorSection
+              value="period"
+              title="Periodo"
+              description="Define a janela de dados usada neste slide."
+            >
+              {item.kind === "bridge_pvm" && (
+                <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+              )}
+              {item.kind === "budget_evo" && (
+                <BudgetEvoConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+              )}
+            </InspectorSection>
+          )}
 
-        <Separator />
-        <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
-          ...it,
-          config: { ...(it.config as object), speakerNotes: notes },
-        } as SlideItem))} />
+          {item.kind === "cover" && (
+            <InspectorSection
+              value="appearance"
+              title="Aparencia"
+              description="Controla textos e estilo visual da capa ou divisor."
+            >
+              <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+            </InspectorSection>
+          )}
+
+          {item.kind === "custom" && (
+            <InspectorSection
+              value="appearance"
+              title="Aparencia"
+              description="Abre o Canva para ajustar blocos, layout e visual do slide."
+            >
+              <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
+            </InspectorSection>
+          )}
+
+          {meta.supportsFilters && (item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
+            <InspectorSection
+              value="filters"
+              title="Filtros"
+              description="Refina os dados deste slide sem alterar o restante do deck."
+            >
+              <FiltersPanel
+                value={item.config.filters}
+                readOnly={readOnly}
+                onChange={(filters) => guardedUpdateItem((it) => {
+                  if (it.kind !== "bridge_pvm" && it.kind !== "budget_evo") return it;
+                  return { ...it, config: { ...it.config, filters } } as SlideItem;
+                })}
+                pricing={pricing}
+                budget={budget}
+              />
+            </InspectorSection>
+          )}
+
+          <InspectorSection
+            value="notes"
+            title="Notas"
+            description="Guarda lembretes para quem for apresentar este slide."
+          >
+            <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
+              ...it,
+              config: { ...(it.config as object), speakerNotes: notes },
+            } as SlideItem))} />
+          </InspectorSection>
+        </Accordion>
       </div>
     </ScrollArea>
   );
@@ -1549,6 +1704,15 @@ export default function SlidesBeta() {
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
   const readyAll = items.every((i) => isItemReady(i).ok);
   const preflight = useMemo(() => buildSlidesPreflight(items), [items]);
+  const preflightIssuesBySlide = useMemo(() => {
+    const map = new Map<string, SlidePreflightIssue[]>();
+    for (const issue of preflight.issues) {
+      const current = map.get(issue.slideId) ?? [];
+      current.push(issue);
+      map.set(issue.slideId, current);
+    }
+    return map;
+  }, [preflight.issues]);
   const {
     exporting,
     fileName,
@@ -1895,7 +2059,12 @@ export default function SlidesBeta() {
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <TransitionSelect />
                 <div className="mx-1 h-5 w-px bg-border/50" />
-                <PreflightPopover issues={preflight.issues} errors={preflight.errors} warnings={preflight.warnings} />
+                <PreflightPopover
+                  issues={preflight.issues}
+                  errors={preflight.errors}
+                  warnings={preflight.warnings}
+                  onSelectSlide={select}
+                />
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1995,6 +2164,7 @@ export default function SlidesBeta() {
                           item={item}
                           index={idx}
                           selected={selectedId === item.id}
+                          preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
                           onSelect={() => select(item.id)}
                           onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
                           onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
@@ -2191,7 +2361,12 @@ export default function SlidesBeta() {
             {inspectorOpen ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
           {inspectorOpen ? (
-            <Inspector item={selected} readOnly={viewOnly} onOpenFullscreen={() => setFullscreenOpen(true)} />
+            <Inspector
+              item={selected}
+              readOnly={viewOnly}
+              preflightIssues={selected ? preflightIssuesBySlide.get(selected.id) ?? [] : []}
+              onOpenFullscreen={() => setFullscreenOpen(true)}
+            />
           ) : (
             <div className="flex h-full items-center justify-center px-1 text-[10px] font-medium uppercase tracking-[0.25em] text-muted-foreground/70 [writing-mode:vertical-rl]">
               Prévia & Filtros
@@ -2324,6 +2499,7 @@ export default function SlidesBeta() {
         updateSlideId={updateSlideId}
         currentUser={currentUser}
         onAddComment={handleAddComment}
+        preflightIssuesBySlide={preflightIssuesBySlide}
         readOnly={viewOnly}
       />
 

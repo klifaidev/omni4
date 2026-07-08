@@ -4,22 +4,25 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import type { SlidePreflightIssue } from "@/lib/slidesPreflight";
 import { ShieldCheck } from "lucide-react";
+import { useState } from "react";
 
 export function PreflightPopover({
   issues,
   errors,
   warnings,
+  onSelectSlide,
 }: {
   issues: SlidePreflightIssue[];
   errors: number;
   warnings: number;
+  onSelectSlide?: (slideId: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const status = errors > 0 ? "error" : warnings > 0 ? "warning" : "ok";
   const label = status === "ok" ? "Pronto" : errors > 0 ? `${errors} erro` : `${warnings} alerta`;
-  const grouped = issues.slice(0, 12);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant={status === "ok" ? "outline" : "ghost"}
@@ -63,16 +66,22 @@ export function PreflightPopover({
               Nenhum risco encontrado na esteira atual.
             </div>
           ) : (
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {grouped.map((item, idx) => (
-                <div
+            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              {issues.map((item, idx) => (
+                <button
+                  type="button"
                   key={`${item.slideId}-${item.blockId ?? "slide"}-${idx}`}
+                  onClick={() => {
+                    onSelectSlide?.(item.slideId);
+                    setOpen(false);
+                  }}
                   className={cn(
-                    "rounded-lg border p-2.5 text-xs",
+                    "w-full rounded-lg border p-2.5 text-left text-xs transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     item.severity === "error" && "border-destructive/30 bg-destructive/10",
-                    item.severity === "warning" && "border-amber-500/30 bg-amber-500/10",
+                    item.severity === "warning" && "border-warning/30 bg-warning/10",
                     item.severity === "info" && "border-border/60 bg-muted/30",
                   )}
+                  aria-label={`Ir para slide ${item.slideNumber}: ${item.title}`}
                 >
                   <div className="flex items-center gap-2 font-semibold">
                     <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -81,13 +90,8 @@ export function PreflightPopover({
                     <span>{item.title}</span>
                   </div>
                   <div className="mt-1 text-muted-foreground">{item.detail}</div>
-                </div>
+                </button>
               ))}
-              {issues.length > grouped.length && (
-                <div className="text-center text-[11px] text-muted-foreground">
-                  +{issues.length - grouped.length} ponto(s) adicionais
-                </div>
-              )}
             </div>
           )}
 
@@ -101,4 +105,3 @@ export function PreflightPopover({
     </Popover>
   );
 }
-
