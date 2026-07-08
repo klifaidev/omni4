@@ -1,1 +1,7 @@
 project_id = "qoshlwlmqpgnghqnkjls"
+
+[functions.create-collab-room]
+verify_jwt = false
+
+[functions.join-collab-room]
+verify_jwt = false
