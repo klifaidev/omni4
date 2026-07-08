@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 type InviteRole = "editor" | "viewer";
 
 type JoinRoomBody = {
-  code: string;
+  code_hash: string;
 };
 
 type InviteRow = {
@@ -37,12 +37,6 @@ function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-async function sha256(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return base64Url(new Uint8Array(digest));
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -92,10 +86,9 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const code = body.code?.trim();
-  if (!code) return json({ error: "code is required" }, 400);
+  const codeHash = body.code_hash?.trim();
+  if (!codeHash) return json({ error: "code_hash is required" }, 400);
 
-  const codeHash = await sha256(code);
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });

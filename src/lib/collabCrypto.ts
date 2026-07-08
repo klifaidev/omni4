@@ -41,6 +41,7 @@ const AES_GCM = "AES-GCM";
 const HKDF = "HKDF";
 const CONTENT_KEY_BYTES = 32;
 const IV_BYTES = 12;
+const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export class CollabCryptoError extends Error {
   constructor(
@@ -73,6 +74,19 @@ function randomBytes(length: number): Uint8Array {
   return bytes;
 }
 
+export function normalizeCollabCode(code: string): string {
+  return code.replace(/\s+/g, "").toUpperCase();
+}
+
+export function createCollabInviteCode(prefix: "ED" | "VW"): string {
+  const bytes = randomBytes(24);
+  let code = "";
+  bytes.forEach((byte) => {
+    code += INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length];
+  });
+  return `${prefix}_${code.slice(0, 6)}-${code.slice(6, 12)}-${code.slice(12, 18)}-${code.slice(18, 24)}`;
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   bytes.forEach((byte) => {
@@ -102,7 +116,7 @@ async function exportContentKey(key: CryptoKey): Promise<Uint8Array> {
 
 async function deriveWrappingKey(code: string, roomPublicId: string): Promise<CryptoKey> {
   const crypto = getCrypto();
-  const baseKey = await crypto.subtle.importKey("raw", utf8(code), HKDF, false, ["deriveKey"]);
+  const baseKey = await crypto.subtle.importKey("raw", utf8(normalizeCollabCode(code)), HKDF, false, ["deriveKey"]);
 
   return crypto.subtle.deriveKey(
     {
@@ -116,6 +130,11 @@ async function deriveWrappingKey(code: string, roomPublicId: string): Promise<Cr
     false,
     ["encrypt", "decrypt"],
   );
+}
+
+export async function hashCollabCode(code: string): Promise<string> {
+  const digest = await getCrypto().subtle.digest("SHA-256", utf8(normalizeCollabCode(code)));
+  return toBase64Url(new Uint8Array(digest));
 }
 
 async function aesEncrypt(key: CryptoKey, plainBytes: Uint8Array): Promise<CollabEncryptedPayload> {

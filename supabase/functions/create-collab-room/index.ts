@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 type CreateRoomBody = {
+  room_public_id: string;
+  editor_code_hash: string;
+  viewer_code_hash: string;
   encrypted_payload: string;
   payload_hash: string;
   app_version?: string;
@@ -21,28 +24,6 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function randomBytes(length: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
-function base64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function makeCode(prefix: "ed" | "vw"): string {
-  return `${prefix}_${base64Url(randomBytes(24))}`;
-}
-
-async function sha256(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return base64Url(new Uint8Array(digest));
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -60,15 +41,20 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  if (!body.encrypted_payload || !body.payload_hash) {
-    return json({ error: "encrypted_payload and payload_hash are required" }, 400);
+  if (
+    !body.room_public_id ||
+    !body.editor_code_hash ||
+    !body.viewer_code_hash ||
+    !body.encrypted_payload ||
+    !body.payload_hash
+  ) {
+    return json({
+      error: "room_public_id, editor_code_hash, viewer_code_hash, encrypted_payload and payload_hash are required",
+    }, 400);
   }
 
   const expiresInHours = Math.min(Math.max(body.expires_in_hours ?? 72, 1), 24 * 30);
   const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString();
-  const roomPublicId = base64Url(randomBytes(16));
-  const editorCode = makeCode("ed");
-  const viewerCode = makeCode("vw");
 
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
@@ -77,7 +63,7 @@ Deno.serve(async (req) => {
   const { data: room, error: roomError } = await client
     .from("collab_rooms")
     .insert({
-      room_public_id: roomPublicId,
+      room_public_id: body.room_public_id,
       status: "active",
       expires_at: expiresAt,
       latest_snapshot_version: 1,
@@ -89,11 +75,9 @@ Deno.serve(async (req) => {
     return json({ error: "Could not create collaboration room", details: roomError?.message }, 500);
   }
 
-  const [editorHash, viewerHash] = await Promise.all([sha256(editorCode), sha256(viewerCode)]);
-
   const { error: inviteError } = await client.from("collab_room_invites").insert([
-    { room_id: room.id, role: "editor", code_hash: editorHash, expires_at: expiresAt },
-    { room_id: room.id, role: "viewer", code_hash: viewerHash, expires_at: expiresAt },
+    { room_id: room.id, role: "editor", code_hash: body.editor_code_hash, expires_at: expiresAt },
+    { room_id: room.id, role: "viewer", code_hash: body.viewer_code_hash, expires_at: expiresAt },
   ]);
 
   if (inviteError) {
@@ -120,7 +104,5 @@ Deno.serve(async (req) => {
     room_public_id: room.room_public_id,
     expires_at: room.expires_at,
     latest_snapshot_version: room.latest_snapshot_version,
-    editor_code: editorCode,
-    viewer_code: viewerCode,
   });
 });

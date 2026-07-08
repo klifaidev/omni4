@@ -89,7 +89,6 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { useCollaboration } from "@/hooks/use-collaboration";
 import type { CollabUser } from "@/lib/collaboration";
 import { initials } from "@/lib/kanban";
-import { Switch } from "@/components/ui/switch";
 import {
   addComment, resolveComment, getComments, getUnresolvedCount, subscribe as subscribeComments,
   type SlideComment,
@@ -102,9 +101,18 @@ import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/comp
 import { PreflightPopover } from "@/components/pricing/slides/SlidesPreflightPopover";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useSlideExport } from "@/hooks/useSlideExport";
+import {
+  createPersistentCollabRoom,
+  getPersistentCollabRoleLabel,
+  joinPersistentCollabRoom,
+  normalizeCollabCode,
+  type CreatePersistentRoomResult,
+  type PersistentCollabRole,
+} from "@/lib/persistentCollab";
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
+const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
 
 function slideToastSuccess(message: string) {
   toast.success(message, { icon: <CheckCheck className="h-4 w-4 text-success" /> });
@@ -1620,10 +1628,13 @@ export default function SlidesBeta() {
     typeof window === "undefined" ? "" : localStorage.getItem("collab-username") ?? "",
   );
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [persistentCollabRole, setPersistentCollabRole] = useState<PersistentCollabRole | null>(null);
+  const [createdPersistentRoom, setCreatedPersistentRoom] = useState<CreatePersistentRoomResult | null>(null);
+  const [collabJoinCode, setCollabJoinCode] = useState("");
+  const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
   const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
 
   const [viewOnly, setViewOnly] = useState(false);
-  const [guestReadOnly, setGuestReadOnly] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const guardViewOnly = useCallback(() => {
     return guardSlideReadOnly(viewOnly, () => slideToastInfo("Modo somente leitura"));
@@ -1638,7 +1649,10 @@ export default function SlidesBeta() {
     const room = params.get("room");
     const name = params.get("name");
     const mode = params.get("mode");
-    if (room) setRoomId(room);
+    if (room) {
+      setRoomId(room);
+      setPersistentCollabRole(mode === "view" ? "viewer" : "editor");
+    }
     if (name) setCollabName(decodeURIComponent(name));
     if (mode === "view") setViewOnly(true);
   }, []);
@@ -1674,31 +1688,62 @@ export default function SlidesBeta() {
     return () => setCollabBroadcast(null, null);
   }, [roomId, broadcast, collabUserId, setCollabBroadcast]);
 
-  const startCollab = (): string | null => {
+  const handleCreatePersistentRoom = async () => {
     if (guardViewOnly()) return null;
     const name = collabName.trim() || "Convidado";
     if (typeof window !== "undefined") {
       localStorage.setItem("collab-username", name);
     }
     setCollabName(name);
-    const newRoom = Math.random().toString(36).slice(2, 10);
-    setRoomId(newRoom);
-    setCollabOpen(false);
-    return newRoom;
+    setCollabBusy("create");
+    try {
+      const created = await createPersistentCollabRoom({
+        items,
+        selectedSlideId: selectedId,
+        appVersion: APP_VERSION,
+      });
+      setCreatedPersistentRoom(created);
+      setPersistentCollabRole("host");
+      setRoomId(created.roomPublicId);
+      setViewOnly(false);
+      slideToastSuccess("Sala colaborativa criada.");
+    } catch {
+      slideToastError("Nao foi possivel criar a sala colaborativa.");
+    } finally {
+      setCollabBusy(null);
+    }
   };
-  const inviteLink = roomId && typeof window !== "undefined"
-    ? `${window.location.origin}/#/slides?room=${roomId}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`
-    : "";
+
+  const handleJoinPersistentRoom = async () => {
+    const normalizedCode = normalizeCollabCode(collabJoinCode);
+    if (!normalizedCode) {
+      slideToastInfo("Informe um codigo de convite.");
+      return;
+    }
+    setCollabJoinCode(normalizedCode);
+    setCollabBusy("join");
+    try {
+      const joined = await joinPersistentCollabRoom(normalizedCode);
+      setCreatedPersistentRoom(null);
+      setPersistentCollabRole(joined.role);
+      setRoomId(joined.roomPublicId);
+      setViewOnly(joined.role === "viewer");
+      slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
+      setCollabOpen(false);
+    } catch {
+      slideToastError("Codigo invalido ou expirado.");
+    } finally {
+      setCollabBusy(null);
+    }
+  };
+
+  const copyText = (value: string, message: string) => {
+    navigator.clipboard?.writeText(value);
+    slideToastSuccess(message);
+  };
   const openPresentation = (presenter = false) => {
     setPresentationPresenterMode(presenter);
     setPresentationOpen(true);
-  };
-  const copyInviteLink = () => {
-    const activeRoom = roomId ?? startCollab();
-    if (!activeRoom || typeof window === "undefined") return;
-    const url = `${window.location.origin}/#/slides?room=${activeRoom}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`;
-    navigator.clipboard?.writeText(url);
-    toast.success("Link copiado!");
   };
 
   const applyTemplate = (tpl: SlideTemplate) => {
@@ -1769,10 +1814,10 @@ export default function SlidesBeta() {
     if (items.length === 0) return "Adicione ao menos um slide para exportar.";
     const incomplete = items.filter((i) => !isItemReady(i).ok).length;
     if (incomplete > 0) {
-      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""} — abra o preflight para ver quais.`;
+      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""} - abra o preflight para ver quais.`;
     }
     if (preflight.errors > 0) {
-      return `Existem ${preflight.errors} erro${preflight.errors > 1 ? "s" : ""} de preflight — abra o preflight para revisar.`;
+      return `Existem ${preflight.errors} erro${preflight.errors > 1 ? "s" : ""} de preflight - abra o preflight para revisar.`;
     }
     return null;
   }, [items, preflight.errors]);
@@ -1987,24 +2032,30 @@ export default function SlidesBeta() {
                 </Badge>
               )}
               {roomId && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
-                  <span className="relative inline-flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                    <span className="relative inline-flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                    </span>
+                    Sala ativa
+                    <span className="text-muted-foreground">- {getPersistentCollabRoleLabel(persistentCollabRole)}</span>
+                    {isConnected && collaborators.length > 0 && (
+                      <span className="text-muted-foreground">- {collaborators.length}</span>
+                    )}
                   </span>
-                  Ao vivo
-                  {isConnected && collaborators.length > 0 && (
-                    <span className="text-muted-foreground">· {collaborators.length}</span>
-                  )}
-                </span>
+                  <span className="hidden max-w-[520px] truncate text-[10px] text-muted-foreground xl:inline">
+                    A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
+                  </span>
+                </div>
               )}
             </div>
             <TooltipProvider delayDuration={200}>
               <div className="flex items-center gap-1.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                      <Button
-                        variant="outline" size="sm" className="h-8 gap-1.5"
+                    <Button
+                      variant="outline" size="sm" className="h-8 gap-1.5"
                       onClick={() => { if (guardViewOnly()) return; setGalleryOpen(true); }}
                       aria-label="Abrir galeria de templates"
                     >
@@ -2026,36 +2077,32 @@ export default function SlidesBeta() {
                       <div>
                         <div className="flex items-center gap-2 text-sm font-semibold">
                           <Users2 className="h-4 w-4 text-primary" />
-                          Colaboracao em tempo real
+                          Sala colaborativa persistente
                         </div>
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          Crie uma sala para outras pessoas acompanharem ou editarem este deck.
+                          Crie uma sala segura ou entre com um codigo recebido.
                         </p>
                       </div>
-                      <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
-                        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Seu nome</Label>
-                        <Input
-                          value={collabName}
-                          disabled={viewOnly}
-                          onChange={(e) => setCollabName(e.target.value)}
-                          placeholder="Ex.: Alice"
-                          className="h-8 text-sm"
-                        />
-                        {roomId && (
-                          <Input
-                            readOnly
-                            value={inviteLink}
-                            className="h-8 font-mono text-[10px]"
-                            onFocus={(e) => e.currentTarget.select()}
-                          />
+                      <div className="space-y-3 rounded-lg border border-border/50 bg-muted/20 p-3">
+                        {roomId ? (
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-medium">Sala ativa</p>
+                              <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
+                            </div>
+                            <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
+                              {getPersistentCollabRoleLabel(persistentCollabRole)}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Nenhuma sala ativa neste deck.</p>
                         )}
-                        <label className="flex items-center justify-between gap-2 pt-1">
-                          <span className="text-[11px] text-muted-foreground">Convidado somente leitura</span>
-                          <Switch checked={guestReadOnly} disabled={viewOnly} onCheckedChange={setGuestReadOnly} />
-                        </label>
-                        <Button className="w-full gap-2" onClick={copyInviteLink} disabled={viewOnly}>
-                          <Copy className="h-3.5 w-3.5" />
-                          Copiar link
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
+                        </p>
+                        <Button className="w-full gap-2" onClick={() => setCollabOpen(true)}>
+                          <Users2 className="h-3.5 w-3.5" />
+                          Abrir colaboracao
                         </Button>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
@@ -2071,8 +2118,8 @@ export default function SlidesBeta() {
                 </Popover>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                      <Button
-                        variant="outline" size="sm" className="h-8 gap-1.5"
+                    <Button
+                      variant="outline" size="sm" className="h-8 gap-1.5"
                       onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
                       aria-label="Importar slides de PowerPoint"
                     >
@@ -2605,78 +2652,120 @@ export default function SlidesBeta() {
       />
 
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users2 className="h-4 w-4 text-primary" />
-              Iniciar colaboração
+              Colaboracao
             </DialogTitle>
             <DialogDescription>
-              Compartilhe o link da sala ? alterações no deck aparecem em tempo real para todos.
+              Crie uma sala persistente ou entre com um codigo recebido. O conteudo da sala fica criptografado.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="collab-name" className="text-xs">Seu nome</Label>
-            <Input
-              id="collab-name"
-              value={collabName}
-              onChange={(e) => setCollabName(e.target.value)}
-              placeholder="Ex.: Alice"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") startCollab();
-              }}
-              autoFocus
-            />
-            {roomId && (
-              <p className="pt-2 text-xs text-muted-foreground">
-                Sala ativa: <span className="font-mono text-foreground">{roomId}</span>
-              </p>
-            )}
-            {roomId && (
-              <div className="space-y-2 rounded-md border border-border/40 bg-muted/30 p-2">
-                <Label className="text-xs">Link de convite</Label>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    readOnly
-                    value={`${window.location.origin}/#/slides?room=${roomId}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`}
-                    className="h-8 font-mono text-[10px]"
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                  <Button
-                    size="sm" variant="outline" className="h-8 gap-1"
-                    onClick={() => {
-                      const url = `${window.location.origin}/#/slides?room=${roomId}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`;
-                      navigator.clipboard?.writeText(url);
-                      toast.success("Link copiado!");
-                    }}
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copiar
-                  </Button>
-                </div>
-                <label className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-[11px] text-muted-foreground">
-                    Modo somente leitura para convidados
-                  </span>
-                  <Switch checked={guestReadOnly} onCheckedChange={setGuestReadOnly} />
-                </label>
-              </div>
-            )}
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+            A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
           </div>
+          {roomId && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-success/30 bg-success/10 p-3">
+              <div>
+                <p className="text-xs font-semibold text-success">Sala ativa</p>
+                <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
+              </div>
+              <Badge variant="outline" className="border-success/40 bg-background/80 text-success">
+                {getPersistentCollabRoleLabel(persistentCollabRole)}
+              </Badge>
+            </div>
+          )}
+          <Tabs defaultValue="create" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="create">Criar sala</TabsTrigger>
+              <TabsTrigger value="join">Entrar com codigo</TabsTrigger>
+            </TabsList>
+            <TabsContent value="create" className="mt-4 space-y-4">
+              <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
+                <Label htmlFor="collab-name" className="text-xs">Seu nome</Label>
+                <Input
+                  id="collab-name"
+                  value={collabName}
+                  disabled={viewOnly || collabBusy === "create"}
+                  onChange={(e) => setCollabName(e.target.value)}
+                  placeholder="Ex.: Alice"
+                />
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  O snapshot inicial desta etapa e simplificado. A sincronizacao completa entra na proxima fase.
+                </p>
+                <Button className="w-full gap-2" onClick={handleCreatePersistentRoom} disabled={viewOnly || collabBusy === "create"}>
+                  {collabBusy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  Criar sala
+                </Button>
+              </div>
+              {createdPersistentRoom && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-card/70 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold">Codigo de editor</p>
+                        <p className="text-[11px] text-muted-foreground">Pode editar quando a sincronizacao for ativada.</p>
+                      </div>
+                      <Badge variant="secondary">Editor</Badge>
+                    </div>
+                    <Input readOnly value={createdPersistentRoom.editorCode} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+                    <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(createdPersistentRoom.editorCode, "Codigo de editor copiado.")}>
+                      <Copy className="h-3.5 w-3.5" />
+                      Copiar editor
+                    </Button>
+                  </div>
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-card/70 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold">Codigo de visualizador</p>
+                        <p className="text-[11px] text-muted-foreground">Entra sem permissao de edicao.</p>
+                      </div>
+                      <Badge variant="outline">Viewer</Badge>
+                    </div>
+                    <Input readOnly value={createdPersistentRoom.viewerCode} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+                    <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(createdPersistentRoom.viewerCode, "Codigo de visualizador copiado.")}>
+                      <Copy className="h-3.5 w-3.5" />
+                      Copiar viewer
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="join" className="mt-4 space-y-4">
+              <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
+                <Label htmlFor="collab-code" className="text-xs">Codigo recebido</Label>
+                <Input
+                  id="collab-code"
+                  value={collabJoinCode}
+                  onChange={(e) => setCollabJoinCode(e.target.value)}
+                  onBlur={() => setCollabJoinCode((value) => normalizeCollabCode(value))}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleJoinPersistentRoom(); }}
+                  placeholder="ED_ABC123-... ou VW_ABC123-..."
+                  className="font-mono text-sm"
+                />
+                <Button className="w-full gap-2" onClick={handleJoinPersistentRoom} disabled={collabBusy === "join"}>
+                  {collabBusy === "join" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users2 className="h-4 w-4" />}
+                  Entrar com codigo
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
           <DialogFooter>
             {roomId && (
               <Button
                 variant="ghost"
                 onClick={() => {
                   setRoomId(null);
+                  setPersistentCollabRole(null);
+                  setCreatedPersistentRoom(null);
+                  setViewOnly(false);
                   setCollabOpen(false);
                 }}
               >
-                Encerrar sala
+                Encerrar sala local
               </Button>
             )}
-            <Button onClick={startCollab}>
-              {roomId ? "Nova sala" : "Iniciar"}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
