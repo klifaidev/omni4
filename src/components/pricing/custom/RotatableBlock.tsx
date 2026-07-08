@@ -129,7 +129,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       <div
         ref={ref}
         {...rest}
-        className={cn("group/block", className)}
+        className={cn("group/block transition-[outline,box-shadow] duration-150", className)}
         style={{
           position: "absolute",
           left: x,

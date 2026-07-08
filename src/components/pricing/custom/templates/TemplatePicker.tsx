@@ -192,8 +192,14 @@ export function TemplatePicker({ open, onOpenChange, onApply, onApplyDeck }: Pro
             </div>
             <div className="grid flex-1 grid-cols-2 gap-3 overflow-y-auto p-3 content-start">
               {filtered.length === 0 && (
-                <div className="col-span-2 flex h-full items-center justify-center py-12 text-center text-[12px] text-muted-foreground">
-                  Nenhum modelo encontrado.
+                <div className="col-span-2 flex h-full items-center justify-center py-12">
+                  <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 p-5 text-center">
+                    <Search className="mx-auto mb-2 h-7 w-7 text-muted-foreground/70" />
+                    <div className="text-sm font-semibold text-foreground">Nenhum modelo encontrado</div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Ajuste a busca ou escolha outra categoria.
+                    </p>
+                  </div>
                 </div>
               )}
               {filtered.map((it) => {

@@ -33,7 +33,7 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, Search, Star, StickyNote,
-  Eye, EyeOff, GripVertical, Minus,
+  Eye, EyeOff, GripVertical, Loader2, MessageSquare, Minus, MoreHorizontal,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -262,6 +262,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
   const [showLayers, setShowLayers] = useState(false);
   const [zoomEditing, setZoomEditing] = useState(false);
   const [palettePanelOpen, setPalettePanelOpen] = useState(true);
+  const [templateApplying, setTemplateApplying] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
   const [recentPaletteIds, setRecentPaletteIds] = useState<string[]>(() => {
     try {
@@ -1098,7 +1099,18 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
+    <div className={cn("relative grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
+      {templateApplying && (
+        <div className="absolute inset-0 z-[99999999] flex items-center justify-center bg-background/55 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-2xl">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <div>
+              <div className="text-sm font-medium">Aplicando modelo</div>
+              <div className="text-xs text-muted-foreground">Atualizando blocos do canvas.</div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ====== Paleta ====== */}
       <div className="relative z-40 min-h-0">
         <div className="flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 bg-card/70 p-1.5">
@@ -1581,6 +1593,33 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 </svg>
               )}
 
+              {config.blocks.length === 0 && (
+                <div
+                  data-export-hide="true"
+                  className="absolute inset-0 z-[2] flex items-center justify-center p-8 transition-opacity duration-200"
+                >
+                  <div className="max-w-md rounded-2xl border border-dashed border-border/60 bg-background/80 p-5 text-center shadow-sm backdrop-blur-sm">
+                    <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div className="text-sm font-semibold">Canvas em branco</div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Use a paleta ao lado ou comece com um bloco rápido para montar o slide.
+                    </p>
+                    {!readOnly && (
+                      <div className="mt-4 flex justify-center gap-2">
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => addBlock("title")}>
+                          <TypeIcon className="h-3.5 w-3.5" /> Título
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => addChart("line")}>
+                          <LineChartIcon className="h-3.5 w-3.5" /> Gráfico
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {[...config.blocks].sort((a, b) => a.z - b.z).map((blk) => {
                 const isSelected = selectedIds.includes(blk.id);
                 const isInlineEditable =
@@ -1778,7 +1817,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                         }}
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
                         className={cn(
-                          "group/block",
+                          "group/block transition-[outline,box-shadow] duration-150",
                           isSelected
                             ? "outline outline-2 outline-offset-1 outline-primary"
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
@@ -1894,6 +1933,20 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 </ContextMenu>
                 );
               })}
+
+              {selected && !readOnly && !inlineEditId && selectedIds.length === 1 && (
+                <FloatingBlockToolbar
+                  block={selected}
+                  onDuplicate={() => duplicateBlock(selected.id)}
+                  onDelete={() => removeBlock(selected.id)}
+                  onForward={() => bringForward(selected.id)}
+                  onBack={() => sendBack(selected.id)}
+                  onToFront={() => bringToFront(selected.id)}
+                  onToBack={() => sendToBack(selected.id)}
+                  onStyle={() => toast.info("Ajuste cor, fonte e estilo no painel à direita.")}
+                  onComment={() => toast.info("Comentários por bloco entram na próxima etapa da colaboração.")}
+                />
+              )}
 
               {/* Inline text edit toolbar. */}
               {(() => {
@@ -2249,15 +2302,24 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         onOpenChange={setTplOpen}
         onApply={(cfg) => {
           if (!canEdit()) return;
-          onChange(cfg);
-          toast.success("Modelo aplicado");
+          setTemplateApplying(true);
+          window.setTimeout(() => {
+            onChange(cfg);
+            setTemplateApplying(false);
+            toast.success("Modelo aplicado");
+          }, 180);
         }}
         onApplyDeck={(configs, mode, name) => {
           if (!canEdit()) return;
+          setTemplateApplying(true);
+          window.setTimeout(() => {
           const state = useSlidesFlow.getState();
           const items = [...state.items];
           const idx = items.findIndex((i) => i.id === slideId);
-          if (idx < 0) return;
+          if (idx < 0) {
+            setTemplateApplying(false);
+            return;
+          }
           // Build new SlideItems for each deck slide.
           const newItems = configs.map((cfg, i) => ({
             id: newId(),
@@ -2276,7 +2338,9 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
             items.splice(idx + 1, 0, ...newItems);
             useSlidesFlow.setState({ items, selectedId: newItems[0].id });
           }
-          toast.success(`Deck aplicado ? ${configs.length} slides criados`);
+            setTemplateApplying(false);
+            toast.success(`Deck aplicado — ${configs.length} slides criados`);
+          }, 180);
         }}
       />
 
@@ -2332,6 +2396,76 @@ function blockIcon(blk: CustomBlock) {
     case "bridge": return <GitBranch className={cls} />;
     default:       return <BarChart3 className={cls} />;
   }
+}
+
+function FloatingBlockToolbar({
+  block,
+  onDuplicate,
+  onDelete,
+  onForward,
+  onBack,
+  onToFront,
+  onToBack,
+  onStyle,
+  onComment,
+}: {
+  block: CustomBlock;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onForward: () => void;
+  onBack: () => void;
+  onToFront: () => void;
+  onToBack: () => void;
+  onStyle: () => void;
+  onComment: () => void;
+}) {
+  const toolbarW = 308;
+  const x = Math.min(Math.max(block.x + block.w / 2 - toolbarW / 2, 8), CANVAS_W - toolbarW - 8);
+  const y = block.y < 52 ? Math.min(block.y + block.h + 10, CANVAS_H - 44) : block.y - 46;
+  return (
+    <div
+      data-export-hide="true"
+      className="absolute z-[9999999] flex h-9 items-center gap-1 rounded-full border border-border/60 bg-card/95 px-1.5 shadow-xl backdrop-blur-md transition-all duration-200"
+      style={{ left: x, top: y, width: toolbarW }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onStyle} title="Editar estilo">
+        <Paintbrush className="h-3.5 w-3.5" />
+      </Button>
+      <Separator orientation="vertical" className="h-5" />
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onBack} title="Enviar para trás">
+        <ArrowDown className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onForward} title="Trazer para frente">
+        <ArrowUp className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDuplicate} title="Duplicar">
+        <CopyIcon className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onComment} title="Comentar">
+        <MessageSquare className="h-3.5 w-3.5" />
+      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações">
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="center" className="w-48 p-1">
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-secondary" onClick={onToFront}>
+            Trazer para a frente de tudo
+          </button>
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-secondary" onClick={onToBack}>
+            Enviar para o fundo
+          </button>
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={onDelete}>
+            Excluir bloco
+          </button>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
 function blockLayerName(blk: CustomBlock): string {
@@ -2611,6 +2745,7 @@ function FilteredInspector({
 }) {
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
   const hasBudget = useBudget((s) => s.rows.length > 0);
   const hasForecast = useForecast((s) => s.rows.length > 0);
   const hasRolling = useRolling((s) => s.rows.length > 0);
@@ -2680,8 +2815,14 @@ function FilteredInspector({
         }
       }
     }
-    onChange(patch);
-    setPendingSource(null);
+    setRecalculating(true);
+    const nextLabel = dataSourceLabel(pendingSource);
+    window.setTimeout(() => {
+      onChange(patch);
+      setPendingSource(null);
+      setRecalculating(false);
+      toast.success(`Fonte alterada para ${nextLabel}.`);
+    }, 180);
   };
 
   const dsBadgeLabel = dataSourceLabel(ds);
@@ -2709,7 +2850,15 @@ function FilteredInspector({
   return (
     <div className="space-y-2">
       {showPicker && (
-        <div className="rounded-md border border-border/60 bg-secondary/30 p-2">
+        <div className="relative rounded-md border border-border/60 bg-secondary/30 p-2">
+          {recalculating && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/70 backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-xs font-medium text-primary">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Recalculando bloco...
+              </div>
+            </div>
+          )}
           <div className="mb-1.5 flex items-center justify-between">
             <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
               Fonte de Dados

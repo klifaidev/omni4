@@ -50,7 +50,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
   ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
+  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -97,6 +97,20 @@ import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/comp
 import { PreflightPopover } from "@/components/pricing/slides/SlidesPreflightPopover";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useSlideExport } from "@/hooks/useSlideExport";
+
+type ExportFormat = "pptx" | "pdf";
+
+function slideToastSuccess(message: string) {
+  toast.success(message, { icon: <CheckCheck className="h-4 w-4 text-success" /> });
+}
+
+function slideToastInfo(message: string) {
+  toast.info(message, { icon: <Sparkles className="h-4 w-4 text-primary" /> });
+}
+
+function slideToastError(message: string) {
+  toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
+}
 
 // ----------------------------------------------------------------------------
 // Smart defaults ? calculados no momento de criar o slide a partir das bases
@@ -1425,6 +1439,9 @@ export default function SlidesBeta() {
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
   const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 292, 220, 420);
   const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 340, 280, 520);
+  const [templateApplying, setTemplateApplying] = useState(false);
+  const [importApplying, setImportApplying] = useState(false);
+  const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
 
   // ====== Colaboração em tempo real ======
   const [collabOpen, setCollabOpen] = useState(false);
@@ -1439,7 +1456,7 @@ export default function SlidesBeta() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const guardViewOnly = useCallback(() => {
     if (!viewOnly) return false;
-    toast.info("Modo somente leitura");
+    slideToastInfo("Modo somente leitura");
     return true;
   }, [viewOnly]);
 
@@ -1501,9 +1518,13 @@ export default function SlidesBeta() {
 
   const applyTemplate = (tpl: SlideTemplate) => {
     if (guardViewOnly()) return;
+    setTemplateApplying(true);
+    window.setTimeout(() => {
+      try {
     const built = tpl.build({ months, budgetMonths });
     if (built.length === 0) {
       // "Em Branco" ? apenas fecha o modal.
+      setTemplateApplying(false);
       return;
     }
     // Insere cada slide via addItem + updateItem para reaproveitar a lógica
@@ -1515,7 +1536,14 @@ export default function SlidesBeta() {
       if (!created) continue;
       updateItem(created.id, () => ({ ...slide, id: created.id } as SlideItem));
     }
-    toast.success(`Template "${tpl.name}" aplicado`);
+        slideToastSuccess(`Template "${tpl.name}" aplicado`);
+      } catch (err) {
+        console.error(err);
+        slideToastError("Não foi possível aplicar o template.");
+      } finally {
+        setTemplateApplying(false);
+      }
+    }, 180);
   };
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
@@ -1542,6 +1570,34 @@ export default function SlidesBeta() {
     n += Object.values(pricingFilters).filter((v) => v && v.length > 0).length;
     return n;
   }, [selectedPeriods, pricingFilters]);
+
+  const exportDisabledReason = useMemo(() => {
+    if (items.length === 0) return "Adicione ao menos um slide para exportar.";
+    const incomplete = items.filter((i) => !isItemReady(i).ok).length;
+    if (incomplete > 0) {
+      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""} — abra o preflight para ver quais.`;
+    }
+    if (preflight.errors > 0) {
+      return `Existem ${preflight.errors} erro${preflight.errors > 1 ? "s" : ""} de preflight — abra o preflight para revisar.`;
+    }
+    return null;
+  }, [items, preflight.errors]);
+
+  const globalFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (selectedPeriods !== null) parts.push(`${selectedPeriods.length} período${selectedPeriods.length > 1 ? "s" : ""}`);
+    for (const [key, values] of Object.entries(pricingFilters)) {
+      if (values && values.length > 0) parts.push(`${key}: ${values.length}`);
+    }
+    return parts.length ? parts.join(" · ") : "Nenhum filtro global aplicado";
+  }, [pricingFilters, selectedPeriods]);
+
+  const confirmExport = async () => {
+    const format = exportConfirm;
+    setExportConfirm(null);
+    if (format === "pdf") await handleExportPdf();
+    else await handleExport();
+  };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
@@ -1594,7 +1650,7 @@ export default function SlidesBeta() {
         onDragCancel={() => setDragging(null)}
       >
       <div
-        className="grid h-[calc(100vh-3.5rem)] min-h-0 gap-0 overflow-hidden"
+        className="grid h-[calc(100vh-3.5rem)] min-h-0 gap-0 overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
         style={{
           gridTemplateColumns: `56px minmax(0,1fr) ${inspectorOpen ? `${rightPanelWidth}px` : "36px"}`,
         }}
@@ -1878,36 +1934,45 @@ export default function SlidesBeta() {
                     />
                   </PopoverContent>
                 </Popover>
-                <div className="inline-flex items-center rounded-md shadow-[0_4px_12px_-4px_hsl(var(--primary)/0.5)]">
-                  <Button
-                    size="sm" className="h-8 gap-2 rounded-r-none"
-                    disabled={items.length === 0 || exporting || !readyAll}
-                    onClick={handleExport}
-                  >
-                    <Download className="h-4 w-4" />
-                    {exporting ? "Gerando..." : "Exportar PPTX"}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        className="h-8 rounded-l-none border-l border-primary-foreground/20 px-2"
-                        disabled={items.length === 0 || exporting || !readyAll}
-                        aria-label="Mais formatos de exportação"
-                      >
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={handleExport} disabled={exporting}>
-                        <Download className="mr-2 h-4 w-4" /> Exportar PPTX
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleExportPdf} disabled={exporting}>
-                        <FileText className="mr-2 h-4 w-4" /> Exportar PDF
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      <div className="inline-flex items-center rounded-md shadow-[0_4px_12px_-4px_hsl(var(--primary)/0.5)]">
+                        <Button
+                          size="sm" className="h-8 gap-2 rounded-r-none"
+                          disabled={!!exportDisabledReason || exporting}
+                          onClick={() => setExportConfirm("pptx")}
+                        >
+                          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          {exporting ? "Gerando..." : "Exportar PPTX"}
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              className="h-8 rounded-l-none border-l border-primary-foreground/20 px-2"
+                              disabled={!!exportDisabledReason || exporting}
+                              aria-label="Mais formatos de exporta??o"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setExportConfirm("pptx")} disabled={exporting}>
+                              <Download className="mr-2 h-4 w-4" /> Exportar PPTX
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setExportConfirm("pdf")} disabled={exporting}>
+                              <FileText className="mr-2 h-4 w-4" /> Exportar PDF
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {exportDisabledReason ?? "Revisar resumo antes de exportar"}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </TooltipProvider>
           </div>
@@ -2094,10 +2159,25 @@ export default function SlidesBeta() {
               </div>
             )}
           </div>
+          {(templateApplying || importApplying || exporting) && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/55 backdrop-blur-sm">
+              <div className="flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-2xl">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <div>
+                  <div className="text-sm font-medium">
+                    {exporting ? "Preparando exportação" : importApplying ? "Inserindo slides no deck" : "Aplicando template"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {exporting ? "Renderizando os slides e gerando o arquivo." : "Organizando os slides e atualizando a esteira."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* ===== Coluna direita: inspector (recolhível) ===== */}
-        <aside className="relative flex min-h-0 flex-col border-l border-border/40 bg-sidebar/40">
+        <aside className="relative flex min-h-0 flex-col border-l border-border/40 bg-sidebar/40 transition-all duration-200 ease-out">
           {inspectorOpen && (
             <ResizeHandle side="left" onResize={(delta) => setRightPanelWidth(rightPanelWidth + delta)} />
           )}
@@ -2134,6 +2214,50 @@ export default function SlidesBeta() {
         })() : null}
       </DragOverlay>
       </DndContext>
+      <Dialog open={!!exportConfirm} onOpenChange={(open) => !open && setExportConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-4 w-4 text-primary" />
+              Confirmar exportação
+            </DialogTitle>
+            <DialogDescription>
+              Revise o resumo antes de gerar o arquivo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Arquivo</span>
+              <span className="text-right font-medium">{fileName.replace(/\.(pptx?|pdf)$/i, "")}.{exportConfirm ?? "pptx"}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Formato</span>
+              <span className="font-medium uppercase">{exportConfirm ?? "pptx"}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Slides</span>
+              <span className="font-medium">{items.length}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Filtros globais</span>
+              <span className="max-w-[220px] text-right font-medium">{globalFilterSummary}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Preflight</span>
+              <span className={cn("font-medium", preflight.errors > 0 ? "text-destructive" : preflight.warnings > 0 ? "text-warning" : "text-success")}>
+                {preflight.errors > 0 ? `${preflight.errors} erro(s)` : preflight.warnings > 0 ? `${preflight.warnings} aviso(s)` : "Pronto"}
+              </span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExportConfirm(null)}>Cancelar</Button>
+            <Button onClick={confirmExport} disabled={exporting || !!exportDisabledReason} className="gap-2">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Confirmar exportação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <TemplateGallery
         open={galleryOpen}
         onOpenChange={setGalleryOpen}
@@ -2145,40 +2269,50 @@ export default function SlidesBeta() {
         onOpenChange={setImportOpen}
         onImport={(slides: PptxSlide[], selectedIndices: number[]) => {
           if (guardViewOnly()) return;
-          for (const idx of selectedIndices) {
-            const slide = slides[idx];
-            if (!slide) continue;
-            addItem("custom");
-            const state = useSlidesFlow.getState();
-            const created = state.items[state.items.length - 1];
-            if (!created) continue;
-            const imageBlock: ImageBlock = {
-              id: crypto.randomUUID(),
-              kind: "image",
-              x: 0, y: 0,
-              w: CANVAS_W, h: CANVAS_H,
-              z: 1,
-              src: slide.thumbnailDataUrl ?? "",
-              fit: "cover",
-            };
-            updateItem(created.id, (it) =>
-              it.kind === "custom"
-                ? {
-                    ...it,
-                    label: `Slide ${slide.numero} (importado)`,
-                    config: {
-                      background: "FFFFFF",
-                      showHaraldFooter: false,
-                      blocks: slide.thumbnailDataUrl ? [imageBlock] : [],
-                    },
-                  } as typeof it
-                : it,
-            );
-          }
+          setImportApplying(true);
           setImportOpen(false);
-          toast.success(
-            `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
-          );
+          window.setTimeout(() => {
+            try {
+              for (const idx of selectedIndices) {
+                const slide = slides[idx];
+                if (!slide) continue;
+                addItem("custom");
+                const state = useSlidesFlow.getState();
+                const created = state.items[state.items.length - 1];
+                if (!created) continue;
+                const imageBlock: ImageBlock = {
+                  id: crypto.randomUUID(),
+                  kind: "image",
+                  x: 0, y: 0,
+                  w: CANVAS_W, h: CANVAS_H,
+                  z: 1,
+                  src: slide.thumbnailDataUrl ?? "",
+                  fit: "cover",
+                };
+                updateItem(created.id, (it) =>
+                  it.kind === "custom"
+                    ? {
+                        ...it,
+                        label: `Slide ${slide.numero} (importado)`,
+                        config: {
+                          background: "FFFFFF",
+                          showHaraldFooter: false,
+                          blocks: slide.thumbnailDataUrl ? [imageBlock] : [],
+                        },
+                      } as typeof it
+                    : it,
+                );
+              }
+              slideToastSuccess(
+                `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
+              );
+            } catch (err) {
+              console.error(err);
+              slideToastError("Não foi possível inserir os slides importados.");
+            } finally {
+              setImportApplying(false);
+            }
+          }, 180);
         }}
       />
       <FullscreenCustomEditor

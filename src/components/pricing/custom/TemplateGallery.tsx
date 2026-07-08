@@ -63,6 +63,17 @@ export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
 
         <ScrollArea className="flex-1 max-h-[calc(88vh-160px)]">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+            {filtered.length === 0 && (
+              <div className="col-span-full flex min-h-[260px] items-center justify-center">
+                <div className="max-w-sm rounded-2xl border border-dashed border-border/60 bg-muted/20 p-6 text-center">
+                  <Sparkles className="mx-auto mb-3 h-8 w-8 text-muted-foreground/70" />
+                  <div className="text-sm font-semibold">Nenhum template encontrado</div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Tente outra categoria ou volte para Todos para ver a biblioteca completa.
+                  </p>
+                </div>
+              </div>
+            )}
             {filtered.map((tpl) => (
               <TemplateCard key={tpl.id} template={tpl} ctx={ctx} onSelect={() => {
                 onSelect(tpl);
