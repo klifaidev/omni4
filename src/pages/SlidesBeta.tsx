@@ -7,7 +7,7 @@
 //  3. Pode salvar a esteira como Pré-definição (localStorage)
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, type ComponentType } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
+  MonitorPlay, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -101,6 +102,7 @@ import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useSlideExport } from "@/hooks/useSlideExport";
 
 type ExportFormat = "pptx" | "pdf";
+type Icon = ComponentType<{ className?: string }>;
 
 function slideToastSuccess(message: string) {
   toast.success(message, { icon: <CheckCheck className="h-4 w-4 text-success" /> });
@@ -1458,6 +1460,30 @@ function QuickAddSlideButton({
   );
 }
 
+function ShareActionButton({
+  icon: Icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon: Icon;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-20 flex-col items-center justify-center gap-2 rounded-lg border border-border/50 bg-background text-xs font-medium transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Icon className="h-5 w-5 text-primary" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function PresetsPanel() {
   const presets = useSlidesFlow((s) => s.presets);
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
@@ -1591,6 +1617,7 @@ export default function SlidesBeta() {
   const [importOpen, setImportOpen] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
+  const [presentationPresenterMode, setPresentationPresenterMode] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -1670,7 +1697,8 @@ export default function SlidesBeta() {
     return () => setCollabBroadcast(null, null);
   }, [roomId, broadcast, collabUserId, setCollabBroadcast]);
 
-  const startCollab = () => {
+  const startCollab = (): string | null => {
+    if (guardViewOnly()) return null;
     const name = collabName.trim() || "Convidado";
     if (typeof window !== "undefined") {
       localStorage.setItem("collab-username", name);
@@ -1679,6 +1707,21 @@ export default function SlidesBeta() {
     const newRoom = Math.random().toString(36).slice(2, 10);
     setRoomId(newRoom);
     setCollabOpen(false);
+    return newRoom;
+  };
+  const inviteLink = roomId && typeof window !== "undefined"
+    ? `${window.location.origin}/#/slides?room=${roomId}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`
+    : "";
+  const openPresentation = (presenter = false) => {
+    setPresentationPresenterMode(presenter);
+    setPresentationOpen(true);
+  };
+  const copyInviteLink = () => {
+    const activeRoom = roomId ?? startCollab();
+    if (!activeRoom || typeof window === "undefined") return;
+    const url = `${window.location.origin}/#/slides?room=${activeRoom}&name=Convidado${guestReadOnly ? "&mode=view" : ""}`;
+    navigator.clipboard?.writeText(url);
+    toast.success("Link copiado!");
   };
 
   const applyTemplate = (tpl: SlideTemplate) => {
@@ -1994,6 +2037,61 @@ export default function SlidesBeta() {
                   </TooltipTrigger>
                   <TooltipContent>Galeria de templates</TooltipContent>
                 </Tooltip>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label="Abrir menu de compartilhamento">
+                      <Share2 className="h-3.5 w-3.5" />
+                      Compartilhar
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-[360px] p-4">
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <Users2 className="h-4 w-4 text-primary" />
+                          Colaboracao em tempo real
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          Crie uma sala para outras pessoas acompanharem ou editarem este deck.
+                        </p>
+                      </div>
+                      <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
+                        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Seu nome</Label>
+                        <Input
+                          value={collabName}
+                          disabled={viewOnly}
+                          onChange={(e) => setCollabName(e.target.value)}
+                          placeholder="Ex.: Alice"
+                          className="h-8 text-sm"
+                        />
+                        {roomId && (
+                          <Input
+                            readOnly
+                            value={inviteLink}
+                            className="h-8 font-mono text-[10px]"
+                            onFocus={(e) => e.currentTarget.select()}
+                          />
+                        )}
+                        <label className="flex items-center justify-between gap-2 pt-1">
+                          <span className="text-[11px] text-muted-foreground">Convidado somente leitura</span>
+                          <Switch checked={guestReadOnly} disabled={viewOnly} onCheckedChange={setGuestReadOnly} />
+                        </label>
+                        <Button className="w-full gap-2" onClick={copyInviteLink} disabled={viewOnly}>
+                          <Copy className="h-3.5 w-3.5" />
+                          Copiar link
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <ShareActionButton icon={Download} label="PPTX" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pptx")} />
+                        <ShareActionButton icon={FileText} label="PDF" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pdf")} />
+                        <ShareActionButton icon={Play} label="Apresentar" disabled={items.length === 0} onClick={() => openPresentation(false)} />
+                      </div>
+                      {exportDisabledReason && (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">{exportDisabledReason}</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Tooltip>
                   <TooltipTrigger asChild>
                       <Button
@@ -2010,14 +2108,16 @@ export default function SlidesBeta() {
                 <SavePresetDialog />
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    <span className="hidden">
                     <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5"
+                      variant="outline" size="sm" className="h-8 gap-1.5 rounded-r-none"
                       onClick={() => setCollabOpen(true)}
                       aria-label="Iniciar colaboração"
                     >
                       <Users2 className="h-3.5 w-3.5" />
                       Colaborar
                     </Button>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent>
                     {roomId ? `Sala ativa: ${roomId}` : "Compartilhar sessão em tempo real"}
@@ -2091,7 +2191,6 @@ export default function SlidesBeta() {
                   </TooltipTrigger>
                   <TooltipContent>{filtersOpen ? "Fechar filtros" : "Abrir filtros"}</TooltipContent>
                 </Tooltip>
-                <div className="mx-1 h-5 w-px bg-border/50" />
                 <TransitionSelect />
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <PreflightPopover
@@ -2106,7 +2205,7 @@ export default function SlidesBeta() {
                     <Button
                       variant="outline" size="sm" className="h-8 gap-1.5"
                       disabled={items.length === 0}
-                      onClick={() => setPresentationOpen(true)}
+                      onClick={() => openPresentation(false)}
                       aria-label="Iniciar apresentação"
                     >
                       <Play className="h-3.5 w-3.5" />
@@ -2115,6 +2214,35 @@ export default function SlidesBeta() {
                   </TooltipTrigger>
                   <TooltipContent>Iniciar apresentação</TooltipContent>
                 </Tooltip>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      disabled={items.length === 0}
+                      aria-label="Escolher modo de apresentacao"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72 p-1.5">
+                    <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(false)}>
+                      <MonitorPlay className="mt-0.5 h-4 w-4 text-primary" />
+                      <span className="space-y-0.5">
+                        <span className="block text-sm font-medium">Tela cheia</span>
+                        <span className="block text-xs text-muted-foreground">Apresente o deck no modo atual de tela cheia.</span>
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(true)}>
+                      <Timer className="mt-0.5 h-4 w-4 text-primary" />
+                      <span className="space-y-0.5">
+                        <span className="block text-sm font-medium">Visao do apresentador</span>
+                        <span className="block text-xs text-muted-foreground">Ja abre com notas do apresentador e timer ativos.</span>
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <Popover>
                   <PopoverTrigger asChild>
@@ -2138,45 +2266,6 @@ export default function SlidesBeta() {
                     />
                   </PopoverContent>
                 </Popover>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex">
-                      <div className="inline-flex items-center rounded-md shadow-[0_4px_12px_-4px_hsl(var(--primary)/0.5)]">
-                        <Button
-                          size="sm" className="h-8 gap-2 rounded-r-none"
-                          disabled={!!exportDisabledReason || exporting}
-                          onClick={() => setExportConfirm("pptx")}
-                        >
-                          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                          {exporting ? "Gerando..." : "Exportar PPTX"}
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="sm"
-                              className="h-8 rounded-l-none border-l border-primary-foreground/20 px-2"
-                              disabled={!!exportDisabledReason || exporting}
-                              aria-label="Mais formatos de exporta??o"
-                            >
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setExportConfirm("pptx")} disabled={exporting}>
-                              <Download className="mr-2 h-4 w-4" /> Exportar PPTX
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setExportConfirm("pdf")} disabled={exporting}>
-                              <FileText className="mr-2 h-4 w-4" /> Exportar PDF
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {exportDisabledReason ?? "Revisar resumo antes de exportar"}
-                  </TooltipContent>
-                </Tooltip>
               </div>
             </TooltipProvider>
           </div>
@@ -2620,6 +2709,7 @@ export default function SlidesBeta() {
       {presentationOpen && (
         <PresentationMode
           currentSlideId={selectedId ?? items[0]?.id}
+          initialPresenterMode={presentationPresenterMode}
           onClose={() => setPresentationOpen(false)}
         />
       )}

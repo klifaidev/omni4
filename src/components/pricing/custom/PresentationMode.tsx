@@ -29,10 +29,11 @@ interface Props {
   currentSlideId?: string;
   /** Live config for the slide being edited (so unsaved changes show). */
   currentConfig?: CustomSlideConfig;
+  initialPresenterMode?: boolean;
   onClose: () => void;
 }
 
-export function PresentationMode({ currentSlideId, currentConfig, onClose }: Props) {
+export function PresentationMode({ currentSlideId, currentConfig, initialPresenterMode = false, onClose }: Props) {
   const items = useSlidesFlow((s) => s.items);
   const transition = useSlidesFlow((s) => s.transition);
   // If editor was opened standalone (no items in deck), present just the live slide.
@@ -47,7 +48,7 @@ export function PresentationMode({ currentSlideId, currentConfig, onClose }: Pro
   const [idx, setIdx] = useState(initial < 0 ? 0 : initial);
   const [prevIdx, setPrevIdx] = useState<number | null>(null);
   const [animKey, setAnimKey] = useState(0);
-  const [presenterMode, setPresenterMode] = useState(false);
+  const [presenterMode, setPresenterMode] = useState(initialPresenterMode);
   const [screen, setScreen] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [thumbsOpen, setThumbsOpen] = useState(false);
   const [laser, setLaser] = useState(false);
