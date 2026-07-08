@@ -267,13 +267,14 @@ interface Props {
   slideId?: string;
   config: CustomSlideConfig;
   onChange: (next: CustomSlideConfig) => void;
+  readOnly?: boolean;
   /** Colaboradores ativos (todos os slides) — filtrados internamente por slideId */
   collaborators?: import("@/lib/collaboration").CollabUser[];
   /** Callback de mouse-move em coordenadas do canvas (1280x720) */
   onCursorMove?: (x: number, y: number) => void;
 }
 
-export function CustomSlideEditor({ slideId, config, onChange, collaborators, onCursorMove }: Props) {
+export function CustomSlideEditor({ slideId, config, onChange, readOnly = false, collaborators, onCursorMove }: Props) {
   // Bind the parent's config <-> internal Zustand+temporal store first so
   // selection store reflects the right slide on initial render.
   useEditorBinding(config, onChange, slideId);
@@ -369,8 +370,17 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const multiSelected = selectedIds.length > 1
     ? config.blocks.filter((b) => selectedIds.includes(b.id))
     : [];
+  const notifyReadOnly = useCallback(() => {
+    toast.info("Modo somente leitura");
+  }, []);
+  const canEdit = useCallback(() => {
+    if (!readOnly) return true;
+    notifyReadOnly();
+    return false;
+  }, [notifyReadOnly, readOnly]);
 
   const updateBlock = (id: string, patch: Partial<CustomBlock>) => {
+    if (!canEdit()) return;
     const keys = Object.keys(patch);
     const isMove = keys.every((k) => k === "x" || k === "y");
     const isResize = keys.some((k) => k === "w" || k === "h");
@@ -384,10 +394,12 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     patchBlockAction(id, patch, label);
   };
   const addBlock = (kind: CustomBlockKind) => {
+    if (!canEdit()) return;
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
   };
   const addChart = (chartType: CustomChartType, preset?: "positivacao") => {
+    if (!canEdit()) return;
     const id = preset === "positivacao"
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
@@ -769,18 +781,20 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     }
   };
   const removeBlock = (id: string) => {
+    if (!canEdit()) return;
     deleteBlockAction(id);
     if (selectedIds.includes(id)) clearSelection();
   };
   const duplicateBlock = (id: string) => {
+    if (!canEdit()) return;
     const newId = duplicateBlockAction(id);
     if (newId) setSelection([newId]);
   };
-  const bringForward = (id: string) => bringForwardAction(id);
-  const sendBack = (id: string) => sendBackAction(id);
-  const bringToFront = (id: string) => bringToFrontAction(id);
-  const sendToBack = (id: string) => sendToBackAction(id);
-  const toggleLock = (id: string) => toggleLockAction(id);
+  const bringForward = (id: string) => { if (canEdit()) bringForwardAction(id); };
+  const sendBack = (id: string) => { if (canEdit()) sendBackAction(id); };
+  const bringToFront = (id: string) => { if (canEdit()) bringToFrontAction(id); };
+  const sendToBack = (id: string) => { if (canEdit()) sendToBackAction(id); };
+  const toggleLock = (id: string) => { if (canEdit()) toggleLockAction(id); };
 
   const rememberPaletteUse = useCallback((id: string) => {
     setRecentPaletteIds((prev) => {
@@ -794,9 +808,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     });
   }, []);
   const runPaletteAction = useCallback((id: string, action: () => void) => {
+    if (!canEdit()) return;
     rememberPaletteUse(id);
     action();
-  }, [rememberPaletteUse]);
+  }, [canEdit, rememberPaletteUse]);
   const togglePaletteFavorite = useCallback((id: string) => {
     setFavoritePaletteIds((prev) => {
       const exists = prev.includes(id);
@@ -882,6 +897,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
     if (selectedIds.length === 0) return;
+    if (cut && !canEdit()) return;
     const blk = config.blocks.find((b) => b.id === selectedIds[0]);
     if (!blk) return;
     crossSlideClipboard = JSON.parse(JSON.stringify(blk)) as CustomBlock;
@@ -892,9 +908,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     } else {
       toast.success("Bloco copiado");
     }
-  }, [selectedIds, config.blocks]);
+  }, [canEdit, selectedIds, config.blocks]);
 
   const pasteFromClipboard = useCallback(() => {
+    if (!canEdit()) return;
     if (!crossSlideClipboard) return;
     const src = crossSlideClipboard;
     const clone = JSON.parse(JSON.stringify(src)) as CustomBlock;
@@ -913,21 +930,23 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       setSelection([newId]);
       toast.success("Bloco colado");
     }
-  }, []);
+  }, [canEdit]);
 
   const centerSelectedH = useCallback(() => {
+    if (!canEdit()) return;
     if (selectedIds.length !== 1) return;
     const b = config.blocks.find((x) => x.id === selectedIds[0]);
     if (!b) return;
     patchBlockAction(b.id, { x: Math.round((CANVAS_W - b.w) / 2) } as Partial<CustomBlock>, "Mover bloco");
-  }, [selectedIds, config.blocks]);
+  }, [canEdit, selectedIds, config.blocks]);
 
   const centerSelectedV = useCallback(() => {
+    if (!canEdit()) return;
     if (selectedIds.length !== 1) return;
     const b = config.blocks.find((x) => x.id === selectedIds[0]);
     if (!b) return;
     patchBlockAction(b.id, { y: Math.round((CANVAS_H - b.h) / 2) } as Partial<CustomBlock>, "Mover bloco");
-  }, [selectedIds, config.blocks]);
+  }, [canEdit, selectedIds, config.blocks]);
 
   // Atalhos de teclado
   useEffect(() => {
@@ -937,19 +956,21 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
       if (!inField && (e.metaKey || e.ctrlKey)) {
         const k = e.key.toLowerCase();
-        if (k === "z" && !e.shiftKey) { e.preventDefault(); undoAction(); return; }
-        if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redoAction(); return; }
+        if (k === "z" && !e.shiftKey) { e.preventDefault(); if (canEdit()) undoAction(); return; }
+        if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); if (canEdit()) redoAction(); return; }
         if (k === "a") { e.preventDefault(); selectAllOnSlide(); return; }
         if (k === "c" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(false); return; }
         if (k === "x" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(true); return; }
         if (k === "v" && !e.shiftKey) { e.preventDefault(); pasteFromClipboard(); return; }
         if (k === "g" && !e.shiftKey) {
           e.preventDefault();
+          if (!canEdit()) return;
           if (selectedIds.length >= 2) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); }
           return;
         }
         if (k === "g" && e.shiftKey) {
           e.preventDefault();
+          if (!canEdit()) return;
           if (selectedIds.length > 0) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); }
           return;
         }
@@ -978,19 +999,21 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
+        if (!canEdit()) return;
         if (selectedIds.length === 1) removeBlock(selectedIds[0]);
         else deleteBlocksAction(selectedIds);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
         e.preventDefault();
+        if (!canEdit()) return;
         if (selectedIds.length === 1) duplicateBlock(selectedIds[0]);
         else duplicateBlocksAction(selectedIds);
         return;
       }
       if (selectedIds.length === 1 && (e.metaKey || e.ctrlKey)) {
-        if (e.shiftKey && e.key === "]") { e.preventDefault(); bringToFrontAction(selectedIds[0]); return; }
-        if (e.shiftKey && e.key === "[") { e.preventDefault(); sendToBackAction(selectedIds[0]); return; }
+        if (e.shiftKey && e.key === "]") { e.preventDefault(); if (canEdit()) bringToFrontAction(selectedIds[0]); return; }
+        if (e.shiftKey && e.key === "[") { e.preventDefault(); if (canEdit()) sendToBackAction(selectedIds[0]); return; }
         if (e.key === "]") { e.preventDefault(); bringForward(selectedIds[0]); return; }
         if (e.key === "[") { e.preventDefault(); sendBack(selectedIds[0]); return; }
       }
@@ -1001,6 +1024,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
       if (dx !== 0 || dy !== 0) {
         e.preventDefault();
+        if (!canEdit()) return;
         nudgeBlocksAction(
           selectedIds,
           dx, dy,
@@ -1010,7 +1034,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -1025,6 +1049,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       const items = Array.from(e.clipboardData?.items ?? []);
       const imageItem = items.find((item) => item.type.startsWith("image/"));
       if (!imageItem) return;
+      if (!canEdit()) return;
 
       e.preventDefault();
       const file = imageItem.getAsFile();
@@ -1052,7 +1077,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, []);
+  }, [canEdit]);
 
   // Smart guides — compute lines + snap target for the dragging block.
   // Snap is applied by react-rnd via onDrag's returned coords; we mutate
@@ -1073,6 +1098,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
   const hiddenCount = config.blocks.filter((b) => b.hidden).length;
   const lockedCount = config.blocks.filter((b) => b.locked).length;
   const handleLayerDragEnd = useCallback((event: DragEndEvent) => {
+    if (!canEdit()) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = layersSorted.findIndex((b) => b.id === active.id);
@@ -1083,7 +1109,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
       "Reordenar camadas",
     );
-  }, [layersSorted]);
+  }, [canEdit, layersSorted]);
 
   // Templates
   const [tplOpen, setTplOpen] = useState(false);
@@ -1102,16 +1128,18 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
             Modelos
           </div>
           <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
-            onClick={() => setTplOpen(true)}>
+            onClick={() => { if (canEdit()) setTplOpen(true); }}
+            disabled={readOnly}>
             <BookOpen className="h-3.5 w-3.5" /> Aplicar modelo
           </Button>
           <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 text-xs"
             onClick={() => setSaveTplOpen(true)}
-            disabled={config.blocks.length === 0}>
+            disabled={config.blocks.length === 0 || readOnly}>
             <Save className="h-3.5 w-3.5" /> Salvar como modelo
           </Button>
           <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
-            onClick={() => setAssetsOpen(true)}>
+            onClick={() => { if (canEdit()) setAssetsOpen(true); }}
+            disabled={readOnly}>
             <Images className="h-3.5 w-3.5" /> Assets
           </Button>
           <div className="relative px-1 pt-1">
@@ -1269,13 +1297,14 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
           <div className="px-2">
             <Label className="text-[10px] uppercase text-muted-foreground">Fundo do slide</Label>
             <BgField label="" value={config.background}
-              onChange={(v) => setBackgroundAction(v)} />
+              onChange={(v) => { if (canEdit()) setBackgroundAction(v); }} />
           </div>
           <div className="mt-2 flex items-center justify-between px-2 text-[11px]">
             <span className="text-muted-foreground">Faixa Harald</span>
             <Switch
               checked={config.showHaraldFooter}
-              onCheckedChange={(v) => setShowHaraldFooterAction(v)}
+              disabled={readOnly}
+              onCheckedChange={(v) => { if (canEdit()) setShowHaraldFooterAction(v); }}
             />
           </div>
           <p className="mt-2 px-2 text-[10px] leading-relaxed text-muted-foreground">
@@ -1300,10 +1329,14 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                   size="sm"
                   variant="outline"
                   className="h-6 gap-1 px-2 text-[10px]"
-                  onClick={() => patchBlocksAction(
-                    config.blocks.filter((b) => b.hidden).map((b) => ({ id: b.id, patch: { hidden: false } as Partial<CustomBlock> })),
-                    "Mostrar blocos",
-                  )}
+                  disabled={readOnly}
+                  onClick={() => {
+                    if (!canEdit()) return;
+                    patchBlocksAction(
+                      config.blocks.filter((b) => b.hidden).map((b) => ({ id: b.id, patch: { hidden: false } as Partial<CustomBlock> })),
+                      "Mostrar blocos",
+                    );
+                  }}
                 >
                   <Eye className="h-3 w-3" /> Mostrar {hiddenCount}
                 </Button>
@@ -1313,10 +1346,14 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                   size="sm"
                   variant="outline"
                   className="h-6 gap-1 px-2 text-[10px]"
-                  onClick={() => patchBlocksAction(
-                    config.blocks.filter((b) => b.locked).map((b) => ({ id: b.id, patch: { locked: false } as Partial<CustomBlock> })),
-                    "Desbloquear blocos",
-                  )}
+                  disabled={readOnly}
+                  onClick={() => {
+                    if (!canEdit()) return;
+                    patchBlocksAction(
+                      config.blocks.filter((b) => b.locked).map((b) => ({ id: b.id, patch: { locked: false } as Partial<CustomBlock> })),
+                      "Desbloquear blocos",
+                    );
+                  }}
                 >
                   <Unlock className="h-3 w-3" /> Desbloquear {lockedCount}
                 </Button>
@@ -1334,7 +1371,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       isSelected={selectedIds.includes(blk.id)}
                       onSelect={() => setSelection([blk.id])}
                       onToggleHidden={() =>
-                        patchBlockAction(
+                        canEdit() && patchBlockAction(
                           blk.id,
                           { hidden: !blk.hidden } as Partial<CustomBlock>,
                           blk.hidden ? "Mostrar bloco" : "Ocultar bloco",
@@ -1344,7 +1381,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       onToFront={() => bringToFront(blk.id)}
                       onToBack={() => sendToBack(blk.id)}
                       zIndex={blk.z}
-                      onDelete={() => deleteBlockAction(blk.id)}
+                      onDelete={() => { if (canEdit()) deleteBlockAction(blk.id); }}
                     />
                   ))}
                 </SortableContext>
@@ -1460,6 +1497,10 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 }
               }}
               onDrop={(e) => {
+                if (readOnly) {
+                  notifyReadOnly();
+                  return;
+                }
                 const src = e.dataTransfer.getData("application/x-slide-asset");
                 if (!src) return;
                 e.preventDefault();
@@ -1525,16 +1566,16 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               {[...config.blocks].sort((a, b) => a.z - b.z).map((blk) => {
                 const isSelected = selectedIds.includes(blk.id);
                 const isInlineEditable =
-                  (blk.kind === "title" || blk.kind === "text") && !blk.locked;
+                  (blk.kind === "title" || blk.kind === "text") && !blk.locked && !readOnly;
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
                 const useRotatableBlock = isRotatable && rotation !== 0;
                 // Shape-specific Rnd config — contextual handles override.
-                let shapeResize: boolean | Record<string, boolean> = !blk.locked;
-                let shapeDisableDrag = !!blk.locked;
+                let shapeResize: boolean | Record<string, boolean> = !blk.locked && !readOnly;
+                let shapeDisableDrag = !!blk.locked || readOnly;
                 let shapeLockAspect = false;
-                if (blk.kind === "shape" && !blk.locked) {
+                if (blk.kind === "shape" && !blk.locked && !readOnly) {
                   const sb = blk as ShapeBlock;
                   if (isLineFamily(sb.shape)) {
                     shapeResize = false;
@@ -1564,7 +1605,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         rotation={rotation}
                         scale={scale}
                         isSelected={isSelected}
-                        isLocked={!!blk.locked}
+                        isLocked={!!blk.locked || readOnly}
                         isEditing={isEditing}
                         onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
                         onResize={(nx, ny, nw, nh) =>
@@ -1590,7 +1631,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         {isEditing && (
                           <InlineTextEditor
                             block={blk as TitleBlock | TextBlock}
-                            onPatch={(patch) => patchBlockAction(blk.id, patch, "Alterar estilo")}
+                            onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                             onExit={() => setInlineEditId(null)}
                           />
                         )}
@@ -1628,7 +1669,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           </div>
                         )}
-                        {isSelected && !blk.locked && !isEditing && (
+                        {isSelected && !blk.locked && !readOnly && !isEditing && (
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                           />
@@ -1735,7 +1776,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                         {isEditing && (
                           <InlineTextEditor
                             block={blk as TitleBlock | TextBlock}
-                            onPatch={(patch) => patchBlockAction(blk.id, patch, "Alterar estilo")}
+                            onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                             onExit={() => setInlineEditId(null)}
                           />
                         )}
@@ -1773,7 +1814,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           </div>
                         )}
-                        {isSelected && !blk.locked && !isEditing && isRotatable && (
+                        {isSelected && !blk.locked && !readOnly && !isEditing && isRotatable && (
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                           />
@@ -1782,27 +1823,27 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                     )}
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-56">
-                    <ContextMenuItem onSelect={() => duplicateBlock(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => duplicateBlock(blk.id)}>
                       Duplicar <ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => removeBlock(blk.id)} className="text-destructive focus:text-destructive">
+                    <ContextMenuItem disabled={readOnly} onSelect={() => removeBlock(blk.id)} className="text-destructive focus:text-destructive">
                       Excluir <ContextMenuShortcut>Del</ContextMenuShortcut>
                     </ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={() => bringForward(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => bringForward(blk.id)}>
                       Trazer para frente <ContextMenuShortcut>Ctrl+]</ContextMenuShortcut>
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => bringToFront(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => bringToFront(blk.id)}>
                       Trazer para a frente de tudo
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => sendBack(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => sendBack(blk.id)}>
                       Enviar para trás <ContextMenuShortcut>Ctrl+[</ContextMenuShortcut>
                     </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => sendToBack(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => sendToBack(blk.id)}>
                       Enviar para o fundo
                     </ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={() => toggleLock(blk.id)}>
+                    <ContextMenuItem disabled={readOnly} onSelect={() => toggleLock(blk.id)}>
                       {blk.locked ? "Desbloquear posição" : "Bloquear posição"}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
@@ -1812,22 +1853,22 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                       Copiar estilo
                     </ContextMenuItem>
                     <ContextMenuItem
-                      disabled={!canPasteElementStyleAction(blk.id)}
+                      disabled={readOnly || !canPasteElementStyleAction(blk.id)}
                       onSelect={() => {
-                        if (pasteElementStyleAction(blk.id)) toast.success("Estilo colado");
+                        if (canEdit() && pasteElementStyleAction(blk.id)) toast.success("Estilo colado");
                       }}>
                       Colar estilo
                     </ContextMenuItem>
                     {selectedIds.length >= 2 && (
                       <>
                         <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); }}>
+                        <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}>
                           Agrupar <ContextMenuShortcut>Ctrl+G</ContextMenuShortcut>
                         </ContextMenuItem>
                       </>
                     )}
                     {blk.groupId && (
-                      <ContextMenuItem onSelect={() => { ungroupBlocksAction([blk.id]); toast.success("Grupo desfeito"); }}>
+                      <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) { ungroupBlocksAction([blk.id]); toast.success("Grupo desfeito"); } }}>
                         Desagrupar <ContextMenuShortcut>Ctrl+Shift+G</ContextMenuShortcut>
                       </ContextMenuItem>
                     )}
@@ -1838,16 +1879,14 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
               {/* Inline text edit toolbar. */}
               {(() => {
-                if (!inlineEditId) return null;
+                if (!inlineEditId || readOnly) return null;
                 const blk = config.blocks.find((b) => b.id === inlineEditId);
                 if (!blk || (blk.kind !== "title" && blk.kind !== "text")) return null;
                 return (
                   <InlineTextToolbar
                     block={blk as TitleBlock | TextBlock}
                     scale={scale}
-                    onPatch={(patch) =>
-                      patchBlockAction(blk.id, patch, "Alterar estilo")
-                    }
+                    onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                   />
                 );
               })()}
@@ -1855,7 +1894,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               {/* Contextual handles for selected shape blocks. */}
               {config.blocks
                 .filter((b): b is ShapeBlock =>
-                  b.kind === "shape" && selectedIds.includes(b.id) && !b.locked)
+                  b.kind === "shape" && selectedIds.includes(b.id) && !b.locked && !readOnly)
                 .map((sb) => (
                   <ShapeHandleOverlay key={`sh-${sb.id}`} block={sb}
                     scale={scale} canvasEl={canvasRef.current} />
@@ -1871,7 +1910,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
                 const active = members.some((b) => selectedIds.includes(b.id));
                 const isGroupEditing = !!groupEditMemberId
                   && members.some((m) => m.id === groupEditMemberId);
-                const showHandles = active && !isGroupEditing;
+                const showHandles = active && !isGroupEditing && !readOnly;
                 return (
                   <GroupOverlay
                     key={`grp-${g.id}`}
@@ -1971,21 +2010,23 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
         {/* Barra de zoom + undo/redo */}
         <div className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border/40 bg-card/40 px-2 py-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={undoAction} disabled={!undoRedo.canUndo}
+            onClick={() => { if (canEdit()) undoAction(); }} disabled={!undoRedo.canUndo || readOnly}
             title={undoRedo.undoLabel ? `Desfazer: ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer (Ctrl+Z)"}>
             <Undo2 className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={redoAction} disabled={!undoRedo.canRedo}
+            onClick={() => { if (canEdit()) redoAction(); }} disabled={!undoRedo.canRedo || readOnly}
             title={undoRedo.redoLabel ? `Refazer: ${undoRedo.redoLabel.toLowerCase()}` : "Refazer (Ctrl+Shift+Z)"}>
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <BrandKitPopover selected={selected} />
+          <BrandKitPopover selected={selected} readOnly={readOnly} canEdit={canEdit} />
           <PalettePopover
             theme={getTheme(config.theme)}
             blocks={config.blocks}
             selected={selected}
+            readOnly={readOnly}
+            canEdit={canEdit}
           />
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant="ghost" className="h-7 w-7"
@@ -2059,7 +2100,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
 
         <SpeakerNotesBar
           value={config.speakerNotes ?? ""}
-          onChange={(v) => setSpeakerNotesAction(v)}
+          onChange={(v) => { if (canEdit()) setSpeakerNotesAction(v); }}
         />
       </div>
 
@@ -2099,6 +2140,8 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               selectedIds={selectedIds}
               blocks={multiSelected}
               hasGroup={multiSelected.some((b) => !!b.groupId)}
+              readOnly={readOnly}
+              canEdit={canEdit}
             />
           ) : !selected ? (
             <div className="space-y-2 px-1 text-[12px] text-muted-foreground">
@@ -2112,7 +2155,7 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
               <div className="flex items-center justify-between">
                 <Badge variant="secondary" className="text-[10px]">{BLOCK_LABELS[selected.kind]}</Badge>
                 <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => bringForward(selected.id)} title="Trazer pra frente">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={readOnly} onClick={() => bringForward(selected.id)} title="Trazer pra frente">
                     <ArrowUp className="h-3.5 w-3.5" />
                   </Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => sendBack(selected.id)} title="Enviar pra trás">
@@ -2169,8 +2212,13 @@ export function CustomSlideEditor({ slideId, config, onChange, collaborators, on
       <TemplatePicker
         open={tplOpen}
         onOpenChange={setTplOpen}
-        onApply={(cfg) => { onChange(cfg); toast.success("Modelo aplicado"); }}
+        onApply={(cfg) => {
+          if (!canEdit()) return;
+          onChange(cfg);
+          toast.success("Modelo aplicado");
+        }}
         onApplyDeck={(configs, mode, name) => {
+          if (!canEdit()) return;
           const state = useSlidesFlow.getState();
           const items = [...state.items];
           const idx = items.findIndex((i) => i.id === slideId);
@@ -3883,12 +3931,14 @@ function clientToCanvas(
 // ---------------------------------------------------------------------------
 // Multi-selection inspector (B8.2)
 // ---------------------------------------------------------------------------
-function MultiSelectInspector({ selectedIds, blocks, hasGroup }: {
+function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit }: {
   selectedIds: string[];
   blocks: CustomBlock[];
   hasGroup: boolean;
+  readOnly: boolean;
+  canEdit: () => boolean;
 }) {
-  const align = (k: AlignKind) => alignBlocksAction(selectedIds, k);
+  const align = (k: AlignKind) => { if (canEdit()) alignBlocksAction(selectedIds, k); };
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -3897,12 +3947,14 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup }: {
         </Badge>
         <div className="flex gap-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => duplicateBlocksAction(selectedIds)}
+            disabled={readOnly}
+            onClick={() => { if (canEdit()) duplicateBlocksAction(selectedIds); }}
             title="Duplicar todos (Ctrl+D)">
             <CopyIcon className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive"
-            onClick={() => deleteBlocksAction(selectedIds)}
+            disabled={readOnly}
+            onClick={() => { if (canEdit()) deleteBlocksAction(selectedIds); }}
             title="Excluir todos (Del)">
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -3939,12 +3991,12 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup }: {
         <Label className="text-[10px] uppercase text-muted-foreground">Distribuir</Label>
         <div className="mt-1 grid grid-cols-2 gap-1">
           <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
-            disabled={blocks.length < 3}
+            disabled={readOnly || blocks.length < 3}
             onClick={() => align("distH")}>
             <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" /> Horizontal
           </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
-            disabled={blocks.length < 3}
+            disabled={readOnly || blocks.length < 3}
             onClick={() => align("distV")}>
             <AlignVerticalDistributeCenter className="h-3.5 w-3.5" /> Vertical
           </Button>
@@ -3955,12 +4007,13 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup }: {
 
       <div className="grid grid-cols-2 gap-1">
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
-          onClick={() => { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); }}>
+          disabled={readOnly}
+          onClick={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}>
           <GroupIcon className="h-3.5 w-3.5" /> Agrupar
         </Button>
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
-          disabled={!hasGroup}
-          onClick={() => { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); }}>
+          disabled={readOnly || !hasGroup}
+          onClick={() => { if (canEdit()) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); } }}>
           <UngroupIcon className="h-3.5 w-3.5" /> Desagrupar
         </Button>
       </div>
@@ -4096,11 +4149,18 @@ function collectUsedColors(blocks: CustomBlock[]): string[] {
   return Array.from(set).filter(Boolean).slice(0, 7);
 }
 
-function BrandKitPopover({ selected }: { selected: CustomBlock | null }) {
+function BrandKitPopover({
+  selected, readOnly, canEdit,
+}: {
+  selected: CustomBlock | null;
+  readOnly: boolean;
+  canEdit: () => boolean;
+}) {
   const target = getBrandStyleTarget(selected);
   const styles = getBrandStylesForBlock(selected);
 
   const apply = (style: SlideBrandStyle) => {
+    if (!canEdit()) return;
     if (!selected) {
       toast.info("Selecione um bloco para aplicar um estilo.");
       return;
@@ -4116,6 +4176,7 @@ function BrandKitPopover({ selected }: { selected: CustomBlock | null }) {
           size="sm"
           variant="ghost"
           className="h-7 gap-1 px-2 text-[11px]"
+          disabled={readOnly}
           title="Brand Kit"
         >
           <Sparkles className="h-3.5 w-3.5" /> Brand Kit
@@ -4191,11 +4252,13 @@ function BrandStyleButton({
 }
 
 function PalettePopover({
-  theme, blocks, selected,
+  theme, blocks, selected, readOnly, canEdit,
 }: {
   theme: SlideTheme;
   blocks: CustomBlock[];
   selected: CustomBlock | null;
+  readOnly: boolean;
+  canEdit: () => boolean;
 }) {
   const used = collectUsedColors(blocks);
   const canApply = !!selected && (
@@ -4204,6 +4267,7 @@ function PalettePopover({
   );
 
   const apply = (hex: string) => {
+    if (!canEdit()) return;
     if (!selected) {
       toast.info("Selecione um bloco para aplicar a cor.");
       return;
@@ -4225,6 +4289,7 @@ function PalettePopover({
         <Button
           size="sm" variant="ghost"
           className="h-7 gap-1 px-2 text-[11px]"
+          disabled={readOnly}
           title="Paleta de cores"
         >
           <Paintbrush className="h-3.5 w-3.5" /> Paleta

@@ -432,13 +432,19 @@ function FiltersPanel({
   onChange,
   pricing,
   budget,
+  readOnly = false,
 }: {
   value: Filters;
   onChange: (next: Filters) => void;
   pricing: PricingRow[];
   budget: BudgetRow[];
+  readOnly?: boolean;
 }) {
   const setKey = (k: FilterKey, vals: string[]) => {
+    if (readOnly) {
+      toast.info("Modo somente leitura");
+      return;
+    }
     const next = { ...value };
     if (vals.length === 0) delete next[k];
     else next[k] = vals;
@@ -460,7 +466,7 @@ function FiltersPanel({
           )}
         </div>
         {activeCount > 0 && (
-          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => onChange({})}>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" disabled={readOnly} onClick={() => onChange({})}>
             <X className="h-3 w-3" /> Limpar
           </Button>
         )}
@@ -504,10 +510,11 @@ function FiltersPanel({
 // Painéis de configuração específicos por tipo
 // ----------------------------------------------------------------------------
 function BridgePvmConfigPanel({
-  item, onChange,
+  item, onChange, readOnly = false,
 }: {
   item: Extract<SlideItem, { kind: "bridge_pvm" }>;
   onChange: (next: SlideItem) => void;
+  readOnly?: boolean;
 }) {
   const fyList = useFyList();
   const months = useMonthsInfo();
@@ -522,6 +529,7 @@ function BridgePvmConfigPanel({
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Modo</Label>
         <Select
+          disabled={readOnly}
           value={cfg.mode}
           onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month", base: null, comp: null } })}
         >
@@ -537,6 +545,7 @@ function BridgePvmConfigPanel({
         <div className="space-y-1.5">
           <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Base</Label>
           <Select
+            disabled={readOnly}
             value={cfg.base ?? undefined}
             onValueChange={(v) => onChange({ ...item, config: { ...cfg, base: v } })}
           >
@@ -554,6 +563,7 @@ function BridgePvmConfigPanel({
         <div className="space-y-1.5">
           <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Comparação</Label>
           <Select
+            disabled={readOnly}
             value={cfg.comp ?? undefined}
             onValueChange={(v) => onChange({ ...item, config: { ...cfg, comp: v } })}
           >
@@ -573,10 +583,11 @@ function BridgePvmConfigPanel({
 }
 
 function BudgetEvoConfigPanel({
-  item, onChange,
+  item, onChange, readOnly = false,
 }: {
   item: Extract<SlideItem, { kind: "budget_evo" }>;
   onChange: (next: SlideItem) => void;
+  readOnly?: boolean;
 }) {
   const budgetRows = useBudget((s) => s.rows);
   const months = useMemo(() => {
@@ -595,6 +606,7 @@ function BudgetEvoConfigPanel({
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mês inicial</Label>
         <Select
+          disabled={readOnly}
           value={cfg.start ?? "__auto__"}
           onValueChange={(v) => onChange({ ...item, config: { ...cfg, start: v === "__auto__" ? null : v } })}
         >
@@ -608,6 +620,7 @@ function BudgetEvoConfigPanel({
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mês final</Label>
         <Select
+          disabled={readOnly}
           value={cfg.end ?? "__auto__"}
           onValueChange={(v) => onChange({ ...item, config: { ...cfg, end: v === "__auto__" ? null : v } })}
         >
@@ -623,10 +636,11 @@ function BudgetEvoConfigPanel({
 }
 
 function CoverConfigPanel({
-  item, onChange,
+  item, onChange, readOnly = false,
 }: {
   item: Extract<SlideItem, { kind: "cover" }>;
   onChange: (next: SlideItem) => void;
+  readOnly?: boolean;
 }) {
   const cfg = item.config;
   return (
@@ -634,6 +648,7 @@ function CoverConfigPanel({
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Estilo</Label>
         <Select
+          disabled={readOnly}
           value={cfg.variant}
           onValueChange={(v) => onChange({ ...item, config: { ...cfg, variant: v as "cover" | "divider" } })}
         >
@@ -648,6 +663,7 @@ function CoverConfigPanel({
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Título</Label>
         <Input
           value={cfg.title}
+          readOnly={readOnly}
           onChange={(e) => onChange({ ...item, config: { ...cfg, title: e.target.value } })}
           className="h-9 text-sm"
         />
@@ -656,6 +672,7 @@ function CoverConfigPanel({
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Subtítulo (opcional)</Label>
         <Textarea
           value={cfg.subtitle ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange({ ...item, config: { ...cfg, subtitle: e.target.value } })}
           rows={2}
           className="text-sm resize-none"
@@ -904,10 +921,11 @@ function CommentsThread({
 
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
-  currentUser, onAddComment,
+  currentUser, onAddComment, readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  readOnly?: boolean;
   collaborators?: CollabUser[];
   isConnected?: boolean;
   updateCursor?: (x: number, y: number) => void;
@@ -963,12 +981,19 @@ function FullscreenCustomEditor({
   }, [open, idx, items]);
 
   const stripSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const guardReadOnly = () => {
+    if (!readOnly) return false;
+    toast.info("Modo somente leitura");
+    return true;
+  };
   const onStripDragEnd = (e: DragEndEvent) => {
+    if (guardReadOnly()) return;
     if (!e.over || e.active.id === e.over.id) return;
     reorder(String(e.active.id), String(e.over.id));
   };
 
   const handleAddBlank = () => {
+    if (guardReadOnly()) return;
     addItem("custom");
     const st = useSlidesFlow.getState();
     const created = st.items[st.items.length - 1];
@@ -982,6 +1007,7 @@ function FullscreenCustomEditor({
   };
 
   const handleRemoveCurrent = () => {
+    if (guardReadOnly()) return;
     if (!current) return;
     const hasContent = current.kind === "custom" && current.config.blocks.length > 0;
     if (hasContent && !confirm(`Remover "${current.label ?? "slide"}"? Os blocos serão perdidos.`)) return;
@@ -1014,6 +1040,11 @@ function FullscreenCustomEditor({
               Ctrl + ← / →
             </span>
           </div>
+          {readOnly && (
+            <Badge variant="outline" className="h-6 border-amber-500/50 bg-amber-500/10 px-2 text-[10px] font-semibold text-amber-600">
+              Somente leitura
+            </Badge>
+          )}
           <div className="flex flex-1 flex-col items-center gap-0.5">
             <DialogTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {idx >= 0 ? `Slide ${idx + 1} de ${items.length}` : "Editor de slide"}
@@ -1021,9 +1052,11 @@ function FullscreenCustomEditor({
             {current && (
               <Input
                 value={current.label ?? ""}
-                onChange={(e) =>
+                readOnly={readOnly}
+                onChange={(e) => {
+                  if (guardReadOnly()) return;
                   updateItem(current.id, (it) => ({ ...it, label: e.target.value } as SlideItem))
-                }
+                }}
                 placeholder="Nome do slide"
                 className="h-8 w-72 border-transparent bg-transparent text-center text-sm font-medium hover:border-border/60 focus-visible:bg-card"
               />
@@ -1108,6 +1141,7 @@ function FullscreenCustomEditor({
               <Button
                 variant="ghost" size="sm" className="h-7 flex-1 px-1"
                 onClick={handleAddBlank}
+                disabled={readOnly}
                 title="Adicionar slide em branco"
               >
                 <Plus className="h-3 w-3" />
@@ -1115,7 +1149,7 @@ function FullscreenCustomEditor({
               <Button
                 variant="ghost" size="sm" className="h-7 flex-1 px-1 text-destructive hover:text-destructive"
                 onClick={handleRemoveCurrent}
-                disabled={!current}
+                disabled={!current || readOnly}
                 title="Remover slide atual"
               >
                 <X className="h-3 w-3" />
@@ -1131,10 +1165,11 @@ function FullscreenCustomEditor({
                 slideId={current.id}
                 config={(current as Extract<SlideItem, { kind: "custom" }>).config}
                 onChange={(cfg) =>
-                  updateItem(current.id, (it) =>
+                  readOnly ? toast.info("Modo somente leitura") : updateItem(current.id, (it) =>
                     it.kind === "custom" ? ({ ...it, config: cfg } as SlideItem) : it,
                   )
                 }
+                readOnly={readOnly}
                 collaborators={collaborators}
                 onCursorMove={updateCursor}
               />
@@ -1153,7 +1188,7 @@ function FullscreenCustomEditor({
 // ----------------------------------------------------------------------------
 // Painel direito (inspector) — depende do slide selecionado
 // ----------------------------------------------------------------------------
-function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenFullscreen: () => void }) {
+function Inspector({ item, onOpenFullscreen, readOnly }: { item: SlideItem | null; onOpenFullscreen: () => void; readOnly: boolean }) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
@@ -1176,6 +1211,13 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
 
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
+  const guardedUpdateItem = (updater: Parameters<typeof updateItem>[1]) => {
+    if (readOnly) {
+      toast.info("Modo somente leitura");
+      return;
+    }
+    updateItem(item.id, updater);
+  };
 
   return (
     <ScrollArea className="h-full">
@@ -1188,7 +1230,8 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.title}</div>
             <Input
               value={item.label ?? ""}
-              onChange={(e) => updateItem(item.id, (it) => ({ ...it, label: e.target.value } as SlideItem))}
+              readOnly={readOnly}
+              onChange={(e) => guardedUpdateItem((it) => ({ ...it, label: e.target.value } as SlideItem))}
               placeholder={meta.title}
               className="-ml-2 h-8 border-transparent bg-transparent px-2 text-base font-medium hover:bg-secondary/40 focus-visible:bg-card"
             />
@@ -1204,13 +1247,13 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
         <Separator />
 
         {item.kind === "bridge_pvm" && (
-          <BridgePvmConfigPanel item={item} onChange={(next) => updateItem(item.id, () => next)} />
+          <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
         )}
         {item.kind === "budget_evo" && (
-          <BudgetEvoConfigPanel item={item} onChange={(next) => updateItem(item.id, () => next)} />
+          <BudgetEvoConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
         )}
         {item.kind === "cover" && (
-          <CoverConfigPanel item={item} onChange={(next) => updateItem(item.id, () => next)} />
+          <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
         )}
         {item.kind === "custom" && (
           <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
@@ -1221,7 +1264,8 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
             <Separator />
             <FiltersPanel
               value={item.config.filters}
-              onChange={(filters) => updateItem(item.id, (it) => {
+              readOnly={readOnly}
+              onChange={(filters) => guardedUpdateItem((it) => {
                 if (it.kind !== "bridge_pvm" && it.kind !== "budget_evo") return it;
                 return { ...it, config: { ...it.config, filters } } as SlideItem;
               })}
@@ -1232,7 +1276,7 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
         )}
 
         <Separator />
-        <SpeakerNotesInspector item={item} onChange={(notes) => updateItem(item.id, (it) => ({
+        <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
           ...it,
           config: { ...(it.config as object), speakerNotes: notes },
         } as SlideItem))} />
@@ -1241,7 +1285,7 @@ function Inspector({ item, onOpenFullscreen }: { item: SlideItem | null; onOpenF
   );
 }
 
-function SpeakerNotesInspector({ item, onChange }: { item: SlideItem; onChange: (v: string) => void }) {
+function SpeakerNotesInspector({ item, onChange, readOnly = false }: { item: SlideItem; onChange: (v: string) => void; readOnly?: boolean }) {
   const MAX = 500;
   const value = ((item.config as { speakerNotes?: string }).speakerNotes ?? "");
   return (
@@ -1255,6 +1299,7 @@ function SpeakerNotesInspector({ item, onChange }: { item: SlideItem; onChange: 
       <Textarea
         rows={4}
         value={value.slice(0, MAX)}
+        readOnly={readOnly}
         onChange={(e) => onChange(e.target.value.slice(0, MAX))}
         placeholder="Adicione notas para o apresentador..."
         className="resize-none text-xs"
@@ -1508,10 +1553,18 @@ export default function SlidesBeta() {
   const [viewOnly, setViewOnly] = useState(false);
   const [guestReadOnly, setGuestReadOnly] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const guardViewOnly = useCallback(() => {
+    if (!viewOnly) return false;
+    toast.info("Modo somente leitura");
+    return true;
+  }, [viewOnly]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
+    const hashQuery = window.location.hash.includes("?")
+      ? window.location.hash.slice(window.location.hash.indexOf("?"))
+      : "";
+    const params = new URLSearchParams(window.location.search || hashQuery);
     const room = params.get("room");
     const name = params.get("name");
     const mode = params.get("mode");
@@ -1563,6 +1616,7 @@ export default function SlidesBeta() {
   };
 
   const applyTemplate = (tpl: SlideTemplate) => {
+    if (guardViewOnly()) return;
     const built = tpl.build({ months, budgetMonths });
     if (built.length === 0) {
       // "Em Branco" — apenas fecha o modal.
@@ -1598,6 +1652,7 @@ export default function SlidesBeta() {
   };
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(null);
+    if (guardViewOnly()) return;
     const { active, over } = e;
     if (!over) return;
     const activeData = active.data.current as { source?: string; kind?: SlideKind } | undefined;
@@ -1675,6 +1730,11 @@ export default function SlidesBeta() {
         title="Slides"
         subtitle="Monte uma apresentação combinando slides com filtros independentes"
       />
+      {viewOnly && (
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-amber-700 md:px-8">
+          Somente leitura
+        </div>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1767,9 +1827,9 @@ export default function SlidesBeta() {
               <div className="flex items-center gap-1.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5"
-                      onClick={() => setGalleryOpen(true)}
+                      <Button
+                        variant="outline" size="sm" className="h-8 gap-1.5"
+                      onClick={() => { if (guardViewOnly()) return; setGalleryOpen(true); }}
                       aria-label="Abrir galeria de templates"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
@@ -1780,9 +1840,9 @@ export default function SlidesBeta() {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5"
-                      onClick={() => setImportOpen(true)}
+                      <Button
+                        variant="outline" size="sm" className="h-8 gap-1.5"
+                      onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
                       aria-label="Importar slides de PowerPoint"
                     >
                       <Upload className="h-3.5 w-3.5" />
@@ -1826,9 +1886,11 @@ export default function SlidesBeta() {
                       <Button
                         variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
                         onClick={() => {
+                          if (guardViewOnly()) return;
                           duplicateDeck();
                           toast.success(`Deck duplicado (${items.length} slides)`);
                         }}
+                        disabled={viewOnly}
                         aria-label="Duplicar deck"
                       >
                         <Copy className="h-4 w-4" />
@@ -1842,7 +1904,11 @@ export default function SlidesBeta() {
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
-                        onClick={() => { if (confirm("Limpar a esteira atual?")) clearItems(); }}
+                        onClick={() => {
+                          if (guardViewOnly()) return;
+                          if (confirm("Limpar a esteira atual?")) clearItems();
+                        }}
+                        disabled={viewOnly}
                         aria-label="Limpar esteira"
                       >
                         <X className="h-4 w-4" />
@@ -1953,7 +2019,7 @@ export default function SlidesBeta() {
             <div className="mx-auto max-w-2xl px-4 py-5">
               <FlowDropZone>
                 {items.length === 0 ? (
-                  <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => setGalleryOpen(true)} />
+                  <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => { if (guardViewOnly()) return; setGalleryOpen(true); }} />
                 ) : (
                   <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
@@ -1965,7 +2031,7 @@ export default function SlidesBeta() {
                           selected={selectedId === item.id}
                           onSelect={() => select(item.id)}
                           onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
-                          onDuplicate={() => duplicateItem(item.id)}
+                          onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
                         />
                       ))}
                     </div>
@@ -2140,7 +2206,7 @@ export default function SlidesBeta() {
             {inspectorOpen ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
           {inspectorOpen ? (
-            <Inspector item={selected} onOpenFullscreen={() => setFullscreenOpen(true)} />
+            <Inspector item={selected} readOnly={viewOnly} onOpenFullscreen={() => setFullscreenOpen(true)} />
           ) : (
             <div className="flex h-full items-center justify-center px-1 text-[10px] font-medium uppercase tracking-[0.25em] text-muted-foreground/70 [writing-mode:vertical-rl]">
               Prévia & Filtros
@@ -2173,6 +2239,7 @@ export default function SlidesBeta() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImport={(slides: PptxSlide[], selectedIndices: number[]) => {
+          if (guardViewOnly()) return;
           for (const idx of selectedIndices) {
             const slide = slides[idx];
             if (!slide) continue;
@@ -2218,6 +2285,7 @@ export default function SlidesBeta() {
         updateSlideId={updateSlideId}
         currentUser={currentUser}
         onAddComment={handleAddComment}
+        readOnly={viewOnly}
       />
 
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
