@@ -15,6 +15,9 @@ dist-ssr
 # Electron build output
 release/
 
+# Supabase local CLI state
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
