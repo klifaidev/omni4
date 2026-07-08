@@ -184,7 +184,11 @@ export const FlowCard = React.memo(function FlowCard({
               {String(index + 1).padStart(2, "0")}
             </span>
 
-            <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", SLIDE_ACCENT_BG[meta.accent])}>
+            <div className="pointer-events-none w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
+              <ScaledPreview item={item} targetWidth={104} />
+            </div>
+
+            <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border max-[900px]:hidden", SLIDE_ACCENT_BG[meta.accent])}>
               <Icon className="h-4 w-4" />
             </div>
 
@@ -237,4 +241,3 @@ export const FlowCard = React.memo(function FlowCard({
     </TooltipProvider>
   );
 });
-

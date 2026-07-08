@@ -1,5 +1,5 @@
 // ============================================================================
-// Slides (Beta) — orquestrador de exportação multi-slide
+// Slides (Beta) ? orquestrador de exportação multi-slide
 //
 // Fluxo:
 //  1. Usuário arrasta slides do "Catálogo" para a "Esteira" (drop zone)
@@ -50,7 +50,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
   ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Layers, LayoutTemplate, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
+  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -99,9 +99,9 @@ import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useSlideExport } from "@/hooks/useSlideExport";
 
 // ----------------------------------------------------------------------------
-// Smart defaults — calculados no momento de criar o slide a partir das bases
+// Smart defaults ? calculados no momento de criar o slide a partir das bases
 // disponíveis. Bridge: mês anterior vs último mês. Budget Evo: primeiro mês
-// do FY anterior → último disponível.
+// do FY anterior ? último disponível.
 // ----------------------------------------------------------------------------
 function smartDefaults(
   kind: SlideKind,
@@ -449,7 +449,7 @@ function CoverConfigPanel({
 }
 
 // ----------------------------------------------------------------------------
-// Trigger no inspector — abre o editor fullscreen ao nível da página.
+// Trigger no inspector ? abre o editor fullscreen ao nível da página.
 // ----------------------------------------------------------------------------
 function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
   return (
@@ -467,7 +467,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 }
 
 // ----------------------------------------------------------------------------
-// Strip lateral de slides — thumbnails empilhados verticalmente, ordenáveis.
+// Strip lateral de slides ? thumbnails empilhados verticalmente, ordenáveis.
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
@@ -527,9 +527,9 @@ function StripThumbnail({
         <Icon className="h-2.5 w-2.5 text-muted-foreground" />
         <span className="truncate text-[9px] text-muted-foreground">{meta.title}</span>
       </div>
-      <div className="thumb hidden min-[1200px]:block px-1 pb-1">
-        <div className="pointer-events-none">
-          <ScaledPreview item={item} targetWidth={104} />
+      <div className="thumb px-1 pb-1">
+        <div className="pointer-events-none mx-auto w-full max-w-[132px] min-w-[82px] overflow-hidden rounded-sm">
+          <ScaledPreview item={item} targetWidth={112} />
         </div>
       </div>
       <div className="truncate px-1.5 pb-1.5 text-[10px] font-medium" title={item.label ?? meta.title}>
@@ -585,7 +585,7 @@ function StripThumbnail({
 }
 
 // ----------------------------------------------------------------------------
-// CommentsThread — lista + input de novo comentário para um slide.
+// CommentsThread ? lista + input de novo comentário para um slide.
 // ----------------------------------------------------------------------------
 function CommentsThread({
   slideId, slideLabel, currentUser, onAddComment,
@@ -622,7 +622,7 @@ function CommentsThread({
   return (
     <div className="flex max-h-[60vh] flex-col">
       <div className="border-b border-border/40 px-3 py-2 text-xs font-semibold">
-        Comentários — <span className="text-muted-foreground">{slideLabel}</span>
+        Comentários ? <span className="text-muted-foreground">{slideLabel}</span>
       </div>
       <ScrollArea className="max-h-72 flex-1">
         <div className="space-y-3 p-3">
@@ -668,7 +668,7 @@ function CommentsThread({
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Escreva um comentário…"
+          placeholder="Escreva um comentário?"
           rows={2}
           className="min-h-[40px] resize-none text-xs"
           onKeyDown={(e) => {
@@ -734,7 +734,7 @@ function FullscreenCustomEditor({
   const hasPrev = idx > 0 && items.slice(0, idx).some((i) => i.kind === "custom");
   const hasNext = idx >= 0 && items.slice(idx + 1).some((i) => i.kind === "custom");
 
-  // Atalhos Ctrl/Cmd + ← / →. Capturamos antes do editor para evitar nudge.
+  // Atalhos Ctrl/Cmd + ? / ?. Capturamos antes do editor para evitar nudge.
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -803,7 +803,7 @@ function FullscreenCustomEditor({
               Próximo <ChevronRight className="h-3.5 w-3.5" />
             </Button>
             <span className="hidden text-[10px] text-muted-foreground/70 lg:inline">
-              Ctrl + ← / →
+              Ctrl + ? / ?
             </span>
           </div>
           {readOnly && (
@@ -844,8 +844,8 @@ function FullscreenCustomEditor({
                   {(collaborators ?? []).slice(0, 4).map((c, i) => {
                     const slideIdx = items.findIndex((it) => it.id === c.slideId);
                     const tip = slideIdx >= 0
-                      ? `${c.name} — editando slide ${slideIdx + 1}`
-                      : `${c.name} — sem slide ativo`;
+                      ? `${c.name} ? editando slide ${slideIdx + 1}`
+                      : `${c.name} ? sem slide ativo`;
                     return (
                       <Tooltip key={c.id}>
                         <TooltipTrigger asChild>
@@ -952,7 +952,7 @@ function FullscreenCustomEditor({
 }
 
 // ----------------------------------------------------------------------------
-// Painel direito (inspector) — depende do slide selecionado
+// Painel direito (inspector) ? depende do slide selecionado
 // ----------------------------------------------------------------------------
 function Inspector({ item, onOpenFullscreen, readOnly }: { item: SlideItem | null; onOpenFullscreen: () => void; readOnly: boolean }) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
@@ -1179,6 +1179,115 @@ function exportPresetModel(preset: SlidesPreset) {
   URL.revokeObjectURL(url);
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function usePersistentWidth(key: string, initial: number, min: number, max: number) {
+  const [width, setWidthState] = useState(() => {
+    if (typeof window === "undefined") return initial;
+    const stored = Number(window.localStorage.getItem(key));
+    return Number.isFinite(stored) ? clampNumber(stored, min, max) : initial;
+  });
+
+  const setWidth = useCallback((next: number) => {
+    const clamped = clampNumber(Math.round(next), min, max);
+    setWidthState(clamped);
+    try {
+      window.localStorage.setItem(key, String(clamped));
+    } catch {
+      // Layout persistence is a convenience.
+    }
+  }, [key, max, min]);
+
+  return [width, setWidth] as const;
+}
+
+function ResizeHandle({
+  side,
+  onResize,
+}: {
+  side: "left" | "right";
+  onResize: (delta: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Redimensionar painel"
+      className={cn(
+        "absolute top-0 z-30 h-full w-2 cursor-col-resize bg-transparent transition-colors hover:bg-primary/20",
+        side === "right" ? "-right-1" : "-left-1",
+      )}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const handleMove = (ev: PointerEvent) => {
+          const rawDelta = ev.clientX - startX;
+          onResize(side === "right" ? rawDelta : -rawDelta);
+        };
+        const handleUp = () => {
+          window.removeEventListener("pointermove", handleMove);
+          window.removeEventListener("pointerup", handleUp);
+        };
+        window.addEventListener("pointermove", handleMove);
+        window.addEventListener("pointerup", handleUp, { once: true });
+      }}
+    />
+  );
+}
+
+type SlidesRailTab = "catalog" | "templates" | "assets" | "presets";
+
+function QuickAddSlideButton({
+  onAdd,
+  readOnly,
+}: {
+  onAdd: (kind: SlideKind) => void;
+  readOnly: boolean;
+}) {
+  const common: SlideKind[] = ["custom", "bridge_pvm", "budget_evo", "cover"];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={readOnly}
+          className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-primary/50 bg-primary/10 text-primary shadow-[0_10px_30px_-18px_hsl(var(--primary)/0.8)] transition hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Adicionar slide"
+          title="Adicionar slide"
+        >
+          <Plus className="h-7 w-7" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-56 p-2">
+        <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Adicionar slide
+        </div>
+        {common.map((kind) => {
+          const meta = metaOf(kind);
+          const Icon = ICON_MAP[meta.icon];
+          return (
+            <button
+              key={kind}
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs transition-colors hover:bg-secondary"
+              onClick={() => onAdd(kind)}
+            >
+              <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg border", ACCENT_BG[meta.accent])}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block font-medium">{meta.title}</span>
+                <span className="block truncate text-[10px] text-muted-foreground">{meta.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function PresetsPanel() {
   const presets = useSlidesFlow((s) => s.presets);
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
@@ -1286,6 +1395,14 @@ export default function SlidesBeta() {
     return created.id;
   };
 
+  const addSlideFromShortcut = (kind: SlideKind): string | null => {
+    const id = addWithDefaults(kind);
+    if (id && typeof window !== "undefined" && window.innerWidth < 1200) {
+      setActiveRailTab(null);
+    }
+    return id;
+  };
+
 
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
@@ -1305,6 +1422,9 @@ export default function SlidesBeta() {
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 292, 220, 420);
+  const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 340, 280, 520);
 
   // ====== Colaboração em tempo real ======
   const [collabOpen, setCollabOpen] = useState(false);
@@ -1383,7 +1503,7 @@ export default function SlidesBeta() {
     if (guardViewOnly()) return;
     const built = tpl.build({ months, budgetMonths });
     if (built.length === 0) {
-      // "Em Branco" — apenas fecha o modal.
+      // "Em Branco" ? apenas fecha o modal.
       return;
     }
     // Insere cada slide via addItem + updateItem para reaproveitar a lógica
@@ -1435,7 +1555,7 @@ export default function SlidesBeta() {
     if (!over) return;
     const activeData = active.data.current as { source?: string; kind?: SlideKind } | undefined;
 
-    // Drop vindo do catálogo → adiciona à esteira
+    // Drop vindo do catálogo ? adiciona à esteira
     if (activeData?.source === "catalog" && activeData.kind) {
       const newId = addWithDefaults(activeData.kind);
       if (!newId) return;
@@ -1474,52 +1594,102 @@ export default function SlidesBeta() {
         onDragCancel={() => setDragging(null)}
       >
       <div
-        className={cn(
-          "grid h-[calc(100vh-3.5rem)] min-h-0 gap-0 overflow-hidden",
-          inspectorOpen
-            ? "grid-cols-[240px_minmax(0,1fr)_300px] xl:grid-cols-[260px_minmax(0,1fr)_340px]"
-            : "grid-cols-[240px_minmax(0,1fr)_36px] xl:grid-cols-[260px_minmax(0,1fr)_36px]",
-        )}
+        className="grid h-[calc(100vh-3.5rem)] min-h-0 gap-0 overflow-hidden"
+        style={{
+          gridTemplateColumns: `56px minmax(0,1fr) ${inspectorOpen ? `${rightPanelWidth}px` : "36px"}`,
+        }}
       >
         {/* ===== Coluna esquerda: catálogo + presets ===== */}
-        <aside className="flex min-h-0 flex-col border-r border-border/40 bg-sidebar/40">
-          <ScrollArea className="flex-1">
-            <div className="flex flex-col gap-4 p-3">
-              <div className="space-y-2">
-                <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
-                  Slides disponíveis
+        <aside className="relative z-50 flex min-h-0 border-r border-border/40 bg-sidebar/70">
+          <div className="flex w-14 flex-col items-center gap-1 border-r border-border/40 py-3">
+            {([
+              { id: "catalog" as const, label: "Catálogo", icon: LayoutTemplate },
+              { id: "templates" as const, label: "Templates", icon: Sparkles },
+              { id: "assets" as const, label: "Assets", icon: ImageIcon },
+              { id: "presets" as const, label: "Modelos", icon: Bookmark },
+            ]).map((tab) => {
+              const Icon = tab.icon;
+              const active = activeRailTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveRailTab(active ? null : tab.id)}
+                  className={cn(
+                    "flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-card hover:text-foreground",
+                    active && "bg-primary/15 text-primary ring-1 ring-primary/20",
+                  )}
+                  aria-label={tab.label}
+                  title={tab.label}
+                >
+                  <Icon className="h-5 w-5" />
+                </button>
+              );
+            })}
+          </div>
+
+          {activeRailTab && (
+            <div
+              className="absolute left-14 top-0 z-40 flex h-full min-h-0 flex-col border-r border-border/50 bg-sidebar/95 shadow-2xl backdrop-blur-xl"
+              style={{ width: leftPanelWidth }}
+            >
+              <ResizeHandle side="right" onResize={(delta) => setLeftPanelWidth(leftPanelWidth + delta)} />
+              <div className="flex items-center justify-between border-b border-border/40 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  {activeRailTab === "catalog" && <LayoutTemplate className="h-4 w-4 text-primary" />}
+                  {activeRailTab === "templates" && <Sparkles className="h-4 w-4 text-primary" />}
+                  {activeRailTab === "assets" && <ImageIcon className="h-4 w-4 text-primary" />}
+                  {activeRailTab === "presets" && <Bookmark className="h-4 w-4 text-primary" />}
+                  <span className="text-sm font-semibold">
+                    {activeRailTab === "catalog" ? "Catálogo" : activeRailTab === "templates" ? "Templates" : activeRailTab === "assets" ? "Assets" : "Modelos"}
+                  </span>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  {SLIDE_CATALOG.map((s) => (
-                    <DraggableCatalogItem
-                      key={s.kind}
-                      kind={s.kind}
-                      onClick={() => addWithDefaults(s.kind)}
-                    />
-                  ))}
-                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setActiveRailTab(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-
-              <Separator />
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="flex items-center gap-2 rounded-xl border border-border/40 bg-card/40 px-3 py-2 text-left transition-colors hover:border-border/70 hover:bg-card">
-                    <Bookmark className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-medium">Pré-definições</span>
-                    <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="right" align="start" className="w-72 p-3">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Bookmark className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-sm font-medium">Pré-definições</span>
-                  </div>
-                  <PresetsPanel />
-                </PopoverContent>
-              </Popover>
+              <ScrollArea className="flex-1">
+                <div className="space-y-3 p-3">
+                  {activeRailTab === "catalog" && (
+                    <>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
+                        Slides disponíveis
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {SLIDE_CATALOG.map((s) => (
+                          <DraggableCatalogItem
+                            key={s.kind}
+                            kind={s.kind}
+                            onClick={() => addSlideFromShortcut(s.kind)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {activeRailTab === "templates" && (
+                    <div className="space-y-2">
+                      <Button className="w-full justify-start gap-2" variant="outline" onClick={() => { if (guardViewOnly()) return; setGalleryOpen(true); }}>
+                        <Sparkles className="h-4 w-4" /> Abrir galeria
+                      </Button>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        A galeria abre sem empurrar o canvas e permite aplicar apresentações prontas.
+                      </p>
+                    </div>
+                  )}
+                  {activeRailTab === "assets" && (
+                    <div className="space-y-2 rounded-xl border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
+                      <ImageIcon className="mx-auto h-6 w-6 text-muted-foreground/70" />
+                      Importe PPTX ou use imagens dentro do slide personalizado.
+                      <Button className="mt-2 w-full gap-2" size="sm" variant="outline" onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}>
+                        <Upload className="h-3.5 w-3.5" /> Importar PPTX
+                      </Button>
+                    </div>
+                  )}
+                  {activeRailTab === "presets" && <PresetsPanel />}
+                </div>
+              </ScrollArea>
             </div>
-          </ScrollArea>
+          )}
         </aside>
 
         {/* ===== Coluna central: esteira ===== */}
@@ -1765,6 +1935,7 @@ export default function SlidesBeta() {
                           onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
                         />
                       ))}
+                      <QuickAddSlideButton onAdd={addSlideFromShortcut} readOnly={viewOnly} />
                     </div>
                   </SortableContext>
                 )}
@@ -1927,6 +2098,9 @@ export default function SlidesBeta() {
 
         {/* ===== Coluna direita: inspector (recolhível) ===== */}
         <aside className="relative flex min-h-0 flex-col border-l border-border/40 bg-sidebar/40">
+          {inspectorOpen && (
+            <ResizeHandle side="left" onResize={(delta) => setRightPanelWidth(rightPanelWidth + delta)} />
+          )}
           <button
             type="button"
             onClick={() => setInspectorOpen((v) => !v)}
@@ -2027,7 +2201,7 @@ export default function SlidesBeta() {
               Iniciar colaboração
             </DialogTitle>
             <DialogDescription>
-              Compartilhe o link da sala — alterações no deck aparecem em tempo real para todos.
+              Compartilhe o link da sala ? alterações no deck aparecem em tempo real para todos.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -2109,7 +2283,7 @@ export default function SlidesBeta() {
 }
 
 // ----------------------------------------------------------------------------
-// HistoryDialog — log de alterações da sala de colaboração.
+// HistoryDialog ? log de alterações da sala de colaboração.
 // ----------------------------------------------------------------------------
 function HistoryDialog({
   open, onOpenChange,
@@ -2126,7 +2300,7 @@ function HistoryDialog({
             Histórico de alterações
           </DialogTitle>
           <DialogDescription>
-            Últimas {entries.length} {entries.length === 1 ? "alteração" : "alterações"} recebidas.
+            ?ltimas {entries.length} {entries.length === 1 ? "alteração" : "alterações"} recebidas.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh]">
@@ -2170,5 +2344,5 @@ function HistoryDialog({
 }
 
 // ----------------------------------------------------------------------------
-// TransitionSelect — chooses the deck-wide slide transition.
+// TransitionSelect ? chooses the deck-wide slide transition.
 // ----------------------------------------------------------------------------

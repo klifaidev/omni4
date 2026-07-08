@@ -1,4 +1,4 @@
-// CustomSlideEditor — canvas WYSIWYG para o slide "Personalizado".
+// CustomSlideEditor ? canvas WYSIWYG para o slide "Personalizado".
 // Drag + resize via react-rnd. Snap-to-grid de 10px com guias de alinhamento
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
@@ -174,7 +174,7 @@ function normalizePaletteText(value: string): string {
     .toLowerCase();
 }
 
-// Group 1 — Charts (and chart-like data viz: KPI Card + Table + Bridge)
+// Group 1 ? Charts (and chart-like data viz: KPI Card + Table + Bridge)
 const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
   | { kind: "chart"; chartType: CustomChartType; preset?: "positivacao" }
   | { kind: Exclude<CustomBlockKind, "chart"> }
@@ -202,7 +202,7 @@ const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
   { id: "kpi",           kind: "kpi",   label: "KPI Card",                                     icon: Hash },
 ];
 
-// Group 2 — Visual elements
+// Group 2 ? Visual elements
 const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon: Icon }[] = [
   { id: "title",  kind: "title",  label: "Título",      icon: TypeIcon },
   { id: "text",   kind: "text",   label: "Texto",       icon: AlignLeft },
@@ -212,7 +212,7 @@ const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon:
   { id: "dre",    kind: "dre",    label: "DRE",         icon: TableIcon },
 ];
 
-// Group 3 — Omni Analytics
+// Group 3 ? Omni Analytics
 type OmniPaletteEntry = { id: string; kind: CustomBlockKind; label: string; icon: Icon; group: string };
 const OMNI_PALETTE: OmniPaletteEntry[] = [
   // Visão Geral
@@ -238,12 +238,12 @@ const OMNI_PALETTE: OmniPaletteEntry[] = [
 const OMNI_GROUPS = ["Visão Geral", "Canais", "Custos", "Preço", "ABC/Farol"] as const;
 
 interface Props {
-  /** ID estável do slide — usado para registrar o canvas no exporter */
+  /** ID estável do slide ? usado para registrar o canvas no exporter */
   slideId?: string;
   config: CustomSlideConfig;
   onChange: (next: CustomSlideConfig) => void;
   readOnly?: boolean;
-  /** Colaboradores ativos (todos os slides) — filtrados internamente por slideId */
+  /** Colaboradores ativos (todos os slides) ? filtrados internamente por slideId */
   collaborators?: import("@/lib/collaboration").CollabUser[];
   /** Callback de mouse-move em coordenadas do canvas (1280x720) */
   onCursorMove?: (x: number, y: number) => void;
@@ -260,6 +260,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [zoomEditing, setZoomEditing] = useState(false);
+  const [palettePanelOpen, setPalettePanelOpen] = useState(true);
   const [paletteSearch, setPaletteSearch] = useState("");
   const [recentPaletteIds, setRecentPaletteIds] = useState<string[]>(() => {
     try {
@@ -933,6 +935,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         const k = e.key.toLowerCase();
         if (k === "z" && !e.shiftKey) { e.preventDefault(); if (canEdit()) undoAction(); return; }
         if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); if (canEdit()) redoAction(); return; }
+        if (k === "0") { e.preventDefault(); prefs.setZoom(1.0); return; }
         if (k === "a") { e.preventDefault(); selectAllOnSlide(); return; }
         if (k === "c" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(false); return; }
         if (k === "x" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(true); return; }
@@ -952,13 +955,13 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         if (e.shiftKey && k === "h") { e.preventDefault(); centerSelectedH(); return; }
         if (e.shiftKey && k === "v") { e.preventDefault(); centerSelectedV(); return; }
       }
-      // F5 / Cmd+Shift+P → presentation mode (works even with no selection).
+      // F5 / Cmd+Shift+P ? presentation mode (works even with no selection).
       if (!inField && (e.key === "F5" || ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p"))) {
         e.preventDefault();
         setPresentOpen(true);
         return;
       }
-      // "?" → open shortcuts dialog.
+      // "?" ? open shortcuts dialog.
       if (!inField && (e.key === "?" || (e.shiftKey && e.key === "/"))) {
         e.preventDefault();
         setShortcutsOpen(true);
@@ -993,7 +996,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         if (e.key === "[") { e.preventDefault(); sendBack(selectedIds[0]); return; }
       }
 
-      // Arrow nudge — works for single or multi. Shift = 40px, normal = 10px.
+      // Arrow nudge ? works for single or multi. Shift = 40px, normal = 10px.
       const step = e.shiftKey ? 40 : 10;
       const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
       const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
@@ -1009,7 +1012,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -1054,7 +1057,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
     return () => window.removeEventListener("paste", handlePaste);
   }, [canEdit]);
 
-  // Smart guides — compute lines + snap target for the dragging block.
+  // Smart guides ? compute lines + snap target for the dragging block.
   // Snap is applied by react-rnd via onDrag's returned coords; we mutate
   // d.x / d.y directly which Rnd respects on next frame.
   const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
@@ -1095,9 +1098,46 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[180px_240px_minmax(0,1fr)_380px]" : "grid-cols-[180px_minmax(0,1fr)_380px]")}>
+    <div className={cn("grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
       {/* ====== Paleta ====== */}
-      <ScrollArea className="rounded-lg border border-border/40 bg-card/40">
+      <div className="relative z-40 min-h-0">
+        <div className="flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 bg-card/70 p-1.5">
+          {([
+            { label: "Favoritos", icon: Star },
+            { label: "Modelos", icon: BookOpen },
+            { label: "Gráficos", icon: BarChart3 },
+            { label: "Elementos", icon: Square },
+            { label: "Story", icon: StickyNote },
+            { label: "Omni", icon: LayersIcon },
+            { label: "Assets", icon: Images },
+          ]).map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-foreground",
+                  palettePanelOpen && "bg-primary/10 text-primary",
+                )}
+                onClick={() => setPalettePanelOpen(true)}
+                title={item.label}
+                aria-label={item.label}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            );
+          })}
+        </div>
+        {palettePanelOpen && (
+          <div className="absolute left-[calc(100%+8px)] top-0 z-50 flex h-full w-[260px] flex-col rounded-lg border border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocos</span>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+      <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-1 p-2">
           <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Modelos
@@ -1287,6 +1327,9 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
           </p>
         </div>
       </ScrollArea>
+          </div>
+        )}
+      </div>
 
       {/* ====== Layers Panel ====== */}
       {showLayers && (
@@ -1373,7 +1416,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
           ref={wrapperRef}
           className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-border/40 bg-secondary/20"
           onMouseDown={(e) => {
-            // Marquee selection — only if mousedown is on the wrapper itself
+            // Marquee selection ? only if mousedown is on the wrapper itself
             // (i.e. canvas background, not a block / Rnd handle / inspector).
             if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset?.canvasBg) return;
             const isChartElement = (el: Element | null): boolean => {
@@ -1495,7 +1538,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 if (pos) onCursorMove(pos.x, pos.y);
               }}
             >
-              {/* Paste-image hint — shown when canvas is hovered with no selection */}
+              {/* Paste-image hint ? shown when canvas is hovered with no selection */}
               {canvasHovered && selectedIds.length === 0 && (
                 <div
                   data-edit-only="true"
@@ -1519,7 +1562,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                   </div>
                 </div>
               )}
-              {/* Snap-to-grid background — dot pattern, behind blocks. */}
+              {/* Snap-to-grid background ? dot pattern, behind blocks. */}
               {prefs.gridEnabled && (
                 <svg
                   data-export-hide="true"
@@ -1546,7 +1589,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
                 const useRotatableBlock = isRotatable && rotation !== 0;
-                // Shape-specific Rnd config — contextual handles override.
+                // Shape-specific Rnd config ? contextual handles override.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked && !readOnly;
                 let shapeDisableDrag = !!blk.locked || readOnly;
                 let shapeLockAspect = false;
@@ -2004,32 +2047,49 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
             canEdit={canEdit}
           />
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => prefs.setZoom(prefs.zoom - 0.1)}
-            title="Diminuir zoom (Ctrl+Scroll ↓)">
-            <Minus className="h-3.5 w-3.5" />
-          </Button>
-          <button
-            className="min-w-[36px] cursor-pointer rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:text-primary"
-            onClick={() => prefs.setZoom(1.0)}
-            title="Clique para redefinir zoom para 100%"
-          >
-            {Math.round(prefs.zoom * 100)}%
-          </button>
-          <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => prefs.setZoom(prefs.zoom + 0.1)}
-            title="Aumentar zoom (Ctrl+Scroll ↑)">
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]"
-            onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela">
-            <Maximize2 className="h-3 w-3" /> Ajustar
-          </Button>
+          <div className="flex min-w-[210px] items-center gap-2 rounded-md bg-background/50 px-2 py-1">
+            <UiSlider
+              value={[Math.round(prefs.zoom * 100)]}
+              min={50}
+              max={150}
+              step={1}
+              onValueChange={([v]) => prefs.setZoom((v ?? 100) / 100)}
+              className="w-28"
+            />
+            {zoomEditing ? (
+              <Input
+                autoFocus
+                className="h-6 w-14 px-1 text-center text-[11px]"
+                defaultValue={String(Math.round(prefs.zoom * 100))}
+                onBlur={(e) => {
+                  const next = Number(e.currentTarget.value);
+                  if (Number.isFinite(next)) prefs.setZoom(next / 100);
+                  setZoomEditing(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") setZoomEditing(false);
+                }}
+              />
+            ) : (
+              <button
+                className="min-w-[42px] rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
+                onClick={() => setZoomEditing(true)}
+                title="Editar zoom"
+              >
+                {Math.round(prefs.zoom * 100)}%
+              </button>
+            )}
+            <Button size="icon" variant="ghost" className="h-6 w-6"
+              onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela (Ctrl+0)">
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant={prefs.gridEnabled ? "default" : "ghost"}
             className="h-7 w-7"
             onClick={() => prefs.setGridEnabled(!prefs.gridEnabled)}
-            title={prefs.gridEnabled ? "Grade ligada — clique para desligar" : "Ativar grade"}>
+            title={prefs.gridEnabled ? "Grade ligada ? clique para desligar" : "Ativar grade"}>
             <Grid3x3 className="h-3.5 w-3.5" />
           </Button>
           {prefs.gridEnabled && (
@@ -2081,7 +2141,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
 
       {/* ====== Inspector ====== */}
       <div className="min-w-0 min-h-0 flex flex-col rounded-lg border border-border/40 bg-card/40">
-        {/* Contextual header — shows which block is being edited */}
+        {/* Contextual header ? shows which block is being edited */}
         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/30 px-3">
           {(selected || multiSelected.length >= 2) ? (
             <>
@@ -2216,7 +2276,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
             items.splice(idx + 1, 0, ...newItems);
             useSlidesFlow.setState({ items, selectedId: newItems[0].id });
           }
-          toast.success(`Deck aplicado — ${configs.length} slides criados`);
+          toast.success(`Deck aplicado ? ${configs.length} slides criados`);
         }}
       />
 
@@ -2277,7 +2337,7 @@ function blockIcon(blk: CustomBlock) {
 function blockLayerName(blk: CustomBlock): string {
   if (blk.kind === "title" || blk.kind === "text") {
     const t = (blk as { text: string }).text;
-    return t ? t.slice(0, 20) + (t.length > 20 ? "…" : "") : BLOCK_LABELS[blk.kind];
+    return t ? t.slice(0, 20) + (t.length > 20 ? "?" : "") : BLOCK_LABELS[blk.kind];
   }
   if (blk.kind === "chart") {
     const cb = blk as ChartBlock;
@@ -2537,7 +2597,7 @@ function BlockSpecificEditor({ block, onChange }: {
   }
 }
 
-// Wrapper com abas Design / Filtros — dá aos blocos de dados a UX
+// Wrapper com abas Design / Filtros ? dá aos blocos de dados a UX
 // próxima do PowerPoint (painel de formatação à direita).
 // Inclui o seletor de Fonte de Dados PINADO no topo (não-colapsável).
 function FilteredInspector({
@@ -2555,7 +2615,7 @@ function FilteredInspector({
   const hasForecast = useForecast((s) => s.rows.length > 0);
   const hasRolling = useRolling((s) => s.rows.length > 0);
 
-  // Bridge não tem fonte selecionável (sempre KE30 — usa cálculo PVM).
+  // Bridge não tem fonte selecionável (sempre KE30 ? usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
 
   const applySwitch = (next: BlockDataSource) => {
@@ -2566,7 +2626,7 @@ function FilteredInspector({
   const confirmSwitch = () => {
     if (!pendingSource) return;
     const unavailable = unavailableMeasuresForSource(pendingSource);
-    // Reset filtros + medida quando a fonte muda — campos podem não existir.
+    // Reset filtros + medida quando a fonte muda ? campos podem não existir.
     const patch: Partial<CustomBlock> = {
       dataSource: pendingSource,
       filters: {},
@@ -2819,7 +2879,7 @@ function KpiInspector({ block, onChange }: {
                   return (
                     <SelectItem key={m.id} value={m.id} disabled={disabled}
                       title={disabled ? hint : undefined}>
-                      {m.label}{disabled ? " — indisponível" : ""}
+                      {m.label}{disabled ? " ? indisponível" : ""}
                     </SelectItem>
                   );
                 })}
@@ -3026,7 +3086,7 @@ function TableBlockEditor({ block, onChange }: {
           onValueChange={(v) => onChange({ colDim: v === "__none__" ? null : v } as never)}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__">— Sem coluna —</SelectItem>
+            <SelectItem value="__none__">? Sem coluna ?</SelectItem>
             {dims.map((d) => <SelectItem key={d.id as string} value={d.id as string}>{d.label}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -3050,7 +3110,7 @@ function TableBlockEditor({ block, onChange }: {
                   disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
                 )}
               >
-                <span>{m.label}{disabled ? " — indisponível" : ""}</span>
+                <span>{m.label}{disabled ? " ? indisponível" : ""}</span>
                 {block.measures.includes(m.id) && !disabled && <span className="text-[9px]">✓</span>}
               </button>
             );
@@ -3088,7 +3148,7 @@ function TableBlockEditor({ block, onChange }: {
               className="h-6 flex-1 text-[10px]"
               onClick={() => onChange({ valueAlign: a } as never)}
             >
-              {a === "left" ? "←" : a === "center" ? "↔" : "→"}
+              {a === "left" ? "?" : a === "center" ? "?" : "?"}
             </Button>
           ))}
         </div>
@@ -3162,7 +3222,7 @@ function TableBlockEditor({ block, onChange }: {
           <NumField label="Máx. linhas" value={block.maxRows ?? fit.shown}
             onChange={(v) => onChange({ maxRows: v } as never)} />
         )}
-        <ToggleRow label="Linha “Outros”" value={!!block.showOthers}
+        <ToggleRow label="Linha ?Outros?" value={!!block.showOthers}
           onChange={handleShowOthers} />
         <ToggleRow label="Nota no slide exportado" value={!!block.exportNote}
           onChange={(v) => onChange({ exportNote: v } as never)} />
@@ -3225,7 +3285,7 @@ function TopSkuBlockEditor({ block, onChange }: {
                 return (
                   <SelectItem key={m.id} value={m.id} disabled={disabled}
                     title={disabled ? hint : undefined}>
-                    {m.label}{disabled ? " — indisponível" : ""}
+                    {m.label}{disabled ? " ? indisponível" : ""}
                   </SelectItem>
                 );
               })}
@@ -3408,20 +3468,20 @@ function TextTitleInspector({ block, onChange }: {
             onChange={(v) => onChange({ letterSpacing: v })} />
         </Row>
         <Row label="Altura linha">
-          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="×"
+          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="?"
             onChange={(v) => onChange({ lineHeight: v })} />
         </Row>
       </Section>
 
       <Section title="Rotação" defaultOpen={false}>
         <Row label="Girar">
-          <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="°"
+          <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="?"
             onChange={(v) => onChange({ rotation: v })} />
         </Row>
         <Row label="">
           <button className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
             onClick={() => onChange({ rotation: 0 })} title="Resetar rotação">
-            ↺ Zerar rotação
+            ? Zerar rotação
           </button>
         </Row>
       </Section>
@@ -3601,7 +3661,7 @@ function DreBlockInspector({ block, onChange }: {
               onChange={(v) => onChange({ variacaoTipo: v as "absoluta" | "percentual" | "ambas" })}
               options={[
                 { value: "percentual", label: "%" },
-                { value: "absoluta", label: "Δ" },
+                { value: "absoluta", label: "Î”" },
                 { value: "ambas", label: "Ambas" },
               ]}
             />
@@ -3676,7 +3736,7 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
   );
 }
 
-// (FitControls compartilhado removido — apenas tabela usa estes toggles agora,
+// (FitControls compartilhado removido ? apenas tabela usa estes toggles agora,
 // inlined em TableBlockEditor.)
 
 // Alerta dismissível mostrado quando o conteúdo está sendo cortado.
@@ -3693,8 +3753,8 @@ function TruncationAlert({ blockId, fit, unitPlural }: {
     <Alert className="relative border-amber-300 bg-amber-50 py-2 pr-7 dark:bg-amber-950/30">
       <Info className="h-3.5 w-3.5 text-amber-600" />
       <AlertDescription className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
-        Mostrando {fit.shown} de {fit.total} {unitPlural} — aumente a altura do bloco para ver mais
-        {" ou ative “Linha Outros” para agregar o restante."}
+        Mostrando {fit.shown} de {fit.total} {unitPlural} ? aumente a altura do bloco para ver mais
+        {" ou ative ?Linha Outros? para agregar o restante."}
       </AlertDescription>
       <button
         onClick={() => { dismissedTruncations.set(blockId, key); force((n) => n + 1); }}
@@ -3805,7 +3865,7 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
 }
 
 // ---------------------------------------------------------------------------
-// ClearFiltersToolbar — slide-level cross-filter clear button (Part B.6)
+// ClearFiltersToolbar ? slide-level cross-filter clear button (Part B.6)
 // ---------------------------------------------------------------------------
 function ClearFiltersToolbar() {
   const { filters, clearAll } = useSlideFilters();
@@ -3827,7 +3887,7 @@ function ClearFiltersToolbar() {
 }
 
 // ---------------------------------------------------------------------------
-// Rotation handle — child of Rnd, NOT inside the rotated content div
+// Rotation handle ? child of Rnd, NOT inside the rotated content div
 // ---------------------------------------------------------------------------
 function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageBlock }) {
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -4001,9 +4061,9 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
 }
 
 // ---------------------------------------------------------------------------
-// GroupOverlay — dashed bbox + 8 resize handles for the active group (B8 fix).
+// GroupOverlay ? dashed bbox + 8 resize handles for the active group (B8 fix).
 // Drag preview is local; on mouseup a single labeled action commits the
-// proportional scale to every member ("Redimensionar grupo" — undoable).
+// proportional scale to every member ("Redimensionar grupo" ? undoable).
 // ---------------------------------------------------------------------------
 function GroupOverlay({
   bounds, active, showHandles, memberIds, scaleRef,
@@ -4112,7 +4172,7 @@ function GroupOverlay({
 }
 
 // ---------------------------------------------------------------------------
-// PalettePopover — paleta de cores rápidas (cores usadas + cores do tema)
+// PalettePopover ? paleta de cores rápidas (cores usadas + cores do tema)
 // ---------------------------------------------------------------------------
 function collectUsedColors(blocks: CustomBlock[]): string[] {
   const set = new Set<string>();
@@ -4322,7 +4382,7 @@ function PalettePopover({
 }
 
 // ----------------------------------------------------------------------------
-// SpeakerNotesBar — colapsável no rodapé do editor de canvas.
+// SpeakerNotesBar ? colapsável no rodapé do editor de canvas.
 // ----------------------------------------------------------------------------
 function SpeakerNotesBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -4359,7 +4419,7 @@ function SpeakerNotesBar({ value, onChange }: { value: string; onChange: (v: str
 }
 
 // ---------------------------------------------------------------------------
-// ShortcutsDialog — painel de referência rápida dos atalhos do editor.
+// ShortcutsDialog ? painel de referência rápida dos atalhos do editor.
 function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   const sections: { title: string; items: [string, string][] }[] = [
