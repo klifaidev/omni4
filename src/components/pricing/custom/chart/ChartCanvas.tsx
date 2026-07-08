@@ -233,7 +233,7 @@ function mapPos(family: Family, p: string): string {
 }
 
 // -- main ------------------------------------------------------------------
-export function ChartCanvas({ block }: { block: ChartBlock }) {
+export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: ChartBlock }) {
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? fallbackMeasureForSource(block.dataSource);
@@ -1478,7 +1478,7 @@ export function ChartCanvas({ block }: { block: ChartBlock }) {
       </div>
     </Wrapper>
   );
-}
+}, (prev, next) => prev.block === next.block);
 
 function Wrapper({ children, style, hasIncoming }: {
   children: React.ReactNode; style: ChartStyle; hasIncoming?: boolean;

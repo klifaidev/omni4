@@ -59,11 +59,9 @@ import { useBudget } from "@/store/budget";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import { useSlidesFlow, type SlidesPreset } from "@/store/slidesFlow";
 import {
-  SLIDE_CATALOG, defaultItem, isItemReady, itemToFlow, metaOf,
+  SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
-import { exportSlideFlow } from "@/lib/exportPpt";
-import { exportToPdf } from "@/lib/exportPdf";
 import { buildSlidesPreflight, type SlidePreflightIssue } from "@/lib/slidesPreflight";
 import { ChevronDown } from "lucide-react";
 import {
@@ -94,6 +92,11 @@ import {
 import { readLog, clearLog, subscribeLog, type ChangeLogEntry } from "@/lib/slideChangeLog";
 import { formatDistanceToNow, format as formatDate } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/components/pricing/slides/SlideCatalogFlow";
+import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
+import { PreflightPopover } from "@/components/pricing/slides/SlidesPreflightPopover";
+import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
+import { useSlideExport } from "@/hooks/useSlideExport";
 
 // ----------------------------------------------------------------------------
 // Smart defaults — calculados no momento de criar o slide a partir das bases
@@ -127,14 +130,6 @@ function smartDefaults(
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
-const ICON_MAP = { GitBranch, Target, BookOpen, LayoutTemplate } as const;
-
-const ACCENT_BG = {
-  blue: "bg-primary/15 text-primary border-primary/30",
-  amber: "bg-amber-500/15 text-amber-500 border-amber-500/30",
-  neutral: "bg-muted text-muted-foreground border-border/40",
-} as const;
-
 // Dimensões disponíveis para filtros por slide.
 // Cada grupo é mostrado como um collapsible no painel.
 const FILTER_GROUPS: Array<{
@@ -196,235 +191,6 @@ function uniqueValues(
   return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
-// ----------------------------------------------------------------------------
-// Drop zone vazio
-// ----------------------------------------------------------------------------
-function EmptyFlow({ onAdd, onOpenGallery, isOver }: { onAdd: (k: SlideKind) => void; onOpenGallery: () => void; isOver?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "relative flex flex-col items-center gap-8 overflow-hidden rounded-3xl border bg-gradient-to-b from-card/40 to-card/10 px-8 py-16 text-center animate-fade-in transition-colors",
-        isOver ? "border-primary/70 bg-primary/[0.06]" : "border-border/40",
-      )}
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-24 h-64 opacity-60"
-        style={{ background: "radial-gradient(60% 60% at 50% 50%, hsl(var(--primary)/0.18), transparent 70%)" }}
-      />
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-        <Sparkles className="h-8 w-8" />
-      </div>
-      <div className="relative max-w-md space-y-2">
-        <h3 className="text-xl font-semibold tracking-tight">Comece sua apresentação</h3>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {isOver
-            ? "Solte aqui para adicionar à esteira."
-            : "Escolha um template pronto para começar em segundos — ou monte do zero arrastando slides do catálogo à esquerda."}
-        </p>
-      </div>
-      <div className="relative flex flex-col sm:flex-row items-center gap-2">
-        <Button size="lg" onClick={onOpenGallery} className="gap-2 shadow-[0_8px_24px_-12px_hsl(var(--primary)/0.6)]">
-          <Sparkles className="h-4 w-4" />
-          Nova apresentação
-        </Button>
-        <span className="text-xs text-muted-foreground">ou clique nos modelos abaixo</span>
-      </div>
-      <div className="relative grid w-full max-w-2xl grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {SLIDE_CATALOG.map((s) => {
-          const Icon = ICON_MAP[s.icon];
-          return (
-            <button
-              key={s.kind}
-              onClick={() => onAdd(s.kind)}
-              className="group flex flex-col items-center gap-2 rounded-2xl border border-border/40 bg-card/50 p-4 text-center transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-[0_8px_24px_-12px_hsl(var(--primary)/0.4)]"
-            >
-              <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl border transition-transform group-hover:scale-105", ACCENT_BG[s.accent])}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="text-xs font-medium leading-tight">{s.title}</div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Catálogo arrastável (sidebar esquerda)
-function DraggableCatalogItem({
-  kind,
-  onClick,
-}: {
-  kind: SlideKind;
-  onClick: () => void;
-}) {
-  const meta = metaOf(kind);
-  const Icon = ICON_MAP[meta.icon];
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `catalog:${kind}`,
-    data: { source: "catalog", kind },
-  });
-  return (
-    <button
-      ref={setNodeRef}
-      onClick={onClick}
-      {...attributes}
-      {...listeners}
-      className={cn(
-        "group relative flex items-start gap-2.5 rounded-xl border border-border/40 bg-card/40 p-2.5 text-left transition-all duration-200 hover:-translate-y-px hover:border-primary/40 hover:bg-card hover:shadow-[0_6px_16px_-10px_hsl(var(--primary)/0.5)] cursor-grab active:cursor-grabbing",
-        isDragging && "opacity-40",
-      )}
-    >
-      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border", ACCENT_BG[meta.accent])}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-[13px] font-medium tracking-tight">
-          <span className="truncate">{meta.title}</span>
-          <Plus className="h-3 w-3 shrink-0 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
-        </div>
-        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground line-clamp-2">
-          {meta.description}
-        </p>
-      </div>
-    </button>
-  );
-}
-
-// Wrapper droppable da esteira (aceita drops do catálogo em qualquer posição)
-function FlowDropZone({ children }: { children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: "flow-dropzone" });
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "rounded-2xl transition-colors",
-        isOver && "ring-2 ring-primary/50 ring-offset-2 ring-offset-background",
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-
-// ----------------------------------------------------------------------------
-// Card sortable na esteira
-// ----------------------------------------------------------------------------
-function FlowCard({
-  item,
-  index,
-  selected,
-  onSelect,
-  onRemove,
-  onDuplicate,
-}: {
-  item: SlideItem;
-  index: number;
-  selected: boolean;
-  onSelect: () => void;
-  onRemove: () => void;
-  onDuplicate: () => void;
-}) {
-  const meta = metaOf(item.kind);
-  const Icon = ICON_MAP[meta.icon];
-  const ready = isItemReady(item);
-  const filtersCount = (item.kind === "bridge_pvm" || item.kind === "budget_evo")
-    ? Object.values(item.config.filters).filter((v) => v && v.length > 0).length
-    : 0;
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <TooltipProvider delayDuration={500}>
-    <Tooltip>
-    <TooltipTrigger asChild>
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "group relative flex items-center gap-2 rounded-xl border bg-card/60 px-2.5 py-2 transition-all duration-200 animate-fade-in",
-        selected
-          ? "border-primary/60 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.35),_0_8px_24px_-12px_hsl(var(--primary)/0.35)]"
-          : "border-border/40 hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_16px_-8px_hsl(0_0%_0%/0.4)]",
-      )}
-      onClick={onSelect}
-    >
-      <button
-        className="flex h-7 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/30 transition-colors hover:text-muted-foreground active:cursor-grabbing"
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        aria-label="Reordenar"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <span className="w-6 shrink-0 text-center text-[10px] font-semibold tabular-nums tracking-wider text-muted-foreground/70">
-        {String(index + 1).padStart(2, "0")}
-      </span>
-
-      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", ACCENT_BG[meta.accent])}>
-        <Icon className="h-4 w-4" />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium tracking-tight">
-          {item.label || meta.title}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-        {filtersCount > 0 && (
-          <span className="inline-flex items-center gap-0.5">
-            <FilterIcon className="h-3 w-3" /> {filtersCount}
-          </span>
-        )}
-        {!ready.ok && (
-          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
-            {ready.reason}
-          </span>
-        )}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-        <Button
-          variant="ghost" size="icon" className="h-7 w-7"
-          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-          aria-label="Duplicar"
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          aria-label="Remover"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-    </TooltipTrigger>
-    <TooltipContent side="left" align="center" sideOffset={12} className="p-1.5 border border-border/60 bg-card">
-      <div className="overflow-hidden rounded-md border border-border/40 bg-white" style={{ width: 200, height: 113 }}>
-        <ScaledPreview item={item} targetWidth={200} />
-      </div>
-      <div className="mt-1 px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
-        Slide {index + 1} · {item.label || meta.title}
-      </div>
-    </TooltipContent>
-    </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-// ----------------------------------------------------------------------------
 // Painel de configuração de filtros
 // ----------------------------------------------------------------------------
 function FiltersPanel({
@@ -1532,8 +1298,6 @@ export default function SlidesBeta() {
   const togglePeriod = usePricing((s) => s.togglePeriod);
   const setAllPeriods = usePricing((s) => s.setAllPeriods);
 
-  const [exporting, setExporting] = useState(false);
-  const [fileName, setFileName] = useState("apresentacao-pricing.pptx");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [dragging, setDragging] = useState<{ source: "catalog"; kind: SlideKind } | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -1637,6 +1401,20 @@ export default function SlidesBeta() {
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
   const readyAll = items.every((i) => isItemReady(i).ok);
   const preflight = useMemo(() => buildSlidesPreflight(items), [items]);
+  const {
+    exporting,
+    fileName,
+    setFileName,
+    handleExport,
+    handleExportPdf,
+  } = useSlideExport({
+    items,
+    readyAll,
+    preflightErrors: preflight.errors,
+    pricingRows,
+    budgetRows,
+    metric,
+  });
 
   const globalActiveFilterCount = useMemo(() => {
     let n = 0;
@@ -1675,53 +1453,6 @@ export default function SlidesBeta() {
     // Reordenação dentro da esteira
     if (active.id === over.id) return;
     reorder(String(active.id), String(over.id));
-  };
-
-  const handleExportPdf = async () => {
-    if (items.length === 0) return;
-    if (!readyAll) {
-      toast.error("Existem slides incompletos. Configure-os antes de exportar.");
-      return;
-    }
-    if (preflight.errors > 0) {
-      toast.error("O preflight encontrou erro critico antes da exportacao.");
-      return;
-    }
-    setExporting(true);
-    try {
-      const safeName = fileName.endsWith(".pptx") ? fileName : `${fileName}.pptx`;
-      await exportToPdf(items, safeName);
-    } catch (err) {
-      console.error(err);
-      toast.error(err instanceof Error ? err.message : "Falha ao gerar PDF.");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleExport = async () => {
-    if (items.length === 0) return;
-    if (!readyAll) {
-      toast.error("Existem slides incompletos. Configure-os antes de exportar.");
-      return;
-    }
-    if (preflight.errors > 0) {
-      toast.error("O preflight encontrou erro critico antes da exportacao.");
-      return;
-    }
-    setExporting(true);
-    try {
-      const flow = items.map((i) => itemToFlow(i, { pricingRows, budgetRows, metric }));
-      const safeName = fileName.endsWith(".pptx") ? fileName : `${fileName}.pptx`;
-      const bridgeIdx = items.findIndex((i) => i.kind === "bridge_pvm");
-      await exportSlideFlow(flow, safeName, bridgeIdx >= 0 ? bridgeIdx + 1 : undefined);
-      toast.success(`PPTX gerado com ${items.length} slide(s).`);
-    } catch (err) {
-      console.error(err);
-      toast.error(err instanceof Error ? err.message : "Falha ao gerar PPTX.");
-    } finally {
-      setExporting(false);
-    }
   };
 
   return (
@@ -2441,118 +2172,3 @@ function HistoryDialog({
 // ----------------------------------------------------------------------------
 // TransitionSelect — chooses the deck-wide slide transition.
 // ----------------------------------------------------------------------------
-function PreflightPopover({
-  issues,
-  errors,
-  warnings,
-}: {
-  issues: SlidePreflightIssue[];
-  errors: number;
-  warnings: number;
-}) {
-  const status = errors > 0 ? "error" : warnings > 0 ? "warning" : "ok";
-  const label = status === "ok" ? "Pronto" : errors > 0 ? `${errors} erro` : `${warnings} alerta`;
-  const grouped = issues.slice(0, 12);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant={status === "ok" ? "outline" : "ghost"}
-          size="sm"
-          className={cn(
-            "relative h-8 gap-1.5",
-            status === "error" && "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15",
-            status === "warning" && "border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/15 dark:text-amber-300",
-          )}
-          title="Preflight de exportacao"
-        >
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Preflight
-          <Badge
-            variant={status === "ok" ? "secondary" : "outline"}
-            className="ml-0.5 h-4 px-1.5 text-[9px]"
-          >
-            {label}
-          </Badge>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 p-3">
-        <div className="space-y-3">
-          <div className="flex items-start gap-2">
-            <ShieldCheck className={cn(
-              "mt-0.5 h-4 w-4",
-              status === "ok" && "text-emerald-500",
-              status === "warning" && "text-amber-500",
-              status === "error" && "text-destructive",
-            )} />
-            <div>
-              <div className="text-sm font-semibold">Preflight de exportacao</div>
-              <p className="text-xs text-muted-foreground">
-                Checagem rapida para reduzir risco de corte, perda de imagem ou bloco incompleto no PPTX.
-              </p>
-            </div>
-          </div>
-
-          {issues.length === 0 ? (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 dark:text-emerald-300">
-              Nenhum risco encontrado na esteira atual.
-            </div>
-          ) : (
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {grouped.map((item, idx) => (
-                <div
-                  key={`${item.slideId}-${item.blockId ?? "slide"}-${idx}`}
-                  className={cn(
-                    "rounded-lg border p-2.5 text-xs",
-                    item.severity === "error" && "border-destructive/30 bg-destructive/10",
-                    item.severity === "warning" && "border-amber-500/30 bg-amber-500/10",
-                    item.severity === "info" && "border-border/60 bg-muted/30",
-                  )}
-                >
-                  <div className="flex items-center gap-2 font-semibold">
-                    <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      Slide {item.slideNumber}
-                    </span>
-                    <span>{item.title}</span>
-                  </div>
-                  <div className="mt-1 text-muted-foreground">{item.detail}</div>
-                </div>
-              ))}
-              {issues.length > grouped.length && (
-                <div className="text-center text-[11px] text-muted-foreground">
-                  +{issues.length - grouped.length} ponto(s) adicionais
-                </div>
-              )}
-            </div>
-          )}
-
-          {errors > 0 && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
-              Corrija os erros criticos para liberar a exportacao.
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function TransitionSelect() {
-  const transition = useSlidesFlow((s) => s.transition);
-  const setTransition = useSlidesFlow((s) => s.setTransition);
-  return (
-    <Select value={transition} onValueChange={(v) => setTransition(v as never)}>
-      <SelectTrigger className="h-8 w-[140px] text-xs" aria-label="Transição entre slides">
-        <SelectValue placeholder="Transição" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="none">Sem transição</SelectItem>
-        <SelectItem value="fade">Fade</SelectItem>
-        <SelectItem value="slide-left">Deslizar (←)</SelectItem>
-        <SelectItem value="slide-up">Subir (↑)</SelectItem>
-        <SelectItem value="zoom">Zoom</SelectItem>
-      </SelectContent>
-    </Select>
-  );
-}

@@ -343,13 +343,17 @@ class BlockErrorBoundary extends React.Component<
   }
 }
 
-export function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
   return (
     <BlockErrorBoundary block={block}>
       <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} />
     </BlockErrorBoundary>
   );
-}
+}, (prev, next) => (
+  prev.block === next.block
+  && prev.readOnly === next.readOnly
+  && prev.isEditing === next.isEditing
+));
 
 function BlockRendererInner({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
   switch (block.kind) {

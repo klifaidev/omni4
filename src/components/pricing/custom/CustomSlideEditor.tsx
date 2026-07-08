@@ -354,7 +354,7 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
     return false;
   }, [notifyReadOnly, readOnly]);
 
-  const updateBlock = (id: string, patch: Partial<CustomBlock>) => {
+  const updateBlock = useCallback((id: string, patch: Partial<CustomBlock>) => {
     if (!canEdit()) return;
     const keys = Object.keys(patch);
     const isMove = keys.every((k) => k === "x" || k === "y");
@@ -367,19 +367,19 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
       : isMove ? "Mover bloco"
       : "Alterar dados";
     patchBlockAction(id, patch, label);
-  };
-  const addBlock = (kind: CustomBlockKind) => {
+  }, [canEdit]);
+  const addBlock = useCallback((kind: CustomBlockKind) => {
     if (!canEdit()) return;
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
-  };
-  const addChart = (chartType: CustomChartType, preset?: "positivacao") => {
+  }, [canEdit]);
+  const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
     const id = preset === "positivacao"
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
     if (id) setSelection([id]);
-  };
+  }, [canEdit]);
   const addInsightCard = () => {
     const x = 60;
     const y = 150;
@@ -755,21 +755,21 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
       setSelection(ids);
     }
   };
-  const removeBlock = (id: string) => {
+  const removeBlock = useCallback((id: string) => {
     if (!canEdit()) return;
     deleteBlockAction(id);
     if (selectedIds.includes(id)) clearSelection();
-  };
-  const duplicateBlock = (id: string) => {
+  }, [canEdit, selectedIds]);
+  const duplicateBlock = useCallback((id: string) => {
     if (!canEdit()) return;
     const newId = duplicateBlockAction(id);
     if (newId) setSelection([newId]);
-  };
-  const bringForward = (id: string) => { if (canEdit()) bringForwardAction(id); };
-  const sendBack = (id: string) => { if (canEdit()) sendBackAction(id); };
-  const bringToFront = (id: string) => { if (canEdit()) bringToFrontAction(id); };
-  const sendToBack = (id: string) => { if (canEdit()) sendToBackAction(id); };
-  const toggleLock = (id: string) => { if (canEdit()) toggleLockAction(id); };
+  }, [canEdit]);
+  const bringForward = useCallback((id: string) => { if (canEdit()) bringForwardAction(id); }, [canEdit]);
+  const sendBack = useCallback((id: string) => { if (canEdit()) sendBackAction(id); }, [canEdit]);
+  const bringToFront = useCallback((id: string) => { if (canEdit()) bringToFrontAction(id); }, [canEdit]);
+  const sendToBack = useCallback((id: string) => { if (canEdit()) sendToBackAction(id); }, [canEdit]);
+  const toggleLock = useCallback((id: string) => { if (canEdit()) toggleLockAction(id); }, [canEdit]);
 
   const rememberPaletteUse = useCallback((id: string) => {
     setRecentPaletteIds((prev) => {
