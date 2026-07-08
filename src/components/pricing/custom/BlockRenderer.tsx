@@ -476,8 +476,9 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     if (incoming.length === 0) return baseRows;
     const applyPeriod = (r: (typeof baseRows)[number]) => {
       if (periodFilterValues.length === 0) return true;
-      const lbl = monthLabel((r as any).mes, (r as any).ano);
-      const raw = String((r as any).periodo ?? "");
+      const row = r as { mes?: number; ano?: number; periodo?: string };
+      const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
+      const raw = String(row.periodo ?? "");
       return periodFilterValues.includes(lbl) || periodFilterValues.includes(raw);
     };
     const hasDimensional = incoming.some(

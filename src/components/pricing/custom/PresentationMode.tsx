@@ -18,6 +18,7 @@ import { exportToPdf } from "@/lib/exportPdf";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { Button } from "@/components/ui/button";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import type { SlideItem } from "@/lib/slidesFlow";
 import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock } from "@/lib/customSlide";
 import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
@@ -481,8 +482,7 @@ function SlideRenderArea({
       );
     }
     // Non-custom: ScaledPreview at full canvas width so it fills the scaled container.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return <ScaledPreview item={slide as any} targetWidth={CANVAS_W} />;
+    return <ScaledPreview item={slide as SlideItem} targetWidth={CANVAS_W} />;
   })();
 
   // C28: use slide background for the outer shell so transparent custom slides

@@ -1,4 +1,4 @@
-// ChartCanvas — single Recharts-based renderer for every ChartBlock variant.
+// ChartCanvas â€” single Recharts-based renderer for every ChartBlock variant.
 // Reads the unified ChartStyle so the inspector can drive every visual knob.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -50,8 +50,43 @@ import {
 import {
   ChartTooltip, applySort, evalCondColor, renderRefLines,
   linearFit, movingAvg, resolveBridgeColumns, FunnelSVG,
-  computeTrendlineSeries,
+  computeTrendlineSeries, type ChartTooltipPayload,
 } from "./chartHelpers";
+
+type PeriodLikeRow = { mes?: number; ano?: number; periodo?: string };
+type ChartClickState = {
+  nativeEvent?: { stopPropagation?: () => void; shiftKey?: boolean };
+  stopPropagation?: () => void;
+  shiftKey?: boolean;
+  activeLabel?: unknown;
+  activePayload?: Array<{ payload?: Record<string, unknown> }>;
+};
+type ChartMouseEvent = { stopPropagation?: () => void; shiftKey?: boolean };
+type RechartsDotProps = {
+  key?: string;
+  cx?: number;
+  cy?: number;
+  index?: number;
+  payload?: Record<string, unknown>;
+};
+type RechartsTooltipProps = {
+  active?: boolean;
+  payload?: ChartTooltipPayload[];
+  label?: string;
+};
+type LabelPointProps = { x?: number; y?: number; value?: unknown };
+type PieLabelProps = {
+  cx: number; cy: number; midAngle: number; outerRadius: number; innerRadius: number;
+  percent: number; value: number; name: string; fill?: string;
+};
+type TreemapNode = { name?: string };
+type TreemapEvent = { stopPropagation?: () => void };
+type BoxPlotRow = { q1: number; q3: number };
+type BoxPlotShapeProps = {
+  x: number; y: number; width: number; height: number;
+  payload: { q1: number; q3: number; median: number; min: number; max: number; name: string };
+  background?: { y?: number; height?: number };
+};
 
 // -- helpers ---------------------------------------------------------------
 function fmtVal(v: number, style: ChartStyle, fallback: ReturnType<typeof inferFormat>) {
@@ -90,7 +125,7 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-// Custom data-label content factory — supports bg, border, autoContrast, showSeries/Category
+// Custom data-label content factory â€” supports bg, border, autoContrast, showSeries/Category
 function makeLabelContent(opts: {
   style: ChartStyle;
   measureFmt: ReturnType<typeof inferFormat>;
@@ -124,9 +159,9 @@ function makeLabelContent(opts: {
       const c = categories[props.index];
       if (c) prefix.push(c);
     }
-    if (prefix.length) text = `${prefix.join(" · ")}: ${text}`;
+    if (prefix.length) text = `${prefix.join(" Â· ")}: ${text}`;
     let color = dl.color;
-    // FIX 11 — auto-contrast works even without explicit bg
+    // FIX 11 â€” auto-contrast works even without explicit bg
     if (dl.autoContrast) {
       const insidePos = ["inside-end", "inside-base", "center", "inside"].includes(dl.position);
       const bgRef = (cs.general?.background && cs.general.background !== "transparent")
@@ -190,7 +225,7 @@ function makeLabelContent(opts: {
   };
 }
 
-// Map our generic dataLabels.position → recharts position per chart family
+// Map our generic dataLabels.position â†’ recharts position per chart family
 type Family = "line" | "area" | "bar-vertical" | "bar-horizontal" | "pie" | "scatter";
 function mapPos(family: Family, p: string): string {
   if (family === "line" || family === "scatter") {
@@ -255,7 +290,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     return pricing;
   }, [block.dataSource, pricing, budget, forecast, rolling]);
   const xDim = block.fieldWells?.xDim ?? null;
-  // C1 — colorDim overrides breakdown as series-key generator
+  // C1 â€” colorDim overrides breakdown as series-key generator
   const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
 
   // ---- Cross-filter (Part B.6) ----
@@ -287,8 +322,9 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     return rawDsRows.filter((r) => {
       for (const f of incoming) {
         if (f.dimension === "period") {
-          const lbl = monthLabel((r as any).mes, (r as any).ano);
-          if (!f.values.includes(lbl) && !f.values.includes(String((r as any).periodo))) return false;
+          const row = r as PeriodLikeRow;
+          const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
+          if (!f.values.includes(lbl) && !f.values.includes(String(row.periodo))) return false;
         } else {
           const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
           if (!f.values.includes(v)) return false;
@@ -310,8 +346,9 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       return base.filter((r) => {
         for (const f of incoming) {
           if (f.dimension === "period") {
-            const lbl = monthLabel((r as any).mes, (r as any).ano);
-            if (!f.values.includes(lbl) && !f.values.includes(String((r as any).periodo))) return false;
+            const row = r as PeriodLikeRow;
+            const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
+            if (!f.values.includes(lbl) && !f.values.includes(String(row.periodo))) return false;
           } else {
             const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
             if (!f.values.includes(v)) return false;
@@ -329,7 +366,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   // Legend-click filter dimension (series dimension, not axis)
   const legendDim: string | null = block.fieldWells?.colorDim ?? block.breakdown ?? null;
 
-  // Core emit — takes an explicit dimension so callers can disambiguate
+  // Core emit â€” takes an explicit dimension so callers can disambiguate
   // between the X-axis click (period on a temporal line chart) and the
   // legend/series click (colorDim/breakdown).
   const handleEmitOn = (dimension: string, rawValue: unknown, opts?: { shift?: boolean }) => {
@@ -348,12 +385,12 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     }
   };
 
-  // Click handler — emits/toggles a filter on this block's emit dimension
+  // Click handler â€” emits/toggles a filter on this block's emit dimension
   const handleEmit = (rawValue: unknown, opts?: { shift?: boolean }) => {
     handleEmitOn(emitDim, rawValue, opts);
   };
 
-  // Legend click — emits filter on the series dimension (not the X-axis dim)
+  // Legend click â€” emits filter on the series dimension (not the X-axis dim)
   const handleLegendEmit = (value: string, shift: boolean) => {
     if (!legendDim) return;
     handleEmitOn(legendDim, value, { shift });
@@ -364,7 +401,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   // line chart) we emit on that dim so the click semantics match what the
   // user actually clicked, even when the chart is broken down by another
   // dimension (colorDim/breakdown).
-  const chartOnClick = (e: any, nativeEvent?: any) => {
+  const chartOnClick = (e: ChartClickState, nativeEvent?: ChartMouseEvent) => {
     e?.nativeEvent?.stopPropagation?.();
     e?.stopPropagation?.();
     nativeEvent?.stopPropagation?.();
@@ -373,13 +410,13 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       ?? e?.activePayload?.[0]?.payload?.name;
     if (label == null) return;
     const dim = xDim ?? emitDim;
-    // Recharts passes (state, event) — shiftKey lives on the native event.
+    // Recharts passes (state, event) â€” shiftKey lives on the native event.
     // Fall back to e.shiftKey for callers (Pie/Scatter) that pass a synthetic event directly.
     const shift = !!(nativeEvent?.shiftKey ?? e?.shiftKey);
     handleEmitOn(dim, label, { shift });
   };
 
-  // Active period values from any source (own or incoming) — used by the
+  // Active period values from any source (own or incoming) â€” used by the
   // line/area branch to render vertical highlight bands.
   const activePeriods = useMemo(() => {
     const s = new Set<string>();
@@ -489,11 +526,11 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           hidden.reduce((s, ser) => s + (ser.values[i] || 0), 0)),
       });
     }
-    // B.5 — apply user-defined sort
+    // B.5 â€” apply user-defined sort
     return applySort(raw.periodos, visible, block.sortConfig);
   }, [raw, block.h, block.w, block.autoFit, block.maxSeries, block.showOthers, block.sortConfig]);
 
-  // Tooltip lookup tables — previous period delta + YoY (best-effort heuristic on label match)
+  // Tooltip lookup tables â€” previous period delta + YoY (best-effort heuristic on label match)
   const tooltipMaps = useMemo(() => {
     const prev = new Map<string, Map<string, number>>();
     const yoy = new Map<string, Map<string, number>>();
@@ -508,7 +545,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     return { prev, yoy };
   }, [data]);
 
-  // C2 — tooltipMeasure: extra measure value per X label
+  // C2 â€” tooltipMeasure: extra measure value per X label
   const tooltipExtra = useMemo(() => {
     const tm = safeTooltipMeasure;
     if (!tm) return null;
@@ -564,7 +601,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       seriesDim ?? "marca",
       effectiveMeasure, 50, "all", null,
     );
-    // FIX 2 — apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
+    // FIX 2 â€” apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
     const sc = block.sortConfig;
     if (!sc) return base;
     if (sc.field === "name") {
@@ -623,7 +660,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     return r;
   });
 
-  // 1.4 stacked100 — normalize each row to percentage of total
+  // 1.4 stacked100 â€” normalize each row to percentage of total
   const ct = block.chartType;
   const isStack100 = (ct === "bar" || ct === "column" || ct === "hbar" || ct === "stackedColumn" || ct === "stackedBar")
     && style.bar.mode === "stacked100";
@@ -645,7 +682,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   const legendLayout = (style.general.legendPos === "left" || style.general.legendPos === "right")
     ? "vertical" : "horizontal";
 
-  // Build a name→color map from the actual series we render so the legend
+  // Build a nameâ†’color map from the actual series we render so the legend
   // can fall back to a guaranteed-contrast palette color when Recharts'
   // payload reports a missing/transparent/near-white swatch (which can
   // happen when colorDim switches and series defs are partially stale).
@@ -680,7 +717,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   const yAx = style.yAxis;
   const yAx2 = style.yAxis2 ?? yAx;
 
-  // 1.2 X axis min/max — apply when numeric (scatter/bubble/hbar)
+  // 1.2 X axis min/max â€” apply when numeric (scatter/bubble/hbar)
   const xDomain: [number | string, number | string] = [
     xAx.min ?? "auto", xAx.max ?? "auto",
   ];
@@ -756,12 +793,12 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   const stack100Fmt = (v: number) => `${(v as number).toFixed(0)}%`;
 
   if (ct === "line" || ct === "area" || ct === "stackedArea" || ct === "combo") {
-    // C2 — trendline + forecast overlay
+    // C2 â€” trendline + forecast overlay
     const trendCfg = style.analytics?.trendline;
     const fcCfg = style.analytics?.forecast;
     const trendOn = !!trendCfg?.enabled;
     const bandOn = trendOn && !!fcCfg?.enabled && !!fcCfg?.band;
-    // FIX 3 — band needs Area children; switch line→ComposedChart when band on
+    // FIX 3 â€” band needs Area children; switch lineâ†’ComposedChart when band on
     const Comp = (ct === "area" || ct === "stackedArea") ? AreaChart
       : ct === "combo" ? ComposedChart
       : (bandOn ? ComposedChart : LineChart);
@@ -782,7 +819,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           if (merged[i]) merged[i][k] = tr[k] as never;
         });
       });
-      // FIX 3 — confidence band: per-series [lo, up] for each forecast index
+      // FIX 3 â€” confidence band: per-series [lo, up] for each forecast index
       if (bandOn) {
         const startIdx = trendOut.forecastStartIdx;
         data.series.forEach((s) => {
@@ -806,7 +843,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     chart = (
       <Comp data={chartRows} onClick={chartOnClick} margin={chartMargin}>
         {renderGrid}{xAxis}{yAxis}{yAxisRight}
-        <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
+        <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
         {renderRefLines(style)}
         {/* Cross-filter: vertical highlight bands for active period selections */}
         {hasPeriodFilter && Array.from(activePeriods)
@@ -840,9 +877,9 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           const baseR = cfg?.marker?.size ?? 3;
           const dotFill = cfg?.marker?.fill ?? color;
           const dotStroke = cfg?.marker?.border ?? color;
-          const dotProp: any = markerOn
+          const dotProp: boolean | ((dp: RechartsDotProps) => JSX.Element) = markerOn
             ? (showCrossing
-              ? (dp: any) => (
+              ? (dp: RechartsDotProps) => (
                   <CrossingDot
                     key={dp.key}
                     {...dp}
@@ -885,7 +922,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
             </Line>
           );
         })}
-        {/* C2 — trendline overlay (one Line per series) */}
+        {/* C2 â€” trendline overlay (one Line per series) */}
         {trendOut && data.series.map((s) => {
           const tk = trendOut.trendKey(s.name);
           const tcolor = trendCfg!.color;
@@ -893,7 +930,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           const showR2 = trendCfg!.showR2 && isFinite(r2);
           return (
             <Line key={tk} isAnimationActive={false} dataKey={tk}
-              name={showR2 ? `${s.name} (tend. R²=${r2.toFixed(2)})` : `${s.name} (tendência)`}
+              name={showR2 ? `${s.name} (tend. RÂ²=${r2.toFixed(2)})` : `${s.name} (tendÃªncia)`}
               type="monotone" stroke={tcolor}
               strokeWidth={trendCfg!.thickness}
               strokeDasharray={trendDash(trendCfg!.style)}
@@ -901,7 +938,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
               yAxisId="left" />
           );
         })}
-        {/* FIX 3 — forecast confidence band (Area between [lo, up]) */}
+        {/* FIX 3 â€” forecast confidence band (Area between [lo, up]) */}
         {bandOn && trendOut && data.series.map((s) => (
           <Area key={`band_${s.name}`} isAnimationActive={false}
             dataKey={`__band_${s.name}`}
@@ -925,7 +962,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           );
         })}
         {hasPeriodFilter && (
-          <Customized component={SegmentOverlay as any} activePeriods={activePeriods as any} />
+          <Customized component={SegmentOverlay as unknown as React.ComponentType<SegmentOverlayProps>} activePeriods={activePeriods} />
         )}
       </Comp>
     );
@@ -939,7 +976,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       <BarChart data={rows} layout="horizontal" onClick={chartOnClick} margin={chartMargin}
         barCategoryGap={`${style.bar.gapPct}%`}>
         {renderGrid}{xAxis}{yAxis}
-        <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
+        <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
         {renderRefLines(style)}
         {renderLegend}
         {data.series.map((s, i) => {
@@ -950,7 +987,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
               yAxisId="left"
               radius={style.bar.cornerRadius}
               stroke={style.bar.borderColor} strokeWidth={style.bar.borderWidth}>
-              {/* C1 — conditional formatting + per-row dim cells */}
+              {/* C1 â€” conditional formatting + per-row dim cells */}
               {((style.conditionalRules?.length ?? 0) > 0 || ownFilterOnRowDim) && rows.map((r, ri) => {
                 const baseFill = (style.conditionalRules?.length ?? 0) > 0
                   ? evalCondColor(Number(r[s.name]) || 0, style.conditionalRules, style.conditionalDefault || color)
@@ -990,7 +1027,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           stroke={yAx.lineColor} strokeWidth={yAx.lineWidth}
           label={yAx.titleText ? { value: yAx.titleText, angle: -90, position: "insideLeft",
             style: { fontSize: yAx.titleSize, fill: yAx.titleColor } } : undefined} />
-        <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
+        <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
         {renderRefLines(style)}
         {renderLegend}
         {data.series.map((s, i) => {
@@ -1025,7 +1062,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     const labelKey = style.pie.labelMode;
     const labelMode = mapPos("pie", dlPos); // "inside" | "outside"
     const isCallout = dlPos === "callout";
-    // A.9 — per-slice explosion via custom shape
+    // A.9 â€” per-slice explosion via custom shape
     const renderPieShape = (props: {
       cx: number; cy: number; midAngle: number;
       innerRadius: number; outerRadius: number;
@@ -1047,8 +1084,8 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     };
     const dl = style.dataLabels;
     const pieTotal = ranking.reduce((s, r) => s + Math.abs(r.value), 0) || 1;
-    // FIX 5 — fully-styled pie label honoring size/color/bold/italic/format/position/showCategory
-    const pieLabel = dl.show ? (props: any) => {
+    // FIX 5 â€” fully-styled pie label honoring size/color/bold/italic/format/position/showCategory
+    const pieLabel = dl.show ? (props: PieLabelProps) => {
       const { cx, cy, midAngle, outerRadius, innerRadius, percent, value, name } = props;
       const RAD = Math.PI / 180;
       const inside = labelMode === "inside";
@@ -1068,7 +1105,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
         case "name-value": body = `${name}: ${valStr}`; break;
         default: body = `${name}: ${pct}`;
       }
-      const text = dl.showCategory ? `${name} · ${body}` : body;
+      const text = dl.showCategory ? `${name} Â· ${body}` : body;
       const anchor: "start" | "end" | "middle" = inside ? "middle" : (x > cx ? "start" : "end");
       let color = dl.color;
       if (dl.autoContrast) {
@@ -1100,7 +1137,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     } : false;
     chart = (
       <PieChart onClick={chartOnClick}>
-        <Tooltip content={(p: any) => (
+        <Tooltip content={(p: RechartsTooltipProps) => (
           <ChartTooltip {...p} style={style} measureFmt={measureFmt} variant="pie" pieTotal={pieTotal} additionalRow={tooltipExtra ?? undefined} />
         )} />
         {renderLegend}
@@ -1112,7 +1149,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           activeIndex={ranking.map((_, i) => i)}
           activeShape={renderPieShape as never}
           label={pieLabel as never}
-          onClick={(_d: any, idx: number, e: any) => {
+          onClick={(_d: unknown, idx: number, e: ChartMouseEvent) => {
             e?.stopPropagation?.();
             handleEmit(ranking[idx]?.name, { shift: !!e?.shiftKey });
           }}
@@ -1127,7 +1164,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       </PieChart>
     );
   } else if (ct === "bubble" || ct === "scatter") {
-    // A.4 — bubble/scatter use measureX/measureY/measure(size) when set
+    // A.4 â€” bubble/scatter use measureX/measureY/measure(size) when set
     const dim = seriesDim ?? "marca";
     const sizeRanking = ranking; // ranks by primary measure (drives size)
     const xRanking = safeMeasureX
@@ -1138,12 +1175,12 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       : null;
     const xByName = new Map(xRanking?.map((r) => [r.name, r.value]) ?? []);
     const yByName = new Map(yRanking?.map((r) => [r.name, r.value]) ?? []);
-    // C3 — labelDim: pick representative dimension value per point
+    // C3 â€” labelDim: pick representative dimension value per point
     const labelDim = block.fieldWells?.labelDim ?? null;
     const labelByName = new Map<string, string>();
     if (labelDim) {
       for (const r of dsRows) {
-        const k = String((r as unknown as Record<string, unknown>)[dim] ?? "—");
+        const k = String((r as unknown as Record<string, unknown>)[dim] ?? "â€”");
         if (labelByName.has(k)) continue;
         const lv = String((r as unknown as Record<string, unknown>)[labelDim] ?? "");
         if (lv) labelByName.set(k, lv);
@@ -1157,7 +1194,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       __label: labelDim ? (labelByName.get(r.name) ?? "") : "",
     }));
     const xLabel = style.measureX
-      ? KPI_MEASURES_LABEL[style.measureX] : "Índice";
+      ? KPI_MEASURES_LABEL[style.measureX] : "Ãndice";
     const yLabel = style.measureY
       ? KPI_MEASURES_LABEL[style.measureY] : KPI_MEASURES_LABEL[block.measure];
     const xFmt = style.measureX ? inferFormat(style.measureX) : measureFmt;
@@ -1189,7 +1226,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           <ZAxis type="number" dataKey="z" range={[style.bubble.minSize, style.bubble.maxSize]} />
         )}
         <Tooltip cursor={{ strokeDasharray: "3 3" }}
-          content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} variant={ct === "bubble" ? "bubble" : "scatter"} additionalRow={tooltipExtra ?? undefined} />} />
+          content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} variant={ct === "bubble" ? "bubble" : "scatter"} additionalRow={tooltipExtra ?? undefined} />} />
         {renderLegend}
         <Scatter data={points} isAnimationActive={false} fill={DEFAULT_PALETTE[0]}
           fillOpacity={style.bubble.fillOpacity}
@@ -1207,10 +1244,10 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
             <LabelList dataKey="z" position="top"
               content={makeLabelContent({ style, measureFmt }) as never} />
           )}
-          {/* C3 — labelDim renders dimension value next to each point */}
+          {/* C3 â€” labelDim renders dimension value next to each point */}
           {labelDim && (
             <LabelList dataKey="__label"
-              content={(p: any) => {
+              content={(p: LabelPointProps) => {
                 if (p.x == null || p.y == null || !p.value) return null;
                 return (
                   <text x={p.x + 8} y={p.y - 8}
@@ -1237,7 +1274,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       />
     );
   } else if (ct === "funnel") {
-    // FIX 3 — replace recharts Funnel (broken triangles) with custom SVG trapezoids
+    // FIX 3 â€” replace recharts Funnel (broken triangles) with custom SVG trapezoids
     const fdata = ranking.map((r, i) => ({
       name: r.name, value: r.value,
       color: style.funnel.slices[r.name]?.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length],
@@ -1258,7 +1295,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       } else {
         fill = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
       }
-      // C1 — conditional formatting overrides palette/gradient
+      // C1 â€” conditional formatting overrides palette/gradient
       if ((style.conditionalRules?.length ?? 0) > 0) {
         fill = evalCondColor(r.value, style.conditionalRules, style.conditionalDefault || fill);
       }
@@ -1268,7 +1305,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       <Treemap data={tdata} isAnimationActive={false} dataKey="size" nameKey="name"
         stroke={style.treemap.borderColor}
         aspectRatio={4 / 3}
-        onClick={((node: any, _idx?: any, e?: any) => { e?.stopPropagation?.(); handleEmit(node?.name); }) as never}
+        onClick={((node: TreemapNode, _idx?: number, e?: TreemapEvent) => { e?.stopPropagation?.(); handleEmit(node?.name); }) as never}
         content={<TreemapTile cfg={style.treemap} dl={style.dataLabels} fmt={measureFmt} dimmedNames={ownFilter && ownFilter.dimension === emitDim ? new Set(ranking.map(r => r.name).filter(n => !ownFilter.values.includes(n))) : null} />} />
     );
   } else if (ct === "radar") {
@@ -1283,15 +1320,15 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           tick={{ fontSize: style.radar.axisLabelSize, fill: style.radar.axisLabelColor }} />
         <PolarRadiusAxis tick={{ fontSize: style.radar.axisLabelSize, fill: style.radar.axisLabelColor }}
           tickFormatter={axisFmt(yAx, measureFmt)} />
-        <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
+        <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
         {renderRefLines(style)}
         {renderLegend}
         {data.series.map((s, i) => {
           const cfg = style.series.find((x) => x.key === s.name);
           const color = cfg?.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
-          // FIX 7b — radar custom data labels via dot prop
+          // FIX 7b â€” radar custom data labels via dot prop
           const dl = style.dataLabels;
-          const dotRenderer = dl.show ? (props: any) => {
+          const dotRenderer = dl.show ? (props: LabelPointProps) => {
             const { cx, cy, value } = props;
             if (cx == null || cy == null) return <g />;
             const pos = dl.position;
@@ -1325,7 +1362,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       </RadarChart>
     );
   } else if (ct === "histogram") {
-    // A.10 — when breakdown set, one histogram series per breakdown
+    // A.10 â€” when breakdown set, one histogram series per breakdown
     const seriesList = data.series.length > 0 ? data.series : [{ name: "Total", values: [] as number[] }];
     const allFlat: number[] = [];
     seriesList.forEach((s) => s.values.forEach((v) => { if (isFinite(v)) allFlat.push(v); }));
@@ -1334,7 +1371,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
     if (min === max && allFlat.length > 0) {
       chart = (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 13, color: SLIDE_HEX.slate400 }}>
-          Sem variação nos dados
+          Sem variaÃ§Ã£o nos dados
         </div>
       );
     } else {
@@ -1369,7 +1406,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
           <YAxis yAxisId="right" orientation="right"
             tick={{ fontSize: yAx.labelSize, fill: yAx.labelColor }} />
         )}
-        <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
+        <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} prevPeriodMap={tooltipMaps.prev} yoyMap={tooltipMaps.yoy} additionalRow={tooltipExtra ?? undefined} />} />
         {renderRefLines(style)}
         {renderLegend}
         {seriesList.map((s, i) => {
@@ -1381,7 +1418,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
               fillOpacity={seriesList.length > 1 ? 0.55 : 1}
               stroke={style.histogram.borderColor}
               strokeWidth={style.histogram.borderWidth}>
-              {/* FIX 6 — histogram data labels (always above) */}
+              {/* FIX 6 â€” histogram data labels (always above) */}
               {style.dataLabels.show && (
                 <LabelList dataKey={s.name} position="top"
                   content={makeLabelContent({ style, measureFmt,
@@ -1419,7 +1456,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
         ))}
         {!participates && (
           <span style={{ background: SLIDE_HEX.slate, color: SLIDE_HEX.white, fontSize: 9,
-            padding: "1px 5px", borderRadius: 4 }}>🔒 sem filtro</span>
+            padding: "1px 5px", borderRadius: 4 }}>ðŸ”’ sem filtro</span>
         )}
       </div>
       {/* Active emitted filter pill (top-right, click to clear) */}
@@ -1440,7 +1477,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
         >
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: SLIDE_HEX.blue }} />
           {ownFilter.values.length === 1 ? ownFilter.values[0] : `${ownFilter.values.length} selecionados`}
-          <span style={{ marginLeft: 2, opacity: 0.7 }}>×</span>
+          <span style={{ marginLeft: 2, opacity: 0.7 }}>Ã—</span>
         </div>
       )}
       {style.general.titleShow && block.title && (
@@ -1515,7 +1552,7 @@ interface CustomLegendProps {
   emits: boolean;
   colorMap?: Map<string, string>;
 }
-// Treat near-white / transparent / missing as invalid — fall back to palette.
+// Treat near-white / transparent / missing as invalid â€” fall back to palette.
 function isUsableSwatch(c?: string): boolean {
   if (!c) return false;
   const v = c.trim().toLowerCase();
@@ -1529,7 +1566,7 @@ function isUsableSwatch(c?: string): boolean {
 // Custom X-axis tick that renders a red pill around the value when the period
 // is part of the active cross-filter selection. Stringifies both sides of the
 // comparison so numeric tick payloads still match string filter values.
-function ActivePeriodTick(props: any) {
+function ActivePeriodTick(props: { x?: number; y?: number; payload?: { value?: unknown }; activePeriods?: Set<string>; labelColor?: string; labelSize?: number }) {
   const { x, y, payload, activePeriods, labelColor, labelSize } = props;
   const text = String(payload?.value ?? "");
   const isActive = activePeriods instanceof Set && activePeriods.has(text);
@@ -1572,13 +1609,13 @@ function ActivePeriodTick(props: any) {
 
 interface CrossingDotProps {
   cx?: number; cy?: number; index?: number;
-  payload?: any;
+  payload?: Record<string, unknown>;
   activePeriods: Set<string>;
   baseR: number; dotFill: string; dotStroke: string;
   strokeOpacity: number;
 }
 
-function CrossingDot(props: any) {
+function CrossingDot(props: CrossingDotProps) {
   const { cx, cy, index, activePeriods, baseR,
     dotFill, dotStroke, strokeOpacity } = props;
   if (cx == null || cy == null || index == null) return null;
@@ -1600,11 +1637,11 @@ function CrossingDot(props: any) {
 
 // Recharts v2 only injects formattedGraphicalItems into class components
 // passed via <Customized component={...} />. This draws the highlighted
-// segments (prev→active and active→next) on top of every Line/Area series.
+// segments (prevâ†’active and activeâ†’next) on top of every Line/Area series.
 interface SegmentOverlayProps {
   activePeriods: Set<string>;
   highlightColor?: string;
-  formattedGraphicalItems?: any[];
+  formattedGraphicalItems?: Array<{ props?: { points?: Array<{ x: number; y: number; payload?: Record<string, unknown> }>; stroke?: string; dataKey?: string } }>;
 }
 class SegmentOverlay extends React.Component<SegmentOverlayProps> {
   render() {
@@ -1614,8 +1651,8 @@ class SegmentOverlay extends React.Component<SegmentOverlayProps> {
     const segW = 4;
     const lines: JSX.Element[] = [];
     for (const item of formattedGraphicalItems) {
-      // Identifica Line/Area: tem points com x/y numéricos e prop stroke
-      const points: Array<{ x: number; y: number; payload: any }> =
+      // Identifica Line/Area: tem points com x/y numÃ©ricos e prop stroke
+      const points: Array<{ x: number; y: number; payload?: Record<string, unknown> }> =
         item?.props?.points ?? [];
       if (points.length === 0) continue;
       const firstValid = points.find(p => p?.x != null && p?.y != null && !isNaN(p.y));
@@ -1674,7 +1711,7 @@ function CustomLegend({ payload, ownFilter, legendDim, onLegendClick, emits, col
           <button
             key={entry.value}
             type="button"
-            aria-label={emits ? `Filtrar série ${entry.value}` : `Série ${entry.value}`}
+            aria-label={emits ? `Filtrar sÃ©rie ${entry.value}` : `SÃ©rie ${entry.value}`}
             aria-pressed={emits && isFilterDim ? isActive : undefined}
             disabled={!emits}
             onClick={(e) => { e.stopPropagation(); if (emits) onLegendClick(entry.value, e.shiftKey); }}
@@ -1705,11 +1742,17 @@ function CustomLegend({ payload, ownFilter, legendDim, onLegendClick, emits, col
   );
 }
 
-// -- Treemap tile renderer (A.7 — honors dataLabels) ---------------------
-function TreemapTile({ cfg, dl, fmt, dimmedNames, ...props }: any) {
+// -- Treemap tile renderer (A.7 â€” honors dataLabels) ---------------------
+function TreemapTile({ cfg, dl, fmt, dimmedNames, ...props }: {
+  cfg: ChartStyle["treemap"];
+  dl: ChartStyle["dataLabels"];
+  fmt: ReturnType<typeof inferFormat>;
+  dimmedNames: Set<string> | null;
+  x?: number; y?: number; width?: number; height?: number; name?: string; value?: number; fill?: string;
+}) {
   const { x, y, width, height, name, value, fill } = props;
   if (width < 2 || height < 2) return null;
-  // FIX 5 — dl.show is master gate; when off, render only the rect
+  // FIX 5 â€” dl.show is master gate; when off, render only the rect
   if (dl && !dl.show) {
     const op = dimmedNames && dimmedNames.has(name) ? 0.4 : 1;
     return (
@@ -1764,7 +1807,7 @@ function mixHex(a: string, b: string, t: number): string {
 }
 
 // -- Waterfall (custom Recharts composition) -------------------------------
-// FIX 1+2 — supports both legacy per-period mode AND smart column-builder mode.
+// FIX 1+2 â€” supports both legacy per-period mode AND smart column-builder mode.
 function WaterfallChart({
   block, style, series, dsRows: dsRowsProp,
 }: {
@@ -1802,7 +1845,7 @@ function WaterfallChart({
   const topN = pvmCfg.topN ?? 6;
   const comparisonMode = pvmCfg.comparisonMode ?? "prev-month";
 
-  // PVM mode — decomposição igual à aba Bridge (com auto-default de base/comp)
+  // PVM mode â€” decomposiÃ§Ã£o igual Ã  aba Bridge (com auto-default de base/comp)
   const pvmItems = useMemo(() => {
     if (wfMode !== "pvm") return null;
     const filtered = applyFilters(dsRows, block.filters, null);
@@ -1811,7 +1854,7 @@ function WaterfallChart({
     let baseKey = pvmCfg.base;
     let compKey = pvmCfg.comp;
 
-    // FIX 2 — Período de comparação automático
+    // FIX 2 â€” PerÃ­odo de comparaÃ§Ã£o automÃ¡tico
     if (comparisonMode !== "manual" && pvmCfg.periodMode === "month") {
       const periods = Array.from(
         new Map(filtered.map((r) => [r.periodo, { mes: r.mes, ano: r.ano }])).entries(),
@@ -1843,7 +1886,7 @@ function WaterfallChart({
       }
     }
 
-    // Auto-default base/comp: primeiro e último período disponíveis (manual sem seleção)
+    // Auto-default base/comp: primeiro e Ãºltimo perÃ­odo disponÃ­veis (manual sem seleÃ§Ã£o)
     if (!baseKey || !compKey || baseKey === compKey) {
       if (pvmCfg.periodMode === "fy") {
         const fys = Array.from(new Set(filtered.map((r) => r.fy))).sort();
@@ -1869,7 +1912,7 @@ function WaterfallChart({
       const r = calcPVM(filtered, metric, baseKey!, compKey!, pvmCfg.periodMode, labels);
       const t = (v: number): "positive" | "negative" => v >= 0 ? "positive" : "negative";
 
-      // ---- Decomposição por dimensão (Marca, Categoria, etc.) ----
+      // ---- DecomposiÃ§Ã£o por dimensÃ£o (Marca, Categoria, etc.) ----
       if (decomposition && decomposition !== "effects") {
         const keyOf = (row: PricingRow) => (pvmCfg.periodMode === "fy" ? row.fy : row.periodo);
         const margemOf = (row: PricingRow) =>
@@ -1879,7 +1922,7 @@ function WaterfallChart({
         for (const row of filtered) {
           const rawVal = (row as unknown as Record<string, unknown>)[decomposition];
           if (typeof rawVal === "number") continue;
-          const dimVal = (typeof rawVal === "string" && rawVal.trim()) ? rawVal.trim() : "—";
+          const dimVal = (typeof rawVal === "string" && rawVal.trim()) ? rawVal.trim() : "â€”";
           const k = keyOf(row);
           if (k === baseKey) baseAgg.set(dimVal, (baseAgg.get(dimVal) ?? 0) + margemOf(row));
           else if (k === compKey) compAgg.set(dimVal, (compAgg.get(dimVal) ?? 0) + margemOf(row));
@@ -1905,14 +1948,14 @@ function WaterfallChart({
         return items;
       }
 
-      // ---- Decomposição padrão por efeitos PVM ----
+      // ---- DecomposiÃ§Ã£o padrÃ£o por efeitos PVM ----
       return [
         { label: r.baseLabel,    value: r.base,       type: "start" as const },
         { label: "Volume",       value: r.volume,     type: t(r.volume) },
-        { label: "Preço",        value: r.price,      type: t(r.price) },
+        { label: "PreÃ§o",        value: r.price,      type: t(r.price) },
         { label: "Custo",        value: r.cost,       type: t(r.cost) },
         { label: "Frete",        value: r.freight,    type: t(r.freight) },
-        { label: "Comissão",     value: r.commission, type: t(r.commission) },
+        { label: "ComissÃ£o",     value: r.commission, type: t(r.commission) },
         { label: "Outros",       value: r.others,     type: t(r.others) },
         { label: r.currentLabel, value: r.current,    type: "total" as const },
       ];
@@ -2010,7 +2053,7 @@ function WaterfallChart({
         const valFmt = (v: number) => formatValue(v, style.dataLabels.format === "auto" ? measureFmt : style.dataLabels.format, "rol", style.dataLabels.decimals);
         const truncLabel = (lbl: string) => {
           const maxChars = Math.max(4, Math.floor(slot / (labelFs * 0.6)));
-          return lbl.length > maxChars ? `${lbl.slice(0, Math.max(1, maxChars - 1))}…` : lbl;
+          return lbl.length > maxChars ? `${lbl.slice(0, Math.max(1, maxChars - 1))}â€¦` : lbl;
         };
 
         return (
@@ -2110,7 +2153,7 @@ function BoxPlot({
   });
 
   const all = stats.flatMap((s) => [s.min, s.max, ...s.outliers]);
-  // A.12 — honor user yAxis.min/max when set
+  // A.12 â€” honor user yAxis.min/max when set
   const yMin = style.yAxis.min ?? (all.length ? all.reduce((a, b) => a < b ? a : b, Infinity) : 0);
   const yMax = style.yAxis.max ?? (all.length ? all.reduce((a, b) => a > b ? a : b, -Infinity) : 1);
 
@@ -2122,11 +2165,11 @@ function BoxPlot({
       <YAxis domain={[yMin, yMax]}
         tick={{ fontSize: style.yAxis.labelSize, fill: style.yAxis.labelColor }}
         tickFormatter={(v: number) => formatValue(v, measureFmt, "rol")} />
-      <Tooltip content={(p: any) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} />} />
+      <Tooltip content={(p: RechartsTooltipProps) => <ChartTooltip {...p} style={style} measureFmt={measureFmt} />} />
       <Bar dataKey="q1" stackId="bp" fill="transparent" isAnimationActive={false} />
-      <Bar dataKey={(r: any) => r.q3 - r.q1} stackId="bp"
+      <Bar dataKey={(r: BoxPlotRow) => r.q3 - r.q1} stackId="bp"
         isAnimationActive={false}
-        shape={(props: any) => {
+        shape={(props: BoxPlotShapeProps) => {
           const { x, y, width, height, payload } = props;
           const cy = (v: number) => {
             const range = yMax - yMin || 1;
@@ -2179,7 +2222,7 @@ function BoxPlot({
                 <circle key={i} cx={cx} cy={yPx(o)} r={2.5}
                   fill="none" stroke={style.boxplot.whiskerColor} strokeWidth={1} />
               ))}
-              {/* FIX 7 — data label: median value above whisker top */}
+              {/* FIX 7 â€” data label: median value above whisker top */}
               {style.dataLabels.show && (
                 <text x={cx} y={yMx - 6} textAnchor="middle"
                   fontSize={style.dataLabels.size}

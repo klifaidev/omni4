@@ -66,6 +66,8 @@ import {
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
 import { buildSlidesPreflight, type SlidePreflightIssue, type SlidePreflightSeverity } from "@/lib/slidesPreflight";
+import { smartDefaults } from "@/lib/slidesSmartDefaults";
+import { guardSlideReadOnly } from "@/lib/slidesReadOnly";
 import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -116,34 +118,6 @@ function slideToastError(message: string) {
   toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
 }
 
-// ----------------------------------------------------------------------------
-// Smart defaults ? calculados no momento de criar o slide a partir das bases
-// disponíveis. Bridge: mês anterior vs último mês. Budget Evo: primeiro mês
-// do FY anterior ? último disponível.
-// ----------------------------------------------------------------------------
-function smartDefaults(
-  kind: SlideKind,
-  ctx: { months: { periodo: string; mes: number; ano: number }[]; budgetMonths: { periodo: string; mes: number; ano: number }[] },
-): Partial<SlideItem["config"]> | null {
-  if (kind === "bridge_pvm" && ctx.months.length >= 2) {
-    const last = ctx.months[ctx.months.length - 1];
-    const prev = ctx.months[ctx.months.length - 2];
-    return { mode: "month", base: prev.periodo, comp: last.periodo, filters: {} } as never;
-  }
-  if (kind === "budget_evo" && ctx.budgetMonths.length > 0) {
-    const last = ctx.budgetMonths[ctx.budgetMonths.length - 1];
-    const fyStart = last.mes >= 4 ? last.ano : last.ano - 1;
-    const prevFyStart = fyStart - 1;
-    const defaultStart = `${String(4).padStart(3, "0")}.${prevFyStart}`;
-    const has = ctx.budgetMonths.some((m) => m.periodo === defaultStart);
-    return {
-      start: has ? defaultStart : ctx.budgetMonths[0].periodo,
-      end: last.periodo,
-      filters: {},
-    } as never;
-  }
-  return null;
-}
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -1583,10 +1557,15 @@ export default function SlidesBeta() {
     if (!created) return null;
     const def = smartDefaults(kind, { months, budgetMonths });
     if (def) {
-      updateItem(created.id, (it) => ({
-        ...it,
-        config: { ...(it as any).config, ...def },
-      } as SlideItem));
+      updateItem(created.id, (it) => {
+        if (it.kind === "bridge_pvm" && created.kind === "bridge_pvm") {
+          return { ...it, config: { ...it.config, ...def } } as SlideItem;
+        }
+        if (it.kind === "budget_evo" && created.kind === "budget_evo") {
+          return { ...it, config: { ...it.config, ...def } } as SlideItem;
+        }
+        return it;
+      });
     }
     return created.id;
   };
@@ -1647,9 +1626,7 @@ export default function SlidesBeta() {
   const [guestReadOnly, setGuestReadOnly] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const guardViewOnly = useCallback(() => {
-    if (!viewOnly) return false;
-    slideToastInfo("Modo somente leitura");
-    return true;
+    return guardSlideReadOnly(viewOnly, () => slideToastInfo("Modo somente leitura"));
   }, [viewOnly]);
 
   useEffect(() => {

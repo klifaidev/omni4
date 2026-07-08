@@ -54,7 +54,6 @@ export function AssetLibrary({ open, onOpenChange }: Props) {
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     for (const f of Array.from(files)) {
-      // eslint-disable-next-line no-await-in-loop
       await addAsset(f, tab);
     }
     if (inputRef.current) inputRef.current.value = "";

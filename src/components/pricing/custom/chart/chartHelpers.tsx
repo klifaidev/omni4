@@ -8,7 +8,15 @@ import { ReferenceLine } from "recharts";
 import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import type { ChartStyle, ConditionalRule, WaterfallColumn } from "./types";
 import { formatValue, inferFormat, computeChartSeries } from "@/lib/customKpi";
-type PricingRow = any;
+import type { PricingRow } from "@/lib/types";
+
+export interface ChartTooltipPayload {
+  dataKey?: string | number;
+  name?: string | number;
+  value?: unknown;
+  color?: string;
+  payload?: Record<string, unknown>;
+}
 
 // ---- Conditional formatting ---------------------------------------------
 export function evalCondColor(
@@ -173,7 +181,7 @@ export function renderRefLines(style: ChartStyle, yAxisId = "left"): ReactNode {
 // ---- Rich tooltip -------------------------------------------------------
 export function ChartTooltip(props: {
   active?: boolean;
-  payload?: any[];
+  payload?: ChartTooltipPayload[];
   label?: string;
   style: ChartStyle;
   measureFmt: ReturnType<typeof inferFormat>;
@@ -268,8 +276,8 @@ export function ChartTooltip(props: {
   return (
     <div style={card}>
       <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
-      {payload.filter((p: any) => !String(p.dataKey ?? "").startsWith("__"))
-        .map((p: any) => {
+      {payload.filter((p) => !String(p.dataKey ?? "").startsWith("__"))
+        .map((p) => {
           const v = Number(p.value) || 0;
           const prev = props.prevPeriodMap?.get(String(p.dataKey))?.get(String(label));
           const yoy = props.yoyMap?.get(String(p.dataKey))?.get(String(label));
@@ -316,7 +324,7 @@ export function resolveBridgeColumns(
       const f = { ...filters };
       if (c.filterDim && c.filterValue) {
         // shallow add: assumes filters obj allows arbitrary dim arrays
-        (f as any)[c.filterDim] = [c.filterValue];
+        (f as Record<string, string[]>)[c.filterDim] = [c.filterValue];
       }
       try {
         const r = computeChartSeries(rows, f, m, null);
