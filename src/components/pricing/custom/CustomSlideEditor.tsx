@@ -151,6 +151,7 @@ import {
   buildBrandStylePatch,
   getBrandStyleTarget,
   getBrandStylesForBlock,
+  SLIDE_BRAND_STYLES,
   type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
 
@@ -383,6 +384,80 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
     if (id) setSelection([id]);
+  }, [canEdit]);
+  const insertTextStyle = useCallback((styleId: string, text: string, x: number, y: number, w: number, h: number) => {
+    if (!canEdit()) return;
+    const style = SLIDE_BRAND_STYLES.find((item) => item.id === styleId);
+    const block = {
+      ...(newBlock("text", 0) as TextBlock),
+      id: localId(),
+      x, y, w, h,
+      text,
+      ...(style?.patch ?? {}),
+    } as TextBlock;
+    const id = insertBlockAction(block as CustomBlock, "Adicionar bloco");
+    if (id) setSelection([id]);
+  }, [canEdit]);
+  const insertQuickLayout = useCallback((layout: "kpis" | "chartInsight" | "table" | "heroNumber" | "bridgeComment") => {
+    if (!canEdit()) return;
+    const title = (text: string, x: number, y: number, w: number, h: number, size = 34) => ({
+      ...(newBlock("title", 0) as TitleBlock),
+      id: localId(), x, y, w, h, text, size, bold: true, color: "C8102E", align: "left",
+    }) as CustomBlock;
+    const text = (content: string, x: number, y: number, w: number, h: number, size = 18) => ({
+      ...(newBlock("text", 0) as TextBlock),
+      id: localId(), x, y, w, h, text: content, size, color: "475569", lineHeight: 1.3,
+    }) as CustomBlock;
+    const kpi = (label: string, measure: KpiBlock["measure"], x: number) => ({
+      ...(newBlock("kpi", 0) as KpiBlock),
+      id: localId(), x, y: 155, w: 285, h: 145, label, measure, periodMode: "all", valueSize: 34,
+    }) as CustomBlock;
+    const shape = (x: number, y: number, w: number, h: number, fill = "F8FAFC") => ({
+      ...(newBlock("shape", 0) as ShapeBlock),
+      id: localId(), x, y, w, h, shape: "roundRect", fill, strokeColor: "E2E8F0", strokeWidth: 1, radius: 14, shadowEnabled: true,
+    }) as CustomBlock;
+    const chart = (x: number, y: number, w: number, h: number, chartType: CustomChartType = "line") => ({
+      ...(newChartBlock(chartType, 0) as ChartBlock),
+      id: localId(), x, y, w, h, title: "Evolucao do indicador", measure: "cmPct",
+    }) as CustomBlock;
+    const table = () => ({
+      ...(newBlock("table", 0) as TableBlock),
+      id: localId(), x: 60, y: 150, w: 1210, h: 500, title: "Tabela executiva", rowDims: ["categoria"], measures: ["rol_real", "cm_real", "cmPct_real"],
+    }) as CustomBlock;
+
+    const blocksByLayout: Record<typeof layout, CustomBlock[]> = {
+      kpis: [
+        title("Titulo da analise", 60, 45, 940, 60),
+        kpi("ROL", "rol", 60),
+        kpi("CM%", "cmPct", 370),
+        kpi("Volume", "volume", 680),
+        kpi("MB%", "mbPct", 990),
+      ],
+      chartInsight: [
+        title("Evolucao e insight", 60, 45, 940, 60),
+        chart(60, 145, 770, 500, "line"),
+        shape(870, 145, 390, 250, "FFF7F8"),
+        text("Insight executivo\n\nExplique a causa, impacto e proxima acao.", 900, 180, 330, 170, 20),
+      ],
+      table: [
+        title("Tabela executiva", 60, 45, 940, 60),
+        table(),
+      ],
+      heroNumber: [
+        title("Numero em destaque", 60, 45, 940, 60),
+        shape(80, 165, 520, 330, "FFF1F2"),
+        text("R$ 0,0 mi", 120, 220, 440, 110, 62),
+        text("Resumo do principal indicador e leitura executiva.", 125, 345, 410, 80, 22),
+      ],
+      bridgeComment: [
+        title("Bridge de margem", 60, 45, 940, 60),
+        { ...(newBlock("omniBridgePvm", 0) as OmniBridgePvmBlock), id: localId(), x: 60, y: 145, w: 790, h: 500 } as CustomBlock,
+        shape(890, 145, 360, 260, "F8FAFC"),
+        text("Comentario\n\nDestaque os principais ofensores e alavancas.", 920, 180, 300, 160, 20),
+      ],
+    };
+    const ids = insertBlocksAction(blocksByLayout[layout], "Adicionar layout rapido");
+    if (ids.length > 0) setSelection(ids);
   }, [canEdit]);
   const addInsightCard = () => {
     const x = 60;
@@ -1235,6 +1310,37 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                     onToggleFavorite={() => togglePaletteFavorite(it.id)}
                   />
                 ))}
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
+
+          {!paletteSearch.trim() && (
+            <>
+              <PaletteGroup title="Layouts rapidos" defaultOpen>
+                <QuickLayoutButton label="Titulo + KPIs" description="Titulo executivo com quatro indicadores." onClick={() => insertQuickLayout("kpis")} />
+                <QuickLayoutButton label="Grafico + insight" description="Grafico grande com caixa de leitura." onClick={() => insertQuickLayout("chartInsight")} />
+                <QuickLayoutButton label="Tabela executiva" description="Titulo e tabela pronta para analise." onClick={() => insertQuickLayout("table")} />
+                <QuickLayoutButton label="Numero em destaque" description="Hero number com comentario curto." onClick={() => insertQuickLayout("heroNumber")} />
+                <QuickLayoutButton label="Bridge + comentario" description="Bridge PVM com bloco de narrativa." onClick={() => insertQuickLayout("bridgeComment")} />
+              </PaletteGroup>
+              <Separator className="my-2" />
+              <PaletteGroup title="Texto" defaultOpen>
+                <TextStyleButton
+                  label="Adicionar titulo"
+                  className="text-[20px] font-bold text-primary"
+                  onClick={() => insertTextStyle("text-executive-title", "Adicionar titulo", 80, 70, 760, 70)}
+                />
+                <TextStyleButton
+                  label="Adicionar subtitulo"
+                  className="text-[15px] font-semibold text-foreground"
+                  onClick={() => insertTextStyle("text-support-copy", "Adicionar subtitulo", 80, 150, 700, 48)}
+                />
+                <TextStyleButton
+                  label="Corpo de texto"
+                  className="text-[12px] text-muted-foreground"
+                  onClick={() => insertTextStyle("text-support-copy", "Corpo de texto", 80, 220, 560, 90)}
+                />
               </PaletteGroup>
               <Separator className="my-2" />
             </>
@@ -4034,6 +4140,47 @@ function PaletteButton({
         </button>
       )}
     </div>
+  );
+}
+
+function QuickLayoutButton({
+  label,
+  description,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-1 w-full rounded-lg border border-border/50 bg-background/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+    >
+      <div className="text-[11px] font-semibold text-foreground">{label}</div>
+      <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{description}</div>
+    </button>
+  );
+}
+
+function TextStyleButton({
+  label,
+  className,
+  onClick,
+}: {
+  label: string;
+  className: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-1 w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+    >
+      <span className={cn("block leading-tight", className)}>{label}</span>
+    </button>
   );
 }
 

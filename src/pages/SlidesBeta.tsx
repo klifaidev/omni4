@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
+  Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -1592,11 +1593,20 @@ export default function SlidesBeta() {
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 292, 220, 420);
   const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 340, 280, 520);
   const [templateApplying, setTemplateApplying] = useState(false);
   const [importApplying, setImportApplying] = useState(false);
   const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
+  const filteredSlideCatalog = useMemo(() => {
+    const q = catalogSearch.trim().toLowerCase();
+    if (!q) return SLIDE_CATALOG;
+    return SLIDE_CATALOG.filter((slide) => {
+      const meta = metaOf(slide.kind);
+      return `${meta.title} ${meta.description} ${slide.kind}`.toLowerCase().includes(q);
+    });
+  }, [catalogSearch]);
 
   // ====== Colaboração em tempo real ======
   const [collabOpen, setCollabOpen] = useState(false);
@@ -1872,11 +1882,31 @@ export default function SlidesBeta() {
                 <div className="space-y-3 p-3">
                   {activeRailTab === "catalog" && (
                     <>
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={catalogSearch}
+                          onChange={(e) => setCatalogSearch(e.target.value)}
+                          placeholder="Buscar slides..."
+                          className="h-9 bg-background pl-8 text-sm"
+                        />
+                      </div>
+                      <Button
+                        className="h-12 w-full justify-start gap-3 rounded-lg"
+                        onClick={() => addSlideFromShortcut("custom")}
+                        disabled={viewOnly}
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span className="flex flex-col items-start leading-tight">
+                          <span className="text-sm font-semibold">Slide em branco</span>
+                          <span className="text-[11px] font-normal opacity-80">Canvas livre para montar sua analise.</span>
+                        </span>
+                      </Button>
                       <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
                         Slides disponíveis
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        {SLIDE_CATALOG.map((s) => (
+                        {filteredSlideCatalog.map((s) => (
                           <DraggableCatalogItem
                             key={s.kind}
                             kind={s.kind}
@@ -1884,6 +1914,11 @@ export default function SlidesBeta() {
                           />
                         ))}
                       </div>
+                      {filteredSlideCatalog.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
+                          Nenhum slide encontrado.
+                        </div>
+                      )}
                     </>
                   )}
                   {activeRailTab === "templates" && (

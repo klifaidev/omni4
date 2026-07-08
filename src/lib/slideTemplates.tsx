@@ -10,7 +10,7 @@ import {
 } from "./customSlide";
 
 export type TemplateCategory =
-  | "Resultado Mensal" | "Revisão de Preço" | "Kick-off" | "Ad hoc";
+  | "Pricing Review" | "Budget vs Real" | "Bridge de Margem" | "DRE Executiva" | "Reuniao Mensal" | "Deck em branco";
 
 export interface TemplateCtx {
   months: { periodo: string; mes: number; ano: number }[];
@@ -399,7 +399,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "budget-evo-canvas",
     name: "Budget Evolutivo",
     description: "Overview de CM e Volume Real vs Budget editável no canvas",
-    category: "Resultado Mensal",
+    category: "Budget vs Real",
     thumbnail: BudgetEvoThumb,
     build: (_ctx) => [
       mk("custom", (it) => {
@@ -414,7 +414,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "resultado-mensal-completo",
     name: "Resultado Mensal Completo",
     description: "Capa, Bridge PVM, Budget Evolutivo, KPIs e Top SKUs.",
-    category: "Resultado Mensal",
+    category: "Reuniao Mensal",
     requires: ["months", "budget"],
     thumbnail: ({ className }) => Multi([Cover, BridgeBars, BudgetLines, KpiGrid, TopSkuLayout]),
     build: (ctx) => [
@@ -438,7 +438,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "resultado-mensal-rapido",
     name: "Resultado Mensal Rápido",
     description: "Capa, Bridge PVM e KPIs essenciais.",
-    category: "Resultado Mensal",
+    category: "Reuniao Mensal",
     requires: ["months"],
     thumbnail: ({ className }) => Multi([Cover, BridgeBars, KpiGrid]),
     build: (ctx) => [
@@ -457,7 +457,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "resultado-quinzenal",
     name: "Resultado Quinzenal",
     description: "Capa, Bridge PVM e Heróis & Ofensores.",
-    category: "Resultado Mensal",
+    category: "Bridge de Margem",
     requires: ["months"],
     thumbnail: ({ className }) => Multi([Cover, BridgeBars, TopSkuLayout]),
     build: (ctx) => [
@@ -476,7 +476,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "revisao-pricing",
     name: "Revisão de Pricing",
     description: "Divisor, tabela por SKU, margem por canal e Bridge PVM.",
-    category: "Revisão de Preço",
+    category: "Pricing Review",
     requires: ["months"],
     thumbnail: ({ className }) => Multi([Cover, TableLayout, BudgetLines, BridgeBars]),
     build: (ctx) => [
@@ -496,7 +496,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "analise-canal",
     name: "Análise de Canal",
     description: "Capa, evolução de margem por canal e tabela detalhada.",
-    category: "Revisão de Preço",
+    category: "Pricing Review",
     thumbnail: ({ className }) => Multi([Cover, BudgetLines, TableLayout]),
     build: () => [
       cover("Análise de Canal", "Performance por canal de venda"),
@@ -516,7 +516,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "kickoff-periodo",
     name: "Kick-off de Período",
     description: "Capa, KPIs do FY, Budget Evolutivo e Top SKUs do FY.",
-    category: "Kick-off",
+    category: "DRE Executiva",
     requires: ["budget"],
     thumbnail: ({ className }) => Multi([Cover, KpiGrid, BudgetLines, TopSkuLayout]),
     build: (ctx) => [
@@ -541,7 +541,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "slide-unico",
     name: "Slide Único",
     description: "Apenas 1 slide personalizado em branco com título.",
-    category: "Ad hoc",
+    category: "Deck em branco",
     thumbnail: ({ className }) => Page(<>
       <rect x="20" y="20" width="80" height="6" rx="1.5" fill={SVG_FG} />
       <rect x="20" y="34" width="120" height="48" rx="2" fill="hsl(var(--card))" stroke={SVG_LINE} />
@@ -554,7 +554,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "deck-basico",
     name: "Deck Básico",
     description: "Capa e 2 slides personalizados em branco.",
-    category: "Ad hoc",
+    category: "Deck em branco",
     thumbnail: ({ className }) => Multi([Cover,
       <><rect x="20" y="20" width="80" height="6" rx="1.5" fill={SVG_FG} /></>,
       <><rect x="20" y="20" width="80" height="6" rx="1.5" fill={SVG_FG} /></>,
@@ -569,7 +569,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "em-branco",
     name: "Em Branco",
     description: "Comece do zero, sem nenhum slide pré-criado.",
-    category: "Ad hoc",
+    category: "Deck em branco",
     thumbnail: ({ className }) => Page(<>
       <rect x="40" y="36" width="80" height="18" rx="2" fill="hsl(var(--card))" stroke={SVG_LINE} strokeDasharray="3 2" />
     </>, className),
@@ -578,5 +578,5 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
 ];
 
 export const TEMPLATE_CATEGORIES: ("Todos" | TemplateCategory)[] = [
-  "Todos", "Resultado Mensal", "Revisão de Preço", "Kick-off", "Ad hoc",
+  "Todos", "Pricing Review", "Budget vs Real", "Bridge de Margem", "DRE Executiva", "Reuniao Mensal", "Deck em branco",
 ];

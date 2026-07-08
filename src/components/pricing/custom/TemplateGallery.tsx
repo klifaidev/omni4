@@ -1,17 +1,40 @@
 // Galeria visual de templates de apresentação. Modal que abre na tela vazia
 // ou pelo botão "Templates" da toolbar.
-import { useMemo, useState, Component, type ReactNode } from "react";
+import { useMemo, useRef, useState, Component, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Sparkles, AlertTriangle } from "lucide-react";
+import { Sparkles, AlertTriangle, Search, Clock, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
 import {
   SLIDE_TEMPLATES, TEMPLATE_CATEGORIES,
   type TemplateCtx, type TemplateCategory, type SlideTemplate,
 } from "@/lib/slideTemplates";
+
+const RECENT_TEMPLATES_KEY = "omni4.slides.recentTemplates";
+
+function readRecentTemplates(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_TEMPLATES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string").slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberTemplateUse(id: string) {
+  const next = [id, ...readRecentTemplates().filter((item) => item !== id)].slice(0, 6);
+  try {
+    localStorage.setItem(RECENT_TEMPLATES_KEY, JSON.stringify(next));
+  } catch {
+    // Recents are a convenience only.
+  }
+  return next;
+}
 
 interface Props {
   open: boolean;
@@ -22,13 +45,31 @@ interface Props {
 
 export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
   const [category, setCategory] = useState<"Todos" | TemplateCategory>("Todos");
+  const [query, setQuery] = useState("");
+  const [recentIds, setRecentIds] = useState<string[]>(() => readRecentTemplates());
+  const normalizedQuery = query.trim().toLowerCase();
 
   const filtered = useMemo(
-    () => category === "Todos"
-      ? SLIDE_TEMPLATES
-      : SLIDE_TEMPLATES.filter((t) => t.category === category),
-    [category],
+    () => SLIDE_TEMPLATES.filter((t) => {
+      const matchesCategory = category === "Todos" || t.category === category;
+      const haystack = `${t.name} ${t.description} ${t.category}`.toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      return matchesCategory && matchesQuery;
+    }),
+    [category, normalizedQuery],
   );
+  const recentTemplates = useMemo(
+    () => recentIds
+      .map((id) => SLIDE_TEMPLATES.find((tpl) => tpl.id === id))
+      .filter((tpl): tpl is SlideTemplate => Boolean(tpl)),
+    [recentIds],
+  );
+  const applyTemplate = (tpl: SlideTemplate) => {
+    setRecentIds(rememberTemplateUse(tpl.id));
+    onSelect(tpl);
+    onOpenChange(false);
+  };
+  const blankTemplate = SLIDE_TEMPLATES.find((tpl) => tpl.id === "slide-unico") ?? SLIDE_TEMPLATES.find((tpl) => tpl.category === "Deck em branco");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -43,7 +84,28 @@ export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-1.5 px-6 py-3 border-b border-border/40 bg-muted/20">
+        <div className="space-y-3 border-b border-border/40 bg-muted/20 px-6 py-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar templates por analise, deck ou conteudo..."
+              className="h-10 bg-background pl-9"
+            />
+          </div>
+          <Button
+            className="h-12 w-full justify-start gap-3 rounded-lg text-left shadow-[0_10px_30px_-18px_hsl(var(--primary)/0.9)]"
+            onClick={() => blankTemplate && applyTemplate(blankTemplate)}
+            disabled={!blankTemplate}
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            <span className="flex flex-col items-start leading-tight">
+              <span className="text-sm font-semibold">Slide em branco</span>
+              <span className="text-[11px] font-normal opacity-80">Comece do zero com um canvas limpo.</span>
+            </span>
+          </Button>
+          <div className="flex flex-wrap items-center gap-1.5">
           {TEMPLATE_CATEGORIES.map((c) => (
             <button
               key={c}
@@ -59,10 +121,25 @@ export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
               {c}
             </button>
           ))}
+          </div>
         </div>
 
         <ScrollArea className="flex-1 max-h-[calc(88vh-160px)]">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+          <div className="space-y-5 p-6">
+            {recentTemplates.length > 0 && !normalizedQuery && category === "Todos" && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Clock className="h-4 w-4 text-primary" />
+                  Usados recentemente
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {recentTemplates.map((tpl) => (
+                    <TemplateCard key={tpl.id} template={tpl} ctx={ctx} onSelect={() => applyTemplate(tpl)} />
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.length === 0 && (
               <div className="col-span-full flex min-h-[260px] items-center justify-center">
                 <div className="max-w-sm rounded-2xl border border-dashed border-border/60 bg-muted/20 p-6 text-center">
@@ -75,11 +152,9 @@ export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
               </div>
             )}
             {filtered.map((tpl) => (
-              <TemplateCard key={tpl.id} template={tpl} ctx={ctx} onSelect={() => {
-                onSelect(tpl);
-                onOpenChange(false);
-              }} />
+              <TemplateCard key={tpl.id} template={tpl} ctx={ctx} onSelect={() => applyTemplate(tpl)} />
             ))}
+            </section>
           </div>
         </ScrollArea>
       </DialogContent>
@@ -105,6 +180,8 @@ class ThumbErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
 
 function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ctx: TemplateCtx; onSelect: () => void }) {
   const Thumb = template.thumbnail;
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewTimer = useRef<number | null>(null);
 
   // C25: Check ctx requirements
   const missing: string[] = [];
@@ -114,6 +191,14 @@ function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ct
 
   return (
     <div
+      onMouseEnter={() => {
+        previewTimer.current = window.setTimeout(() => setPreviewOpen(true), 180);
+      }}
+      onMouseLeave={() => {
+        if (previewTimer.current) window.clearTimeout(previewTimer.current);
+        previewTimer.current = null;
+        setPreviewOpen(false);
+      }}
       className={cn(
         "group relative rounded-xl border border-border/60 bg-card p-3 transition-all",
         disabled
@@ -133,6 +218,16 @@ function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ct
           </div>
         )}
       </div>
+      {previewOpen && !disabled && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-30 hidden w-[360px] -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-xl border border-border/60 bg-card p-3 shadow-2xl lg:block">
+          <div className="aspect-video overflow-hidden rounded-lg border border-border/40 bg-muted/30">
+            <ThumbErrorBoundary>
+              <Thumb className="h-full w-full" />
+            </ThumbErrorBoundary>
+          </div>
+          <div className="mt-2 text-xs font-medium">{template.name}</div>
+        </div>
+      )}
       <div className="mt-3 space-y-1.5">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-sm font-semibold leading-snug">{template.name}</h3>

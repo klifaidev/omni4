@@ -1,14 +1,15 @@
 // AssetLibrary — biblioteca persistida de assets de imagem reutilizáveis.
 // Exibida em um Dialog acionado pelo editor de slides.
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Upload, Trash2, Plus, Image as ImageIcon, Layers } from "lucide-react";
+import { Upload, Trash2, Plus, Image as ImageIcon, Layers, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAllSlideAssets, useSlideAssets,
@@ -35,11 +36,20 @@ interface Props {
 
 export function AssetLibrary({ open, onOpenChange }: Props) {
   const [tab, setTab] = useState<AssetCategory>("logo");
+  const [query, setQuery] = useState("");
   const all = useAllSlideAssets();
   const inputRef = useRef<HTMLInputElement>(null);
   const addAsset = useSlideAssets((s) => s.addAsset);
 
-  const list = all.filter((a) => a.category === tab);
+  const normalizedQuery = query.trim().toLowerCase();
+  const list = useMemo(
+    () => all.filter((a) => {
+      const matchesTab = a.category === tab;
+      const matchesQuery = !normalizedQuery || `${a.name} ${a.category}`.toLowerCase().includes(normalizedQuery);
+      return matchesTab && matchesQuery;
+    }),
+    [all, normalizedQuery, tab],
+  );
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -77,7 +87,27 @@ export function AssetLibrary({ open, onOpenChange }: Props) {
             <ImageIcon className="h-4 w-4" /> Biblioteca de assets
           </DialogTitle>
         </DialogHeader>
-        <div className="px-5 pb-5 pt-3">
+        <div className="space-y-3 px-5 pb-5 pt-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar assets..."
+              className="h-9 pl-8 text-sm"
+            />
+          </div>
+          <Button
+            size="lg"
+            className="h-12 w-full justify-start gap-3 rounded-lg"
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            <span className="flex flex-col items-start leading-tight">
+              <span className="text-sm font-semibold">Adicionar asset</span>
+              <span className="text-[11px] font-normal opacity-80">Faça upload de logos, fundos, icones e imagens.</span>
+            </span>
+          </Button>
           <Tabs value={tab} onValueChange={(v) => setTab(v as AssetCategory)}>
             <div className="flex items-center justify-between gap-2">
               <TabsList className="h-8">
@@ -87,7 +117,7 @@ export function AssetLibrary({ open, onOpenChange }: Props) {
                   </TabsTrigger>
                 ))}
               </TabsList>
-              <Button size="sm" variant="default" className="h-8 gap-1.5"
+              <Button size="sm" variant="outline" className="h-8 gap-1.5"
                 onClick={() => inputRef.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
