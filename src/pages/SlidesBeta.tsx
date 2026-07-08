@@ -1545,6 +1545,8 @@ export default function SlidesBeta() {
   const duplicateDeck = useSlidesFlow((s) => s.duplicateDeck);
   const reorder = useSlidesFlow((s) => s.reorder);
   const clearItems = useSlidesFlow((s) => s.clearItems);
+  const transition = useSlidesFlow((s) => s.transition);
+  const applySnapshotFromCollab = useSlidesFlow((s) => s.applySnapshotFromCollab);
 
   const months = useMonthsInfo();
   const budgetRowsAll = useBudget((s) => s.rows);
@@ -1632,6 +1634,7 @@ export default function SlidesBeta() {
   const [createdPersistentRoom, setCreatedPersistentRoom] = useState<CreatePersistentRoomResult | null>(null);
   const [collabJoinCode, setCollabJoinCode] = useState("");
   const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
+  const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
   const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
 
   const [viewOnly, setViewOnly] = useState(false);
@@ -1700,11 +1703,13 @@ export default function SlidesBeta() {
       const created = await createPersistentCollabRoom({
         items,
         selectedSlideId: selectedId,
+        transition,
         appVersion: APP_VERSION,
       });
       setCreatedPersistentRoom(created);
       setPersistentCollabRole("host");
       setRoomId(created.roomPublicId);
+      setCollabSnapshotVersion(created.latestSnapshotVersion);
       setViewOnly(false);
       slideToastSuccess("Sala colaborativa criada.");
     } catch {
@@ -1724,9 +1729,17 @@ export default function SlidesBeta() {
     setCollabBusy("join");
     try {
       const joined = await joinPersistentCollabRoom(normalizedCode);
+      if (items.length > 0) {
+        const shouldReplace = window.confirm(
+          "Entrar nesta sala vai substituir a esteira local pelo snapshot mais recente da sala. Continuar?",
+        );
+        if (!shouldReplace) return;
+      }
+      applySnapshotFromCollab(joined.state);
       setCreatedPersistentRoom(null);
       setPersistentCollabRole(joined.role);
       setRoomId(joined.roomPublicId);
+      setCollabSnapshotVersion(joined.latestSnapshotVersion);
       setViewOnly(joined.role === "viewer");
       slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
       setCollabOpen(false);
@@ -2040,6 +2053,9 @@ export default function SlidesBeta() {
                     </span>
                     Sala ativa
                     <span className="text-muted-foreground">- {getPersistentCollabRoleLabel(persistentCollabRole)}</span>
+                    {collabSnapshotVersion && (
+                      <span className="text-muted-foreground">- v{collabSnapshotVersion}</span>
+                    )}
                     {isConnected && collaborators.length > 0 && (
                       <span className="text-muted-foreground">- {collaborators.length}</span>
                     )}
@@ -2670,6 +2686,9 @@ export default function SlidesBeta() {
               <div>
                 <p className="text-xs font-semibold text-success">Sala ativa</p>
                 <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
+                {collabSnapshotVersion && (
+                  <p className="text-[11px] text-muted-foreground">Snapshot v{collabSnapshotVersion}</p>
+                )}
               </div>
               <Badge variant="outline" className="border-success/40 bg-background/80 text-success">
                 {getPersistentCollabRoleLabel(persistentCollabRole)}
@@ -2759,6 +2778,7 @@ export default function SlidesBeta() {
                   setRoomId(null);
                   setPersistentCollabRole(null);
                   setCreatedPersistentRoom(null);
+                  setCollabSnapshotVersion(null);
                   setViewOnly(false);
                   setCollabOpen(false);
                 }}

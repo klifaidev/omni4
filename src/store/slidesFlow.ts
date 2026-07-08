@@ -43,6 +43,11 @@ interface SlidesFlowState {
   addItemFromCollab: (item: SlideItem) => void;
   updateItemFromCollab: (payload: { id: string; patch: Partial<SlideItem> }) => void;
   loadPresetFromCollab: (items: SlideItem[]) => void;
+  applySnapshotFromCollab: (payload: {
+    items: SlideItem[];
+    selectedId: string | null;
+    transition: SlideTransition;
+  }) => void;
 
   // Presets
   savePreset: (name: string, description?: string) => SlidesPreset;
@@ -97,6 +102,15 @@ export const useSlidesFlow = create<SlidesFlowState>()(
 
       loadPresetFromCollab: (items) =>
         set({ items, selectedId: items[0]?.id ?? null }),
+
+      applySnapshotFromCollab: ({ items, selectedId, transition }) =>
+        set({
+          items,
+          selectedId: selectedId && items.some((item) => item.id === selectedId)
+            ? selectedId
+            : items[0]?.id ?? null,
+          transition,
+        }),
 
       removeItem: (id) =>
         set((s) => {

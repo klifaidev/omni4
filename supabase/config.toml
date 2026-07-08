@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.join-collab-room]
 verify_jwt = false
+
+[functions.save-collab-snapshot]
+verify_jwt = false
