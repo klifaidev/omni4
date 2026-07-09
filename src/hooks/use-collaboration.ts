@@ -17,6 +17,8 @@ import { useSlidesFlow } from "@/store/slidesFlow";
 import { recordEvent } from "@/lib/slideChangeLog";
 import { addComment as addLocalComment, subscribeToComments, type SlideComment } from "@/lib/slideComments";
 import type { SlideItem } from "@/lib/slidesFlow";
+import type { PersistentCollabRole } from "@/lib/persistentCollab";
+import type { SlideTransition } from "@/store/slidesFlow";
 
 interface UseCollabReturn {
   collaborators: CollabUser[];
@@ -31,6 +33,7 @@ interface UseCollabReturn {
 export function useCollaboration(
   roomId: string | null,
   userName: string,
+  role: PersistentCollabRole | null = null,
 ): UseCollabReturn {
   const [collaborators, setCollaborators] = useState<CollabUser[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -39,10 +42,20 @@ export function useCollaboration(
   const knownIdsRef = useRef<Set<string>>(new Set());
   const collaboratorsByIdRef = useRef<Map<string, CollabUser>>(new Map());
   const userMetaRef = useRef<CollabUser | null>(null);
+  const userNameRef = useRef(userName);
+  const roleRef = useRef<PersistentCollabRole | null>(role);
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
 
-  // Effect 1: cria/destrói o canal quando roomId muda.
-  // userName NÃO é dependência — evita recriar o canal ao editar o nome.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    userNameRef.current = userName;
+  }, [userName]);
+
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
+  // Effect 1: cria/destroi o canal quando roomId muda.
+  // userName nao e dependencia; evita recriar o canal ao editar o nome.
   useEffect(() => {
     if (!roomId) return;
     const userId =
@@ -51,14 +64,14 @@ export function useCollaboration(
         : `u_${Math.random().toString(36).slice(2, 10)}`;
     userIdRef.current = userId;
     knownIdsRef.current = new Set([userId]);
-    // Cor estável por hash do userId
+    // Cor estavel por hash do userId
     let h = 0;
     for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
     const color = CURSOR_COLORS[h % CURSOR_COLORS.length];
 
     const user: CollabUser = {
       id: userId,
-      name: userName || "Convidado",
+      name: userNameRef.current || "Convidado",
       color,
       slideId: null,
     };
@@ -69,13 +82,12 @@ export function useCollaboration(
 
     onPresenceChange(channel, (users) => {
       setCollaborators(users);
-      // isConnected é gerido pelo callback de status do subscribe abaixo
       const currentIds = new Set(users.map((u) => u.id));
       const prev = knownIdsRef.current;
       for (const u of users) {
         if (u.id === userId) continue;
         if (!prev.has(u.id)) {
-          toast.info(`${u.name} entrou na sala`, { icon: "👋", duration: 2500 });
+          toast.info(`${u.name} entrou na sala`, { duration: 2500 });
         }
       }
       for (const id of prev) {
@@ -91,9 +103,15 @@ export function useCollaboration(
       knownIdsRef.current = currentIds;
     });
 
-    // onEvent retorna cleanup; garante que handlers não acumulem em Strict Mode.
     const offEvent = onEvent(channel, (event) => {
-      if (event.userId === userId) return; // ignora ecos
+      if (event.userId === userId) return;
+      if (event.role === "viewer") return;
+      const eventId = event.id ?? `${event.userId}-${event.ts}-${event.type}`;
+      if (seenEventIdsRef.current.has(eventId)) return;
+      seenEventIdsRef.current.add(eventId);
+      if (seenEventIdsRef.current.size > 500) {
+        seenEventIdsRef.current = new Set(Array.from(seenEventIdsRef.current).slice(-250));
+      }
       const peer = collaboratorsByIdRef.current.get(event.userId);
       recordEvent(event, peer?.name ?? "Colaborador", peer?.color);
       const store = useSlidesFlow.getState();
@@ -104,38 +122,50 @@ export function useCollaboration(
         case "update_item":
           store.updateItemFromCollab(event.payload as { id: string; patch: Partial<SlideItem> });
           break;
+        case "update_custom_slide": {
+          const p = event.payload as { id: string; item: SlideItem };
+          store.updateItemFromCollab({ id: p.id, patch: p.item });
+          break;
+        }
         case "remove_item": {
           const p = event.payload as { id: string };
-          store.removeItem(p.id);
+          store.removeItemFromCollab(p.id);
           break;
         }
-        case "reorder": {
+        case "duplicate_item": {
+          const p = event.payload as { sourceId: string; item: SlideItem };
+          store.duplicateItemFromCollab(p);
+          break;
+        }
+        case "reorder_items": {
           const p = event.payload as { activeId: string; overId: string };
-          store.reorder(p.activeId, p.overId);
+          store.reorderFromCollab(p.activeId, p.overId);
           break;
         }
+        case "clear_items":
+          store.clearItemsFromCollab();
+          break;
         case "update_transition": {
-          const p = event.payload as { transition: Parameters<typeof store.setTransition>[0] };
-          store.setTransition(p.transition);
+          const p = event.payload as { transition: SlideTransition };
+          store.setTransitionFromCollab(p.transition);
           break;
         }
-        case "load_preset": {
-          const p = event.payload as { items: SlideItem[] };
-          store.loadPresetFromCollab(p.items);
+        case "load_snapshot": {
+          const p = event.payload as { items: SlideItem[]; selectedId: string | null; transition: SlideTransition };
+          store.applySnapshotFromCollab(p);
           break;
         }
       }
     });
-
     subscribeToComments(channel, (c: SlideComment) => {
       if (c.author && userMetaRef.current && c.author === userMetaRef.current.name) {
-        // ainda assim adiciona — addComment é idempotente por id
+        // ainda assim adiciona; addComment e idempotente por id
       }
       addLocalComment(c);
     });
 
     // Todos os `.on(...)` foram registrados acima; agora sim, subscribe.
-    // O callback de status monitora conexão/desconexão explicitamente.
+    // O callback de status monitora conexao/desconexao explicitamente.
     subscribeRoom(channel, user, (status) => {
       if (status === "SUBSCRIBED") setIsConnected(true);
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
@@ -152,9 +182,10 @@ export function useCollaboration(
       userIdRef.current = null;
       knownIdsRef.current = new Set();
       collaboratorsByIdRef.current = new Map();
+      seenEventIdsRef.current = new Set();
       userMetaRef.current = null;
     };
-  }, [roomId]); // intencionalmente omite userName — Effect 2 atualiza só o presence
+  }, [roomId]); // intencionalmente omite userName; Effect 2 atualiza so o presence
 
   // Effect 2: atualiza o nome no presence sem recriar o canal.
   useEffect(() => {
@@ -171,7 +202,13 @@ export function useCollaboration(
   const broadcast = useCallback((e: CollabEvent) => {
     const ch = channelRef.current;
     if (!ch) return;
-    broadcastEvent(ch, e);
+    const currentRole = roleRef.current;
+    if (currentRole === "viewer") return;
+    broadcastEvent(ch, {
+      ...e,
+      id: e.id ?? `${e.userId}-${e.ts}-${e.type}-${Math.random().toString(36).slice(2, 8)}`,
+      role: currentRole ?? undefined,
+    });
   }, []);
 
   const updateCursor = useCallback((x: number, y: number) => {

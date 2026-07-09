@@ -1,4 +1,4 @@
-// Log de alterações da sala de colaboração — persistência local + descrição
+// Log de alterações da sala de colaboração: persistência local + descrição
 // legível para cada CollabEvent recebido.
 import type { CollabEvent } from "@/lib/collaboration";
 import type { SlideItem } from "@/lib/slidesFlow";
@@ -66,8 +66,16 @@ function describe(event: CollabEvent, userName: string): string {
     }
     case "update_item":
       return `${userName} editou um slide`;
-    case "reorder":
+    case "update_custom_slide":
+      return `${userName} editou um slide personalizado`;
+    case "duplicate_item":
+      return `${userName} duplicou um slide`;
+    case "reorder_items":
       return `${userName} reordenou slides`;
+    case "clear_items":
+      return `${userName} limpou a esteira`;
+    case "load_snapshot":
+      return `${userName} carregou um snapshot`;
     case "update_transition": {
       const p = event.payload as { transition: string };
       return `${userName} mudou transição para ${p.transition}`;
@@ -82,7 +90,7 @@ export function recordEvent(
   userName: string,
   userColor?: string,
 ): void {
-  const eventId = `${event.userId}-${event.ts}-${event.type}`;
+  const eventId = event.id ?? `${event.userId}-${event.ts}-${event.type}`;
   const entries = readLog();
   if (entries.some((e) => e.eventId === eventId)) return; // dedupe
   const entry: ChangeLogEntry = {

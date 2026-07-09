@@ -1663,6 +1663,7 @@ export default function SlidesBeta() {
   const { collaborators, isConnected, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
     roomId,
     collabName,
+    persistentCollabRole,
   );
 
   // Cor estável do usuário local (mesmo cálculo do hook de colaboração).

@@ -18,15 +18,20 @@ export type CollabEventType =
   | "add_item"
   | "update_item"
   | "remove_item"
-  | "reorder"
+  | "duplicate_item"
+  | "reorder_items"
+  | "clear_items"
   | "update_transition"
-  | "load_preset";
+  | "load_snapshot"
+  | "update_custom_slide";
 
 export interface CollabEvent {
+  id?: string;
   type: CollabEventType;
   payload: unknown;
   userId: string;
   ts: number;
+  role?: "host" | "editor" | "viewer";
 }
 
 export const CURSOR_COLORS: string[] = [
@@ -67,8 +72,40 @@ export function subscribeRoom(
   });
 }
 
-export function broadcastEvent(channel: RealtimeChannel, event: CollabEvent): void {
+const customSlideEventState = new WeakMap<RealtimeChannel, { last: number; pending: number | null; nextEvent: CollabEvent | null }>();
+
+function sendBroadcastEvent(channel: RealtimeChannel, event: CollabEvent): void {
   channel.send({ type: "broadcast", event: "deck-op", payload: event });
+}
+
+export function broadcastEvent(channel: RealtimeChannel, event: CollabEvent): void {
+  if (event.type !== "update_custom_slide") {
+    sendBroadcastEvent(channel, event);
+    return;
+  }
+
+  const now = Date.now();
+  let s = customSlideEventState.get(channel);
+  if (!s) {
+    s = { last: 0, pending: null, nextEvent: null };
+    customSlideEventState.set(channel, s);
+  }
+  const send = (next: CollabEvent) => {
+    s!.last = Date.now();
+    sendBroadcastEvent(channel, next);
+  };
+  if (now - s.last >= 60) {
+    send(event);
+    return;
+  }
+  s.nextEvent = event;
+  if (s.pending !== null) return;
+  s.pending = window.setTimeout(() => {
+    s!.pending = null;
+    const next = s!.nextEvent;
+    s!.nextEvent = null;
+    if (next) send(next);
+  }, 60 - (now - s.last));
 }
 
 export function onEvent(
