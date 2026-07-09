@@ -1,6 +1,7 @@
 // ChartCanvas â€” single Recharts-based renderer for every ChartBlock variant.
 // Reads the unified ChartStyle so the inspector can drive every visual knob.
 
+/* eslint-disable no-irregular-whitespace */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, ComposedChart, LineChart, BarChart, AreaChart,
@@ -39,6 +40,7 @@ import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
@@ -87,6 +89,14 @@ type BoxPlotShapeProps = {
   payload: { q1: number; q3: number; median: number; min: number; max: number; name: string };
   background?: { y?: number; height?: number };
 };
+
+function MissingLocalData({ label }: { label: string }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-warning/40 bg-warning/10 p-4 text-center text-xs font-medium leading-relaxed text-warning">
+      {localDataMissingMessage(label)}
+    </div>
+  );
+}
 
 // -- helpers ---------------------------------------------------------------
 function fmtVal(v: number, style: ChartStyle, fallback: ReturnType<typeof inferFormat>) {
@@ -282,6 +292,17 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
+  const sourceCounts = {
+    pricing: pricing.length,
+    budget: budget.length,
+    forecast: forecast.length,
+    rolling: rolling.length,
+  };
+  const missingData = block.chartType === "combo" && block.comboSeries?.length
+    ? block.comboSeries
+        .map((series) => missingLocalDataLabel(series.dataSource, sourceCounts))
+        .find((label): label is string => !!label) ?? null
+    : missingLocalDataLabel(block.dataSource, sourceCounts);
   const rawDsRows = useMemo(() => {
     if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
@@ -622,7 +643,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   const isPvmBridge = block.chartType === "waterfall"
     && (style.waterfall.mode ?? "pvm") === "pvm";
 
-  if (!isPvmBridge && ((isRankingChart && rankingEmpty) || (!isRankingChart && seriesEmpty))) {
+  if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (!isRankingChart && seriesEmpty))) {
     // Distinguish "no data because of incoming filter" vs "no data at all"
     const filteredOut = incoming.length > 0 && rawDsRows.length > 0 && dsRows.length === 0;
     return (
@@ -686,13 +707,10 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
   // can fall back to a guaranteed-contrast palette color when Recharts'
   // payload reports a missing/transparent/near-white swatch (which can
   // happen when colorDim switches and series defs are partially stale).
-  const seriesColorMap = useMemo(() => {
-    const m = new Map<string, string>();
-    data.series.forEach((s, i) => {
-      m.set(s.name, colorForSeries(style, s.name, i));
-    });
-    return m;
-  }, [data.series, style]);
+  const seriesColorMap = new Map<string, string>();
+  data.series.forEach((s, i) => {
+    seriesColorMap.set(s.name, colorForSeries(style, s.name, i));
+  });
 
   const renderLegend = style.general.legendShow ? (
     <Legend verticalAlign={legendVerticalAlign} align={legendAlign} layout={legendLayout}
@@ -707,6 +725,8 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
         />
       ) : undefined} />
   ) : null;
+
+  if (missingData) return <MissingLocalData label={missingData} />;
 
   const renderGrid = style.grid.show && !["pie", "donut", "radar"].includes(ct) ? (
     <CartesianGrid stroke={style.grid.color}
@@ -1844,7 +1864,6 @@ function WaterfallChart({
     : "effects";
   const topN = pvmCfg.topN ?? 6;
   const comparisonMode = pvmCfg.comparisonMode ?? "prev-month";
-
   // PVM mode â€” decomposiÃ§Ã£o igual Ã  aba Bridge (com auto-default de base/comp)
   const pvmItems = useMemo(() => {
     if (wfMode !== "pvm") return null;

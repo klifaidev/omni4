@@ -48,6 +48,7 @@ import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
@@ -67,6 +68,14 @@ function useDataSource(
     if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
   }, [dataSource, pricing, budget, forecast, rolling]);
+}
+
+function MissingLocalData({ label }: { label: string }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-warning/40 bg-warning/10 p-4 text-center text-xs font-medium leading-relaxed text-warning">
+      {localDataMissingMessage(label)}
+    </div>
+  );
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
@@ -456,6 +465,12 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
+  const missingData = missingLocalDataLabel(b.dataSource, {
+    pricing: pricing.length,
+    budget: budget.length,
+    forecast: forecast.length,
+    rolling: rolling.length,
+  });
   const baseRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
 
   // Split incoming filters into "period" (special: format-tolerant + overrides
@@ -527,6 +542,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         min: 12,
       })
     : b.valueSize;
+  if (missingData) return <MissingLocalData label={missingData} />;
   if (readOnly) {
     const fill = isTransparent ? "transparent" : `#${cardBg}`;
     const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
@@ -687,6 +703,12 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
+  const missingData = missingLocalDataLabel(b.dataSource, {
+    pricing: pricing.length,
+    budget: budget.length,
+    forecast: forecast.length,
+    rolling: rolling.length,
+  });
   const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
 
   const data = useMemo(() => {
@@ -713,6 +735,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     return { result, measures, sortedHeaders };
   }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure]);
 
+  if (missingData) return <MissingLocalData label={missingData} />;
   if (!data || data.sortedHeaders.length === 0) {
     return (
       <div style={{
@@ -1068,6 +1091,12 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
+  const missingData = missingLocalDataLabel(b.dataSource, {
+    pricing: pricing.length,
+    budget: budget.length,
+    forecast: forecast.length,
+    rolling: rolling.length,
+  });
   const rows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
@@ -1087,6 +1116,7 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const fmt = (v: number) => formatValue(v, inferFormat(b.measure), b.measure);
   const max = Math.max(...items.map((i) => i.value), 1);
 
+  if (missingData) return <MissingLocalData label={missingData} />;
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri" }}>
       {b.title && (
@@ -1182,6 +1212,12 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
   const budgetRows = useBudget((s) => s.rows);
   const forecastRows = useForecast((s) => s.rows);
   const rollingRows = useRolling((s) => s.rows);
+  const missingData = missingLocalDataLabel(blk.dataSource, {
+    pricing: pricingRows.length,
+    budget: budgetRows.length,
+    forecast: forecastRows.length,
+    rolling: rollingRows.length,
+  });
   const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows, forecastRows, rollingRows);
   const months = useMonthsInfo();
 
@@ -1247,6 +1283,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     };
   }, [blk.conditionalFormat, cols, aggsByCol]);
 
+  if (missingData) return <MissingLocalData label={missingData} />;
   if (cols.length === 0) {
     return (
       <div style={{

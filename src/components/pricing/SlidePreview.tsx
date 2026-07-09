@@ -16,6 +16,7 @@ import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 
 // ---------------------------------------------------------------------------
 // Tokens (espelhando PPT_COLORS de exportPpt.ts)
@@ -33,6 +34,7 @@ const C = {
 // Sistema de coordenadas: inches × 100  → viewBox 1333 × 750
 const SLIDE_W = 1333;
 const SLIDE_H = 750;
+type PreviewDataRow = Record<string, number | string | null | undefined>;
 
 // ---------------------------------------------------------------------------
 // Format helpers (idênticos ao slide)
@@ -145,6 +147,9 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
   );
 
   if (data.length === 0) {
+    if (budgetRows.length === 0) {
+      return <Frame label="Overview CM/VOL"><Empty message={localDataMissingMessage("Budget")} /></Frame>;
+    }
     return <Frame label="Overview CM/VOL"><Empty message="Sem dados Budget para o range escolhido." /></Frame>;
   }
 
@@ -200,7 +205,7 @@ function LineRow({
   y: number;
   title: string;
   headerNote?: string;
-  data: any[];
+  data: PreviewDataRow[];
   realKey: string;
   budKey: string;
   fmt: (v: number) => string;
@@ -241,7 +246,7 @@ function LineRow({
   });
 
   // Separador vertical Real / Budget
-  const sepColIdx = data.findIndex((r: any) => {
+  const sepColIdx = data.findIndex((r) => {
     const rv = r[realKey]; const bv = r[budKey];
     return (rv == null || rv === 0) && bv != null && bv !== 0;
   });
@@ -250,8 +255,8 @@ function LineRow({
   let deltaLabel = "";
   let deltaColor = C.haraldRed;
   if (hasSep && deltaFmt) {
-    const totalReal = data.reduce((s: number, r: any) => { const v = r[realKey]; return v && v > 0 ? s + v : s; }, 0);
-    const totalBud  = data.reduce((s: number, r: any) => { const v = r[budKey];  return v && v > 0 ? s + v : s; }, 0);
+    const totalReal = data.reduce((s, r) => { const v = r[realKey]; return typeof v === "number" && v > 0 ? s + v : s; }, 0);
+    const totalBud  = data.reduce((s, r) => { const v = r[budKey];  return typeof v === "number" && v > 0 ? s + v : s; }, 0);
     const delta = totalReal - totalBud;
     deltaLabel = deltaFmt(delta);
     deltaColor = delta >= 0 ? "#16A34A" : C.haraldRed;
@@ -331,7 +336,7 @@ function LineRow({
   );
 }
 
-function VolBarsRow({ y, data, accumGapTons }: { y: number; data: any[]; accumGapTons: number }) {
+function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow[]; accumGapTons: number }) {
   const x = 35;
   const w = 1260;
   const h = 125;
@@ -353,7 +358,7 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: any[]; accumGa
   const barW = colW * 0.36;
 
   // Separador vertical Real / Budget + nota de variação em volume
-  const sepColIdxV = data.findIndex((r: any) => r.realVol === 0 && r.budVol > 0);
+  const sepColIdxV = data.findIndex((r) => r.realVol === 0 && typeof r.budVol === "number" && r.budVol > 0);
   const hasSepV = sepColIdxV > 0;
   const sepXV = hasSepV ? plotX + (sepColIdxV - 0.5) * colW : 0;
   const volDeltaLabel = (accumGapTons >= 0 ? "+" : "-") + fmtIntBR(Math.abs(accumGapTons)) + " Tons";

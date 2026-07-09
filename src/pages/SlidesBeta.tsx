@@ -162,6 +162,21 @@ function triggerUpdateNow(): void {
   window.open(DOWNLOAD_URL, "_blank", "noopener,noreferrer");
 }
 
+async function retryAsync<T>(operation: () => Promise<T>, attempts = 2, delayMs = 900): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -1720,23 +1735,6 @@ export default function SlidesBeta() {
     return guardSlideReadOnly(viewOnly, () => slideToastInfo("Modo somente leitura"));
   }, [viewOnly]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const hashQuery = window.location.hash.includes("?")
-      ? window.location.hash.slice(window.location.hash.indexOf("?"))
-      : "";
-    const params = new URLSearchParams(window.location.search || hashQuery);
-    const room = params.get("room");
-    const name = params.get("name");
-    const mode = params.get("mode");
-    if (room) {
-      setRoomId(room);
-      setPersistentCollabRole(mode === "view" ? "viewer" : "editor");
-    }
-    if (name) setCollabName(decodeURIComponent(name));
-    if (mode === "view") setViewOnly(true);
-  }, []);
-
   const selectedSlideIndex = useMemo(
     () => (selectedId ? items.findIndex((item) => item.id === selectedId) : -1),
     [items, selectedId],
@@ -1842,14 +1840,18 @@ export default function SlidesBeta() {
     if (persistentCollabRole === "viewer") return;
     broadcastComment(event);
     if (!persistentRoomDbId || !persistentCollabCode) return;
-    void savePersistentCollabComment({
-      roomId: persistentRoomDbId,
-      code: persistentCollabCode,
-      comment: event.comment,
-      status: event.type === "comment_delete"
-        ? "deleted"
-        : event.comment.resolved ? "resolved" : "open",
-    }).catch(() => {
+    void retryAsync(
+      () => savePersistentCollabComment({
+        roomId: persistentRoomDbId,
+        code: persistentCollabCode,
+        comment: event.comment,
+        status: event.type === "comment_delete"
+          ? "deleted"
+          : event.comment.resolved ? "resolved" : "open",
+      }),
+      3,
+      1200,
+    ).catch(() => {
       slideToastError("Nao foi possivel salvar o comentario na sala.");
     });
   }, [broadcastComment, persistentCollabCode, persistentCollabRole, persistentRoomDbId, roomId]);
@@ -1891,7 +1893,7 @@ export default function SlidesBeta() {
     savingRef.current = true;
     setCollabSaveStatus("saving");
     try {
-      const result = await savePersistentCollabSnapshot({
+      const result = await retryAsync(() => savePersistentCollabSnapshot({
         roomId: persistentRoomDbId,
         code: persistentCollabCode,
         expectedPreviousVersion: collabSnapshotVersion,
@@ -1899,7 +1901,7 @@ export default function SlidesBeta() {
         selectedSlideId: selectedId,
         transition,
         appVersion: APP_VERSION,
-      });
+      }), 3, 1200);
       lastSavedSnapshotRef.current = currentSnapshotSignature;
       setCollabSnapshotVersion(result.version);
       setCollabSaveStatus("saved");
@@ -2025,8 +2027,17 @@ export default function SlidesBeta() {
       setViewOnly(joined.role === "viewer");
       slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
       setCollabOpen(false);
-    } catch {
-      slideToastError("Codigo invalido ou expirado.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("UNSUPPORTED") || message.includes("SNAPSHOT")) {
+        slideToastError("Snapshot incompatível com esta versão do app.");
+      } else if (message.includes("CORRUPTED")) {
+        slideToastError("Snapshot da sala está corrompido ou não pode ser lido.");
+      } else if (message.includes("INVALID") || message.includes("EXPIRED") || message.includes("EMPTY_CODE")) {
+        slideToastError("Código inválido ou expirado.");
+      } else {
+        slideToastError("Não foi possível entrar na sala. Verifique sua conexão e tente novamente.");
+      }
     } finally {
       setCollabBusy(null);
     }
@@ -2062,8 +2073,7 @@ export default function SlidesBeta() {
       updateItem(created.id, () => ({ ...slide, id: created.id } as SlideItem));
     }
         slideToastSuccess(`Template "${tpl.name}" aplicado`);
-      } catch (err) {
-        console.error(err);
+      } catch {
         slideToastError("Não foi possível aplicar o template.");
       } finally {
         setTemplateApplying(false);
@@ -2534,7 +2544,7 @@ export default function SlidesBeta() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {roomId ? `Sala ativa: ${roomId}` : "Compartilhar sessão em tempo real"}
+                    {roomId ? `Sala ativa: ${roomId}` : "Abrir sala persistente por código"}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -3019,8 +3029,7 @@ export default function SlidesBeta() {
               slideToastSuccess(
                 `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
               );
-            } catch (err) {
-              console.error(err);
+            } catch {
               slideToastError("Não foi possível inserir os slides importados.");
             } finally {
               setImportApplying(false);
