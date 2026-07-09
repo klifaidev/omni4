@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import type { CustomSlideConfig } from "@/lib/customSlide";
 import {
   customSlideConfigToYDoc,
   getCustomSlideBlockText,
   getCustomSlideYDocParts,
+  insertCustomSlideBlock,
+  patchCustomSlideBlock,
+  removeCustomSlideBlock,
+  reorderCustomSlideBlock,
   setYTextValue,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
@@ -83,6 +88,23 @@ const sampleConfig: CustomSlideConfig = {
   ],
 };
 
+function cloneSyncedDoc(source: Y.Doc): Y.Doc {
+  const clone = new Y.Doc();
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(source));
+  return clone;
+}
+
+function syncBoth(left: Y.Doc, right: Y.Doc): void {
+  const leftUpdate = Y.encodeStateAsUpdate(left);
+  const rightUpdate = Y.encodeStateAsUpdate(right);
+  Y.applyUpdate(left, rightUpdate);
+  Y.applyUpdate(right, leftUpdate);
+}
+
+function blockIds(doc: Y.Doc): string[] {
+  return yDocToCustomSlideConfig(doc).blocks.map((block) => block.id);
+}
+
 describe("customSlideYjs", () => {
   it("preserves a CustomSlideConfig through JSON -> Y.Doc -> JSON", () => {
     const doc = customSlideConfigToYDoc(sampleConfig);
@@ -130,5 +152,82 @@ describe("customSlideYjs", () => {
 
     const restored = yDocToCustomSlideConfig(doc);
     expect(restored.blocks[2]).toMatchObject({ id: "kpi-1", manualValue: "35,8%" });
+  });
+
+  it("converges when two collaborators delete the same block at the same time", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    removeCustomSlideBlock(host, "text-1");
+    removeCustomSlideBlock(guest, "text-1");
+    syncBoth(host, guest);
+
+    expect(blockIds(host)).toEqual(blockIds(guest));
+    expect(blockIds(host)).not.toContain("text-1");
+  });
+
+  it("converges without duplicate or missing ids after simultaneous reorders", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    reorderCustomSlideBlock(host, "chart-1", "title-1");
+    reorderCustomSlideBlock(guest, "kpi-1", "text-1");
+    syncBoth(host, guest);
+
+    const hostIds = blockIds(host);
+    const guestIds = blockIds(guest);
+    expect(hostIds).toEqual(guestIds);
+    expect(new Set(hostIds)).toEqual(new Set(sampleConfig.blocks.map((block) => block.id)));
+    expect(hostIds).toHaveLength(sampleConfig.blocks.length);
+  });
+
+  it("keeps a concurrently edited block deleted from the app view when another collaborator removed it", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    removeCustomSlideBlock(host, "kpi-1");
+    patchCustomSlideBlock(guest, "kpi-1", { x: 999, y: 888 });
+    syncBoth(host, guest);
+
+    expect(blockIds(host)).toEqual(blockIds(guest));
+    expect(blockIds(host)).not.toContain("kpi-1");
+  });
+
+  it("keeps both blocks when collaborators add different blocks concurrently", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    insertCustomSlideBlock(host, {
+      id: "host-new",
+      kind: "text",
+      x: 100,
+      y: 100,
+      w: 200,
+      h: 80,
+      z: 5,
+      text: "Bloco do host",
+      size: 20,
+      color: "1C2430",
+      align: "left",
+    });
+    insertCustomSlideBlock(guest, {
+      id: "guest-new",
+      kind: "text",
+      x: 320,
+      y: 100,
+      w: 200,
+      h: 80,
+      z: 6,
+      text: "Bloco do convidado",
+      size: 20,
+      color: "1C2430",
+      align: "left",
+    });
+    syncBoth(host, guest);
+
+    const hostIds = blockIds(host);
+    expect(hostIds).toEqual(blockIds(guest));
+    expect(hostIds).toContain("host-new");
+    expect(hostIds).toContain("guest-new");
   });
 });

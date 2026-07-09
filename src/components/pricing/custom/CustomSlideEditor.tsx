@@ -53,7 +53,7 @@ import {
   isFromBudgetBase, isFromForecastBase, isFromRollingBase,
   type BlockDataSource,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
-  type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock,
+  type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
   isLineFamily,
   type ConditionalFormatMode, type ConditionalFormatRule,
@@ -111,7 +111,13 @@ import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 import {
   getCustomSlideBlockText,
   getCustomSlideSpeakerNotesText,
+  insertCustomSlideBlock,
+  insertCustomSlideBlocks,
+  duplicateCustomSlideBlock,
+  patchCustomSlideBlock,
+  removeCustomSlideBlock,
   setYTextValue,
+  yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
@@ -399,6 +405,51 @@ export function CustomSlideEditor({
     notifyReadOnly();
     return false;
   }, [notifyReadOnly, readOnly]);
+  const pendingYBlockPatchesRef = useRef(new Map<string, Partial<CustomBlock>>());
+  const yBlockPatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emitYDocConfig = useCallback(() => {
+    if (!collabYDoc) return;
+    onChange(yDocToCustomSlideConfig(collabYDoc));
+  }, [collabYDoc, onChange]);
+  const maxBlockZ = useCallback(() => (
+    config.blocks.reduce((max, block) => Math.max(max, block.z), 0)
+  ), [config.blocks]);
+  const insertYBlocks = useCallback((blocks: CustomBlock[], selectInserted = true) => {
+    if (!collabYDoc || blocks.length === 0) return [];
+    const zTop = maxBlockZ();
+    const withZ = blocks.map((block, index) => ({ ...block, z: zTop + index + 1 }) as CustomBlock);
+    const ids = insertCustomSlideBlocks(collabYDoc, withZ);
+    emitYDocConfig();
+    if (selectInserted && ids.length > 0) setSelection(ids);
+    return ids;
+  }, [collabYDoc, emitYDocConfig, maxBlockZ]);
+  const flushYBlockPatches = useCallback(() => {
+    if (!collabYDoc) return;
+    const pending = pendingYBlockPatchesRef.current;
+    if (pending.size === 0) return;
+    pending.forEach((patch, id) => {
+      patchCustomSlideBlock(collabYDoc, id, patch);
+    });
+    pending.clear();
+    emitYDocConfig();
+  }, [collabYDoc, emitYDocConfig]);
+  const queueYBlockPatch = useCallback((id: string, patch: Partial<CustomBlock>) => {
+    const pending = pendingYBlockPatchesRef.current;
+    pending.set(id, { ...(pending.get(id) ?? {}), ...patch });
+    if (yBlockPatchTimerRef.current) return;
+    yBlockPatchTimerRef.current = setTimeout(() => {
+      yBlockPatchTimerRef.current = null;
+      flushYBlockPatches();
+    }, 60);
+  }, [flushYBlockPatches]);
+
+  useEffect(() => () => {
+    if (yBlockPatchTimerRef.current) {
+      clearTimeout(yBlockPatchTimerRef.current);
+      yBlockPatchTimerRef.current = null;
+    }
+    pendingYBlockPatchesRef.current.clear();
+  }, []);
 
   const updateBlock = useCallback((id: string, patch: Partial<CustomBlock>) => {
     if (!canEdit()) return;
@@ -412,8 +463,17 @@ export function CustomSlideEditor({
       : isResize ? "Redimensionar bloco"
       : isMove ? "Mover bloco"
       : "Alterar dados";
+    if (collabYDoc) {
+      if (isMove || isResize) {
+        queueYBlockPatch(id, patch);
+        return;
+      }
+      patchCustomSlideBlock(collabYDoc, id, patch);
+      emitYDocConfig();
+      return;
+    }
     patchBlockAction(id, patch, label);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, emitYDocConfig, queueYBlockPatch]);
   const yBlockText = useCallback((blockId: string, field: string) => (
     collabYDoc ? getCustomSlideBlockText(collabYDoc, blockId, field) : null
   ), [collabYDoc]);
@@ -423,16 +483,32 @@ export function CustomSlideEditor({
   ), [textAwareness]);
   const addBlock = useCallback((kind: CustomBlockKind) => {
     if (!canEdit()) return;
+    if (collabYDoc) {
+      const block = newBlock(kind, maxBlockZ()) as CustomBlock;
+      insertCustomSlideBlock(collabYDoc, block);
+      emitYDocConfig();
+      setSelection([block.id]);
+      return;
+    }
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, emitYDocConfig, maxBlockZ]);
   const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
+    if (collabYDoc) {
+      const block = preset === "positivacao"
+        ? (newPositivacaoChartBlock(maxBlockZ()) as CustomBlock)
+        : (newChartBlock(chartType, maxBlockZ()) as CustomBlock);
+      insertCustomSlideBlock(collabYDoc, block);
+      emitYDocConfig();
+      setSelection([block.id]);
+      return;
+    }
     const id = preset === "positivacao"
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
     if (id) setSelection([id]);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, emitYDocConfig, maxBlockZ]);
   const insertTextStyle = useCallback((styleId: string, text: string, x: number, y: number, w: number, h: number) => {
     if (!canEdit()) return;
     const style = SLIDE_BRAND_STYLES.find((item) => item.id === styleId);
@@ -443,9 +519,13 @@ export function CustomSlideEditor({
       text,
       ...(style?.patch ?? {}),
     } as TextBlock;
+    if (collabYDoc) {
+      insertYBlocks([block as CustomBlock]);
+      return;
+    }
     const id = insertBlockAction(block as CustomBlock, "Adicionar bloco");
     if (id) setSelection([id]);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, insertYBlocks]);
   const insertQuickLayout = useCallback((layout: "kpis" | "chartInsight" | "table" | "heroNumber" | "bridgeComment") => {
     if (!canEdit()) return;
     const title = (text: string, x: number, y: number, w: number, h: number, size = 34) => ({
@@ -504,9 +584,13 @@ export function CustomSlideEditor({
         text("Comentario\n\nDestaque os principais ofensores e alavancas.", 920, 180, 300, 160, 20),
       ],
     };
+    if (collabYDoc) {
+      insertYBlocks(blocksByLayout[layout]);
+      return;
+    }
     const ids = insertBlocksAction(blocksByLayout[layout], "Adicionar layout rapido");
     if (ids.length > 0) setSelection(ids);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, insertYBlocks]);
   const addInsightCard = () => {
     const x = 60;
     const y = 150;
@@ -580,6 +664,10 @@ export function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ];
+    if (collabYDoc) {
+      insertYBlocks(blocks);
+      return;
+    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       groupBlocksAction(ids);
@@ -689,6 +777,10 @@ export function CustomSlideEditor({
         borderRadius: 10,
       } as CustomBlock,
     ];
+    if (collabYDoc) {
+      insertYBlocks(blocks);
+      return;
+    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       groupBlocksAction(ids);
@@ -798,6 +890,10 @@ export function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ];
+    if (collabYDoc) {
+      insertYBlocks(blocks);
+      return;
+    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       groupBlocksAction(ids);
@@ -876,6 +972,10 @@ export function CustomSlideEditor({
         borderRadius: 0,
       } as CustomBlock,
     ];
+    if (collabYDoc) {
+      insertYBlocks(blocks);
+      return;
+    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       groupBlocksAction(ids);
@@ -884,14 +984,71 @@ export function CustomSlideEditor({
   };
   const removeBlock = useCallback((id: string) => {
     if (!canEdit()) return;
+    if (collabYDoc) {
+      removeCustomSlideBlock(collabYDoc, id);
+      emitYDocConfig();
+      if (selectedIds.includes(id)) clearSelection();
+      return;
+    }
     deleteBlockAction(id);
     if (selectedIds.includes(id)) clearSelection();
-  }, [canEdit, selectedIds]);
+  }, [canEdit, collabYDoc, emitYDocConfig, selectedIds]);
   const duplicateBlock = useCallback((id: string) => {
     if (!canEdit()) return;
+    if (collabYDoc) {
+      const orig = config.blocks.find((block) => block.id === id);
+      if (!orig) return;
+      const clone = {
+        ...JSON.parse(JSON.stringify(orig)),
+        id: localId(),
+        x: orig.x + 20,
+        y: orig.y + 20,
+        z: maxBlockZ() + 1,
+        locked: false,
+      } as CustomBlock;
+      const newId = duplicateCustomSlideBlock(collabYDoc, id, clone);
+      emitYDocConfig();
+      if (newId) setSelection([newId]);
+      return;
+    }
     const newId = duplicateBlockAction(id);
     if (newId) setSelection([newId]);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, config.blocks, emitYDocConfig, maxBlockZ]);
+  const removeBlocks = useCallback((ids: string[]) => {
+    if (!canEdit() || ids.length === 0) return;
+    if (collabYDoc) {
+      ids.forEach((id) => removeCustomSlideBlock(collabYDoc, id));
+      emitYDocConfig();
+      clearSelection();
+      return;
+    }
+    deleteBlocksAction(ids);
+  }, [canEdit, collabYDoc, emitYDocConfig]);
+  const duplicateBlocks = useCallback((ids: string[]) => {
+    if (!canEdit() || ids.length === 0) return;
+    if (collabYDoc) {
+      const zTop = maxBlockZ();
+      const clones = ids
+        .map((id, index) => {
+          const orig = config.blocks.find((block) => block.id === id);
+          if (!orig) return null;
+          return {
+            ...JSON.parse(JSON.stringify(orig)),
+            id: localId(),
+            x: orig.x + 20,
+            y: orig.y + 20,
+            z: zTop + index + 1,
+            locked: false,
+          } as CustomBlock;
+        })
+        .filter((block): block is CustomBlock => Boolean(block));
+      const inserted = insertCustomSlideBlocks(collabYDoc, clones);
+      emitYDocConfig();
+      if (inserted.length > 0) setSelection(inserted);
+      return;
+    }
+    duplicateBlocksAction(ids);
+  }, [canEdit, collabYDoc, config.blocks, emitYDocConfig, maxBlockZ]);
   const bringForward = useCallback((id: string) => { if (canEdit()) bringForwardAction(id); }, [canEdit]);
   const sendBack = useCallback((id: string) => { if (canEdit()) sendBackAction(id); }, [canEdit]);
   const bringToFront = useCallback((id: string) => { if (canEdit()) bringToFrontAction(id); }, [canEdit]);
@@ -1005,12 +1162,12 @@ export function CustomSlideEditor({
     crossSlideClipboard = JSON.parse(JSON.stringify(blk)) as CustomBlock;
     if (cut) {
       if (selectedIds.length === 1) removeBlock(selectedIds[0]);
-      else deleteBlocksAction(selectedIds);
+      else removeBlocks(selectedIds);
       toast.success("Bloco cortado");
     } else {
       toast.success("Bloco copiado");
     }
-  }, [canEdit, selectedIds, config.blocks]);
+  }, [canEdit, config.blocks, removeBlock, removeBlocks, selectedIds]);
 
   const pasteFromClipboard = useCallback(() => {
     if (!canEdit()) return;
@@ -1027,12 +1184,17 @@ export function CustomSlideEditor({
     }
     clone.x = x;
     clone.y = y;
+    if (collabYDoc) {
+      const ids = insertYBlocks([clone]);
+      if (ids.length > 0) toast.success("Bloco colado");
+      return;
+    }
     const newId = insertBlockAction(clone, "Adicionar bloco");
     if (newId) {
       setSelection([newId]);
       toast.success("Bloco colado");
     }
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, insertYBlocks]);
 
   const centerSelectedH = useCallback(() => {
     if (!canEdit()) return;
@@ -1104,14 +1266,14 @@ export function CustomSlideEditor({
         e.preventDefault();
         if (!canEdit()) return;
         if (selectedIds.length === 1) removeBlock(selectedIds[0]);
-        else deleteBlocksAction(selectedIds);
+        else removeBlocks(selectedIds);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
         e.preventDefault();
         if (!canEdit()) return;
         if (selectedIds.length === 1) duplicateBlock(selectedIds[0]);
-        else duplicateBlocksAction(selectedIds);
+        else duplicateBlocks(selectedIds);
         return;
       }
       if (selectedIds.length === 1 && (e.metaKey || e.ctrlKey)) {
@@ -1128,6 +1290,13 @@ export function CustomSlideEditor({
       if (dx !== 0 || dy !== 0) {
         e.preventDefault();
         if (!canEdit()) return;
+        if (collabYDoc) {
+          selectedIds.forEach((id) => {
+            const block = config.blocks.find((item) => item.id === id);
+            if (block && !block.locked) updateBlock(id, { x: block.x + dx, y: block.y + dy });
+          });
+          return;
+        }
         nudgeBlocksAction(
           selectedIds,
           dx, dy,
@@ -1137,7 +1306,7 @@ export function CustomSlideEditor({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, collabYDoc, updateBlock]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -1208,11 +1377,18 @@ export function CustomSlideEditor({
     const newIndex = layersSorted.findIndex((b) => b.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
     const reordered = arrayMove(layersSorted, oldIndex, newIndex);
+    if (collabYDoc) {
+      reordered.forEach((blk, i) => {
+        patchCustomSlideBlock(collabYDoc, blk.id, { z: reordered.length - i } as Partial<CustomBlock>);
+      });
+      emitYDocConfig();
+      return;
+    }
     patchBlocksAction(
       reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
       "Reordenar camadas",
     );
-  }, [canEdit, layersSorted]);
+  }, [canEdit, collabYDoc, emitYDocConfig, layersSorted]);
 
   // Templates
   const [tplOpen, setTplOpen] = useState(false);
@@ -1959,6 +2135,10 @@ export function CustomSlideEditor({
                               .map((id) => config.blocks.find((b) => b.id === id))
                               .filter((b): b is CustomBlock => !!b && !b.locked)
                               .map((b) => ({ id: b.id, patch: { x: b.x + dx, y: b.y + dy } as Partial<CustomBlock> }));
+                            if (collabYDoc) {
+                              patches.forEach((item) => updateBlock(item.id, item.patch));
+                              return;
+                            }
                             patchBlocksAction(patches, "Mover blocos");
                           }
                         }}
@@ -2431,6 +2611,8 @@ export function CustomSlideEditor({
               hasGroup={multiSelected.some((b) => !!b.groupId)}
               readOnly={readOnly}
               canEdit={canEdit}
+              onDuplicate={() => duplicateBlocks(selectedIds)}
+              onDelete={() => removeBlocks(selectedIds)}
             />
           ) : !selected ? (
             <div className="space-y-2 px-1 text-[12px] text-muted-foreground">
@@ -4416,12 +4598,14 @@ function clientToCanvas(
 // ---------------------------------------------------------------------------
 // Multi-selection inspector (B8.2)
 // ---------------------------------------------------------------------------
-function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit }: {
+function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit, onDuplicate, onDelete }: {
   selectedIds: string[];
   blocks: CustomBlock[];
   hasGroup: boolean;
   readOnly: boolean;
   canEdit: () => boolean;
+  onDuplicate: () => void;
+  onDelete: () => void;
 }) {
   const align = (k: AlignKind) => { if (canEdit()) alignBlocksAction(selectedIds, k); };
   return (
@@ -4433,14 +4617,14 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
         <div className="flex gap-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
             disabled={readOnly}
-            onClick={() => { if (canEdit()) duplicateBlocksAction(selectedIds); }}
+            onClick={onDuplicate}
             title="Duplicar todos (Ctrl+D)"
             aria-label="Duplicar blocos selecionados">
             <CopyIcon className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive"
             disabled={readOnly}
-            onClick={() => { if (canEdit()) deleteBlocksAction(selectedIds); }}
+            onClick={onDelete}
             title="Excluir todos (Del)"
             aria-label="Excluir blocos selecionados">
             <Trash2 className="h-3.5 w-3.5" />

@@ -52,6 +52,10 @@ function textFieldsForBlock(block: CustomBlock): Set<string> {
   return new Set(TEXT_FIELDS_BY_KIND[block.kind] ?? []);
 }
 
+function textFieldsForKind(kind: string): Set<string> {
+  return new Set(TEXT_FIELDS_BY_KIND[kind] ?? []);
+}
+
 function getParts(doc: Y.Doc): CustomSlideYDoc {
   return {
     doc,
@@ -95,6 +99,21 @@ function yMapToBlock(blockMap: Y.Map<unknown>): CustomBlock {
   return block as CustomBlock;
 }
 
+function removeFromArray<T>(array: Y.Array<T>, predicate: (value: T) => boolean): void {
+  for (let index = array.length - 1; index >= 0; index -= 1) {
+    if (predicate(array.get(index))) array.delete(index, 1);
+  }
+}
+
+function uniqueOrderedBlockIds(ids: string[], blocks: Y.Map<Y.Map<unknown>>): string[] {
+  const seen = new Set<string>();
+  return ids.filter((id) => {
+    if (seen.has(id) || !blocks.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 export function getCustomSlideBlockText(doc: Y.Doc, blockId: string, field: string): Y.Text | null {
   const blockMap = getParts(doc).blocks.get(blockId);
   const texts = blockMap?.get(BLOCK_TEXTS) as Y.Map<Y.Text> | undefined;
@@ -118,6 +137,103 @@ export function setYTextValue(text: Y.Text, value: string): void {
     text.delete(0, text.length);
     if (value) text.insert(0, value);
   });
+}
+
+export function getCustomSlideBlockMap(doc: Y.Doc, blockId: string): Y.Map<unknown> | null {
+  const blockMap = getParts(doc).blocks.get(blockId);
+  return blockMap instanceof Y.Map ? blockMap : null;
+}
+
+export function insertCustomSlideBlock(doc: Y.Doc, block: CustomBlock, index?: number): string {
+  const { blockOrder, blocks } = getParts(doc);
+  doc.transact(() => {
+    if (blocks.has(block.id)) return;
+    const safeIndex = Math.max(0, Math.min(index ?? blockOrder.length, blockOrder.length));
+    blocks.set(block.id, blockToYMap(block));
+    blockOrder.insert(safeIndex, [block.id]);
+  });
+  return block.id;
+}
+
+export function insertCustomSlideBlocks(doc: Y.Doc, newBlocks: CustomBlock[], index?: number): string[] {
+  const { blockOrder, blocks } = getParts(doc);
+  const ids: string[] = [];
+  doc.transact(() => {
+    let insertAt = Math.max(0, Math.min(index ?? blockOrder.length, blockOrder.length));
+    newBlocks.forEach((block) => {
+      if (blocks.has(block.id)) return;
+      blocks.set(block.id, blockToYMap(block));
+      blockOrder.insert(insertAt, [block.id]);
+      ids.push(block.id);
+      insertAt += 1;
+    });
+  });
+  return ids;
+}
+
+export function removeCustomSlideBlock(doc: Y.Doc, blockId: string): void {
+  const { blockOrder, blocks } = getParts(doc);
+  doc.transact(() => {
+    blocks.delete(blockId);
+    removeFromArray(blockOrder, (id) => id === blockId);
+  });
+}
+
+export function duplicateCustomSlideBlock(doc: Y.Doc, sourceBlockId: string, clone: CustomBlock): string | null {
+  const { blockOrder, blocks } = getParts(doc);
+  if (!blocks.has(sourceBlockId) || blocks.has(clone.id)) return null;
+  doc.transact(() => {
+    const sourceIndex = blockOrder.toArray().indexOf(sourceBlockId);
+    const insertAt = sourceIndex >= 0 ? sourceIndex + 1 : blockOrder.length;
+    blocks.set(clone.id, blockToYMap(clone));
+    blockOrder.insert(insertAt, [clone.id]);
+  });
+  return clone.id;
+}
+
+export function reorderCustomSlideBlock(doc: Y.Doc, blockId: string, overBlockId: string): void {
+  if (blockId === overBlockId) return;
+  const { blockOrder, blocks } = getParts(doc);
+  if (!blocks.has(blockId) || !blocks.has(overBlockId)) return;
+  doc.transact(() => {
+    const ids = blockOrder.toArray().filter((id) => blocks.has(id));
+    const oldIndex = ids.indexOf(blockId);
+    const newIndex = ids.indexOf(overBlockId);
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+    ids.splice(oldIndex, 1);
+    ids.splice(newIndex, 0, blockId);
+    blockOrder.delete(0, blockOrder.length);
+    blockOrder.insert(0, ids);
+  });
+}
+
+export function patchCustomSlideBlock(doc: Y.Doc, blockId: string, patch: Partial<CustomBlock>): boolean {
+  const blockMap = getCustomSlideBlockMap(doc, blockId);
+  if (!blockMap) return false;
+  const props = blockMap.get(BLOCK_PROPS) as Y.Map<unknown> | undefined;
+  const texts = blockMap.get(BLOCK_TEXTS) as Y.Map<Y.Text> | undefined;
+  if (!props || !texts) return false;
+  const kind = String(props.get("kind") ?? "");
+  const textFields = textFieldsForKind(kind);
+
+  doc.transact(() => {
+    Object.entries(patch as JsonObject).forEach(([key, value]) => {
+      if (typeof value === "string" && textFields.has(key)) {
+        const text = texts.get(key) ?? createText("");
+        if (!texts.has(key)) texts.set(key, text);
+        setYTextValue(text, value);
+        return;
+      }
+      if (value === undefined) {
+        props.delete(key);
+        texts.delete(key);
+        return;
+      }
+      props.set(key, value);
+    });
+  });
+
+  return true;
 }
 
 export function customSlideConfigToYDoc(config: CustomSlideConfig): Y.Doc {
@@ -147,8 +263,7 @@ export function yDocToCustomSlideConfig(doc: Y.Doc): CustomSlideConfig {
   const config: CustomSlideConfig = {
     background: String(meta.get("background") ?? "FFFFFF"),
     showHaraldFooter: Boolean(meta.get("showHaraldFooter") ?? true),
-    blocks: blockOrder
-      .toArray()
+    blocks: uniqueOrderedBlockIds(blockOrder.toArray(), blocks)
       .map((id) => blocks.get(id))
       .filter((blockMap): blockMap is Y.Map<unknown> => blockMap instanceof Y.Map)
       .map(yMapToBlock),
