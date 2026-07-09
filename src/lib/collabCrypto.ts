@@ -29,6 +29,10 @@ export type CollabEncryptedComment = CollabEncryptedPayload & {
   payload_type: "comment";
 };
 
+export type CollabEncryptedYjsUpdate = CollabEncryptedPayload & {
+  payload_type: "yjs-update";
+};
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -255,6 +259,13 @@ export async function encryptCollabJson<T extends JsonValue>(
   return aesEncrypt(contentKey, utf8(JSON.stringify(value)));
 }
 
+export async function encryptCollabBytes(
+  contentKey: CryptoKey,
+  bytes: Uint8Array,
+): Promise<CollabEncryptedPayload> {
+  return aesEncrypt(contentKey, bytes);
+}
+
 export async function decryptCollabJson<T extends JsonValue>(
   contentKey: CryptoKey,
   payload: CollabEncryptedPayload,
@@ -266,6 +277,13 @@ export async function decryptCollabJson<T extends JsonValue>(
   } catch {
     throw new CollabCryptoError("CORRUPTED_PAYLOAD");
   }
+}
+
+export async function decryptCollabBytes(
+  contentKey: CryptoKey,
+  payload: CollabEncryptedPayload,
+): Promise<Uint8Array> {
+  return aesDecrypt(contentKey, payload);
 }
 
 export async function encryptCollabSnapshot<T extends JsonValue>(
@@ -306,4 +324,24 @@ export async function decryptCollabComment<T extends JsonValue>(
     throw new CollabCryptoError("UNSUPPORTED_SCHEMA");
   }
   return decryptCollabJson<T>(contentKey, payload);
+}
+
+export async function encryptCollabYjsUpdate(
+  contentKey: CryptoKey,
+  update: Uint8Array,
+): Promise<CollabEncryptedYjsUpdate> {
+  return {
+    ...(await encryptCollabBytes(contentKey, update)),
+    payload_type: "yjs-update",
+  };
+}
+
+export async function decryptCollabYjsUpdate(
+  contentKey: CryptoKey,
+  payload: CollabEncryptedYjsUpdate,
+): Promise<Uint8Array> {
+  if (payload.payload_type !== "yjs-update") {
+    throw new CollabCryptoError("UNSUPPORTED_SCHEMA");
+  }
+  return decryptCollabBytes(contentKey, payload);
 }
