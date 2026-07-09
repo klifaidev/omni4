@@ -9,6 +9,7 @@ import {
   onEvent,
   onPresenceChange,
   updateCursor as updateCursorRaw,
+  updatePresence,
   CURSOR_COLORS,
   type CollabUser,
   type CollabEvent,
@@ -26,14 +27,26 @@ interface UseCollabReturn {
   broadcast: (e: CollabEvent) => void;
   updateCursor: (x: number, y: number) => void;
   updateSlideId: (slideId: string | null) => void;
+  updatePresenceMeta: (patch: Partial<CollabUser>) => void;
   broadcastComment: (event: SlideCommentEvent) => void;
   userId: string | null;
+}
+
+interface UseCollaborationOptions {
+  appVersion: string;
+  collabProtocolVersion: number;
+  currentSlideId: string | null;
+  currentSlideIndex: number | null;
+  activity: CollabUser["activity"];
+  isFollowingHost: boolean;
+  onRemoteEvent?: (event: CollabEvent) => void;
 }
 
 export function useCollaboration(
   roomId: string | null,
   userName: string,
   role: PersistentCollabRole | null = null,
+  options?: UseCollaborationOptions,
 ): UseCollabReturn {
   const [collaborators, setCollaborators] = useState<CollabUser[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -44,6 +57,7 @@ export function useCollaboration(
   const userMetaRef = useRef<CollabUser | null>(null);
   const userNameRef = useRef(userName);
   const roleRef = useRef<PersistentCollabRole | null>(role);
+  const optionsRef = useRef<UseCollaborationOptions | undefined>(options);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -53,6 +67,10 @@ export function useCollaboration(
   useEffect(() => {
     roleRef.current = role;
   }, [role]);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   // Effect 1: cria/destroi o canal quando roomId muda.
   // userName nao e dependencia; evita recriar o canal ao editar o nome.
@@ -71,9 +89,17 @@ export function useCollaboration(
 
     const user: CollabUser = {
       id: userId,
+      clientId: userId,
       name: userNameRef.current || "Convidado",
       color,
+      role: roleRef.current ?? undefined,
+      appVersion: optionsRef.current?.appVersion,
+      collabProtocolVersion: optionsRef.current?.collabProtocolVersion,
       slideId: null,
+      currentSlideId: optionsRef.current?.currentSlideId ?? null,
+      currentSlideIndex: optionsRef.current?.currentSlideIndex ?? null,
+      activity: optionsRef.current?.activity ?? "idle",
+      isFollowingHost: optionsRef.current?.isFollowingHost ?? false,
     };
     userMetaRef.current = user;
 
@@ -114,6 +140,7 @@ export function useCollaboration(
       }
       const peer = collaboratorsByIdRef.current.get(event.userId);
       recordEvent(event, peer?.name ?? "Colaborador", peer?.color);
+      optionsRef.current?.onRemoteEvent?.(event);
       const store = useSlidesFlow.getState();
       switch (event.type) {
         case "add_item":
@@ -162,6 +189,9 @@ export function useCollaboration(
         case "comment_delete":
           applyCommentEvent(event.payload as SlideCommentEvent);
           break;
+        case "bring_to_slide":
+        case "notify_host_update":
+          break;
       }
     });
 
@@ -200,11 +230,38 @@ export function useCollaboration(
     try { ch.track(updated); } catch { /* noop */ }
   }, [userName]);
 
+  useEffect(() => {
+    const ch = channelRef.current;
+    const meta = userMetaRef.current;
+    const opts = optionsRef.current;
+    if (!ch || !meta || !opts) return;
+    const patch: Partial<CollabUser> = {
+      role: role ?? undefined,
+      appVersion: opts.appVersion,
+      collabProtocolVersion: opts.collabProtocolVersion,
+      currentSlideId: opts.currentSlideId,
+      currentSlideIndex: opts.currentSlideIndex,
+      activity: opts.activity,
+      isFollowingHost: opts.isFollowingHost,
+      slideId: opts.currentSlideId,
+    };
+    userMetaRef.current = { ...meta, ...patch };
+    try { ch.track(userMetaRef.current); } catch { /* noop */ }
+  }, [
+    role,
+    options?.appVersion,
+    options?.collabProtocolVersion,
+    options?.currentSlideId,
+    options?.currentSlideIndex,
+    options?.activity,
+    options?.isFollowingHost,
+  ]);
+
   const broadcast = useCallback((e: CollabEvent) => {
     const ch = channelRef.current;
     if (!ch) return;
     const currentRole = roleRef.current;
-    if (currentRole === "viewer") return;
+    if (currentRole === "viewer" && e.type !== "notify_host_update") return;
     broadcastEvent(ch, {
       ...e,
       id: e.id ?? `${e.userId}-${e.ts}-${e.type}-${Math.random().toString(36).slice(2, 8)}`,
@@ -224,7 +281,7 @@ export function useCollaboration(
     const meta = userMetaRef.current;
     if (!ch || !meta) return;
     if (meta.slideId === slideId) return;
-    userMetaRef.current = { ...meta, slideId };
+    userMetaRef.current = { ...meta, slideId, currentSlideId: slideId };
     try {
       ch.track(userMetaRef.current);
     } catch {
@@ -247,12 +304,22 @@ export function useCollaboration(
     });
   }, []);
 
+  const updatePresenceMeta = useCallback((patch: Partial<CollabUser>) => {
+    const ch = channelRef.current;
+    const uid = userIdRef.current;
+    const meta = userMetaRef.current;
+    if (!ch || !uid || !meta) return;
+    userMetaRef.current = { ...meta, ...patch };
+    updatePresence(ch, uid, patch);
+  }, []);
+
   return {
     collaborators,
     isConnected,
     broadcast,
     updateCursor,
     updateSlideId,
+    updatePresenceMeta,
     broadcastComment,
     userId: userIdRef.current,
   };

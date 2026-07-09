@@ -86,6 +86,10 @@ function describe(event: CollabEvent, userName: string): string {
       return `${userName} reabriu um comentário`;
     case "comment_delete":
       return `${userName} excluiu um comentário`;
+    case "bring_to_slide":
+      return `${userName} chamou participantes para um slide`;
+    case "notify_host_update":
+      return `${userName} notificou o host sobre versão`;
     case "update_transition": {
       const p = event.payload as { transition: string };
       return `${userName} mudou transição para ${p.transition}`;

@@ -7,9 +7,17 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface CollabUser {
   id: string;
+  clientId?: string;
   name: string;
   color: string;
+  role?: "host" | "editor" | "viewer";
+  appVersion?: string;
+  collabProtocolVersion?: number;
   slideId: string | null;
+  currentSlideId?: string | null;
+  currentSlideIndex?: number | null;
+  activity?: "editing" | "presenting" | "idle";
+  isFollowingHost?: boolean;
   cursorX?: number;
   cursorY?: number;
 }
@@ -28,7 +36,9 @@ export type CollabEventType =
   | "comment_update"
   | "comment_resolve"
   | "comment_reopen"
-  | "comment_delete";
+  | "comment_delete"
+  | "bring_to_slide"
+  | "notify_host_update";
 
 export interface CollabEvent {
   id?: string;
@@ -174,6 +184,26 @@ export function updateCursor(
     s!.nextArgs = null;
     if (args) send(args.x, args.y);
   }, 60 - (now - s.last));
+}
+
+export function updatePresence(
+  channel: RealtimeChannel,
+  userId: string,
+  patch: Partial<CollabUser>,
+): void {
+  const state = channel.presenceState<CollabUser>();
+  const mine = (state[userId]?.[0] ?? null) as CollabUser | null;
+  const next: CollabUser = mine
+    ? { ...mine, ...patch }
+    : {
+      id: userId,
+      clientId: userId,
+      name: "",
+      color: "#888",
+      slideId: null,
+      ...patch,
+    };
+  channel.track(next);
 }
 
 export function leaveRoom(channel: RealtimeChannel): void {

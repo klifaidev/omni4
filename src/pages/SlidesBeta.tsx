@@ -7,7 +7,7 @@
 //  3. Pode salvar a esteira como Pré-definição (localStorage)
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
-import { useEffect, useMemo, useState, useCallback, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -50,9 +50,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
-  AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
+  AlertTriangle, ArrowRight, Bell, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
-  MonitorPlay, Share2, Timer,
+  MonitorPlay, RefreshCw, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -116,7 +116,13 @@ import {
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
-const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
+const APP_VERSION = (() => {
+  const fallback = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
+  if (typeof window === "undefined") return fallback;
+  return localStorage.getItem("omni4.collab.testAppVersion") || fallback;
+})();
+const COLLAB_PROTOCOL_VERSION = 1;
+const DOWNLOAD_URL = "https://github.com/klifaidev/omni4/releases/latest";
 
 function slideToastSuccess(message: string) {
   toast.success(message, { icon: <CheckCheck className="h-4 w-4 text-success" /> });
@@ -128,6 +134,32 @@ function slideToastInfo(message: string) {
 
 function slideToastError(message: string) {
   toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
+}
+
+function versionParts(version: string): number[] {
+  const clean = version.replace(/^v/i, "").match(/\d+(?:\.\d+)*/)?.[0] ?? "";
+  return clean.split(".").filter(Boolean).map((part) => Number(part));
+}
+
+function compareVersions(a: string, b: string): number {
+  const aa = versionParts(a);
+  const bb = versionParts(b);
+  const max = Math.max(aa.length, bb.length);
+  for (let i = 0; i < max; i += 1) {
+    const diff = (aa[i] ?? 0) - (bb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+function triggerUpdateNow(): void {
+  const api = (window as unknown as { electronAPI?: { checkForUpdates?: () => void } }).electronAPI;
+  if (api?.checkForUpdates) {
+    api.checkForUpdates();
+    slideToastInfo("Verificando atualizações...");
+    return;
+  }
+  window.open(DOWNLOAD_URL, "_blank", "noopener,noreferrer");
 }
 
 
@@ -1675,6 +1707,8 @@ export default function SlidesBeta() {
   const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
   const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
   const [collabSaveStatus, setCollabSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [isFollowingHost, setIsFollowingHost] = useState(false);
+  const [lastHostUpdateNotice, setLastHostUpdateNotice] = useState<string | null>(null);
   const lastSavedSnapshotRef = useRef<string>("");
   const saveTimerRef = useRef<number | null>(null);
   const savingRef = useRef(false);
@@ -1703,10 +1737,45 @@ export default function SlidesBeta() {
     if (mode === "view") setViewOnly(true);
   }, []);
 
+  const selectedSlideIndex = useMemo(
+    () => (selectedId ? items.findIndex((item) => item.id === selectedId) : -1),
+    [items, selectedId],
+  );
+  const selectedSlideIndexForPresence = selectedSlideIndex >= 0 ? selectedSlideIndex : null;
+  const collabActivity = presentationOpen
+    ? "presenting"
+    : selectedId ? "editing" : "idle";
+
+  const handleRemoteCollabEvent = useCallback((event: import("@/lib/collaboration").CollabEvent) => {
+    if (event.type === "bring_to_slide") {
+      if (event.role !== "host") return;
+      const payload = event.payload as { slideId?: string | null };
+      if (payload.slideId && items.some((item) => item.id === payload.slideId)) {
+        select(payload.slideId);
+      }
+      return;
+    }
+    if (event.type === "notify_host_update" && persistentCollabRole === "host") {
+      const payload = event.payload as { fromName?: string; appVersion?: string };
+      const message = `${payload.fromName ?? "Um convidado"} está em uma versão mais nova (${payload.appVersion ?? "desconhecida"}).`;
+      setLastHostUpdateNotice(message);
+      toast.info(message, { icon: <Bell className="h-4 w-4 text-primary" /> });
+    }
+  }, [items, persistentCollabRole, select]);
+
   const { collaborators, isConnected, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
     roomId,
     collabName,
     persistentCollabRole,
+    {
+      appVersion: APP_VERSION,
+      collabProtocolVersion: COLLAB_PROTOCOL_VERSION,
+      currentSlideId: selectedId,
+      currentSlideIndex: selectedSlideIndexForPresence,
+      activity: collabActivity,
+      isFollowingHost,
+      onRemoteEvent: handleRemoteCollabEvent,
+    },
   );
 
   // Cor estável do usuário local (mesmo cálculo do hook de colaboração).
@@ -1721,6 +1790,52 @@ export default function SlidesBeta() {
     () => ({ name: collabName || "Convidado", color: currentUserColor }),
     [collabName, currentUserColor],
   );
+
+  const hostParticipant = useMemo(
+    () => collaborators.find((user) => user.role === "host") ?? null,
+    [collaborators],
+  );
+  const appVersionComparison = hostParticipant?.appVersion
+    ? compareVersions(APP_VERSION, hostParticipant.appVersion)
+    : 0;
+  const localAppOutdated = !!roomId && persistentCollabRole !== "host" && !!hostParticipant?.appVersion && appVersionComparison < 0;
+  const hostAppOutdated = !!roomId && persistentCollabRole !== "host" && !!hostParticipant?.appVersion && appVersionComparison > 0;
+  const protocolMismatch = !!roomId && !!hostParticipant?.collabProtocolVersion
+    && hostParticipant.collabProtocolVersion !== COLLAB_PROTOCOL_VERSION;
+
+  useEffect(() => {
+    if (!protocolMismatch) return;
+    setViewOnly(true);
+  }, [protocolMismatch]);
+
+  useEffect(() => {
+    if (!isFollowingHost || !hostParticipant?.currentSlideId) return;
+    if (hostParticipant.currentSlideId === selectedId) return;
+    if (!items.some((item) => item.id === hostParticipant.currentSlideId)) return;
+    select(hostParticipant.currentSlideId);
+  }, [hostParticipant?.currentSlideId, isFollowingHost, items, select, selectedId]);
+
+  const bringEveryoneToCurrentSlide = useCallback(() => {
+    if (persistentCollabRole !== "host" || !selectedId) return;
+    broadcast({
+      type: "bring_to_slide",
+      payload: { slideId: selectedId },
+      userId: collabUserId ?? "local",
+      ts: Date.now(),
+    });
+    slideToastSuccess("Participantes chamados para este slide.");
+  }, [broadcast, collabUserId, persistentCollabRole, selectedId]);
+
+  const notifyHostAboutVersion = useCallback(() => {
+    if (!hostParticipant || !roomId) return;
+    broadcast({
+      type: "notify_host_update",
+      payload: { fromName: collabName || "Convidado", appVersion: APP_VERSION },
+      userId: collabUserId ?? "local",
+      ts: Date.now(),
+    });
+    slideToastSuccess("Host notificado sobre a versão.");
+  }, [broadcast, collabName, collabUserId, hostParticipant, roomId]);
 
   const handleCommentEvent = useCallback((event: SlideCommentEvent) => {
     if (!roomId) return;
@@ -2294,6 +2409,87 @@ export default function SlidesBeta() {
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
                           A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
                         </p>
+                        {roomId && (
+                          <div className="space-y-2 rounded-lg border border-border/40 bg-background/70 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Participantes
+                              </p>
+                              <Badge variant="secondary" className="h-5 text-[10px]">{collaborators.length}</Badge>
+                            </div>
+                            <div className="space-y-1.5">
+                              {collaborators.map((user) => (
+                                <div key={user.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-[11px]">
+                                  <span className="h-2 w-2 rounded-full" style={{ background: user.color }} />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    <span className="font-medium">{user.name || "Convidado"}</span>
+                                    <span className="text-muted-foreground">
+                                      {" — "}{getPersistentCollabRoleLabel(user.role ?? null)} · v{user.appVersion ?? "?"}
+                                      {typeof user.currentSlideIndex === "number" ? ` · Slide ${user.currentSlideIndex + 1}` : " · Sem slide"}
+                                      {user.activity === "presenting" ? " · Apresentando" : user.activity === "editing" ? " · Editando" : " · Ocioso"}
+                                    </span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {persistentCollabRole !== "host" && (
+                                <Button
+                                  variant={isFollowingHost ? "default" : "outline"}
+                                  size="sm"
+                                  className="h-8 gap-2 text-xs"
+                                  onClick={() => setIsFollowingHost((value) => !value)}
+                                >
+                                  <Target className="h-3.5 w-3.5" />
+                                  {isFollowingHost ? "Seguindo host" : "Seguir host"}
+                                </Button>
+                              )}
+                              {persistentCollabRole === "host" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 gap-2 text-xs"
+                                  disabled={!selectedId}
+                                  onClick={bringEveryoneToCurrentSlide}
+                                >
+                                  <Users2 className="h-3.5 w-3.5" />
+                                  Trazer todos
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {roomId && protocolMismatch && (
+                          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
+                            Protocolo incompatível. Edição colaborativa bloqueada; você pode permanecer em visualização.
+                          </div>
+                        )}
+                        {roomId && localAppOutdated && !protocolMismatch && (
+                          <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/10 p-2 text-[11px] text-warning">
+                            <p>Você está em uma versão anterior à do host. Atualize para editar com segurança.</p>
+                            <div className="flex gap-2">
+                              <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={triggerUpdateNow}>
+                                <RefreshCw className="h-3 w-3" /> Atualizar agora
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setViewOnly(true)}>
+                                Entrar em modo visualização
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {roomId && hostAppOutdated && !protocolMismatch && (
+                          <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/10 p-2 text-[11px] text-primary">
+                            <p>Seu app está mais novo que o do host.</p>
+                            <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={notifyHostAboutVersion}>
+                              <Bell className="h-3 w-3" /> Notificar host
+                            </Button>
+                          </div>
+                        )}
+                        {lastHostUpdateNotice && persistentCollabRole === "host" && (
+                          <div className="rounded-lg border border-primary/25 bg-primary/10 p-2 text-[11px] text-primary">
+                            {lastHostUpdateNotice}
+                          </div>
+                        )}
                         <Button className="w-full gap-2" onClick={() => setCollabOpen(true)}>
                           <Users2 className="h-3.5 w-3.5" />
                           Abrir colaboracao
@@ -2860,17 +3056,32 @@ export default function SlidesBeta() {
             A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
           </div>
           {roomId && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-success/30 bg-success/10 p-3">
-              <div>
-                <p className="text-xs font-semibold text-success">Sala ativa</p>
-                <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
-                {collabSnapshotVersion && (
-                  <p className="text-[11px] text-muted-foreground">Snapshot v{collabSnapshotVersion}</p>
-                )}
+            <div className="space-y-3 rounded-lg border border-success/30 bg-success/10 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-success">Sala ativa</p>
+                  <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
+                  {collabSnapshotVersion && (
+                    <p className="text-[11px] text-muted-foreground">Snapshot v{collabSnapshotVersion}</p>
+                  )}
+                </div>
+                <Badge variant="outline" className="border-success/40 bg-background/80 text-success">
+                  {getPersistentCollabRoleLabel(persistentCollabRole)}
+                </Badge>
               </div>
-              <Badge variant="outline" className="border-success/40 bg-background/80 text-success">
-                {getPersistentCollabRoleLabel(persistentCollabRole)}
-              </Badge>
+              <div className="space-y-1.5 rounded-md bg-background/60 p-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Participantes</p>
+                {collaborators.map((user) => (
+                  <p key={user.id} className="truncate text-[11px]">
+                    <span className="font-medium">{user.name || "Convidado"}</span>
+                    <span className="text-muted-foreground">
+                      {" — "}{getPersistentCollabRoleLabel(user.role ?? null)} · v{user.appVersion ?? "?"}
+                      {typeof user.currentSlideIndex === "number" ? ` · Slide ${user.currentSlideIndex + 1}` : " · Sem slide"}
+                      {user.activity === "presenting" ? " · Apresentando" : user.activity === "editing" ? " · Editando" : " · Ocioso"}
+                    </span>
+                  </p>
+                ))}
+              </div>
             </div>
           )}
           <Tabs defaultValue="create" className="w-full">
@@ -2957,6 +3168,10 @@ export default function SlidesBeta() {
                   setPersistentCollabRole(null);
                   setCreatedPersistentRoom(null);
                   setCollabSnapshotVersion(null);
+                  setPersistentRoomDbId(null);
+                  setPersistentCollabCode(null);
+                  setIsFollowingHost(false);
+                  setLastHostUpdateNotice(null);
                   setViewOnly(false);
                   setCollabOpen(false);
                 }}
