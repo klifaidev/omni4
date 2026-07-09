@@ -2,7 +2,9 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   createCollabInviteCode,
   createCollabRoomKeyBundle,
+  decryptCollabComment,
   decryptCollabSnapshot,
+  encryptCollabComment,
   encryptCollabSnapshot,
   hashCollabCode,
   normalizeCollabCode,
@@ -19,6 +21,7 @@ import {
   type PersistentCollabSnapshot,
 } from "@/lib/persistentCollabSnapshot";
 import type { SlideItem } from "@/lib/slidesFlow";
+import type { SlideComment } from "@/lib/slideComments";
 import type { SlideTransition } from "@/store/slidesFlow";
 
 export type PersistentCollabRole = "host" | CollabInviteRole;
@@ -82,6 +85,21 @@ type SaveSnapshotResponse = {
   version: number;
 };
 
+type CommentRow = {
+  id: string;
+  slide_id: string;
+  block_id: string | null;
+  encrypted_payload: string;
+  status: "open" | "resolved" | "deleted";
+  created_at: string;
+  updated_at: string;
+};
+
+type SaveCommentResponse = {
+  id: string;
+  status: "open" | "resolved" | "deleted";
+};
+
 function createRoomPublicId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID().replace(/-/g, "").slice(0, 22);
@@ -133,6 +151,35 @@ async function decryptStoredSnapshot(code: string, encryptedPayload: string): Pr
   const contentKey = await unlockCollabContentKey(code, stored.keyBundle);
   const decrypted = await decryptCollabSnapshot<JsonValue>(contentKey, stored.encryptedSnapshot);
   return validatePersistentCollabSnapshot(decrypted);
+}
+
+async function encryptSnapshotWithStoredKey(params: {
+  code: string;
+  encryptedPayload: string;
+  items: SlideItem[];
+  selectedSlideId: string | null;
+  transition: SlideTransition;
+  appVersion: string;
+  version: number;
+}): Promise<{ payload: string; snapshot: PersistentCollabSnapshot }> {
+  const stored = parseStoredPayload(params.encryptedPayload);
+  const contentKey = await unlockCollabContentKey(params.code, stored.keyBundle);
+  const snapshot = serializePersistentCollabSnapshot({
+    items: params.items,
+    selectedSlideId: params.selectedSlideId,
+    transition: params.transition,
+    appVersion: params.appVersion,
+    version: params.version,
+  });
+  const encryptedSnapshot = await encryptCollabSnapshot(contentKey, snapshot as unknown as JsonValue);
+  return {
+    snapshot,
+    payload: stringifyStoredPayload({
+      schemaVersion: 1,
+      keyBundle: stored.keyBundle,
+      encryptedSnapshot,
+    }),
+  };
 }
 
 async function buildEncryptedSnapshotPayload(params: {
@@ -249,9 +296,7 @@ export async function joinPersistentCollabRoom(code: string): Promise<JoinPersis
 
 export async function savePersistentCollabSnapshot(params: {
   roomId: string;
-  roomPublicId: string;
-  editorCode: string;
-  viewerCode: string;
+  code: string;
   expectedPreviousVersion: number;
   items: SlideItem[];
   selectedSlideId: string | null;
@@ -263,10 +308,9 @@ export async function savePersistentCollabSnapshot(params: {
     throw new Error("COLLAB_SNAPSHOT_VERSION_CONFLICT");
   }
   const nextVersion = latest.version + 1;
-  const { payload } = await buildEncryptedSnapshotPayload({
-    roomPublicId: params.roomPublicId,
-    editorCode: params.editorCode,
-    viewerCode: params.viewerCode,
+  const { payload } = await encryptSnapshotWithStoredKey({
+    code: params.code,
+    encryptedPayload: latest.encrypted_payload,
     items: params.items,
     selectedSlideId: params.selectedSlideId,
     transition: params.transition,
@@ -277,7 +321,7 @@ export async function savePersistentCollabSnapshot(params: {
   const { data, error } = await supabase.functions.invoke<SaveSnapshotResponse>("save-collab-snapshot", {
     body: {
       room_id: params.roomId,
-      code_hash: await hashCollabCode(params.editorCode),
+      code_hash: await hashCollabCode(params.code),
       expected_previous_version: params.expectedPreviousVersion,
       encrypted_payload: payload,
       payload_hash: await hashPayload(payload),
@@ -288,6 +332,68 @@ export async function savePersistentCollabSnapshot(params: {
 
   if (error || !data) throw new Error("SAVE_COLLAB_SNAPSHOT_FAILED");
   return { version: data.version };
+}
+
+export async function loadPersistentCollabComments(params: {
+  roomId: string;
+  code: string;
+}): Promise<SlideComment[]> {
+  const latest = await getLatestSnapshotRow(params.roomId);
+  const stored = parseStoredPayload(latest.encrypted_payload);
+  const contentKey = await unlockCollabContentKey(params.code, stored.keyBundle);
+  const { data, error } = await supabase
+    .from("collab_room_comments")
+    .select("id, slide_id, block_id, encrypted_payload, status, created_at, updated_at")
+    .eq("room_id", params.roomId)
+    .neq("status", "deleted")
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error("LOAD_COLLAB_COMMENTS_FAILED");
+
+  const comments: SlideComment[] = [];
+  for (const row of (data ?? []) as CommentRow[]) {
+    try {
+      const encrypted = JSON.parse(row.encrypted_payload);
+      const comment = await decryptCollabComment<SlideComment & JsonValue>(contentKey, encrypted);
+      comments.push({
+        ...comment,
+        id: row.id,
+        slideId: row.slide_id,
+        blockId: row.block_id,
+        resolved: row.status === "resolved",
+      });
+    } catch {
+      /* Ignore corrupted comment payloads without exposing plaintext details. */
+    }
+  }
+  return comments;
+}
+
+export async function savePersistentCollabComment(params: {
+  roomId: string;
+  code: string;
+  comment: SlideComment;
+  status?: "open" | "resolved" | "deleted";
+}): Promise<SaveCommentResponse> {
+  const latest = await getLatestSnapshotRow(params.roomId);
+  const stored = parseStoredPayload(latest.encrypted_payload);
+  const contentKey = await unlockCollabContentKey(params.code, stored.keyBundle);
+  const encrypted = await encryptCollabComment(contentKey, params.comment as unknown as JsonValue);
+  const payload = JSON.stringify(encrypted);
+  const { data, error } = await supabase.functions.invoke<SaveCommentResponse>("save-collab-comment", {
+    body: {
+      room_id: params.roomId,
+      comment_id: params.comment.id,
+      code_hash: await hashCollabCode(params.code),
+      slide_id: params.comment.slideId,
+      block_id: params.comment.blockId ?? null,
+      encrypted_payload: payload,
+      status: params.status ?? (params.comment.resolved ? "resolved" : "open"),
+    },
+  });
+
+  if (error || !data) throw new Error("SAVE_COLLAB_COMMENT_FAILED");
+  return data;
 }
 
 export function getPersistentCollabRoleLabel(role: PersistentCollabRole | null): string {

@@ -15,7 +15,7 @@ import {
 } from "@/lib/collaboration";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { recordEvent } from "@/lib/slideChangeLog";
-import { addComment as addLocalComment, subscribeToComments, type SlideComment } from "@/lib/slideComments";
+import { applyCommentEvent, type SlideCommentEvent } from "@/lib/slideComments";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { PersistentCollabRole } from "@/lib/persistentCollab";
 import type { SlideTransition } from "@/store/slidesFlow";
@@ -26,7 +26,7 @@ interface UseCollabReturn {
   broadcast: (e: CollabEvent) => void;
   updateCursor: (x: number, y: number) => void;
   updateSlideId: (slideId: string | null) => void;
-  broadcastComment: (c: SlideComment) => void;
+  broadcastComment: (event: SlideCommentEvent) => void;
   userId: string | null;
 }
 
@@ -155,13 +155,14 @@ export function useCollaboration(
           store.applySnapshotFromCollab(p);
           break;
         }
+        case "comment_add":
+        case "comment_update":
+        case "comment_resolve":
+        case "comment_reopen":
+        case "comment_delete":
+          applyCommentEvent(event.payload as SlideCommentEvent);
+          break;
       }
-    });
-    subscribeToComments(channel, (c: SlideComment) => {
-      if (c.author && userMetaRef.current && c.author === userMetaRef.current.name) {
-        // ainda assim adiciona; addComment e idempotente por id
-      }
-      addLocalComment(c);
     });
 
     // Todos os `.on(...)` foram registrados acima; agora sim, subscribe.
@@ -231,10 +232,19 @@ export function useCollaboration(
     }
   }, []);
 
-  const broadcastComment = useCallback((c: SlideComment) => {
+  const broadcastComment = useCallback((commentEvent: SlideCommentEvent) => {
     const ch = channelRef.current;
     if (!ch) return;
-    ch.send({ type: "broadcast", event: "comment", payload: c });
+    const currentRole = roleRef.current;
+    if (currentRole === "viewer") return;
+    broadcastEvent(ch, {
+      id: `${commentEvent.comment.id}-${commentEvent.at}-${commentEvent.type}`,
+      type: commentEvent.type,
+      payload: commentEvent,
+      userId: userIdRef.current ?? "local",
+      ts: commentEvent.at,
+      role: currentRole ?? undefined,
+    });
   }, []);
 
   return {

@@ -76,6 +76,16 @@ function describe(event: CollabEvent, userName: string): string {
       return `${userName} limpou a esteira`;
     case "load_snapshot":
       return `${userName} carregou um snapshot`;
+    case "comment_add":
+      return `${userName} comentou em um slide`;
+    case "comment_update":
+      return `${userName} editou um comentário`;
+    case "comment_resolve":
+      return `${userName} resolveu um comentário`;
+    case "comment_reopen":
+      return `${userName} reabriu um comentário`;
+    case "comment_delete":
+      return `${userName} excluiu um comentário`;
     case "update_transition": {
       const p = event.payload as { transition: string };
       return `${userName} mudou transição para ${p.transition}`;

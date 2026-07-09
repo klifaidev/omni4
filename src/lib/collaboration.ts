@@ -23,7 +23,12 @@ export type CollabEventType =
   | "clear_items"
   | "update_transition"
   | "load_snapshot"
-  | "update_custom_slide";
+  | "update_custom_slide"
+  | "comment_add"
+  | "comment_update"
+  | "comment_resolve"
+  | "comment_reopen"
+  | "comment_delete";
 
 export interface CollabEvent {
   id?: string;

@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.save-collab-snapshot]
 verify_jwt = false
+
+[functions.save-collab-comment]
+verify_jwt = false

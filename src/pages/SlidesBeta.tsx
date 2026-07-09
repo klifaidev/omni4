@@ -90,8 +90,9 @@ import { useCollaboration } from "@/hooks/use-collaboration";
 import type { CollabUser } from "@/lib/collaboration";
 import { initials } from "@/lib/kanban";
 import {
-  addComment, resolveComment, getComments, getUnresolvedCount, subscribe as subscribeComments,
-  type SlideComment,
+  addComment, deleteComment, getComments, getUnresolvedCount, reopenComment,
+  replaceComments, resolveComment, setCommentStorageScope, subscribe as subscribeComments,
+  type SlideComment, type SlideCommentEvent,
 } from "@/lib/slideComments";
 import { readLog, clearLog, subscribeLog, type ChangeLogEntry } from "@/lib/slideChangeLog";
 import { formatDistanceToNow, format as formatDate } from "date-fns";
@@ -105,7 +106,10 @@ import {
   createPersistentCollabRoom,
   getPersistentCollabRoleLabel,
   joinPersistentCollabRoom,
+  loadPersistentCollabComments,
   normalizeCollabCode,
+  savePersistentCollabComment,
+  savePersistentCollabSnapshot,
   type CreatePersistentRoomResult,
   type PersistentCollabRole,
 } from "@/lib/persistentCollab";
@@ -498,7 +502,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
-  currentUser, onAddComment, preflightIssues = [],
+  currentUser, onCommentEvent, preflightIssues = [],
 }: {
   item: SlideItem;
   index: number;
@@ -506,7 +510,7 @@ function StripThumbnail({
   onClick: () => void;
   editingUsers?: CollabUser[];
   currentUser: { name: string; color: string };
-  onAddComment?: (c: SlideComment) => void;
+  onCommentEvent?: (event: SlideCommentEvent) => void;
   preflightIssues?: SlidePreflightIssue[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
@@ -620,7 +624,7 @@ function StripThumbnail({
             slideId={item.id}
             slideLabel={item.label ?? meta.title}
             currentUser={currentUser}
-            onAddComment={onAddComment}
+            onCommentEvent={onCommentEvent}
           />
         </PopoverContent>
       </Popover>
@@ -632,12 +636,12 @@ function StripThumbnail({
 // CommentsThread ? lista + input de novo comentário para um slide.
 // ----------------------------------------------------------------------------
 function CommentsThread({
-  slideId, slideLabel, currentUser, onAddComment,
+  slideId, slideLabel, currentUser, onCommentEvent,
 }: {
   slideId: string;
   slideLabel: string;
   currentUser: { name: string; color: string };
-  onAddComment?: (c: SlideComment) => void;
+  onCommentEvent?: (event: SlideCommentEvent) => void;
 }) {
   const [, force] = useState(0);
   useEffect(() => subscribeComments(() => force((n) => n + 1)), []);
@@ -659,8 +663,13 @@ function CommentsThread({
       resolved: false,
     };
     addComment(c);
-    onAddComment?.(c);
+    onCommentEvent?.({ type: "comment_add", comment: c, at: c.createdAt });
     setText("");
+  };
+
+  const emitCommentChange = (type: SlideCommentEvent["type"], comment: SlideComment) => {
+    const at = Date.now();
+    onCommentEvent?.({ type, comment: { ...comment, updatedAt: at }, at });
   };
 
   return (
@@ -686,16 +695,44 @@ function CommentsThread({
                   <span className="text-muted-foreground">
                     · {formatDistanceToNow(c.createdAt, { addSuffix: true, locale: ptBR })}
                   </span>
-                  {!c.resolved && (
+                  {!c.resolved ? (
                     <button
                       type="button"
-                      onClick={() => resolveComment(slideId, c.id)}
+                      onClick={() => {
+                        const updated = { ...c, resolved: true, updatedAt: Date.now() };
+                        resolveComment(slideId, c.id);
+                        emitCommentChange("comment_resolve", updated);
+                      }}
                       className="ml-auto inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
                       title="Marcar como resolvido"
                     >
                       <CheckCheck className="h-3 w-3" /> Resolver
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = { ...c, resolved: false, updatedAt: Date.now() };
+                        reopenComment(slideId, c.id);
+                        emitCommentChange("comment_reopen", updated);
+                      }}
+                      className="ml-auto inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                      title="Reabrir comentario"
+                    >
+                      Reabrir
+                    </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      deleteComment(slideId, c.id);
+                      emitCommentChange("comment_delete", c);
+                    }}
+                    className="inline-flex items-center rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="Excluir comentario"
+                  >
+                    Excluir
+                  </button>
                 </div>
                 <p className={cn(
                   "mt-0.5 break-words text-xs",
@@ -731,7 +768,7 @@ function CommentsThread({
 
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
-  currentUser, onAddComment, preflightIssuesBySlide, readOnly = false,
+  currentUser, onCommentEvent, preflightIssuesBySlide, readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -742,7 +779,7 @@ function FullscreenCustomEditor({
   updateCursor?: (x: number, y: number) => void;
   updateSlideId?: (slideId: string | null) => void;
   currentUser: { name: string; color: string };
-  onAddComment?: (c: SlideComment) => void;
+  onCommentEvent?: (event: SlideCommentEvent) => void;
 }) {
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
@@ -936,7 +973,7 @@ function FullscreenCustomEditor({
                         active={it.id === current?.id}
                         editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
                         currentUser={currentUser}
-                        onAddComment={onAddComment}
+                        onCommentEvent={onCommentEvent}
                         preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
                         onClick={() => {
                           if (it.id === current?.id) return;
@@ -1630,11 +1667,17 @@ export default function SlidesBeta() {
     typeof window === "undefined" ? "" : localStorage.getItem("collab-username") ?? "",
   );
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [persistentRoomDbId, setPersistentRoomDbId] = useState<string | null>(null);
+  const [persistentCollabCode, setPersistentCollabCode] = useState<string | null>(null);
   const [persistentCollabRole, setPersistentCollabRole] = useState<PersistentCollabRole | null>(null);
   const [createdPersistentRoom, setCreatedPersistentRoom] = useState<CreatePersistentRoomResult | null>(null);
   const [collabJoinCode, setCollabJoinCode] = useState("");
   const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
   const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
+  const [collabSaveStatus, setCollabSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const lastSavedSnapshotRef = useRef<string>("");
+  const saveTimerRef = useRef<number | null>(null);
+  const savingRef = useRef(false);
   const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
 
   const [viewOnly, setViewOnly] = useState(false);
@@ -1679,9 +1722,22 @@ export default function SlidesBeta() {
     [collabName, currentUserColor],
   );
 
-  const handleAddComment = useCallback((c: SlideComment) => {
-    if (roomId) broadcastComment(c);
-  }, [roomId, broadcastComment]);
+  const handleCommentEvent = useCallback((event: SlideCommentEvent) => {
+    if (!roomId) return;
+    if (persistentCollabRole === "viewer") return;
+    broadcastComment(event);
+    if (!persistentRoomDbId || !persistentCollabCode) return;
+    void savePersistentCollabComment({
+      roomId: persistentRoomDbId,
+      code: persistentCollabCode,
+      comment: event.comment,
+      status: event.type === "comment_delete"
+        ? "deleted"
+        : event.comment.resolved ? "resolved" : "open",
+    }).catch(() => {
+      slideToastError("Nao foi possivel salvar o comentario na sala.");
+    });
+  }, [broadcastComment, persistentCollabCode, persistentCollabRole, persistentRoomDbId, roomId]);
 
   useEffect(() => {
     if (roomId) {
@@ -1691,6 +1747,98 @@ export default function SlidesBeta() {
     }
     return () => setCollabBroadcast(null, null);
   }, [roomId, broadcast, collabUserId, setCollabBroadcast]);
+
+  useEffect(() => {
+    setCommentStorageScope(roomId);
+    return () => setCommentStorageScope(null);
+  }, [roomId]);
+
+  const currentSnapshotSignature = useMemo(
+    () => JSON.stringify({ items, selectedId, transition }),
+    [items, selectedId, transition],
+  );
+
+  const saveCollabSnapshotNow = useCallback(async () => {
+    if (
+      !persistentRoomDbId ||
+      !persistentCollabCode ||
+      !collabSnapshotVersion ||
+      persistentCollabRole === "viewer" ||
+      savingRef.current
+    ) {
+      return;
+    }
+    if (lastSavedSnapshotRef.current === currentSnapshotSignature) {
+      setCollabSaveStatus("saved");
+      return;
+    }
+
+    savingRef.current = true;
+    setCollabSaveStatus("saving");
+    try {
+      const result = await savePersistentCollabSnapshot({
+        roomId: persistentRoomDbId,
+        code: persistentCollabCode,
+        expectedPreviousVersion: collabSnapshotVersion,
+        items,
+        selectedSlideId: selectedId,
+        transition,
+        appVersion: APP_VERSION,
+      });
+      lastSavedSnapshotRef.current = currentSnapshotSignature;
+      setCollabSnapshotVersion(result.version);
+      setCollabSaveStatus("saved");
+    } catch {
+      setCollabSaveStatus("error");
+    } finally {
+      savingRef.current = false;
+    }
+  }, [
+    collabSnapshotVersion,
+    currentSnapshotSignature,
+    items,
+    persistentCollabCode,
+    persistentCollabRole,
+    persistentRoomDbId,
+    selectedId,
+    transition,
+  ]);
+
+  useEffect(() => {
+    if (!roomId || persistentCollabRole === "viewer" || !persistentRoomDbId || !persistentCollabCode) return;
+    if (!lastSavedSnapshotRef.current || lastSavedSnapshotRef.current === currentSnapshotSignature) return;
+    setCollabSaveStatus("saving");
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveCollabSnapshotNow();
+    }, 1200);
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [
+    currentSnapshotSignature,
+    persistentCollabCode,
+    persistentCollabRole,
+    persistentRoomDbId,
+    roomId,
+    saveCollabSnapshotNow,
+  ]);
+
+  useEffect(() => {
+    if (!roomId || persistentCollabRole === "viewer") return;
+    const flush = () => {
+      void saveCollabSnapshotNow();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [persistentCollabRole, roomId, saveCollabSnapshotNow]);
 
   const handleCreatePersistentRoom = async () => {
     if (guardViewOnly()) return null;
@@ -1709,8 +1857,13 @@ export default function SlidesBeta() {
       });
       setCreatedPersistentRoom(created);
       setPersistentCollabRole("host");
+      setPersistentRoomDbId(created.roomId);
+      setPersistentCollabCode(created.editorCode);
       setRoomId(created.roomPublicId);
       setCollabSnapshotVersion(created.latestSnapshotVersion);
+      lastSavedSnapshotRef.current = JSON.stringify({ items, selectedId, transition });
+      setCommentStorageScope(created.roomPublicId);
+      replaceComments([]);
       setViewOnly(false);
       slideToastSuccess("Sala colaborativa criada.");
     } catch {
@@ -1737,10 +1890,23 @@ export default function SlidesBeta() {
         if (!shouldReplace) return;
       }
       applySnapshotFromCollab(joined.state);
+      const persistedComments = await loadPersistentCollabComments({
+        roomId: joined.roomId,
+        code: normalizedCode,
+      });
+      setCommentStorageScope(joined.roomPublicId);
+      replaceComments(persistedComments);
       setCreatedPersistentRoom(null);
       setPersistentCollabRole(joined.role);
+      setPersistentRoomDbId(joined.roomId);
+      setPersistentCollabCode(normalizedCode);
       setRoomId(joined.roomPublicId);
       setCollabSnapshotVersion(joined.latestSnapshotVersion);
+      lastSavedSnapshotRef.current = JSON.stringify({
+        items: joined.state.items,
+        selectedId: joined.state.selectedId,
+        transition: joined.state.transition,
+      });
       setViewOnly(joined.role === "viewer");
       slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
       setCollabOpen(false);
@@ -2056,6 +2222,17 @@ export default function SlidesBeta() {
                     <span className="text-muted-foreground">- {getPersistentCollabRoleLabel(persistentCollabRole)}</span>
                     {collabSnapshotVersion && (
                       <span className="text-muted-foreground">- v{collabSnapshotVersion}</span>
+                    )}
+                    {persistentCollabRole !== "viewer" && collabSaveStatus !== "idle" && (
+                      <span className={cn(
+                        "text-muted-foreground",
+                        collabSaveStatus === "error" && "text-destructive",
+                        collabSaveStatus === "saved" && "text-success",
+                      )}>
+                        - {collabSaveStatus === "saving"
+                          ? "Salvando..."
+                          : collabSaveStatus === "saved" ? "Salvo" : "Erro ao salvar"}
+                      </span>
                     )}
                     {isConnected && collaborators.length > 0 && (
                       <span className="text-muted-foreground">- {collaborators.length}</span>
@@ -2663,7 +2840,7 @@ export default function SlidesBeta() {
         updateCursor={updateCursor}
         updateSlideId={updateSlideId}
         currentUser={currentUser}
-        onAddComment={handleAddComment}
+        onCommentEvent={handleCommentEvent}
         preflightIssuesBySlide={preflightIssuesBySlide}
         readOnly={viewOnly}
       />
