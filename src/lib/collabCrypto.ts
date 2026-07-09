@@ -33,6 +33,10 @@ export type CollabEncryptedYjsUpdate = CollabEncryptedPayload & {
   payload_type: "yjs-update";
 };
 
+export type CollabEncryptedYjsAwareness = CollabEncryptedPayload & {
+  payload_type: "yjs-awareness";
+};
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -341,6 +345,26 @@ export async function decryptCollabYjsUpdate(
   payload: CollabEncryptedYjsUpdate,
 ): Promise<Uint8Array> {
   if (payload.payload_type !== "yjs-update") {
+    throw new CollabCryptoError("UNSUPPORTED_SCHEMA");
+  }
+  return decryptCollabBytes(contentKey, payload);
+}
+
+export async function encryptCollabYjsAwareness(
+  contentKey: CryptoKey,
+  update: Uint8Array,
+): Promise<CollabEncryptedYjsAwareness> {
+  return {
+    ...(await encryptCollabBytes(contentKey, update)),
+    payload_type: "yjs-awareness",
+  };
+}
+
+export async function decryptCollabYjsAwareness(
+  contentKey: CryptoKey,
+  payload: CollabEncryptedYjsAwareness,
+): Promise<Uint8Array> {
+  if (payload.payload_type !== "yjs-awareness") {
     throw new CollabCryptoError("UNSUPPORTED_SCHEMA");
   }
   return decryptCollabBytes(contentKey, payload);

@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { Awareness } from "y-protocols/awareness";
 import { createCollabRoomKeyBundle } from "@/lib/collabCrypto";
 import type { CustomSlideConfig } from "@/lib/customSlide";
 import { customSlideConfigToYDoc, getCustomSlideYDocParts, yDocToCustomSlideConfig } from "@/lib/customSlideYjs";
-import { createSupabaseYjsProvider, type SupabaseYjsChannel } from "@/lib/supabaseYjsProvider";
+import {
+  createSupabaseYjsProvider,
+  getTextAwarenessStates,
+  getYjsAwarenessSecurityPolicy,
+  type SupabaseYjsChannel,
+} from "@/lib/supabaseYjsProvider";
 
 type BroadcastMessage = Parameters<SupabaseYjsChannel["send"]>[0];
 type BroadcastCallback = Parameters<SupabaseYjsChannel["on"]>[2];
@@ -165,5 +171,71 @@ describe("SupabaseYjsProvider", () => {
     expect(yDocToCustomSlideConfig(doc)).toEqual(config);
 
     provider.destroy();
+  });
+
+  it("broadcasts Yjs Awareness encrypted, including text cursor metadata", async () => {
+    const contentKey = await createSharedKey();
+    const docA = customSlideConfigToYDoc(config);
+    const docB = new Y.Doc();
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+    const awarenessA = new Awareness(docA);
+    const awarenessB = new Awareness(docB);
+    const channelA = new MemoryChannel();
+    const channelB = new MemoryChannel();
+    connectChannels(channelA, channelB);
+    const providerA = createSupabaseYjsProvider({
+      doc: docA,
+      channel: channelA,
+      contentKey,
+      clientId: "client-a",
+      awareness: awarenessA,
+      throttleMs: 10,
+    });
+    const providerB = createSupabaseYjsProvider({
+      doc: docB,
+      channel: channelB,
+      contentKey,
+      clientId: "client-b",
+      awareness: awarenessB,
+      throttleMs: 10,
+    });
+
+    awarenessA.setLocalStateField("user", { name: "Ana", color: "#C8102E" });
+    awarenessA.setLocalStateField("textSelection", {
+      slideId: "slide-1",
+      blockId: "title-1",
+      field: "text",
+      anchor: 2,
+      head: 5,
+    });
+    await wait(30);
+
+    const remoteState = Array.from(awarenessB.getStates().values())
+      .find((state) => (state as { user?: { name?: string } }).user?.name === "Ana") as {
+        user?: { name: string; color: string };
+        textSelection?: { blockId: string; field: string; anchor: number; head: number };
+      } | undefined;
+    const awarenessMessages = channelA.sent.filter((message) => message.event === "yjs-awareness");
+
+    expect(getYjsAwarenessSecurityPolicy()).toBe("encrypted");
+    expect(awarenessMessages.length).toBeGreaterThan(0);
+    expect(JSON.stringify(awarenessMessages[0].payload)).not.toContain("Ana");
+    expect(remoteState?.user).toEqual({ name: "Ana", color: "#C8102E" });
+    expect(remoteState?.textSelection).toMatchObject({ blockId: "title-1", field: "text", anchor: 2, head: 5 });
+    expect(getTextAwarenessStates(awarenessB)).toEqual([
+      expect.objectContaining({
+        name: "Ana",
+        color: "#C8102E",
+        blockId: "title-1",
+        field: "text",
+        anchor: 2,
+        head: 5,
+      }),
+    ]);
+
+    providerA.destroy();
+    providerB.destroy();
+    awarenessA.destroy();
+    awarenessB.destroy();
   });
 });

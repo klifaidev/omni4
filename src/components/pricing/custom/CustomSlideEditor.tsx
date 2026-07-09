@@ -4,6 +4,7 @@
 // de templates built-in / do usuário.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import type * as Y from "yjs";
 import { Rnd } from "react-rnd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,6 +108,11 @@ import {
   dataSourceLabel,
 } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import {
+  getCustomSlideBlockText,
+  getCustomSlideSpeakerNotesText,
+  setYTextValue,
+} from "@/lib/customSlideYjs";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
@@ -248,9 +254,44 @@ interface Props {
   collaborators?: import("@/lib/collaboration").CollabUser[];
   /** Callback de mouse-move em coordenadas do canvas (1280x720) */
   onCursorMove?: (x: number, y: number) => void;
+  /** Optional collaborative Yjs document. When present, free text fields write to Y.Text. */
+  collabYDoc?: Y.Doc | null;
+  textAwareness?: CustomTextAwareness[];
 }
 
-export function CustomSlideEditor({ slideId, config, onChange, readOnly = false, collaborators, onCursorMove }: Props) {
+type CustomTextAwareness = {
+  id: string;
+  name: string;
+  color: string;
+  blockId?: string | null;
+  field: string;
+};
+
+function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
+  const [value, setValue] = useState(() => yText?.toString() ?? fallback);
+  useEffect(() => {
+    if (!yText) {
+      setValue(fallback);
+      return;
+    }
+    const sync = () => setValue(yText.toString());
+    sync();
+    yText.observe(sync);
+    return () => yText.unobserve(sync);
+  }, [fallback, yText]);
+  return value;
+}
+
+export function CustomSlideEditor({
+  slideId,
+  config,
+  onChange,
+  readOnly = false,
+  collaborators,
+  onCursorMove,
+  collabYDoc,
+  textAwareness = [],
+}: Props) {
   // Bind the parent's config <-> internal Zustand+temporal store first so
   // selection store reflects the right slide on initial render.
   useEditorBinding(config, onChange, slideId);
@@ -373,6 +414,13 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
       : "Alterar dados";
     patchBlockAction(id, patch, label);
   }, [canEdit]);
+  const yBlockText = useCallback((blockId: string, field: string) => (
+    collabYDoc ? getCustomSlideBlockText(collabYDoc, blockId, field) : null
+  ), [collabYDoc]);
+  const ySpeakerNotes = collabYDoc ? getCustomSlideSpeakerNotesText(collabYDoc) : null;
+  const textAwarenessFor = useCallback((blockId: string | null, field: string) => (
+    textAwareness.filter((item) => (item.blockId ?? null) === blockId && item.field === field)
+  ), [textAwareness]);
   const addBlock = useCallback((kind: CustomBlockKind) => {
     if (!canEdit()) return;
     const id = addBlockAction(kind);
@@ -1808,6 +1856,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                             block={blk as TitleBlock | TextBlock}
                             onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                             onExit={() => setInlineEditId(null)}
+                            yText={yBlockText(blk.id, "text")}
+                            remoteSelections={textAwarenessFor(blk.id, "text")}
                           />
                         )}
                         {isInlineEditable && !isEditing && !blk.locked && (
@@ -1973,6 +2023,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
                             block={blk as TitleBlock | TextBlock}
                             onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                             onExit={() => setInlineEditId(null)}
+                            yText={yBlockText(blk.id, "text")}
+                            remoteSelections={textAwarenessFor(blk.id, "text")}
                           />
                         )}
                         {isInlineEditable && !isEditing && !blk.locked && (
@@ -2335,6 +2387,8 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
         <SpeakerNotesBar
           value={config.speakerNotes ?? ""}
           onChange={(v) => { if (canEdit()) setSpeakerNotesAction(v); }}
+          yText={ySpeakerNotes}
+          remoteSelections={textAwarenessFor(null, "speakerNotes")}
         />
       </div>
 
@@ -2438,7 +2492,11 @@ export function CustomSlideEditor({ slideId, config, onChange, readOnly = false,
 
               <PositionInputs block={selected} onChange={(p) => updateBlock(selected.id, p)} />
               <Separator />
-              <BlockSpecificEditor block={selected} onChange={(p) => updateBlock(selected.id, p)} />
+              <BlockSpecificEditor
+                block={selected}
+                onChange={(p) => updateBlock(selected.id, p)}
+                getYText={(field) => yBlockText(selected.id, field)}
+              />
             </>
           )}
         </div>
@@ -2776,8 +2834,10 @@ function PositionInputs({ block, onChange }: {
   );
 }
 
-function BlockSpecificEditor({ block, onChange }: {
-  block: CustomBlock; onChange: (p: Partial<CustomBlock>) => void;
+function BlockSpecificEditor({ block, onChange, getYText }: {
+  block: CustomBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+  getYText?: (field: string) => Y.Text | null;
 }) {
   switch (block.kind) {
     case "title":
@@ -2787,7 +2847,12 @@ function BlockSpecificEditor({ block, onChange }: {
     case "kpi":
       return <FilteredInspector
         block={block}
-        design={<KpiInspector block={block} onChange={onChange} />}
+        design={<KpiInspector
+          block={block}
+          onChange={onChange}
+          labelText={getYText?.("label")}
+          manualValueText={getYText?.("manualValue")}
+        />}
         filters={block.filters ?? {}}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -2853,7 +2918,7 @@ function BlockSpecificEditor({ block, onChange }: {
     case "topSku":
       return <FilteredInspector
         block={block}
-        design={<TopSkuBlockEditor block={block} onChange={onChange} />}
+        design={<TopSkuBlockEditor block={block} onChange={onChange} titleText={getYText?.("title")} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -3092,11 +3157,29 @@ function FilteredInspector({
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({
+  label,
+  value,
+  onChange,
+  yText,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  yText?: Y.Text | null;
+}) {
+  const currentValue = useYTextValue(yText, value);
   return (
     <div>
       <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <Input className="h-7 text-xs" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        className="h-7 text-xs"
+        value={currentValue}
+        onChange={(e) => {
+          if (yText) setYTextValue(yText, e.target.value);
+          else onChange(e.target.value);
+        }}
+      />
     </div>
   );
 }
@@ -3150,8 +3233,11 @@ function BgField({ label, value, onChange }: {
 // ---------------------------------------------------------------------------
 // KPI inspector — Manual ou Dinâmico
 // ---------------------------------------------------------------------------
-function KpiInspector({ block, onChange }: {
-  block: KpiBlock; onChange: (p: Partial<CustomBlock>) => void;
+function KpiInspector({ block, onChange, labelText, manualValueText }: {
+  block: KpiBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+  labelText?: Y.Text | null;
+  manualValueText?: Y.Text | null;
 }) {
   const months = useMonthsInfo();
   const fyList = useFyList();
@@ -3165,6 +3251,7 @@ function KpiInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <Field label="Rótulo" value={block.label}
+        yText={labelText}
         onChange={(v) => onChange({ label: v } as never)} />
 
       <div>
@@ -3181,6 +3268,7 @@ function KpiInspector({ block, onChange }: {
 
       {block.source === "manual" ? (
         <Field label="Valor" value={block.manualValue ?? ""}
+          yText={manualValueText}
           onChange={(v) => onChange({ manualValue: v } as never)} />
       ) : (
         <>
@@ -3560,8 +3648,10 @@ function ChartBlockEditor({ block, onChange }: {
   return <ChartInspector block={block} onChange={onChange as never} />;
 }
 
-function TopSkuBlockEditor({ block, onChange }: {
-  block: TopSkuBlock; onChange: (p: Partial<CustomBlock>) => void;
+function TopSkuBlockEditor({ block, onChange, titleText }: {
+  block: TopSkuBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+  titleText?: Y.Text | null;
 }) {
   const months = useMonthsInfo();
   const fyList = useFyList();
@@ -3573,6 +3663,7 @@ function TopSkuBlockEditor({ block, onChange }: {
   return (
     <div className="space-y-2">
       <Field label="Título" value={block.title ?? ""}
+        yText={titleText}
         onChange={(v) => onChange({ title: v } as never)} />
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -4747,10 +4838,21 @@ function PalettePopover({
 // ----------------------------------------------------------------------------
 // SpeakerNotesBar ? colapsável no rodapé do editor de canvas.
 // ----------------------------------------------------------------------------
-function SpeakerNotesBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function SpeakerNotesBar({
+  value,
+  onChange,
+  yText,
+  remoteSelections = [],
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  yText?: Y.Text | null;
+  remoteSelections?: CustomTextAwareness[];
+}) {
   const [open, setOpen] = useState(false);
   const MAX = 500;
-  const trimmed = value.slice(0, MAX);
+  const currentValue = useYTextValue(yText, value);
+  const trimmed = currentValue.slice(0, MAX);
   return (
     <div className="shrink-0 rounded-lg border border-border/40 bg-card/40">
       <button
@@ -4760,18 +4862,35 @@ function SpeakerNotesBar({ value, onChange }: { value: string; onChange: (v: str
       >
         <StickyNote className="h-3.5 w-3.5" />
         Anotações do apresentador
-        {value.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px]">{value.length}</Badge>}
+        {currentValue.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px]">{currentValue.length}</Badge>}
         <ChevronUp className={cn("ml-auto h-3 w-3 transition-transform", !open && "rotate-180")} />
       </button>
       {open && (
         <div className="relative px-3 pb-2">
           <Textarea
             value={trimmed}
-            onChange={(e) => onChange(e.target.value.slice(0, MAX))}
+            onChange={(e) => {
+              const next = e.target.value.slice(0, MAX);
+              if (yText) setYTextValue(yText, next);
+              else onChange(next);
+            }}
             placeholder="Adicione notas para o apresentador..."
             className="h-[80px] resize-none text-xs"
             maxLength={MAX}
           />
+          {remoteSelections.length > 0 && (
+            <div className="pointer-events-none absolute right-5 top-1 flex max-w-[70%] flex-wrap justify-end gap-1">
+              {remoteSelections.map((selection) => (
+                <span
+                  key={selection.id}
+                  className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
+                  style={{ background: selection.color }}
+                >
+                  {selection.name}
+                </span>
+              ))}
+            </div>
+          )}
           <span className="pointer-events-none absolute bottom-3 right-5 text-[10px] tabular-nums text-muted-foreground">
             {trimmed.length}/{MAX}
           </span>

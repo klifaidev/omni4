@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { CustomSlideConfig } from "@/lib/customSlide";
 import {
   customSlideConfigToYDoc,
+  getCustomSlideBlockText,
   getCustomSlideYDocParts,
+  setYTextValue,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
 
@@ -117,5 +119,16 @@ describe("customSlideYjs", () => {
     const restored = yDocToCustomSlideConfig(doc);
     expect(restored.blocks[0]).toMatchObject({ id: "title-1", text: "Novo titulo colaborativo" });
     expect(restored.speakerNotes).toBe("Nova nota do apresentador");
+  });
+
+  it("keeps KPI manualValue as Y.Text so manual business values use encrypted Yjs updates", () => {
+    const doc = customSlideConfigToYDoc(sampleConfig);
+    const manualValue = getCustomSlideBlockText(doc, "kpi-1", "manualValue");
+
+    expect(manualValue?.constructor.name).toBe("YText");
+    setYTextValue(manualValue!, "35,8%");
+
+    const restored = yDocToCustomSlideConfig(doc);
+    expect(restored.blocks[2]).toMatchObject({ id: "kpi-1", manualValue: "35,8%" });
   });
 });

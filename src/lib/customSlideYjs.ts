@@ -95,6 +95,31 @@ function yMapToBlock(blockMap: Y.Map<unknown>): CustomBlock {
   return block as CustomBlock;
 }
 
+export function getCustomSlideBlockText(doc: Y.Doc, blockId: string, field: string): Y.Text | null {
+  const blockMap = getParts(doc).blocks.get(blockId);
+  const texts = blockMap?.get(BLOCK_TEXTS) as Y.Map<Y.Text> | undefined;
+  const text = texts?.get(field);
+  return text instanceof Y.Text ? text : null;
+}
+
+export function getCustomSlideSpeakerNotesText(doc: Y.Doc): Y.Text {
+  const { meta } = getParts(doc);
+  const existing = meta.get(SPEAKER_NOTES);
+  if (existing instanceof Y.Text) return existing;
+  const text = createText(typeof existing === "string" ? existing : "");
+  meta.set(SPEAKER_NOTES, text);
+  return text;
+}
+
+export function setYTextValue(text: Y.Text, value: string): void {
+  const current = text.toString();
+  if (current === value) return;
+  text.doc?.transact(() => {
+    text.delete(0, text.length);
+    if (value) text.insert(0, value);
+  });
+}
+
 export function customSlideConfigToYDoc(config: CustomSlideConfig): Y.Doc {
   const doc = new Y.Doc();
   const { meta, blockOrder, blocks } = getParts(doc);

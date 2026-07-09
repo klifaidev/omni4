@@ -2,10 +2,12 @@
 // Canva/PowerPoint: double-click no canvas → textarea posicionado sobre o
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type * as Y from "yjs";
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
+import { setYTextValue } from "@/lib/customSlideYjs";
 
 type TextLikeBlock = TitleBlock | TextBlock;
 
@@ -19,11 +21,29 @@ interface EditorProps {
   block: TextLikeBlock;
   onPatch: (patch: Partial<CustomBlock>) => void;
   onExit: () => void;
+  yText?: Y.Text | null;
+  remoteSelections?: Array<{ id: string; name: string; color: string }>;
 }
 
-export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
+function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
+  const [value, setValue] = useState(() => yText?.toString() ?? fallback);
+  useEffect(() => {
+    if (!yText) {
+      setValue(fallback);
+      return;
+    }
+    const sync = () => setValue(yText.toString());
+    sync();
+    yText.observe(sync);
+    return () => yText.unobserve(sync);
+  }, [fallback, yText]);
+  return value;
+}
+
+export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelections = [] }: EditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const isTitle = block.kind === "title";
+  const value = useYTextValue(yText, block.text);
   useEffect(() => {
     const ta = ref.current;
     if (!ta) return;
@@ -34,10 +54,17 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
   }, []);
 
   return (
+    <>
     <textarea
       ref={ref}
-      value={block.text}
-      onChange={(e) => onPatch({ text: e.target.value } as Partial<CustomBlock>)}
+      value={value}
+      onChange={(e) => {
+        if (yText) {
+          setYTextValue(yText, e.target.value);
+        } else {
+          onPatch({ text: e.target.value } as Partial<CustomBlock>);
+        }
+      }}
       onBlur={onExit}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -79,6 +106,23 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
       }}
       data-export-hide="true"
     />
+    {remoteSelections.length > 0 && (
+      <div
+        data-export-hide="true"
+        className="pointer-events-none absolute right-1 top-1 z-[10000000] flex max-w-[70%] flex-wrap justify-end gap-1"
+      >
+        {remoteSelections.map((selection) => (
+          <span
+            key={selection.id}
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
+            style={{ background: selection.color }}
+          >
+            {selection.name}
+          </span>
+        ))}
+      </div>
+    )}
+    </>
   );
 }
 

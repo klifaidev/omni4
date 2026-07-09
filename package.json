@@ -87,6 +87,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
+    "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
     "zod": "^3.25.76",
     "zundo": "^2.3.0",
