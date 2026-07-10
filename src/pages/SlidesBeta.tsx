@@ -8,6 +8,8 @@
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
 import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
+import * as Y from "yjs";
+import { Awareness } from "y-protocols/awareness";
 import {
   DndContext,
   PointerSensor,
@@ -118,6 +120,16 @@ import {
   recordCollabDegradedLog,
   type CollabDegradedReason,
 } from "@/lib/collabDegradedMode";
+import {
+  createSupabaseYjsProvider,
+  getTextAwarenessStates,
+  type SupabaseYjsProvider,
+  type YjsTextAwarenessState,
+} from "@/lib/supabaseYjsProvider";
+import {
+  customSlideConfigToYDoc,
+  yDocToCustomSlideConfig,
+} from "@/lib/customSlideYjs";
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
@@ -821,6 +833,7 @@ function CommentsThread({
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
   currentUser, onCommentEvent, preflightIssuesBySlide, readOnly = false,
+  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {},
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -832,11 +845,15 @@ function FullscreenCustomEditor({
   updateSlideId?: (slideId: string | null) => void;
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
+  yjsCollabReady?: boolean;
+  getCollabYDoc?: (item: Extract<SlideItem, { kind: "custom" }>) => Y.Doc | null;
+  textAwarenessBySlide?: Record<string, YjsTextAwarenessState[]>;
 }) {
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
   const select = useSlidesFlow((s) => s.select);
   const updateItem = useSlidesFlow((s) => s.updateItem);
+  const updateItemFromCollab = useSlidesFlow((s) => s.updateItemFromCollab);
   const addItem = useSlidesFlow((s) => s.addItem);
   const removeItem = useSlidesFlow((s) => s.removeItem);
   const reorder = useSlidesFlow((s) => s.reorder);
@@ -844,6 +861,7 @@ function FullscreenCustomEditor({
   const current = items.find((i) => i.id === selectedId) ?? null;
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
   const isCustom = current?.kind === "custom";
+  const currentCustomYDoc = current?.kind === "custom" && getCollabYDoc ? getCollabYDoc(current) : null;
 
   // Se o slide selecionado deixou de ser custom, fecha o editor.
   useEffect(() => {
@@ -858,13 +876,13 @@ function FullscreenCustomEditor({
   }, [open, current, isCustom, updateSlideId]);
 
   // Navegação sequencial (apenas slides custom).
-  const goRel = (offset: number) => {
+  const goRel = useCallback((offset: number) => {
     if (idx < 0) return;
     const dir = offset > 0 ? 1 : -1;
     for (let i = idx + dir; i >= 0 && i < items.length; i += dir) {
       if (items[i].kind === "custom") { select(items[i].id); return; }
     }
-  };
+  }, [idx, items, select]);
   const hasPrev = idx > 0 && items.slice(0, idx).some((i) => i.kind === "custom");
   const hasNext = idx >= 0 && items.slice(idx + 1).some((i) => i.kind === "custom");
 
@@ -878,7 +896,7 @@ function FullscreenCustomEditor({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [open, idx, items]);
+  }, [open, goRel]);
 
   const stripSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const guardReadOnly = () => {
@@ -1065,14 +1083,26 @@ function FullscreenCustomEditor({
                 key={current.id}
                 slideId={current.id}
                 config={(current as Extract<SlideItem, { kind: "custom" }>).config}
-                onChange={(cfg) =>
-                  readOnly ? toast.info("Modo somente leitura") : updateItem(current.id, (it) =>
+                onChange={(cfg) => {
+                  if (readOnly) {
+                    toast.info("Modo somente leitura");
+                    return;
+                  }
+                  if (yjsCollabReady) {
+                    // Em sala ativa, o canvas customizado é sincronizado pelo Y.Doc.
+                    // Refletimos no store local sem rebroadcastar o fluxo legado deck-op.
+                    updateItemFromCollab({ id: current.id, patch: { config: cfg } as Partial<SlideItem> });
+                    return;
+                  }
+                  updateItem(current.id, (it) =>
                     it.kind === "custom" ? ({ ...it, config: cfg } as SlideItem) : it,
-                  )
-                }
+                  );
+                }}
                 readOnly={readOnly}
                 collaborators={collaborators}
                 onCursorMove={updateCursor}
+                collabYDoc={currentCustomYDoc}
+                textAwareness={textAwarenessBySlide[current.id] ?? []}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1636,6 +1666,7 @@ export default function SlidesBeta() {
   const clearItems = useSlidesFlow((s) => s.clearItems);
   const transition = useSlidesFlow((s) => s.transition);
   const applySnapshotFromCollab = useSlidesFlow((s) => s.applySnapshotFromCollab);
+  const updateItemFromCollab = useSlidesFlow((s) => s.updateItemFromCollab);
 
   const months = useMonthsInfo();
   const budgetRowsAll = useBudget((s) => s.rows);
@@ -1721,6 +1752,7 @@ export default function SlidesBeta() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [persistentRoomDbId, setPersistentRoomDbId] = useState<string | null>(null);
   const [persistentCollabCode, setPersistentCollabCode] = useState<string | null>(null);
+  const [persistentCollabContentKey, setPersistentCollabContentKey] = useState<CryptoKey | null>(null);
   const [persistentCollabRole, setPersistentCollabRole] = useState<PersistentCollabRole | null>(null);
   const [createdPersistentRoom, setCreatedPersistentRoom] = useState<CreatePersistentRoomResult | null>(null);
   const [collabJoinCode, setCollabJoinCode] = useState("");
@@ -1734,6 +1766,11 @@ export default function SlidesBeta() {
   const lastSavedSnapshotRef = useRef<string>("");
   const saveTimerRef = useRef<number | null>(null);
   const savingRef = useRef(false);
+  const customYDocsRef = useRef<Map<string, Y.Doc>>(new Map());
+  const customYProvidersRef = useRef<Map<string, SupabaseYjsProvider>>(new Map());
+  const customYAwarenessRef = useRef<Map<string, Awareness>>(new Map());
+  const customYSyncDisposersRef = useRef<Map<string, () => void>>(new Map());
+  const [textAwarenessBySlide, setTextAwarenessBySlide] = useState<Record<string, YjsTextAwarenessState[]>>({});
   const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
 
   const [viewOnly, setViewOnly] = useState(false);
@@ -1768,7 +1805,7 @@ export default function SlidesBeta() {
     }
   }, [items, persistentCollabRole, select]);
 
-  const { collaborators, isConnected, degraded: realtimeDegraded, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
+  const { collaborators, isConnected, channel: realtimeChannel, degraded: realtimeDegraded, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
     roomId,
     collabName,
     persistentCollabRole,
@@ -1832,6 +1869,112 @@ export default function SlidesBeta() {
     () => ({ name: collabName || "Convidado", color: currentUserColor }),
     [collabName, currentUserColor],
   );
+  const yjsCollabReady = !!roomId && !!persistentCollabContentKey && !!realtimeChannel;
+
+  const getOrCreateCustomYDoc = useCallback((item: Extract<SlideItem, { kind: "custom" }>): Y.Doc => {
+    const existing = customYDocsRef.current.get(item.id);
+    if (existing) return existing;
+    const doc = customSlideConfigToYDoc(item.config);
+    customYDocsRef.current.set(item.id, doc);
+    return doc;
+  }, []);
+
+  const syncCustomYDocToStore = useCallback((slideId: string, doc: Y.Doc) => {
+    const config = yDocToCustomSlideConfig(doc);
+    updateItemFromCollab({
+      id: slideId,
+      patch: { config } as Partial<SlideItem>,
+    });
+  }, [updateItemFromCollab]);
+
+  const ensureCustomYProvider = useCallback((item: Extract<SlideItem, { kind: "custom" }>) => {
+    if (!persistentCollabContentKey || !realtimeChannel || !collabUserId) return null;
+    const doc = getOrCreateCustomYDoc(item);
+    if (!customYSyncDisposersRef.current.has(item.id)) {
+      const sync = () => syncCustomYDocToStore(item.id, doc);
+      doc.on("update", sync);
+      customYSyncDisposersRef.current.set(item.id, () => doc.off("update", sync));
+    }
+    if (customYProvidersRef.current.has(item.id)) return doc;
+
+    const awareness = new Awareness(doc);
+    awareness.setLocalStateField("user", currentUser);
+    const updateAwareness = () => {
+      setTextAwarenessBySlide((current) => ({
+        ...current,
+        [item.id]: getTextAwarenessStates(awareness, awareness.clientID),
+      }));
+    };
+    awareness.on("update", updateAwareness);
+    customYAwarenessRef.current.set(item.id, awareness);
+
+    const provider = createSupabaseYjsProvider({
+      doc,
+      channel: realtimeChannel,
+      contentKey: persistentCollabContentKey,
+      clientId: collabUserId,
+      eventName: `custom-slide-yjs:${item.id}`,
+      awarenessEventName: `custom-slide-yjs-awareness:${item.id}`,
+      awareness,
+      throttleMs: 80,
+      onSendFailure: () => {
+        recordCollabDegradedLog({
+          at: new Date().toISOString(),
+          action: "activated",
+          reason: "realtime_channel_error",
+          roomId,
+          detail: `custom-slide-yjs:${item.id}`,
+        });
+      },
+    });
+    customYProvidersRef.current.set(item.id, provider);
+    return doc;
+  }, [
+    collabUserId,
+    currentUser,
+    getOrCreateCustomYDoc,
+    persistentCollabContentKey,
+    realtimeChannel,
+    roomId,
+    syncCustomYDocToStore,
+  ]);
+
+  useEffect(() => {
+    customYProvidersRef.current.forEach((provider) => provider.destroy());
+    customYProvidersRef.current.clear();
+    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
+    customYAwarenessRef.current.clear();
+    setTextAwarenessBySlide({});
+  }, [persistentCollabContentKey, realtimeChannel, roomId]);
+
+  useEffect(() => {
+    customYAwarenessRef.current.forEach((awareness) => {
+      awareness.setLocalStateField("user", currentUser);
+    });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (roomId) return;
+    setPersistentCollabContentKey(null);
+    customYProvidersRef.current.forEach((provider) => provider.destroy());
+    customYProvidersRef.current.clear();
+    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
+    customYAwarenessRef.current.clear();
+    customYSyncDisposersRef.current.forEach((dispose) => dispose());
+    customYSyncDisposersRef.current.clear();
+    customYDocsRef.current.clear();
+    setTextAwarenessBySlide({});
+  }, [roomId]);
+
+  useEffect(() => () => {
+    customYProvidersRef.current.forEach((provider) => provider.destroy());
+    customYProvidersRef.current.clear();
+    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
+    customYAwarenessRef.current.clear();
+    customYSyncDisposersRef.current.forEach((dispose) => dispose());
+    customYSyncDisposersRef.current.clear();
+    customYDocsRef.current.clear();
+  }, []);
 
   const hostParticipant = useMemo(
     () => collaborators.find((user) => user.role === "host") ?? null,
@@ -2034,6 +2177,7 @@ export default function SlidesBeta() {
       setPersistentCollabRole("host");
       setPersistentRoomDbId(created.roomId);
       setPersistentCollabCode(created.editorCode);
+      setPersistentCollabContentKey(created.contentKey);
       setRoomId(created.roomPublicId);
       setCollabSnapshotVersion(created.latestSnapshotVersion);
       lastSavedSnapshotRef.current = JSON.stringify({ items, selectedId, transition });
@@ -2081,6 +2225,7 @@ export default function SlidesBeta() {
       setPersistentCollabRole(joined.role);
       setPersistentRoomDbId(joined.roomId);
       setPersistentCollabCode(normalizedCode);
+      setPersistentCollabContentKey(joined.contentKey);
       setRoomId(joined.roomPublicId);
       setCollabSnapshotVersion(joined.latestSnapshotVersion);
       lastSavedSnapshotRef.current = JSON.stringify({
@@ -3163,6 +3308,9 @@ export default function SlidesBeta() {
         onCommentEvent={handleCommentEvent}
         preflightIssuesBySlide={preflightIssuesBySlide}
         readOnly={viewOnly}
+        yjsCollabReady={yjsCollabReady}
+        getCollabYDoc={ensureCustomYProvider}
+        textAwarenessBySlide={textAwarenessBySlide}
       />
 
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>

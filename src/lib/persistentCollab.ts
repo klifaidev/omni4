@@ -43,6 +43,7 @@ export type PersistentCollabStoredPayload = {
 export type CreatePersistentRoomResult = {
   roomId: string;
   roomPublicId: string;
+  contentKey: CryptoKey;
   editorCode: string;
   viewerCode: string;
   expiresAt: string;
@@ -54,6 +55,7 @@ export type CreatePersistentRoomResult = {
 export type JoinPersistentRoomResult = {
   roomId: string;
   roomPublicId: string;
+  contentKey: CryptoKey;
   role: CollabInviteRole;
   realtimeChannel: string;
   token: string;
@@ -154,15 +156,15 @@ async function getLatestSnapshotRow(roomId: string): Promise<SnapshotRow> {
   return data;
 }
 
-async function decryptStoredSnapshot(code: string, encryptedPayload: string): Promise<PersistentCollabSnapshot> {
+async function decryptStoredSnapshot(code: string, encryptedPayload: string): Promise<{ contentKey: CryptoKey; snapshot: PersistentCollabSnapshot }> {
   const stored = parseStoredPayload(encryptedPayload);
   const contentKey = await unlockCollabContentKey(code, stored.keyBundle);
   if (stored.encryptedYjsState) {
     const update = await decryptCollabYjsState(contentKey, stored.encryptedYjsState);
-    return decodePersistentSnapshotYjsState(update);
+    return { contentKey, snapshot: decodePersistentSnapshotYjsState(update) };
   }
   const decrypted = await decryptCollabSnapshot<JsonValue>(contentKey, stored.encryptedSnapshot!);
-  return validatePersistentCollabSnapshot(decrypted);
+  return { contentKey, snapshot: validatePersistentCollabSnapshot(decrypted) };
 }
 
 async function encryptSnapshotWithStoredKey(params: {
@@ -173,7 +175,7 @@ async function encryptSnapshotWithStoredKey(params: {
   transition: SlideTransition;
   appVersion: string;
   version: number;
-}): Promise<{ payload: string; snapshot: PersistentCollabSnapshot }> {
+}): Promise<{ payload: string; snapshot: PersistentCollabSnapshot; contentKey: CryptoKey }> {
   const stored = parseStoredPayload(params.encryptedPayload);
   const contentKey = await unlockCollabContentKey(params.code, stored.keyBundle);
   const snapshot = serializePersistentCollabSnapshot({
@@ -186,6 +188,7 @@ async function encryptSnapshotWithStoredKey(params: {
   const encryptedYjsState = await encryptCollabYjsState(contentKey, encodePersistentSnapshotYjsState(snapshot));
   return {
     snapshot,
+    contentKey,
     payload: stringifyStoredPayload({
       schemaVersion: 1,
       keyBundle: stored.keyBundle,
@@ -219,6 +222,7 @@ async function buildEncryptedSnapshotPayload(params: {
   const encryptedYjsState = await encryptCollabYjsState(contentKey, encodePersistentSnapshotYjsState(snapshot));
   return {
     snapshot,
+    contentKey,
     payload: stringifyStoredPayload({
       schemaVersion: 1,
       keyBundle: bundle,
@@ -236,7 +240,7 @@ export async function createPersistentCollabRoom(params: {
   const roomPublicId = createRoomPublicId();
   const editorCode = createCollabInviteCode("ED");
   const viewerCode = createCollabInviteCode("VW");
-  const { payload, snapshot } = await buildEncryptedSnapshotPayload({
+  const { payload, snapshot, contentKey } = await buildEncryptedSnapshotPayload({
     roomPublicId,
     editorCode,
     viewerCode,
@@ -271,6 +275,7 @@ export async function createPersistentCollabRoom(params: {
   return {
     roomId: data.room_id,
     roomPublicId: data.room_public_id,
+    contentKey,
     editorCode,
     viewerCode,
     expiresAt: data.expires_at,
@@ -299,11 +304,12 @@ export async function joinPersistentCollabRoom(code: string): Promise<JoinPersis
   }
 
   const latest = await getLatestSnapshotRow(data.room_id);
-  const snapshot = await decryptStoredSnapshot(normalizedCode, latest.encrypted_payload);
+  const { contentKey, snapshot } = await decryptStoredSnapshot(normalizedCode, latest.encrypted_payload);
 
   return {
     roomId: data.room_id,
     roomPublicId: data.room_public_id,
+    contentKey,
     role: data.role,
     realtimeChannel: data.realtime_channel,
     token: data.token,

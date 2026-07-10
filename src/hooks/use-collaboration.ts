@@ -29,6 +29,7 @@ import {
 interface UseCollabReturn {
   collaborators: CollabUser[];
   isConnected: boolean;
+  channel: RealtimeChannel | null;
   degraded: {
     active: boolean;
     reason: CollabDegradedReason | null;
@@ -418,6 +419,7 @@ export function useCollaboration(
   return {
     collaborators,
     isConnected,
+    channel: channelRef.current,
     degraded,
     broadcast,
     updateCursor,
