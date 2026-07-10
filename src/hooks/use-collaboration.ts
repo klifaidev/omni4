@@ -25,6 +25,16 @@ import {
   recordCollabDegradedLog,
   type CollabDegradedReason,
 } from "@/lib/collabDegradedMode";
+import {
+  decryptCollabComment,
+  encryptCollabComment,
+  type CollabEncryptedComment,
+  type JsonValue,
+} from "@/lib/collabCrypto";
+
+type EncryptedCommentEventPayload = {
+  encrypted: CollabEncryptedComment;
+};
 
 interface UseCollabReturn {
   collaborators: CollabUser[];
@@ -51,7 +61,19 @@ interface UseCollaborationOptions {
   currentSlideIndex: number | null;
   activity: CollabUser["activity"];
   isFollowingHost: boolean;
+  commentContentKey?: CryptoKey | null;
   onRemoteEvent?: (event: CollabEvent) => void;
+}
+
+function isEncryptedCommentEventPayload(value: unknown): value is EncryptedCommentEventPayload {
+  const candidate = value as Partial<EncryptedCommentEventPayload> | null;
+  return !!candidate
+    && !!candidate.encrypted
+    && candidate.encrypted.schema_version === 1
+    && candidate.encrypted.algorithm === "AES-GCM-256"
+    && candidate.encrypted.payload_type === "comment"
+    && typeof candidate.encrypted.iv === "string"
+    && typeof candidate.encrypted.ciphertext === "string";
 }
 
 export function useCollaboration(
@@ -265,9 +287,16 @@ export function useCollaboration(
           case "comment_update":
           case "comment_resolve":
           case "comment_reopen":
-          case "comment_delete":
-            applyCommentEvent(event.payload as SlideCommentEvent);
+          case "comment_delete": {
+            const key = optionsRef.current?.commentContentKey;
+            if (!key || !isEncryptedCommentEventPayload(event.payload)) break;
+            void decryptCollabComment<SlideCommentEvent & JsonValue>(key, event.payload.encrypted)
+              .then((commentEvent) => applyCommentEvent(commentEvent))
+              .catch(() => {
+                /* Discard encrypted comment events that cannot be decrypted without exposing payload details. */
+              });
             break;
+          }
           case "bring_to_slide":
           case "notify_host_update":
             break;
@@ -397,14 +426,22 @@ export function useCollaboration(
     if (!ch) return;
     const currentRole = roleRef.current;
     if (currentRole === "viewer") return;
-    broadcastEvent(ch, {
-      id: `${commentEvent.comment.id}-${commentEvent.at}-${commentEvent.type}`,
-      type: commentEvent.type,
-      payload: commentEvent,
-      userId: userIdRef.current ?? "local",
-      ts: commentEvent.at,
-      role: currentRole ?? undefined,
-    });
+    const key = optionsRef.current?.commentContentKey;
+    if (!key) return;
+    void encryptCollabComment(key, commentEvent as unknown as JsonValue)
+      .then((encrypted) => {
+        broadcastEvent(ch, {
+          id: `${commentEvent.comment.id}-${commentEvent.at}-${commentEvent.type}`,
+          type: commentEvent.type,
+          payload: { encrypted } satisfies EncryptedCommentEventPayload,
+          userId: userIdRef.current ?? "local",
+          ts: commentEvent.at,
+          role: currentRole ?? undefined,
+        });
+      })
+      .catch(() => {
+        /* Keep the comment local/persisted; never fall back to plaintext broadcast. */
+      });
   }, []);
 
   const updatePresenceMeta = useCallback((patch: Partial<CollabUser>) => {

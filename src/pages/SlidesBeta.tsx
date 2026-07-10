@@ -135,7 +135,7 @@ type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
 const CUSTOM_YJS_STORE_SYNC_MS = 120;
 const COLLAB_PRIVACY_NOTICE =
-  "A sala sincroniza estrutura, layout, textos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
+  "A sala sincroniza de forma criptografada estrutura, layout, textos, blocos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
 const APP_VERSION = (() => {
   const fallback = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
   if (typeof window === "undefined") return fallback;
@@ -1842,6 +1842,7 @@ export default function SlidesBeta() {
       currentSlideIndex: selectedSlideIndexForPresence,
       activity: collabActivity,
       isFollowingHost,
+      commentContentKey: persistentCollabContentKey,
       onRemoteEvent: handleRemoteCollabEvent,
     },
   );

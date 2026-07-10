@@ -19,6 +19,7 @@ O Supabase armazena snapshots, estado compactado do Yjs e comentarios como paylo
 | Campos de texto livres | Titulos, subtitulos, notas do apresentador, textos de insight/storytelling e campos equivalentes | Dentro de Y.Text, transmitido como update Yjs criptografado | A digitacao incremental nao trafega em texto aberto no provider Yjs. |
 | KPI manual | `manualValue` de bloco KPI manual | Dentro de Y.Text, transmitido como update Yjs criptografado | Este campo pode conter valor real de negocio digitado manualmente e usa o mesmo envelope criptografado. |
 | Comentarios persistidos | Texto do comentario, autor, cor do autor, status logico e metadados do comentario | `collab_room_comments.encrypted_payload` com AES-GCM | A tabela tambem guarda em claro `room_id`, `slide_id`, `block_id`, `status`, `created_at` e `updated_at` para indexacao e listagem. |
+| Comentarios ao vivo | Eventos `comment_add`, `comment_update`, `comment_resolve`, `comment_reopen`, `comment_delete` com o objeto do comentario | Broadcast Realtime com `payload_type: "comment"` criptografado | O envelope externo contem metadados operacionais do evento; o comentario em si fica cifrado. |
 | Awareness de texto Yjs | Nome, cor, campo selecionado, bloco, slide e posicao de cursor/selecionado em campo de texto | Broadcast Realtime com `payload_type: "yjs-awareness"` criptografado | A decisao atual e criptografar Awareness por conter identidade e metadados de cursor. |
 | Chave de conteudo da sala | Chave AES-GCM usada para snapshots, comentarios e updates Yjs | `keyBundle.envelopes[].encrypted_key` | Ha um envelope para editor e outro para visualizador, ambos derivados via HKDF-SHA256 a partir do respectivo codigo e `room_public_id`. |
 
@@ -33,7 +34,6 @@ O Supabase armazena snapshots, estado compactado do Yjs e comentarios como paylo
 | Presence geral da sala | `clientId`, nome, cor, papel, versao do app, versao de protocolo, slide atual, indice do slide, atividade, `isFollowingHost`, coordenadas de cursor geral | Supabase Presence (`channel.track`) | Dado operacional em claro para lista de participantes, seguir host, versao e presenca. Deve ser tratado como dado pessoal/metadado colaborativo. |
 | Envelope de broadcast Yjs | `id`, `senderId`, `sentAt`, nome do evento | Supabase Realtime Broadcast | Necessario para deduplicacao, ordenacao operacional e descarte de mensagens proprias. O conteudo do update fica criptografado. |
 | Eventos operacionais nao Yjs | `bring_to_slide`, `notify_host_update` e eventos legados `deck-op` quando usados | Supabase Realtime Broadcast | Usados para controles de sala. O fluxo Yjs cobre edicao simultanea do editor customizado. |
-| Ponto de atencao: comentarios ao vivo | Eventos `comment_add`, `comment_update`, `comment_resolve`, `comment_reopen`, `comment_delete` atualmente carregam o objeto do comentario no broadcast `deck-op` | Supabase Realtime Broadcast | O comentario persistido no banco e criptografado, mas o broadcast ao vivo ainda pode expor o payload para participantes conectados ao canal. Para endurecimento futuro, trocar por evento sem texto e recarregar/decriptar pelo banco. |
 
 ## O que nunca trafega para a nuvem
 
@@ -66,6 +66,7 @@ Os seguintes campos devem ser considerados dados pessoais ou metadados pessoais 
 - A chave de conteudo e aleatoria por sala e fica acessivel via envelopes criptografados por codigo.
 - Snapshots e comentarios persistidos usam AES-GCM com IV unico por operacao.
 - Updates Yjs e Awareness Yjs usam AES-GCM antes de trafegar no Realtime.
+- Eventos ao vivo de comentarios (`comment_add`, `comment_update`, `comment_resolve`, `comment_reopen`, `comment_delete`) tambem usam AES-GCM antes do broadcast Realtime; nao ha fallback para envio em texto claro.
 - Payload corrompido ou incompativel e descartado sem logar conteudo aberto.
 - Snapshot persistente remove dados brutos, series renderizadas e imagens calculadas antes da criptografia.
 - Convidado visualizador tem bloqueios de UI e handlers defensivos para nao emitir edicoes estruturais.
@@ -75,7 +76,6 @@ Os seguintes campos devem ser considerados dados pessoais ou metadados pessoais 
 | Tema | Situacao atual | Recomendacao |
 | --- | --- | --- |
 | Presence geral em claro | Nome, papel, versao, slide atual, atividade e cursor geral trafegam pelo Presence do Supabase | Validar se esse nivel de metadado e aceitavel. Se a politica exigir, reduzir campos ou mover parte para canal criptografado. |
-| Broadcast ao vivo de comentarios | Persistencia e criptografada, mas o evento realtime de comentario ainda pode carregar o comentario em claro para participantes conectados | Endurecer em fase futura: broadcastar apenas `comment_id`/acao e cada cliente recarrega o comentario criptografado da tabela. |
 | Retencao | Sala tem expiracao operacional, mas a politica formal de retencao deve ser definida pela empresa | Definir prazo, rotina de limpeza e responsavel pelo tratamento. |
 | Identidade anonima/local | Nao ha Supabase Auth; identidade e nome sao locais/anomimos | Validar se atende ao contexto corporativo ou se sera necessario SSO/auditoria nominal no futuro. |
 | Controle de acesso por codigo | Codigo concede acesso conforme papel retornado pelo servidor | Tratar codigos como segredo operacional; orientar usuarios a compartilhar apenas por canais aprovados. |
@@ -88,4 +88,4 @@ O conteudo persistido na nuvem e criptografado no cliente com AES-GCM. Cada sala
 
 Na edicao simultanea, os updates do Yjs e o Awareness de texto tambem trafegam criptografados. Alguns metadados operacionais permanecem em claro para funcionamento da sala, especialmente Presence: nome do participante, papel, versao do app, slide atual e atividade. Esses campos devem ser tratados como dados pessoais/metadados de uso sob LGPD.
 
-O principal ponto de atencao atual e o broadcast ao vivo de comentarios: a copia persistida no banco e criptografada, mas o evento realtime de comentario ainda pode carregar o objeto do comentario para participantes conectados. Isso nao envia bases brutas nem arquivos originais, mas deve ser avaliado em uma revisao de seguranca e pode ser endurecido em fase futura.
+Comentarios persistidos e eventos ao vivo de comentarios usam o mesmo envelope AES-GCM da sala. O Realtime transporta apenas metadados operacionais do evento e o payload criptografado, sem fallback para texto claro.
