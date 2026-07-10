@@ -62,6 +62,63 @@ interface SlidesFlowState {
   renamePreset: (id: string, name: string, description?: string) => void;
 }
 
+function cloneItem(item: SlideItem): SlideItem {
+  return JSON.parse(JSON.stringify(item)) as SlideItem;
+}
+
+function uniqueId(existing: Set<string>, candidate?: string): string {
+  let id = candidate && !existing.has(candidate) ? candidate : newId();
+  while (existing.has(id)) id = newId();
+  existing.add(id);
+  return id;
+}
+
+function sanitizeCustomSlideItem(item: Extract<SlideItem, { kind: "custom" }>): Extract<SlideItem, { kind: "custom" }> {
+  const blockIds = new Set<string>();
+  const groupIds = new Set<string>();
+  const blockReplacements = new Map<string, string[]>();
+
+  const blocks = item.config.blocks.map((block) => {
+    const id = uniqueId(blockIds, block.id);
+    const replacements = blockReplacements.get(block.id) ?? [];
+    replacements.push(id);
+    blockReplacements.set(block.id, replacements);
+    return id === block.id ? block : { ...block, id };
+  });
+
+  const validBlockIds = new Set(blocks.map((block) => block.id));
+  const groups = (item.config.groups ?? [])
+    .map((group) => {
+      const memberIds = Array.from(new Set(
+        group.memberIds.flatMap((memberId) => blockReplacements.get(memberId) ?? [memberId]),
+      )).filter((memberId) => validBlockIds.has(memberId));
+      const id = uniqueId(groupIds, group.id);
+      return { ...group, id, memberIds };
+    })
+    .filter((group) => group.memberIds.length > 1);
+
+  return {
+    ...item,
+    config: {
+      ...item.config,
+      blocks,
+      groups: groups.length > 0 ? groups : undefined,
+    },
+  };
+}
+
+export function sanitizeSlidesFlowItems(items: SlideItem[]): SlideItem[] {
+  const slideIds = new Set<string>();
+  return items.map((item) => {
+    const cloned = cloneItem(item);
+    const id = uniqueId(slideIds, cloned.id);
+    const withUniqueSlideId = id === cloned.id ? cloned : ({ ...cloned, id } as SlideItem);
+    return withUniqueSlideId.kind === "custom"
+      ? sanitizeCustomSlideItem(withUniqueSlideId)
+      : withUniqueSlideId;
+  });
+}
+
 export const useSlidesFlow = create<SlidesFlowState>()(
   persist(
     (set, get) => ({
@@ -103,10 +160,16 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         }),
 
       addItemFromCollab: (item) =>
-        set((s) => (s.items.some((i) => i.id === item.id) ? {} : { items: [...s.items, item] })),
+        set((s) => {
+          if (s.items.some((i) => i.id === item.id)) return {};
+          return { items: sanitizeSlidesFlowItems([...s.items, item]) };
+        }),
 
       loadPresetFromCollab: (items) =>
-        set({ items, selectedId: items[0]?.id ?? null }),
+        set(() => {
+          const safeItems = sanitizeSlidesFlowItems(items);
+          return { items: safeItems, selectedId: safeItems[0]?.id ?? null };
+        }),
 
       removeItemFromCollab: (id) =>
         set((s) => ({
@@ -120,7 +183,8 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           const idx = s.items.findIndex((i) => i.id === sourceId);
           const items = [...s.items];
           items.splice(idx >= 0 ? idx + 1 : items.length, 0, item);
-          return { items, selectedId: item.id };
+          const safeItems = sanitizeSlidesFlowItems(items);
+          return { items: safeItems, selectedId: item.id };
         }),
 
       reorderFromCollab: (sourceId, targetId) =>
@@ -139,12 +203,15 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       setTransitionFromCollab: (t) => set({ transition: t }),
 
       applySnapshotFromCollab: ({ items, selectedId, transition }) =>
-        set({
-          items,
-          selectedId: selectedId && items.some((item) => item.id === selectedId)
-            ? selectedId
-            : items[0]?.id ?? null,
-          transition,
+        set(() => {
+          const safeItems = sanitizeSlidesFlowItems(items);
+          return {
+            items: safeItems,
+            selectedId: selectedId && safeItems.some((item) => item.id === selectedId)
+              ? selectedId
+              : safeItems[0]?.id ?? null,
+            transition,
+          };
         }),
 
       removeItem: (id) =>
@@ -186,10 +253,10 @@ export const useSlidesFlow = create<SlidesFlowState>()(
 
       updateItem: (id, patch) =>
         set((s) => {
-          const next = s.items.map((i) => {
+          const next = sanitizeSlidesFlowItems(s.items.map((i) => {
             if (i.id !== id) return i;
             return typeof patch === "function" ? patch(i) : ({ ...i, ...patch } as SlideItem);
-          });
+          }));
           if (s._collabBroadcast && typeof patch !== "function") {
             const updated = next.find((i) => i.id === id);
             s._collabBroadcast({
@@ -215,7 +282,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
 
       updateItemFromCollab: ({ id, patch }) =>
         set((s) => ({
-          items: s.items.map((i) => (i.id === id ? ({ ...i, ...patch } as SlideItem) : i)),
+          items: sanitizeSlidesFlowItems(s.items.map((i) => (i.id === id ? ({ ...i, ...patch } as SlideItem) : i))),
         })),
 
       reorder: (sourceId, targetId) =>
@@ -304,11 +371,12 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           ...JSON.parse(JSON.stringify(i)),
           id: newId(),
         })) as SlideItem[];
-        set({ items, selectedId: items[0]?.id ?? null });
+        const safeItems = sanitizeSlidesFlowItems(items);
+        set({ items: safeItems, selectedId: safeItems[0]?.id ?? null });
         if (state._collabBroadcast) {
           state._collabBroadcast({
             type: "load_snapshot",
-            payload: { items, selectedId: items[0]?.id ?? null, transition: state.transition },
+            payload: { items: safeItems, selectedId: safeItems[0]?.id ?? null, transition: state.transition },
             userId: state._collabUserId ?? "local",
             ts: Date.now(),
           });
@@ -342,8 +410,12 @@ export const useSlidesFlow = create<SlidesFlowState>()(
             }
           }
         };
+        state.items = sanitizeSlidesFlowItems(state.items);
         migrateItems(state.items);
-        for (const preset of state.presets) migrateItems(preset.items);
+        for (const preset of state.presets) {
+          preset.items = sanitizeSlidesFlowItems(preset.items);
+          migrateItems(preset.items);
+        }
       },
     },
   ),
