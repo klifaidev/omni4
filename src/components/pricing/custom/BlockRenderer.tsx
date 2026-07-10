@@ -52,6 +52,7 @@ import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocal
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
+import { recordSlideRender } from "@/lib/slidesPerfCounters";
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -76,6 +77,10 @@ function MissingLocalData({ label }: { label: string }) {
       {localDataMissingMessage(label)}
     </div>
   );
+}
+
+function areBlocksEqual(prev: CustomBlock, next: CustomBlock): boolean {
+  return prev === next || JSON.stringify(prev) === JSON.stringify(next);
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
@@ -353,13 +358,14 @@ class BlockErrorBoundary extends React.Component<
 }
 
 export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+  recordSlideRender("BlockRenderer", block.id);
   return (
     <BlockErrorBoundary block={block}>
       <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} />
     </BlockErrorBoundary>
   );
 }, (prev, next) => (
-  prev.block === next.block
+  areBlocksEqual(prev.block, next.block)
   && prev.readOnly === next.readOnly
   && prev.isEditing === next.isEditing
 ));

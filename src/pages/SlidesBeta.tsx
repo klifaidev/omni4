@@ -83,7 +83,7 @@ import { TemplateGallery } from "@/components/pricing/custom/TemplateGallery";
 import { ImportPptxDialog } from "@/components/pricing/custom/ImportPptxDialog";
 import type { PptxSlide } from "@/components/pricing/custom/ImportPptxDialog";
 import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
-import type { ImageBlock } from "@/lib/customSlide";
+import type { CustomBlock, CustomSlideConfig, ImageBlock } from "@/lib/customSlide";
 import { PresentationMode } from "@/components/pricing/custom/PresentationMode";
 import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import type { SlideTemplate } from "@/lib/slideTemplates";
@@ -133,6 +133,7 @@ import {
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
+const CUSTOM_YJS_STORE_SYNC_MS = 120;
 const APP_VERSION = (() => {
   const fallback = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
   if (typeof window === "undefined") return fallback;
@@ -151,6 +152,28 @@ function slideToastInfo(message: string) {
 
 function slideToastError(message: string) {
   toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
+}
+
+function stableBlock(prev: CustomBlock | undefined, next: CustomBlock): CustomBlock {
+  if (!prev) return next;
+  return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+}
+
+function mergeCustomSlideConfigRefs(prev: CustomSlideConfig, next: CustomSlideConfig): CustomSlideConfig {
+  const prevById = new Map(prev.blocks.map((block) => [block.id, block]));
+  let blocksChanged = prev.blocks.length !== next.blocks.length;
+  const blocks = next.blocks.map((block, index) => {
+    const stable = stableBlock(prevById.get(block.id), block);
+    if (stable !== prev.blocks[index]) blocksChanged = true;
+    return stable;
+  });
+  return {
+    ...next,
+    blocks: blocksChanged ? blocks : prev.blocks,
+    groups: JSON.stringify(prev.groups ?? []) === JSON.stringify(next.groups ?? [])
+      ? prev.groups
+      : next.groups,
+  };
 }
 
 function versionParts(version: string): number[] {
@@ -1770,6 +1793,7 @@ export default function SlidesBeta() {
   const customYProvidersRef = useRef<Map<string, SupabaseYjsProvider>>(new Map());
   const customYAwarenessRef = useRef<Map<string, Awareness>>(new Map());
   const customYSyncDisposersRef = useRef<Map<string, () => void>>(new Map());
+  const customYSyncTimersRef = useRef<Map<string, number>>(new Map());
   const [textAwarenessBySlide, setTextAwarenessBySlide] = useState<Record<string, YjsTextAwarenessState[]>>({});
   const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
 
@@ -1881,17 +1905,31 @@ export default function SlidesBeta() {
 
   const syncCustomYDocToStore = useCallback((slideId: string, doc: Y.Doc) => {
     const config = yDocToCustomSlideConfig(doc);
+    const current = useSlidesFlow.getState().items.find((item) => item.id === slideId);
+    const mergedConfig = current?.kind === "custom"
+      ? mergeCustomSlideConfigRefs(current.config, config)
+      : config;
     updateItemFromCollab({
       id: slideId,
-      patch: { config } as Partial<SlideItem>,
+      patch: { config: mergedConfig } as Partial<SlideItem>,
     });
   }, [updateItemFromCollab]);
+
+  const scheduleCustomYDocStoreSync = useCallback((slideId: string, doc: Y.Doc) => {
+    const currentTimer = customYSyncTimersRef.current.get(slideId);
+    if (currentTimer !== undefined) window.clearTimeout(currentTimer);
+    const timer = window.setTimeout(() => {
+      customYSyncTimersRef.current.delete(slideId);
+      syncCustomYDocToStore(slideId, doc);
+    }, CUSTOM_YJS_STORE_SYNC_MS);
+    customYSyncTimersRef.current.set(slideId, timer);
+  }, [syncCustomYDocToStore]);
 
   const ensureCustomYProvider = useCallback((item: Extract<SlideItem, { kind: "custom" }>) => {
     if (!persistentCollabContentKey || !realtimeChannel || !collabUserId) return null;
     const doc = getOrCreateCustomYDoc(item);
     if (!customYSyncDisposersRef.current.has(item.id)) {
-      const sync = () => syncCustomYDocToStore(item.id, doc);
+      const sync = () => scheduleCustomYDocStoreSync(item.id, doc);
       doc.on("update", sync);
       customYSyncDisposersRef.current.set(item.id, () => doc.off("update", sync));
     }
@@ -1916,7 +1954,7 @@ export default function SlidesBeta() {
       eventName: `custom-slide-yjs:${item.id}`,
       awarenessEventName: `custom-slide-yjs-awareness:${item.id}`,
       awareness,
-      throttleMs: 80,
+      throttleMs: 120,
       onSendFailure: () => {
         recordCollabDegradedLog({
           at: new Date().toISOString(),
@@ -1936,7 +1974,7 @@ export default function SlidesBeta() {
     persistentCollabContentKey,
     realtimeChannel,
     roomId,
-    syncCustomYDocToStore,
+    scheduleCustomYDocStoreSync,
   ]);
 
   useEffect(() => {
@@ -1944,6 +1982,8 @@ export default function SlidesBeta() {
     customYProvidersRef.current.clear();
     customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
     customYAwarenessRef.current.clear();
+    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    customYSyncTimersRef.current.clear();
     setTextAwarenessBySlide({});
   }, [persistentCollabContentKey, realtimeChannel, roomId]);
 
@@ -1960,6 +2000,8 @@ export default function SlidesBeta() {
     customYProvidersRef.current.clear();
     customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
     customYAwarenessRef.current.clear();
+    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    customYSyncTimersRef.current.clear();
     customYSyncDisposersRef.current.forEach((dispose) => dispose());
     customYSyncDisposersRef.current.clear();
     customYDocsRef.current.clear();
@@ -1971,6 +2013,8 @@ export default function SlidesBeta() {
     customYProvidersRef.current.clear();
     customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
     customYAwarenessRef.current.clear();
+    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    customYSyncTimersRef.current.clear();
     customYSyncDisposersRef.current.forEach((dispose) => dispose());
     customYSyncDisposersRef.current.clear();
     customYDocsRef.current.clear();

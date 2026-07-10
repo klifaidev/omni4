@@ -166,6 +166,7 @@ import {
   SLIDE_BRAND_STYLES,
   type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
+import { recordSlideRender } from "@/lib/slidesPerfCounters";
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -307,6 +308,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   collabYDoc,
   textAwareness = [],
 }: Props) {
+  recordSlideRender("CustomSlideEditor", slideId);
   // Bind the parent's config <-> internal Zustand+temporal store first so
   // selection store reflects the right slide on initial render.
   useEditorBinding(config, onChange, slideId);

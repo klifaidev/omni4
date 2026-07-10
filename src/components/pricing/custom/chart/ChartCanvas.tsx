@@ -26,6 +26,10 @@ function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeas
   return dataSource === "forecast" ? "volume" : "rol";
 }
 
+function areChartBlocksEqual(prev: ChartBlock, next: ChartBlock): boolean {
+  return prev === next || JSON.stringify(prev) === JSON.stringify(next);
+}
+
 function safeMeasureForSource(
   measure: KpiMeasureId | null | undefined,
   dataSource: ChartBlock["dataSource"],
@@ -46,6 +50,7 @@ import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
+import { recordSlideRender } from "@/lib/slidesPerfCounters";
 import {
   ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type ChartStyle,
 } from "./types";
@@ -278,7 +283,8 @@ function mapPos(family: Family, p: string): string {
 }
 
 // -- main ------------------------------------------------------------------
-export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: ChartBlock }) {
+function ChartCanvasComponent({ block }: { block: ChartBlock }) {
+  recordSlideRender("ChartCanvas", block.id);
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? fallbackMeasureForSource(block.dataSource);
@@ -1535,7 +1541,7 @@ export const ChartCanvas = React.memo(function ChartCanvas({ block }: { block: C
       </div>
     </Wrapper>
   );
-}, (prev, next) => prev.block === next.block);
+}
 
 function Wrapper({ children, style, hasIncoming }: {
   children: React.ReactNode; style: ChartStyle; hasIncoming?: boolean;
@@ -1562,6 +1568,10 @@ function Wrapper({ children, style, hasIncoming }: {
     </div>
   );
 }
+
+export const ChartCanvas = React.memo(ChartCanvasComponent, (prev, next) =>
+  areChartBlocksEqual(prev.block, next.block)
+);
 
 // -- Custom legend with click-to-filter on series dimension ----------------
 interface CustomLegendProps {
