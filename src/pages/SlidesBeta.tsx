@@ -134,6 +134,8 @@ import {
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
 const CUSTOM_YJS_STORE_SYNC_MS = 120;
+const COLLAB_PRIVACY_NOTICE =
+  "A sala sincroniza estrutura, layout, textos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
 const APP_VERSION = (() => {
   const fallback = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
   if (typeof window === "undefined") return fallback;
@@ -2668,7 +2670,7 @@ export default function SlidesBeta() {
                     )}
                   </span>
                   <span className="hidden max-w-[520px] truncate text-[10px] text-muted-foreground xl:inline">
-                    A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
+                    {COLLAB_PRIVACY_NOTICE}
                   </span>
                 </div>
               )}
@@ -2721,7 +2723,7 @@ export default function SlidesBeta() {
                           <p className="text-xs text-muted-foreground">Nenhuma sala ativa neste deck.</p>
                         )}
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
+                          {COLLAB_PRIVACY_NOTICE}
                         </p>
                         {roomId && (
                           <div className="space-y-2 rounded-lg border border-border/40 bg-background/70 p-2">
@@ -3369,7 +3371,7 @@ export default function SlidesBeta() {
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
-            A sala sincroniza estrutura, layout e comentarios. As bases de dados continuam locais em cada computador.
+            {COLLAB_PRIVACY_NOTICE}
           </div>
           {roomId && (
             <div className="space-y-3 rounded-lg border border-success/30 bg-success/10 p-3">
