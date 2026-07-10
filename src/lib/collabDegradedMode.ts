@@ -19,6 +19,13 @@ export function nextCollabReconnectDelayMs(attempt: number): number {
   return BACKOFF_MS[Math.min(Math.max(0, attempt), BACKOFF_MS.length - 1)];
 }
 
+export function collabDegradedReasonFromRealtimeStatus(status: string): CollabDegradedReason | null {
+  if (status === "CHANNEL_ERROR") return "realtime_channel_error";
+  if (status === "TIMED_OUT") return "realtime_reconnect_failed";
+  if (status === "CLOSED") return "realtime_join_refused";
+  return null;
+}
+
 export function isEdgeFunctionQuotaError(error: unknown): boolean {
   const candidate = error as {
     status?: unknown;

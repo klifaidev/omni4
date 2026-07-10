@@ -138,7 +138,7 @@ describe("SupabaseYjsProvider", () => {
     providerB.destroy();
   });
 
-  it("keeps local Yjs edits in memory when realtime send fails and merges after reconnection", async () => {
+  it("keeps local Yjs edits in memory when realtime send fails and merges through the provider after reconnection", async () => {
     const contentKey = await createSharedKey();
     const docA = customSlideConfigToYDoc(config);
     const docB = new Y.Doc();
@@ -167,8 +167,8 @@ describe("SupabaseYjsProvider", () => {
     expect((yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text).toContain("online B");
 
     channelA.failSend = false;
-    Y.applyUpdate(docA, Y.encodeStateAsUpdate(docB));
-    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+    await providerA.flush();
+    await wait(30);
 
     expect(yDocToCustomSlideConfig(docA)).toEqual(yDocToCustomSlideConfig(docB));
     expect((yDocToCustomSlideConfig(docA).blocks[0] as { text: string }).text).toContain("offline A");
@@ -181,7 +181,11 @@ describe("SupabaseYjsProvider", () => {
   it("discards corrupted encrypted updates without breaking the local document", async () => {
     const contentKey = await createSharedKey();
     const doc = customSlideConfigToYDoc(config);
+    const peerDoc = new Y.Doc();
+    Y.applyUpdate(peerDoc, Y.encodeStateAsUpdate(doc));
     const channel = new MemoryChannel();
+    const peerChannel = new MemoryChannel();
+    connectChannels(channel, peerChannel);
     const discarded: string[] = [];
     const provider = createSupabaseYjsProvider({
       doc,
@@ -190,6 +194,13 @@ describe("SupabaseYjsProvider", () => {
       clientId: "client-a",
       throttleMs: 10,
       onDiscardedUpdate: (reason) => discarded.push(reason),
+    });
+    const peerProvider = createSupabaseYjsProvider({
+      doc: peerDoc,
+      channel: peerChannel,
+      contentKey,
+      clientId: "client-b",
+      throttleMs: 10,
     });
 
     channel.receive({
@@ -213,7 +224,14 @@ describe("SupabaseYjsProvider", () => {
     expect(discarded).toEqual(["decrypt_failed"]);
     expect(yDocToCustomSlideConfig(doc)).toEqual(config);
 
+    titleText(peerDoc).insert(titleText(peerDoc).length, " depois do payload invalido");
+    await wait(30);
+
+    expect((yDocToCustomSlideConfig(doc).blocks[0] as { text: string }).text)
+      .toBe("Titulo original depois do payload invalido");
+
     provider.destroy();
+    peerProvider.destroy();
   });
 
   it("broadcasts Yjs Awareness encrypted, including text cursor metadata", async () => {

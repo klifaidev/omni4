@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collabDegradedReasonFromRealtimeStatus,
   isEdgeFunctionQuotaError,
   nextCollabReconnectDelayMs,
 } from "@/lib/collabDegradedMode";
@@ -18,5 +19,12 @@ describe("collabDegradedMode", () => {
     expect(isEdgeFunctionQuotaError({ context: { status: 402 } })).toBe(true);
     expect(isEdgeFunctionQuotaError(new Error("Function returned 402"))).toBe(true);
     expect(isEdgeFunctionQuotaError({ status: 500 })).toBe(false);
+  });
+
+  it("classifies realtime degraded-mode triggers without treating normal subscription as failure", () => {
+    expect(collabDegradedReasonFromRealtimeStatus("CHANNEL_ERROR")).toBe("realtime_channel_error");
+    expect(collabDegradedReasonFromRealtimeStatus("TIMED_OUT")).toBe("realtime_reconnect_failed");
+    expect(collabDegradedReasonFromRealtimeStatus("CLOSED")).toBe("realtime_join_refused");
+    expect(collabDegradedReasonFromRealtimeStatus("SUBSCRIBED")).toBeNull();
   });
 });

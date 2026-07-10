@@ -21,20 +21,15 @@ import type { SlideItem } from "@/lib/slidesFlow";
 import type { PersistentCollabRole } from "@/lib/persistentCollab";
 import type { SlideTransition } from "@/store/slidesFlow";
 import {
+  collabDegradedReasonFromRealtimeStatus,
   nextCollabReconnectDelayMs,
   recordCollabDegradedLog,
   type CollabDegradedReason,
 } from "@/lib/collabDegradedMode";
 import {
-  decryptCollabComment,
-  encryptCollabComment,
-  type CollabEncryptedComment,
-  type JsonValue,
-} from "@/lib/collabCrypto";
-
-type EncryptedCommentEventPayload = {
-  encrypted: CollabEncryptedComment;
-};
+  decryptCommentEventFromBroadcast,
+  encryptCommentEventForBroadcast,
+} from "@/lib/collabCommentBroadcast";
 
 interface UseCollabReturn {
   collaborators: CollabUser[];
@@ -63,17 +58,6 @@ interface UseCollaborationOptions {
   isFollowingHost: boolean;
   commentContentKey?: CryptoKey | null;
   onRemoteEvent?: (event: CollabEvent) => void;
-}
-
-function isEncryptedCommentEventPayload(value: unknown): value is EncryptedCommentEventPayload {
-  const candidate = value as Partial<EncryptedCommentEventPayload> | null;
-  return !!candidate
-    && !!candidate.encrypted
-    && candidate.encrypted.schema_version === 1
-    && candidate.encrypted.algorithm === "AES-GCM-256"
-    && candidate.encrypted.payload_type === "comment"
-    && typeof candidate.encrypted.iv === "string"
-    && typeof candidate.encrypted.ciphertext === "string";
 }
 
 export function useCollaboration(
@@ -289,9 +273,11 @@ export function useCollaboration(
           case "comment_reopen":
           case "comment_delete": {
             const key = optionsRef.current?.commentContentKey;
-            if (!key || !isEncryptedCommentEventPayload(event.payload)) break;
-            void decryptCollabComment<SlideCommentEvent & JsonValue>(key, event.payload.encrypted)
-              .then((commentEvent) => applyCommentEvent(commentEvent))
+            if (!key) break;
+            void decryptCommentEventFromBroadcast(key, event.payload)
+              .then((commentEvent) => {
+                if (commentEvent) applyCommentEvent(commentEvent);
+              })
               .catch(() => {
                 /* Discard encrypted comment events that cannot be decrypted without exposing payload details. */
               });
@@ -312,17 +298,8 @@ export function useCollaboration(
           recoverDegraded();
           return;
         }
-        if (status === "CHANNEL_ERROR") {
-          activateDegraded("realtime_channel_error", status);
-          return;
-        }
-        if (status === "TIMED_OUT") {
-          activateDegraded("realtime_reconnect_failed", status);
-          return;
-        }
-        if (status === "CLOSED") {
-          activateDegraded("realtime_join_refused", status);
-        }
+        const degradedReason = collabDegradedReasonFromRealtimeStatus(status);
+        if (degradedReason) activateDegraded(degradedReason, status);
       });
     };
 
@@ -428,12 +405,12 @@ export function useCollaboration(
     if (currentRole === "viewer") return;
     const key = optionsRef.current?.commentContentKey;
     if (!key) return;
-    void encryptCollabComment(key, commentEvent as unknown as JsonValue)
-      .then((encrypted) => {
+    void encryptCommentEventForBroadcast(key, commentEvent)
+      .then((payload) => {
         broadcastEvent(ch, {
           id: `${commentEvent.comment.id}-${commentEvent.at}-${commentEvent.type}`,
           type: commentEvent.type,
-          payload: { encrypted } satisfies EncryptedCommentEventPayload,
+          payload,
           userId: userIdRef.current ?? "local",
           ts: commentEvent.at,
           role: currentRole ?? undefined,
