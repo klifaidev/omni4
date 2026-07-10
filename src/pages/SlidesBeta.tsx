@@ -3109,7 +3109,7 @@ export default function SlidesBeta() {
                   placeholder="Ex.: Alice"
                 />
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  O snapshot inicial desta etapa e simplificado. A sincronizacao completa entra na proxima fase.
+                  A sala salva snapshots Yjs criptografados. Exportacao e preflight continuam usando a estrutura normal do deck.
                 </p>
                 <Button className="w-full gap-2" onClick={handleCreatePersistentRoom} disabled={viewOnly || collabBusy === "create"}>
                   {collabBusy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}

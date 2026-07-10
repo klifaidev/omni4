@@ -4,8 +4,10 @@ import {
   createCollabRoomKeyBundle,
   decryptCollabComment,
   decryptCollabSnapshot,
+  decryptCollabYjsState,
   encryptCollabComment,
   encryptCollabSnapshot,
+  encryptCollabYjsState,
   unlockCollabContentKey,
   type JsonValue,
 } from "@/lib/collabCrypto";
@@ -64,6 +66,23 @@ describe("collabCrypto", () => {
     await expect(decryptCollabComment<TestComment>(viewerKey, first)).resolves.toEqual(comment);
     expect(first.iv).not.toEqual(second.iv);
     expect(first.ciphertext).not.toEqual(second.ciphertext);
+  });
+
+  it("encrypts and decrypts compact Yjs snapshot state as binary", async () => {
+    const { bundle, contentKey } = await createCollabRoomKeyBundle({
+      roomPublicId: "room_public_yjs",
+      editorCode: "editor-code",
+      viewerCode: "viewer-code",
+    });
+    const binaryState = new Uint8Array([1, 2, 3, 4, 255, 0, 42]);
+
+    const encrypted = await encryptCollabYjsState(contentKey, binaryState);
+    const viewerKey = await unlockCollabContentKey("viewer-code", bundle);
+    const restored = await decryptCollabYjsState(viewerKey, encrypted);
+
+    expect(Array.from(restored)).toEqual(Array.from(binaryState));
+    expect(encrypted.payload_type).toBe("yjs-state");
+    expect(encrypted.ciphertext).not.toContain("1,2,3");
   });
 
   it("fails with a wrong code without exposing payload details", async () => {

@@ -4,12 +4,14 @@ import {
   createCollabRoomKeyBundle,
   decryptCollabComment,
   decryptCollabSnapshot,
+  decryptCollabYjsState,
   encryptCollabComment,
-  encryptCollabSnapshot,
+  encryptCollabYjsState,
   hashCollabCode,
   normalizeCollabCode,
   unlockCollabContentKey,
   type CollabEncryptedSnapshot,
+  type CollabEncryptedYjsState,
   type CollabInviteRole,
   type CollabRoomKeyBundle,
   type JsonValue,
@@ -20,6 +22,10 @@ import {
   validatePersistentCollabSnapshot,
   type PersistentCollabSnapshot,
 } from "@/lib/persistentCollabSnapshot";
+import {
+  decodePersistentSnapshotYjsState,
+  encodePersistentSnapshotYjsState,
+} from "@/lib/persistentCollabYjs";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { SlideComment } from "@/lib/slideComments";
 import type { SlideTransition } from "@/store/slidesFlow";
@@ -29,7 +35,8 @@ export type PersistentCollabRole = "host" | CollabInviteRole;
 export type PersistentCollabStoredPayload = {
   schemaVersion: 1;
   keyBundle: CollabRoomKeyBundle;
-  encryptedSnapshot: CollabEncryptedSnapshot;
+  encryptedSnapshot?: CollabEncryptedSnapshot;
+  encryptedYjsState?: CollabEncryptedYjsState;
 };
 
 export type CreatePersistentRoomResult = {
@@ -124,7 +131,7 @@ function stringifyStoredPayload(payload: PersistentCollabStoredPayload): string 
 function parseStoredPayload(value: string): PersistentCollabStoredPayload {
   try {
     const parsed = JSON.parse(value) as PersistentCollabStoredPayload;
-    if (parsed.schemaVersion !== 1 || !parsed.keyBundle || !parsed.encryptedSnapshot) {
+    if (parsed.schemaVersion !== 1 || !parsed.keyBundle || (!parsed.encryptedSnapshot && !parsed.encryptedYjsState)) {
       throw new Error("UNSUPPORTED_COLLAB_PAYLOAD_SCHEMA");
     }
     return parsed;
@@ -149,7 +156,11 @@ async function getLatestSnapshotRow(roomId: string): Promise<SnapshotRow> {
 async function decryptStoredSnapshot(code: string, encryptedPayload: string): Promise<PersistentCollabSnapshot> {
   const stored = parseStoredPayload(encryptedPayload);
   const contentKey = await unlockCollabContentKey(code, stored.keyBundle);
-  const decrypted = await decryptCollabSnapshot<JsonValue>(contentKey, stored.encryptedSnapshot);
+  if (stored.encryptedYjsState) {
+    const update = await decryptCollabYjsState(contentKey, stored.encryptedYjsState);
+    return decodePersistentSnapshotYjsState(update);
+  }
+  const decrypted = await decryptCollabSnapshot<JsonValue>(contentKey, stored.encryptedSnapshot!);
   return validatePersistentCollabSnapshot(decrypted);
 }
 
@@ -171,13 +182,13 @@ async function encryptSnapshotWithStoredKey(params: {
     appVersion: params.appVersion,
     version: params.version,
   });
-  const encryptedSnapshot = await encryptCollabSnapshot(contentKey, snapshot as unknown as JsonValue);
+  const encryptedYjsState = await encryptCollabYjsState(contentKey, encodePersistentSnapshotYjsState(snapshot));
   return {
     snapshot,
     payload: stringifyStoredPayload({
       schemaVersion: 1,
       keyBundle: stored.keyBundle,
-      encryptedSnapshot,
+      encryptedYjsState,
     }),
   };
 }
@@ -204,13 +215,13 @@ async function buildEncryptedSnapshotPayload(params: {
     appVersion: params.appVersion,
     version: params.version,
   });
-  const encryptedSnapshot = await encryptCollabSnapshot(contentKey, snapshot as unknown as JsonValue);
+  const encryptedYjsState = await encryptCollabYjsState(contentKey, encodePersistentSnapshotYjsState(snapshot));
   return {
     snapshot,
     payload: stringifyStoredPayload({
       schemaVersion: 1,
       keyBundle: bundle,
-      encryptedSnapshot,
+      encryptedYjsState,
     }),
   };
 }

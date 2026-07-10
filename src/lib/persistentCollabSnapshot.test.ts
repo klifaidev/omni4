@@ -4,6 +4,10 @@ import {
   snapshotToSlidesState,
   validatePersistentCollabSnapshot,
 } from "@/lib/persistentCollabSnapshot";
+import {
+  decodePersistentSnapshotYjsState,
+  encodePersistentSnapshotYjsState,
+} from "@/lib/persistentCollabYjs";
 import type { SlideItem } from "@/lib/slidesFlow";
 
 describe("persistentCollabSnapshot", () => {
@@ -83,5 +87,51 @@ describe("persistentCollabSnapshot", () => {
     expect(serialized).not.toContain("\"value\":123");
     expect(validatePersistentCollabSnapshot(snapshot)).toEqual(snapshot);
     expect(snapshotToSlidesState(snapshot).items).toHaveLength(1);
+  });
+
+  it("restores the same deck state from a compact Yjs update", () => {
+    const items: SlideItem[] = [
+      {
+        id: "custom-1",
+        kind: "custom",
+        label: "Executivo",
+        config: {
+          background: "FFFFFF",
+          showHaraldFooter: true,
+          blocks: [
+            {
+              id: "title-1",
+              kind: "title",
+              x: 10,
+              y: 20,
+              w: 400,
+              h: 80,
+              z: 1,
+              text: "Resultado salvo no Yjs",
+              size: 42,
+              bold: true,
+              color: "111111",
+              align: "left",
+            },
+          ],
+        },
+      },
+    ];
+    const snapshot = serializePersistentCollabSnapshot({
+      items,
+      selectedSlideId: "custom-1",
+      transition: "fade",
+      appVersion: "test",
+      version: 4,
+    });
+
+    const update = encodePersistentSnapshotYjsState(snapshot);
+    const restored = decodePersistentSnapshotYjsState(update);
+    const restoredState = snapshotToSlidesState(restored);
+
+    expect(update.byteLength).toBeGreaterThan(0);
+    expect(restored).toEqual(snapshot);
+    expect(restoredState.items).toEqual(snapshotToSlidesState(snapshot).items);
+    expect(restoredState.selectedId).toBe("custom-1");
   });
 });
