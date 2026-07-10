@@ -3,7 +3,7 @@
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type * as Y from "yjs";
 import { Rnd } from "react-rnd";
 import { Button } from "@/components/ui/button";
@@ -265,6 +265,15 @@ interface Props {
   textAwareness?: CustomTextAwareness[];
 }
 
+function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
+  return prev.slideId === next.slideId
+    && prev.config === next.config
+    && prev.readOnly === next.readOnly
+    && prev.collabYDoc === next.collabYDoc
+    && prev.collaborators === next.collaborators
+    && prev.textAwareness === next.textAwareness;
+}
+
 type CustomTextAwareness = {
   id: string;
   name: string;
@@ -288,7 +297,7 @@ function useYTextValue(yText: Y.Text | null | undefined, fallback: string): stri
   return value;
 }
 
-export function CustomSlideEditor({
+export const CustomSlideEditor = memo(function CustomSlideEditor({
   slideId,
   config,
   onChange,
@@ -2769,7 +2778,7 @@ export function CustomSlideEditor({
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </SlideFilterProvider>
   );
-}
+}, areCustomSlideEditorPropsEqual);
 
 // ---------------------------------------------------------------------------
 // Layers panel helpers
