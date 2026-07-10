@@ -17,6 +17,7 @@ import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMo
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
+import { recordSlideRender } from "@/lib/slidesPerfCounters";
 
 // ---------------------------------------------------------------------------
 // Tokens (espelhando PPT_COLORS de exportPpt.ts)
@@ -676,6 +677,7 @@ const PREVIEW_W_INSPECTOR = 260;
 const PREVIEW_W_DIALOG = 800;
 
 export function ScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
+  recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
 
   if (item.kind !== "custom") {

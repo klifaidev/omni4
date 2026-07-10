@@ -134,6 +134,9 @@ import {
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
 const CUSTOM_YJS_STORE_SYNC_MS = 120;
+const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
+const FLOW_CARD_ESTIMATED_HEIGHT = 98;
+const SLIDE_PREVIEW_OVERSCAN = 3;
 const COLLAB_PRIVACY_NOTICE =
   "A sala sincroniza de forma criptografada estrutura, layout, textos, blocos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
 const APP_VERSION = (() => {
@@ -159,6 +162,48 @@ function slideToastError(message: string) {
 function stableBlock(prev: CustomBlock | undefined, next: CustomBlock): CustomBlock {
   if (!prev) return next;
   return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+}
+
+function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, overscan = SLIDE_PREVIEW_OVERSCAN) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [range, setRange] = useState({ start: 0, end: Math.min(count, overscan + 1) });
+
+  const recompute = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      setRange({ start: 0, end: Math.min(count, overscan + 1) });
+      return;
+    }
+    const scrollTop = viewport.scrollTop;
+    const visibleHeight = viewport.clientHeight || estimatedItemHeight;
+    const start = Math.max(0, Math.floor(scrollTop / estimatedItemHeight) - overscan);
+    const end = Math.min(count, Math.ceil((scrollTop + visibleHeight) / estimatedItemHeight) + overscan);
+    setRange((current) => (current.start === start && current.end === end ? current : { start, end }));
+  }, [count, estimatedItemHeight, overscan]);
+
+  useEffect(() => {
+    recompute();
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new ResizeObserver(recompute);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [recompute]);
+
+  useEffect(() => {
+    recompute();
+  }, [count, recompute]);
+
+  const isPreviewVisible = useCallback((index: number) => (
+    index >= range.start && index < range.end
+  ), [range.end, range.start]);
+
+  return {
+    viewportRef,
+    onScroll: recompute,
+    isPreviewVisible,
+    range,
+  };
 }
 
 function mergeCustomSlideConfigRefs(prev: CustomSlideConfig, next: CustomSlideConfig): CustomSlideConfig {
@@ -591,7 +636,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
-  currentUser, onCommentEvent, preflightIssues = [],
+  currentUser, onCommentEvent, preflightIssues = [], previewVisible = true,
 }: {
   item: SlideItem;
   index: number;
@@ -601,6 +646,7 @@ function StripThumbnail({
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
   preflightIssues?: SlidePreflightIssue[];
+  previewVisible?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const editors = editingUsers ?? [];
@@ -666,7 +712,15 @@ function StripThumbnail({
       </div>
       <div className="thumb px-1 pb-1">
         <div className="pointer-events-none mx-auto w-full max-w-[132px] min-w-[82px] overflow-hidden rounded-sm">
-          <ScaledPreview item={item} targetWidth={112} />
+          {previewVisible ? (
+            <ScaledPreview item={item} targetWidth={112} />
+          ) : (
+            <div
+              aria-hidden
+              className="rounded-lg border border-border/30 bg-muted/40"
+              style={{ width: "100%", aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
+            />
+          )}
         </div>
       </div>
       <div className="truncate px-1.5 pb-1.5 text-[10px] font-medium" title={item.label ?? meta.title}>
@@ -964,6 +1018,7 @@ function FullscreenCustomEditor({
       onOpenChange(false);
     }
   };
+  const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1056,7 +1111,11 @@ function FullscreenCustomEditor({
             <div className="border-b border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
               Slides ({items.length})
             </div>
-            <ScrollArea className="flex-1">
+            <div
+              ref={stripPreviewWindow.viewportRef}
+              onScroll={stripPreviewWindow.onScroll}
+              className="flex-1 overflow-y-auto"
+            >
               <DndContext sensors={stripSensors} collisionDetection={closestCenter} onDragEnd={onStripDragEnd}>
                 <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col gap-1.5 p-1.5">
@@ -1070,6 +1129,7 @@ function FullscreenCustomEditor({
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
                         preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
+                        previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
                         onClick={() => {
                           if (it.id === current?.id) return;
                           select(it.id);
@@ -1080,7 +1140,7 @@ function FullscreenCustomEditor({
                   </div>
                 </SortableContext>
               </DndContext>
-            </ScrollArea>
+            </div>
             <div className="flex gap-1 border-t border-border/40 p-1.5">
               <Button
                 variant="ghost" size="sm" className="h-7 flex-1 px-1"
@@ -2423,6 +2483,8 @@ export default function SlidesBeta() {
     slideToastSuccess("Copia local salva.");
   }, [items, roomId, selectedId, transition]);
 
+  const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
     const data = e.active.data.current as { source?: string; kind?: SlideKind } | undefined;
@@ -3005,7 +3067,11 @@ export default function SlidesBeta() {
           {globalActiveFilterCount > 0 && <ActiveFiltersBar />}
 
           {/* Conteúdo da esteira */}
-          <ScrollArea className="flex-1">
+          <div
+            ref={flowPreviewWindow.viewportRef}
+            onScroll={flowPreviewWindow.onScroll}
+            className="flex-1 overflow-y-auto"
+          >
             <div className="mx-auto max-w-2xl px-4 py-5">
               <FlowDropZone>
                 {items.length === 0 ? (
@@ -3020,6 +3086,7 @@ export default function SlidesBeta() {
                           index={idx}
                           selected={selectedId === item.id}
                           preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
+                          previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
                           onSelect={() => select(item.id)}
                           onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
                           onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
@@ -3031,7 +3098,7 @@ export default function SlidesBeta() {
                 )}
               </FlowDropZone>
             </div>
-          </ScrollArea>
+          </div>
           {/* Painel de filtros (drawer lateral direito) */}
           <div
             className={cn(
