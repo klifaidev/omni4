@@ -113,6 +113,11 @@ import {
   type CreatePersistentRoomResult,
   type PersistentCollabRole,
 } from "@/lib/persistentCollab";
+import {
+  isEdgeFunctionQuotaError,
+  recordCollabDegradedLog,
+  type CollabDegradedReason,
+} from "@/lib/collabDegradedMode";
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
@@ -1722,6 +1727,8 @@ export default function SlidesBeta() {
   const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
   const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
   const [collabSaveStatus, setCollabSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [edgeDegradedSince, setEdgeDegradedSince] = useState<number | null>(null);
+  const [degradedNow, setDegradedNow] = useState(() => Date.now());
   const [isFollowingHost, setIsFollowingHost] = useState(false);
   const [lastHostUpdateNotice, setLastHostUpdateNotice] = useState<string | null>(null);
   const lastSavedSnapshotRef = useRef<string>("");
@@ -1761,7 +1768,7 @@ export default function SlidesBeta() {
     }
   }, [items, persistentCollabRole, select]);
 
-  const { collaborators, isConnected, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
+  const { collaborators, isConnected, degraded: realtimeDegraded, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
     roomId,
     collabName,
     persistentCollabRole,
@@ -1775,6 +1782,43 @@ export default function SlidesBeta() {
       onRemoteEvent: handleRemoteCollabEvent,
     },
   );
+  const degradedActive = realtimeDegraded.active || edgeDegradedSince !== null;
+  const degradedSince = realtimeDegraded.since ?? edgeDegradedSince;
+  const degradedReason: CollabDegradedReason | null = realtimeDegraded.reason ?? (edgeDegradedSince ? "edge_function_quota" : null);
+  const degradedLongRunning = degradedActive && degradedSince !== null && degradedNow - degradedSince >= 15 * 60_000;
+
+  const activateEdgeDegraded = useCallback((detail?: string) => {
+    const now = Date.now();
+    setEdgeDegradedSince((current) => current ?? now);
+    setCollabSaveStatus("error");
+    recordCollabDegradedLog({
+      at: new Date(now).toISOString(),
+      action: "activated",
+      reason: "edge_function_quota",
+      roomId,
+      detail,
+    });
+  }, [roomId]);
+
+  const recoverEdgeDegraded = useCallback(() => {
+    setEdgeDegradedSince((current) => {
+      if (current) {
+        recordCollabDegradedLog({
+          at: new Date().toISOString(),
+          action: "recovered",
+          reason: "edge_function_quota",
+          roomId,
+        });
+      }
+      return null;
+    });
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!degradedActive) return;
+    const id = window.setInterval(() => setDegradedNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, [degradedActive]);
 
   // Cor estável do usuário local (mesmo cálculo do hook de colaboração).
   const currentUserColor = useMemo(() => {
@@ -1851,10 +1895,17 @@ export default function SlidesBeta() {
       }),
       3,
       1200,
-    ).catch(() => {
+    ).then(() => {
+      recoverEdgeDegraded();
+    }).catch((error) => {
+      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
+        activateEdgeDegraded("save-collab-comment");
+        slideToastInfo("Comentario mantido localmente. Vamos tentar sincronizar quando o servico normalizar.");
+        return;
+      }
       slideToastError("Nao foi possivel salvar o comentario na sala.");
     });
-  }, [broadcastComment, persistentCollabCode, persistentCollabRole, persistentRoomDbId, roomId]);
+  }, [activateEdgeDegraded, broadcastComment, persistentCollabCode, persistentCollabRole, persistentRoomDbId, recoverEdgeDegraded, roomId]);
 
   useEffect(() => {
     if (roomId) {
@@ -1905,7 +1956,12 @@ export default function SlidesBeta() {
       lastSavedSnapshotRef.current = currentSnapshotSignature;
       setCollabSnapshotVersion(result.version);
       setCollabSaveStatus("saved");
-    } catch {
+      recoverEdgeDegraded();
+    } catch (error) {
+      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
+        activateEdgeDegraded("save-collab-snapshot");
+        slideToastInfo("Salvamento online temporariamente indisponivel. Suas edicoes continuam nesta sessao.");
+      }
       setCollabSaveStatus("error");
     } finally {
       savingRef.current = false;
@@ -1917,6 +1973,8 @@ export default function SlidesBeta() {
     persistentCollabCode,
     persistentCollabRole,
     persistentRoomDbId,
+    activateEdgeDegraded,
+    recoverEdgeDegraded,
     selectedId,
     transition,
   ]);
@@ -1982,9 +2040,15 @@ export default function SlidesBeta() {
       setCommentStorageScope(created.roomPublicId);
       replaceComments([]);
       setViewOnly(false);
+      recoverEdgeDegraded();
       slideToastSuccess("Sala colaborativa criada.");
-    } catch {
-      slideToastError("Nao foi possivel criar a sala colaborativa.");
+    } catch (error) {
+      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
+        activateEdgeDegraded("create-collab-room");
+        slideToastError("Criacao de sala temporariamente indisponivel. O deck local continua preservado.");
+      } else {
+        slideToastError("Nao foi possivel criar a sala colaborativa.");
+      }
     } finally {
       setCollabBusy(null);
     }
@@ -2025,6 +2089,7 @@ export default function SlidesBeta() {
         transition: joined.state.transition,
       });
       setViewOnly(joined.role === "viewer");
+      recoverEdgeDegraded();
       slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
       setCollabOpen(false);
     } catch (error) {
@@ -2033,6 +2098,9 @@ export default function SlidesBeta() {
         slideToastError("Snapshot incompatível com esta versão do app.");
       } else if (message.includes("CORRUPTED")) {
         slideToastError("Snapshot da sala está corrompido ou não pode ser lido.");
+      } else if (message.includes("SUPABASE_EDGE_FUNCTION_QUOTA")) {
+        activateEdgeDegraded("join-collab-room");
+        slideToastError("Entrada em sala temporariamente indisponivel. Seu deck local continua preservado.");
       } else if (message.includes("INVALID") || message.includes("EXPIRED") || message.includes("EMPTY_CODE")) {
         slideToastError("Código inválido ou expirado.");
       } else {
@@ -2143,6 +2211,26 @@ export default function SlidesBeta() {
     else await handleExport();
   };
 
+  const saveLocalCollabSafetyCopy = useCallback(() => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      collabProtocolVersion: COLLAB_PROTOCOL_VERSION,
+      roomId,
+      selectedId,
+      transition,
+      items,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `omni4-sala-colaborativa-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    slideToastSuccess("Copia local salva.");
+  }, [items, roomId, selectedId, transition]);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
     const data = e.active.data.current as { source?: string; kind?: SlideKind } | undefined;
@@ -2184,6 +2272,33 @@ export default function SlidesBeta() {
       {viewOnly && (
         <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-amber-700 md:px-8">
           Somente leitura
+        </div>
+      )}
+      {degradedActive && (
+        <div className="border-b border-warning/25 bg-warning/10 px-4 py-2 md:px-8">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-warning" />
+              <div className="space-y-0.5">
+                <p className="font-medium">
+                  {degradedReason === "edge_function_quota"
+                    ? "Salvamento online temporariamente indisponivel."
+                    : "Colaboracao ao vivo temporariamente indisponivel."}
+                </p>
+                <p className="text-muted-foreground">
+                  {degradedReason === "edge_function_quota"
+                    ? "Suas edicoes continuam nesta sessao. Salve uma copia local se precisar de uma seguranca extra."
+                    : "Suas edicoes continuam sendo salvas normalmente e vao sincronizar automaticamente assim que a conexao for restabelecida."}
+                </p>
+              </div>
+            </div>
+            {degradedLongRunning && (
+              <Button size="sm" variant="outline" className="h-8 gap-2 bg-background/70" onClick={saveLocalCollabSafetyCopy}>
+                <Download className="h-3.5 w-3.5" />
+                Salvar copia local
+              </Button>
+            )}
+          </div>
         </div>
       )}
       <DndContext

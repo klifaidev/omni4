@@ -26,6 +26,7 @@ import {
   decodePersistentSnapshotYjsState,
   encodePersistentSnapshotYjsState,
 } from "@/lib/persistentCollabYjs";
+import { isEdgeFunctionQuotaError } from "@/lib/collabDegradedMode";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { SlideComment } from "@/lib/slideComments";
 import type { SlideTransition } from "@/store/slidesFlow";
@@ -259,6 +260,10 @@ export async function createPersistentCollabRoom(params: {
     },
   });
 
+  if (isEdgeFunctionQuotaError(error)) {
+    throw new Error("SUPABASE_EDGE_FUNCTION_QUOTA");
+  }
+
   if (error || !data) {
     throw new Error("CREATE_ROOM_FAILED");
   }
@@ -284,6 +289,10 @@ export async function joinPersistentCollabRoom(code: string): Promise<JoinPersis
       code_hash: await hashCollabCode(normalizedCode),
     },
   });
+
+  if (isEdgeFunctionQuotaError(error)) {
+    throw new Error("SUPABASE_EDGE_FUNCTION_QUOTA");
+  }
 
   if (error || !data) {
     throw new Error("INVALID_OR_EXPIRED_CODE");
@@ -341,6 +350,7 @@ export async function savePersistentCollabSnapshot(params: {
     },
   });
 
+  if (isEdgeFunctionQuotaError(error)) throw new Error("SUPABASE_EDGE_FUNCTION_QUOTA");
   if (error || !data) throw new Error("SAVE_COLLAB_SNAPSHOT_FAILED");
   return { version: data.version };
 }
@@ -403,6 +413,7 @@ export async function savePersistentCollabComment(params: {
     },
   });
 
+  if (isEdgeFunctionQuotaError(error)) throw new Error("SUPABASE_EDGE_FUNCTION_QUOTA");
   if (error || !data) throw new Error("SAVE_COLLAB_COMMENT_FAILED");
   return data;
 }

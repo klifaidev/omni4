@@ -20,10 +20,21 @@ import { applyCommentEvent, type SlideCommentEvent } from "@/lib/slideComments";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { PersistentCollabRole } from "@/lib/persistentCollab";
 import type { SlideTransition } from "@/store/slidesFlow";
+import {
+  nextCollabReconnectDelayMs,
+  recordCollabDegradedLog,
+  type CollabDegradedReason,
+} from "@/lib/collabDegradedMode";
 
 interface UseCollabReturn {
   collaborators: CollabUser[];
   isConnected: boolean;
+  degraded: {
+    active: boolean;
+    reason: CollabDegradedReason | null;
+    since: number | null;
+    nextRetryAt: number | null;
+  };
   broadcast: (e: CollabEvent) => void;
   updateCursor: (x: number, y: number) => void;
   updateSlideId: (slideId: string | null) => void;
@@ -50,6 +61,12 @@ export function useCollaboration(
 ): UseCollabReturn {
   const [collaborators, setCollaborators] = useState<CollabUser[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [degraded, setDegraded] = useState<UseCollabReturn["degraded"]>({
+    active: false,
+    reason: null,
+    since: null,
+    nextRetryAt: null,
+  });
   const channelRef = useRef<RealtimeChannel | null>(null);
   const userIdRef = useRef<string | null>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
@@ -59,6 +76,7 @@ export function useCollaboration(
   const roleRef = useRef<PersistentCollabRole | null>(role);
   const optionsRef = useRef<UseCollaborationOptions | undefined>(options);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
+  const degradedAttemptRef = useRef(0);
 
   useEffect(() => {
     userNameRef.current = userName;
@@ -76,6 +94,9 @@ export function useCollaboration(
   // userName nao e dependencia; evita recriar o canal ao editar o nome.
   useEffect(() => {
     if (!roomId) return;
+    let disposed = false;
+    let offEvent: (() => void) | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const userId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
@@ -103,118 +124,199 @@ export function useCollaboration(
     };
     userMetaRef.current = user;
 
-    const channel = createRoom(roomId, user);
-    channelRef.current = channel;
+    const clearChannel = (cancelRetry = true) => {
+      if (cancelRetry && reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      offEvent?.();
+      offEvent = null;
+      const current = channelRef.current;
+      channelRef.current = null;
+      if (current) leaveRoom(current);
+    };
 
-    onPresenceChange(channel, (users) => {
-      setCollaborators(users);
-      const currentIds = new Set(users.map((u) => u.id));
-      const prev = knownIdsRef.current;
-      for (const u of users) {
-        if (u.id === userId) continue;
-        if (!prev.has(u.id)) {
-          toast.info(`${u.name} entrou na sala`, { duration: 2500 });
-        }
-      }
-      for (const id of prev) {
-        if (id === userId) continue;
-        if (!currentIds.has(id)) {
-          const gone = collaboratorsByIdRef.current.get(id);
-          toast.info(`${gone?.name ?? "Colaborador"} saiu`, { duration: 2000 });
-        }
-      }
-      const byId = new Map<string, CollabUser>();
-      for (const u of users) byId.set(u.id, u);
-      collaboratorsByIdRef.current = byId;
-      knownIdsRef.current = currentIds;
-    });
-
-    const offEvent = onEvent(channel, (event) => {
-      if (event.userId === userId) return;
-      if (event.role === "viewer") return;
-      const eventId = event.id ?? `${event.userId}-${event.ts}-${event.type}`;
-      if (seenEventIdsRef.current.has(eventId)) return;
-      seenEventIdsRef.current.add(eventId);
-      if (seenEventIdsRef.current.size > 500) {
-        seenEventIdsRef.current = new Set(Array.from(seenEventIdsRef.current).slice(-250));
-      }
-      const peer = collaboratorsByIdRef.current.get(event.userId);
-      recordEvent(event, peer?.name ?? "Colaborador", peer?.color);
-      optionsRef.current?.onRemoteEvent?.(event);
-      const store = useSlidesFlow.getState();
-      switch (event.type) {
-        case "add_item":
-          store.addItemFromCollab(event.payload as SlideItem);
-          break;
-        case "update_item":
-          store.updateItemFromCollab(event.payload as { id: string; patch: Partial<SlideItem> });
-          break;
-        case "update_custom_slide": {
-          const p = event.payload as { id: string; item: SlideItem };
-          store.updateItemFromCollab({ id: p.id, patch: p.item });
-          break;
-        }
-        case "remove_item": {
-          const p = event.payload as { id: string };
-          store.removeItemFromCollab(p.id);
-          break;
-        }
-        case "duplicate_item": {
-          const p = event.payload as { sourceId: string; item: SlideItem };
-          store.duplicateItemFromCollab(p);
-          break;
-        }
-        case "reorder_items": {
-          const p = event.payload as { activeId: string; overId: string };
-          store.reorderFromCollab(p.activeId, p.overId);
-          break;
-        }
-        case "clear_items":
-          store.clearItemsFromCollab();
-          break;
-        case "update_transition": {
-          const p = event.payload as { transition: SlideTransition };
-          store.setTransitionFromCollab(p.transition);
-          break;
-        }
-        case "load_snapshot": {
-          const p = event.payload as { items: SlideItem[]; selectedId: string | null; transition: SlideTransition };
-          store.applySnapshotFromCollab(p);
-          break;
-        }
-        case "comment_add":
-        case "comment_update":
-        case "comment_resolve":
-        case "comment_reopen":
-        case "comment_delete":
-          applyCommentEvent(event.payload as SlideCommentEvent);
-          break;
-        case "bring_to_slide":
-        case "notify_host_update":
-          break;
-      }
-    });
-
-    // Todos os `.on(...)` foram registrados acima; agora sim, subscribe.
-    // O callback de status monitora conexao/desconexao explicitamente.
-    subscribeRoom(channel, user, (status) => {
-      if (status === "SUBSCRIBED") setIsConnected(true);
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        setIsConnected(false);
-      }
-    });
-
-    return () => {
-      offEvent();
+    const activateDegraded = (reason: CollabDegradedReason, detail?: string) => {
+      if (disposed) return;
+      clearChannel(false);
       setIsConnected(false);
       setCollaborators([]);
-      leaveRoom(channel);
+      const now = Date.now();
+      const delay = nextCollabReconnectDelayMs(degradedAttemptRef.current);
+      degradedAttemptRef.current += 1;
+      const nextRetryAt = now + delay;
+      setDegraded((current) => {
+        const since = current.active && current.since ? current.since : now;
+        return { active: true, reason, since, nextRetryAt };
+      });
+      recordCollabDegradedLog({
+        at: new Date(now).toISOString(),
+        action: "activated",
+        reason,
+        roomId,
+        detail,
+      });
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectChannel();
+      }, delay);
+    };
+
+    const recoverDegraded = () => {
+      const wasActive = degradedAttemptRef.current > 0;
+      degradedAttemptRef.current = 0;
+      setDegraded({ active: false, reason: null, since: null, nextRetryAt: null });
+      if (wasActive) {
+        recordCollabDegradedLog({
+          at: new Date().toISOString(),
+          action: "recovered",
+          reason: "realtime_channel_error",
+          roomId,
+        });
+      }
+    };
+
+    const connectChannel = () => {
+      if (disposed) return;
+      clearChannel();
+      const channel = createRoom(roomId, user);
+      channelRef.current = channel;
+
+      onPresenceChange(channel, (users) => {
+        if (disposed || channelRef.current !== channel) return;
+        setCollaborators(users);
+        const currentIds = new Set(users.map((u) => u.id));
+        const prev = knownIdsRef.current;
+        for (const u of users) {
+          if (u.id === userId) continue;
+          if (!prev.has(u.id)) {
+            toast.info(`${u.name} entrou na sala`, { duration: 2500 });
+          }
+        }
+        for (const id of prev) {
+          if (id === userId) continue;
+          if (!currentIds.has(id)) {
+            const gone = collaboratorsByIdRef.current.get(id);
+            toast.info(`${gone?.name ?? "Colaborador"} saiu`, { duration: 2000 });
+          }
+        }
+        const byId = new Map<string, CollabUser>();
+        for (const u of users) byId.set(u.id, u);
+        collaboratorsByIdRef.current = byId;
+        knownIdsRef.current = currentIds;
+      });
+
+      offEvent = onEvent(channel, (event) => {
+        if (disposed || channelRef.current !== channel) return;
+        if (event.userId === userId) return;
+        if (event.role === "viewer") return;
+        const eventId = event.id ?? `${event.userId}-${event.ts}-${event.type}`;
+        if (seenEventIdsRef.current.has(eventId)) return;
+        seenEventIdsRef.current.add(eventId);
+        if (seenEventIdsRef.current.size > 500) {
+          seenEventIdsRef.current = new Set(Array.from(seenEventIdsRef.current).slice(-250));
+        }
+        const peer = collaboratorsByIdRef.current.get(event.userId);
+        recordEvent(event, peer?.name ?? "Colaborador", peer?.color);
+        optionsRef.current?.onRemoteEvent?.(event);
+        const store = useSlidesFlow.getState();
+        switch (event.type) {
+          case "add_item":
+            store.addItemFromCollab(event.payload as SlideItem);
+            break;
+          case "update_item":
+            store.updateItemFromCollab(event.payload as { id: string; patch: Partial<SlideItem> });
+            break;
+          case "update_custom_slide": {
+            const p = event.payload as { id: string; item: SlideItem };
+            store.updateItemFromCollab({ id: p.id, patch: p.item });
+            break;
+          }
+          case "remove_item": {
+            const p = event.payload as { id: string };
+            store.removeItemFromCollab(p.id);
+            break;
+          }
+          case "duplicate_item": {
+            const p = event.payload as { sourceId: string; item: SlideItem };
+            store.duplicateItemFromCollab(p);
+            break;
+          }
+          case "reorder_items": {
+            const p = event.payload as { activeId: string; overId: string };
+            store.reorderFromCollab(p.activeId, p.overId);
+            break;
+          }
+          case "clear_items":
+            store.clearItemsFromCollab();
+            break;
+          case "update_transition": {
+            const p = event.payload as { transition: SlideTransition };
+            store.setTransitionFromCollab(p.transition);
+            break;
+          }
+          case "load_snapshot": {
+            const p = event.payload as { items: SlideItem[]; selectedId: string | null; transition: SlideTransition };
+            store.applySnapshotFromCollab(p);
+            break;
+          }
+          case "comment_add":
+          case "comment_update":
+          case "comment_resolve":
+          case "comment_reopen":
+          case "comment_delete":
+            applyCommentEvent(event.payload as SlideCommentEvent);
+            break;
+          case "bring_to_slide":
+          case "notify_host_update":
+            break;
+        }
+      });
+
+      // Todos os `.on(...)` foram registrados acima; agora sim, subscribe.
+      // O callback de status monitora conexao/desconexao explicitamente.
+      subscribeRoom(channel, user, (status) => {
+        if (disposed || channelRef.current !== channel) return;
+        if (status === "SUBSCRIBED") {
+          setIsConnected(true);
+          recoverDegraded();
+          return;
+        }
+        if (status === "CHANNEL_ERROR") {
+          activateDegraded("realtime_channel_error", status);
+          return;
+        }
+        if (status === "TIMED_OUT") {
+          activateDegraded("realtime_reconnect_failed", status);
+          return;
+        }
+        if (status === "CLOSED") {
+          activateDegraded("realtime_join_refused", status);
+        }
+      });
+    };
+
+    connectChannel();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      offEvent?.();
+      setIsConnected(false);
+      setCollaborators([]);
+      const current = channelRef.current;
+      if (current) leaveRoom(current);
       channelRef.current = null;
       userIdRef.current = null;
       knownIdsRef.current = new Set();
       collaboratorsByIdRef.current = new Map();
       seenEventIdsRef.current = new Set();
       userMetaRef.current = null;
+      degradedAttemptRef.current = 0;
+      setDegraded({ active: false, reason: null, since: null, nextRetryAt: null });
     };
   }, [roomId]); // intencionalmente omite userName; Effect 2 atualiza so o presence
 
@@ -316,6 +418,7 @@ export function useCollaboration(
   return {
     collaborators,
     isConnected,
+    degraded,
     broadcast,
     updateCursor,
     updateSlideId,

@@ -52,6 +52,7 @@ export type SupabaseYjsProviderOptions = {
   awarenessEventName?: string;
   awareness?: Awareness;
   throttleMs?: number;
+  onSendFailure?: (reason: "send_failed") => void;
   onDiscardedUpdate?: (reason: "decrypt_failed" | "apply_failed" | "invalid_payload") => void;
   onDiscardedAwareness?: (reason: "decrypt_failed" | "apply_failed" | "invalid_payload") => void;
 };
@@ -155,6 +156,12 @@ function isAwarenessBroadcastPayload(value: unknown): value is YjsAwarenessBroad
     && isEncryptedAwareness(candidate.encrypted);
 }
 
+function isSendRejected(result: unknown): boolean {
+  return result === "error"
+    || result === "timed out"
+    || (typeof result === "object" && result !== null && "error" in result);
+}
+
 export class SupabaseYjsProvider {
   private readonly doc: Y.Doc;
   private readonly channel: SupabaseYjsChannel;
@@ -164,6 +171,7 @@ export class SupabaseYjsProvider {
   private readonly awarenessEventName: string;
   private readonly awareness?: Awareness;
   private readonly throttleMs: number;
+  private readonly onSendFailure?: SupabaseYjsProviderOptions["onSendFailure"];
   private readonly onDiscardedUpdate?: SupabaseYjsProviderOptions["onDiscardedUpdate"];
   private readonly onDiscardedAwareness?: SupabaseYjsProviderOptions["onDiscardedAwareness"];
   private readonly localOrigin = {};
@@ -183,6 +191,7 @@ export class SupabaseYjsProvider {
     this.awarenessEventName = options.awarenessEventName ?? DEFAULT_AWARENESS_EVENT;
     this.awareness = options.awareness;
     this.throttleMs = options.throttleMs ?? DEFAULT_THROTTLE_MS;
+    this.onSendFailure = options.onSendFailure;
     this.onDiscardedUpdate = options.onDiscardedUpdate;
     this.onDiscardedAwareness = options.onDiscardedAwareness;
 
@@ -244,14 +253,21 @@ export class SupabaseYjsProvider {
     this.pendingUpdates = [];
     const merged = updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
     const encrypted = await encryptCollabYjsUpdate(this.contentKey, merged);
-    const payload: BroadcastPayload = {
+    const payload: YjsUpdateBroadcastPayload = {
       id: createMessageId(this.clientId),
       senderId: this.clientId,
       sentAt: Date.now(),
       encrypted,
     };
     this.seenMessageIds.add(payload.id);
-    this.channel.send({ type: "broadcast", event: this.eventName, payload });
+    try {
+      const result = await this.channel.send({ type: "broadcast", event: this.eventName, payload });
+      if (isSendRejected(result)) throw new Error("YJS_SEND_FAILED");
+    } catch {
+      this.pendingUpdates.unshift(merged);
+      this.seenMessageIds.delete(payload.id);
+      this.onSendFailure?.("send_failed");
+    }
   }
 
   private async sendAwarenessUpdate(update: Uint8Array): Promise<void> {
@@ -264,7 +280,13 @@ export class SupabaseYjsProvider {
       encrypted,
     };
     this.seenAwarenessMessageIds.add(payload.id);
-    this.channel.send({ type: "broadcast", event: this.awarenessEventName, payload });
+    try {
+      const result = await this.channel.send({ type: "broadcast", event: this.awarenessEventName, payload });
+      if (isSendRejected(result)) throw new Error("YJS_SEND_FAILED");
+    } catch {
+      this.seenAwarenessMessageIds.delete(payload.id);
+      this.onSendFailure?.("send_failed");
+    }
   }
 
   private async applyRemotePayload(payload: unknown): Promise<void> {

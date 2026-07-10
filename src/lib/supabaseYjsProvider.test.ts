@@ -18,10 +18,13 @@ class MemoryChannel implements SupabaseYjsChannel {
   readonly sent: BroadcastMessage[] = [];
   private callbacks: Array<{ event: string; callback: BroadcastCallback }> = [];
   peers: MemoryChannel[] = [];
+  failSend = false;
 
-  send(message: BroadcastMessage): void {
+  send(message: BroadcastMessage): "ok" | "error" {
+    if (this.failSend) return "error";
     this.sent.push(message);
     this.peers.forEach((peer) => peer.receive(message));
+    return "ok";
   }
 
   on(_type: "broadcast", filter: { event: string }, callback: BroadcastCallback): void {
@@ -130,6 +133,46 @@ describe("SupabaseYjsProvider", () => {
 
     expect(channelA.sent).toHaveLength(1);
     expect((yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text).toBe("Titulo original 1 2 3");
+
+    providerA.destroy();
+    providerB.destroy();
+  });
+
+  it("keeps local Yjs edits in memory when realtime send fails and merges after reconnection", async () => {
+    const contentKey = await createSharedKey();
+    const docA = customSlideConfigToYDoc(config);
+    const docB = new Y.Doc();
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+    const channelA = new MemoryChannel();
+    const channelB = new MemoryChannel();
+    connectChannels(channelA, channelB);
+    channelA.failSend = true;
+    const failures: string[] = [];
+    const providerA = createSupabaseYjsProvider({
+      doc: docA,
+      channel: channelA,
+      contentKey,
+      clientId: "client-a",
+      throttleMs: 10,
+      onSendFailure: (reason) => failures.push(reason),
+    });
+    const providerB = createSupabaseYjsProvider({ doc: docB, channel: channelB, contentKey, clientId: "client-b", throttleMs: 10 });
+
+    titleText(docA).insert(titleText(docA).length, " offline A");
+    titleText(docB).insert(titleText(docB).length, " online B");
+    await wait(30);
+
+    expect(failures).toEqual(["send_failed"]);
+    expect((yDocToCustomSlideConfig(docA).blocks[0] as { text: string }).text).toContain("offline A");
+    expect((yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text).toContain("online B");
+
+    channelA.failSend = false;
+    Y.applyUpdate(docA, Y.encodeStateAsUpdate(docB));
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+
+    expect(yDocToCustomSlideConfig(docA)).toEqual(yDocToCustomSlideConfig(docB));
+    expect((yDocToCustomSlideConfig(docA).blocks[0] as { text: string }).text).toContain("offline A");
+    expect((yDocToCustomSlideConfig(docA).blocks[0] as { text: string }).text).toContain("online B");
 
     providerA.destroy();
     providerB.destroy();
