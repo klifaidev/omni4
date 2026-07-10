@@ -345,6 +345,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   const [fitScale, setFitScale] = useState(1);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const guidesRef = useRef(guides);
+  const pendingGuidesRef = useRef(guides);
+  const guidesRafRef = useRef<number | null>(null);
   const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -361,6 +364,42 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
+
+  const setGuidesImmediate = useCallback((next: { v: number[]; h: number[] }) => {
+    if (
+      guidesRef.current.v.length === next.v.length
+      && guidesRef.current.h.length === next.h.length
+      && guidesRef.current.v.every((value, index) => value === next.v[index])
+      && guidesRef.current.h.every((value, index) => value === next.h[index])
+    ) return;
+    guidesRef.current = next;
+    setGuides(next);
+  }, []);
+
+  const scheduleGuides = useCallback((next: { v: number[]; h: number[] }) => {
+    pendingGuidesRef.current = next;
+    if (guidesRafRef.current !== null) return;
+    guidesRafRef.current = requestAnimationFrame(() => {
+      guidesRafRef.current = null;
+      setGuidesImmediate(pendingGuidesRef.current);
+    });
+  }, [setGuidesImmediate]);
+
+  const clearGuides = useCallback(() => {
+    if (guidesRafRef.current !== null) {
+      cancelAnimationFrame(guidesRafRef.current);
+      guidesRafRef.current = null;
+    }
+    pendingGuidesRef.current = { v: [], h: [] };
+    setGuidesImmediate({ v: [], h: [] });
+  }, [setGuidesImmediate]);
+
+  useEffect(() => () => {
+    if (guidesRafRef.current !== null) {
+      cancelAnimationFrame(guidesRafRef.current);
+      guidesRafRef.current = null;
+    }
+  }, []);
 
   // Calcula a escala para caber no contêiner mantendo a proporção 16:9
   useEffect(() => {
@@ -1369,9 +1408,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const excl = new Set(activeIds);
     const others = boundsOf(config.blocks, excl);
     const snap = computeSnap({ x, y, w, h }, others);
-    setGuides(snap.guides);
+    scheduleGuides(snap.guides);
     return snap;
-  }, [config.blocks]);
+  }, [config.blocks, scheduleGuides]);
 
   // Layers panel data
   const layersSorted = useMemo(
@@ -2129,7 +2168,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           void snap;
                         }}
                         onDragStop={(_, d) => {
-                          setGuides({ v: [], h: [] });
+                          clearGuides();
                           const ids = draggableSiblings(blk.id);
                           let dx = d.x - blk.x;
                           let dy = d.y - blk.y;
@@ -2159,7 +2198,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             next.delete(blk.id);
                             return next;
                           });
-                          setGuides({ v: [], h: [] });
+                          clearGuides();
                           let w = parseInt(refEl.style.width, 10);
                           let h = parseInt(refEl.style.height, 10);
                           let x = pos.x, y = pos.y;
