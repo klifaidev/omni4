@@ -48,6 +48,14 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitFor(check: () => boolean, timeoutMs = 300): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) return;
+    await wait(10);
+  }
+}
+
 const config: CustomSlideConfig = {
   background: "FFFFFF",
   showHaraldFooter: true,
@@ -160,7 +168,7 @@ describe("SupabaseYjsProvider", () => {
 
     titleText(docA).insert(titleText(docA).length, " offline A");
     titleText(docB).insert(titleText(docB).length, " online B");
-    await wait(30);
+    await waitFor(() => failures.length > 0);
 
     expect(failures).toEqual(["send_failed"]);
     expect((yDocToCustomSlideConfig(docA).blocks[0] as { text: string }).text).toContain("offline A");
