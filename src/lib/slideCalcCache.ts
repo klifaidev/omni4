@@ -76,6 +76,21 @@ export function getOrComputeSlideCalc<T>(input: SlideCalcCacheKeyInput, compute:
   return value;
 }
 
+export function getSlideCalcCacheValue<T>(input: SlideCalcCacheKeyInput): T | undefined {
+  const key = buildSlideCalcCacheKey(input);
+  const hit = cache.get(key) as CacheEntry<T> | undefined;
+  if (!hit) return undefined;
+  hit.usedAt = ++tick;
+  recordCacheMetric(`SlideCalcCache:${input.op}:hit`, input.blockId ?? input.slideId ?? undefined);
+  return hit.value;
+}
+
+export function setSlideCalcCacheValue<T>(input: SlideCalcCacheKeyInput, value: T): void {
+  const key = buildSlideCalcCacheKey(input);
+  cache.set(key, { key, value, usedAt: ++tick });
+  trimSlideCalcCache();
+}
+
 function trimSlideCalcCache(): void {
   if (cache.size <= maxEntries) return;
   const entries = Array.from(cache.values()).sort((a, b) => a.usedAt - b.usedAt);

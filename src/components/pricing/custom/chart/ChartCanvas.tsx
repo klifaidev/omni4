@@ -51,7 +51,13 @@ import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilt
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
-import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
+import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
+import {
+  computeChartSeriesAsync,
+  computeTopRankingAsync,
+  type ChartSeriesResult,
+  type TopRankingResult,
+} from "@/lib/slideCalcWorkerClient";
 import {
   ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type ChartStyle,
 } from "./types";
@@ -95,6 +101,42 @@ type BoxPlotShapeProps = {
   payload: { q1: number; q3: number; median: number; min: number; max: number; name: string };
   background?: { y?: number; height?: number };
 };
+
+const EMPTY_CHART_SERIES: ChartSeriesResult = { periodos: [], series: [] };
+const EMPTY_RANKING: TopRankingResult = [];
+const RANKING_CHART_TYPES = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"] as const;
+
+function useAsyncSlideCalc<T>(
+  enabled: boolean,
+  fallback: T,
+  key: string,
+  compute: () => Promise<T>,
+): { value: T; loading: boolean } {
+  const [state, setState] = useState<{ value: T; loading: boolean }>({ value: fallback, loading: enabled });
+  const computeRef = useRef(compute);
+  computeRef.current = compute;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled) {
+      setState({ value: fallback, loading: false });
+      return () => { cancelled = true; };
+    }
+
+    setState((previous) => ({ value: previous.value, loading: true }));
+    computeRef.current()
+      .then((value) => {
+        if (!cancelled) setState({ value, loading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ value: fallback, loading: false });
+      });
+
+    return () => { cancelled = true; };
+  }, [enabled, fallback, key]);
+
+  return state;
+}
 
 function MissingLocalData({ label }: { label: string }) {
   return (
@@ -537,17 +579,30 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     return { periodos, series };
   }, [block.chartType, block.comboSeries, block.filters, rowsForDataSource, xDim, cacheSlideId, block.id]);
 
-  const raw = useMemo(
-    () => manualComboRaw ?? getOrComputeSlideCalc({
-      op: "chart-series",
-      slideId: cacheSlideId,
-      blockId: block.id,
-      dataSource: block.dataSource,
-      dataSignature: dsRowsSignature,
-      params: { filters: block.filters, measure: effectiveMeasure, seriesDim, xDim },
-    }, () => computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim)),
-    [manualComboRaw, dsRows, dsRowsSignature, block.filters, block.dataSource, block.id, effectiveMeasure, seriesDim, xDim, cacheSlideId],
+  const rawCacheInput = useMemo<SlideCalcCacheKeyInput>(() => ({
+    op: "chart-series",
+    slideId: cacheSlideId,
+    blockId: block.id,
+    dataSource: block.dataSource,
+    dataSignature: dsRowsSignature,
+    params: { filters: block.filters, measure: effectiveMeasure, seriesDim, xDim },
+  }), [cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, seriesDim, xDim]);
+  const rawCacheKey = useMemo(() => buildSlideCalcCacheKey(rawCacheInput), [rawCacheInput]);
+  const workerRaw = useAsyncSlideCalc(
+    !manualComboRaw,
+    EMPTY_CHART_SERIES,
+    rawCacheKey,
+    () => computeChartSeriesAsync({
+      cache: rawCacheInput,
+      rows: dsRows,
+      filters: block.filters,
+      measure: effectiveMeasure,
+      breakdown: seriesDim,
+      xDim,
+    }),
   );
+  const raw = manualComboRaw ?? workerRaw.value;
+  const rawLoading = !manualComboRaw && workerRaw.loading;
   const data = useMemo(() => {
     const seriesSum = (ser: (typeof raw.series)[number]) =>
       ser.values.reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
@@ -566,7 +621,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     }
     // B.5 â€” apply user-defined sort
     return applySort(raw.periodos, visible, block.sortConfig);
-  }, [raw, block.h, block.w, block.autoFit, block.maxSeries, block.showOthers, block.sortConfig]);
+  }, [raw, block]);
 
   // Tooltip lookup tables â€” previous period delta + YoY (best-effort heuristic on label match)
   const tooltipMaps = useMemo(() => {
@@ -654,21 +709,34 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }, [block.budgetGap, block.dataSource, block.filters, block.id, effectiveMeasure, budget, cacheSlideId]);
 
   // ---- ranking-style data for pie/donut/bubble/scatter/funnel/treemap ----
-  const rankingTypes = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"];
+  const isRankingChart = RANKING_CHART_TYPES.includes(block.chartType as typeof RANKING_CHART_TYPES[number]);
+  const rankingCacheInput = useMemo<SlideCalcCacheKeyInput>(() => ({
+    op: "chart-ranking",
+    slideId: cacheSlideId,
+    blockId: block.id,
+    dataSource: block.dataSource,
+    dataSignature: dsRowsSignature,
+    params: { filters: block.filters, dim: seriesDim ?? "marca", measure: effectiveMeasure, chartType: block.chartType },
+  }), [cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, seriesDim, effectiveMeasure, block.chartType]);
+  const rankingCacheKey = useMemo(() => buildSlideCalcCacheKey(rankingCacheInput), [rankingCacheInput]);
+  const workerRanking = useAsyncSlideCalc(
+    isRankingChart,
+    EMPTY_RANKING,
+    rankingCacheKey,
+    () => computeTopRankingAsync({
+      cache: rankingCacheInput,
+      rows: dsRows,
+      filters: block.filters,
+      dim: seriesDim ?? "marca",
+      measure: effectiveMeasure,
+      topN: 50,
+      periodMode: "all",
+      periodValue: null,
+    }),
+  );
   const ranking = useMemo(() => {
-    if (!rankingTypes.includes(block.chartType)) return [];
-    const base = getOrComputeSlideCalc({
-      op: "chart-ranking",
-      slideId: cacheSlideId,
-      blockId: block.id,
-      dataSource: block.dataSource,
-      dataSignature: dsRowsSignature,
-      params: { filters: block.filters, dim: seriesDim ?? "marca", measure: effectiveMeasure, chartType: block.chartType },
-    }, () => computeTopRanking(
-      dsRows, block.filters,
-      seriesDim ?? "marca",
-      effectiveMeasure, 50, "all", null,
-    ));
+    if (!isRankingChart) return [];
+    const base = workerRanking.value;
     // FIX 2 â€” apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
     const sc = block.sortConfig;
     if (!sc) return base;
@@ -680,15 +748,23 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       return sc.dir === "asc" ? [...base].reverse() : base;
     }
     return base;
-  }, [dsRows, dsRowsSignature, block.filters, block.dataSource, block.id, seriesDim, effectiveMeasure, block.chartType, block.sortConfig, block.fieldWells?.colorDim, cacheSlideId]);
+  }, [isRankingChart, workerRanking.value, block.sortConfig]);
+  const rankingLoading = isRankingChart && workerRanking.loading;
 
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
   const rankingEmpty = ranking.length === 0;
-  const isRankingChart = rankingTypes.includes(block.chartType);
   // Bridge PVM has its own data path (calcPVM) and own empty state.
   const isPvmBridge = block.chartType === "waterfall"
     && (style.waterfall.mode ?? "pvm") === "pvm";
+
+  if (!missingData && !isPvmBridge && (rawLoading || rankingLoading)) {
+    return (
+      <Wrapper style={style} hasIncoming={incoming.length > 0}>
+        <ChartLoadingSkeleton />
+      </Wrapper>
+    );
+  }
 
   if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (!isRankingChart && seriesEmpty))) {
     // Distinguish "no data because of incoming filter" vs "no data at all"
@@ -1621,6 +1697,22 @@ function Wrapper({ children, style, hasIncoming }: {
       transition: "border-color 0.2s",
     }}>
       {children}
+    </div>
+  );
+}
+
+function ChartLoadingSkeleton() {
+  return (
+    <div className="flex h-full w-full items-center justify-center p-4">
+      <div className="flex h-full w-full max-w-[320px] items-end gap-2 opacity-70">
+        {[46, 72, 54, 88, 64, 78].map((height, index) => (
+          <div
+            key={height}
+            className="flex-1 animate-pulse rounded-t-sm bg-muted"
+            style={{ height: `${height}%`, animationDelay: `${index * 60}ms` }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

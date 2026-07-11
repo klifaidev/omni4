@@ -1,6 +1,6 @@
 // Renderer dos blocos do slide personalizado.
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
@@ -18,7 +18,7 @@ import type { BudgetRow } from "@/lib/budget";
 import { aggregate, LINES, fmt } from "../DreTable";
 import { useMonthsInfo } from "@/store/selectors";
 import {
-  applyFilters, calcPVM, aggregateBy,
+  applyFilters, calcPVM, aggregateBy, type PVMResult,
   computeCanalTrend, computeCostEvolution, computePriceDecomposition,
 } from "@/lib/analytics";
 import { FarolGauge } from "@/components/farol/FarolGauge";
@@ -53,7 +53,8 @@ import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
-import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
+import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
+import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -108,6 +109,38 @@ function topFarolSkus(rows: PricingRow[]): { sku: string; desc: string; volume: 
     else map.set(r.sku, { desc: r.skuDesc || r.sku, volume: r.volumeKg || 0 });
   }
   return Array.from(map, ([sku, v]) => ({ sku, ...v })).sort((a, b) => b.volume - a.volume);
+}
+
+function useAsyncBlockCalc<T>(
+  enabled: boolean,
+  fallback: T,
+  key: string,
+  compute: () => Promise<T>,
+): { value: T; loading: boolean } {
+  const [state, setState] = useState<{ value: T; loading: boolean }>({ value: fallback, loading: enabled });
+  const computeRef = useRef(compute);
+  computeRef.current = compute;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!enabled) {
+      setState({ value: fallback, loading: false });
+      return () => { cancelled = true; };
+    }
+
+    setState((previous) => ({ value: previous.value, loading: true }));
+    computeRef.current()
+      .then((value) => {
+        if (!cancelled) setState({ value, loading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ value: fallback, loading: false });
+      });
+
+    return () => { cancelled = true; };
+  }, [enabled, fallback, key]);
+
+  return state;
 }
 
 export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
@@ -673,29 +706,44 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
   const metric = usePricing((s) => s.metric);
   const pricingSignature = useMemo(() => slideDataSignature(pricing), [pricing]);
 
+  const bridgeCacheInput = useMemo<SlideCalcCacheKeyInput>(() => ({
+    op: "custom-bridge-pvm",
+    slideId: cacheSlideId,
+    blockId: b.id,
+    dataSource: "ke30",
+    dataSignature: `${pricingSignature}:${JSON.stringify({ filters: b.filters, base: b.base, comp: b.comp, mode: b.mode })}`,
+    params: { metric, base: b.base, comp: b.comp, mode: b.mode, filters: b.filters },
+  }), [cacheSlideId, b.id, b.filters, b.base, b.comp, b.mode, pricingSignature, metric]);
+  const bridgeCacheKey = useMemo(() => buildSlideCalcCacheKey(bridgeCacheInput), [bridgeCacheInput]);
+  const filteredRows = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
+  const labels = useMemo(() => {
+    if (b.mode !== "month") return undefined;
+    return {
+      base: (() => { const r = filteredRows.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
+      comp: (() => { const r = filteredRows.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
+    };
+  }, [b.mode, b.base, b.comp, filteredRows]);
+  const bridgeCalc = useAsyncBlockCalc<PVMResult | null>(
+    !!b.base && !!b.comp && b.base !== b.comp,
+    null,
+    bridgeCacheKey,
+    () => calcPvmAsync({
+      cache: bridgeCacheInput,
+      rows: filteredRows,
+      filters: {},
+      metric,
+      base: b.base!,
+      comp: b.comp!,
+      mode: b.mode,
+      labels,
+    }),
+  );
   const pvmResult = useMemo(() => {
     if (!b.base || !b.comp || b.base === b.comp) return { kind: "unconfigured" as const };
-    return getOrComputeSlideCalc({
-      op: "custom-bridge-pvm",
-      slideId: cacheSlideId,
-      blockId: b.id,
-      dataSource: "ke30",
-      dataSignature: pricingSignature,
-      params: { metric, base: b.base, comp: b.comp, mode: b.mode, filters: b.filters },
-    }, () => {
-      const filtered = applyOmniFilters(pricing, b);
-      const labels = b.mode === "month" ? {
-        base: (() => { const r = filtered.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
-        comp: (() => { const r = filtered.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
-      } : undefined;
-      try {
-        return { kind: "ok" as const, data: calcPVM(filtered, metric, b.base, b.comp, b.mode, labels) };
-      } catch (err) {
-        console.error("[BridgeRender] calcPVM error:", err);
-        return { kind: "error" as const };
-      }
-    });
-  }, [pricing, pricingSignature, metric, b, cacheSlideId]);
+    if (bridgeCalc.loading) return { kind: "loading" as const };
+    if (!bridgeCalc.value) return { kind: "error" as const };
+    return { kind: "ok" as const, data: bridgeCalc.value };
+  }, [b.base, b.comp, bridgeCalc.loading, bridgeCalc.value]);
 
   if (pvmResult.kind !== "ok") {
     return (
@@ -705,7 +753,9 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
         background: SLIDE_HEX.paper, border: `1px dashed ${SLIDE_HEX.slate300}`,
         color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
-        {pvmResult.kind === "unconfigured"
+        {pvmResult.kind === "loading"
+          ? "Calculando Bridge..."
+          : pvmResult.kind === "unconfigured"
           ? "Configure base e comparação para a Bridge"
           : "Erro ao calcular Bridge"}
       </div>
