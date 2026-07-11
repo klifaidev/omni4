@@ -77,7 +77,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
-import { SlidePreview, ScaledPreview } from "@/components/pricing/SlidePreview";
+import { SlidePreview, ScaledPreview, warmSlideThumbnail } from "@/components/pricing/SlidePreview";
 import { CustomSlideEditor } from "@/components/pricing/custom/CustomSlideEditor";
 import { TemplateGallery } from "@/components/pricing/custom/TemplateGallery";
 import { ImportPptxDialog } from "@/components/pricing/custom/ImportPptxDialog";
@@ -943,6 +943,22 @@ function FullscreenCustomEditor({
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
   const isCustom = current?.kind === "custom";
   const currentCustomYDoc = current?.kind === "custom" && getCollabYDoc ? getCollabYDoc(current) : null;
+  const [warmCustomSlideIds, setWarmCustomSlideIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open || !current || current.kind !== "custom") return;
+    setWarmCustomSlideIds((previous) => [current.id, ...previous.filter((id) => id !== current.id)].slice(0, 3));
+  }, [open, current]);
+
+  useEffect(() => {
+    if (!open || warmCustomSlideIds.length === 0) return;
+    const warmItems = warmCustomSlideIds
+      .map((id) => items.find((item) => item.id === id))
+      .filter((item): item is SlideItem => !!item);
+    warmItems.forEach((item, order) => {
+      window.setTimeout(() => { void warmSlideThumbnail(item); }, order * 80);
+    });
+  }, [open, items, warmCustomSlideIds]);
 
   // Se o slide selecionado deixou de ser custom, fecha o editor.
   useEffect(() => {
@@ -1167,7 +1183,6 @@ function FullscreenCustomEditor({
           <div className="min-w-0 flex-1">
             {current && isCustom ? (
               <CustomSlideEditor
-                key={current.id}
                 slideId={current.id}
                 config={(current as Extract<SlideItem, { kind: "custom" }>).config}
                 onChange={(cfg) => {

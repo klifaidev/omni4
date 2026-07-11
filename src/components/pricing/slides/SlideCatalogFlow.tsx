@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -174,6 +174,25 @@ export const FlowCard = React.memo(function FlowCard({
     ? Object.values(item.config.filters).filter((v) => v && v.length > 0).length
     : 0;
   const preflightSeverity = highestPreflightSeverity(preflightIssues);
+  const hoverPreviewTimerRef = useRef<number | null>(null);
+  const [hoverPreviewReady, setHoverPreviewReady] = useState(false);
+
+  const resetHoverPreviewDelay = () => {
+    if (hoverPreviewTimerRef.current) window.clearTimeout(hoverPreviewTimerRef.current);
+    setHoverPreviewReady(false);
+    hoverPreviewTimerRef.current = window.setTimeout(() => {
+      setHoverPreviewReady(true);
+      hoverPreviewTimerRef.current = null;
+    }, 200);
+  };
+
+  const clearHoverPreviewDelay = () => {
+    if (hoverPreviewTimerRef.current) window.clearTimeout(hoverPreviewTimerRef.current);
+    hoverPreviewTimerRef.current = null;
+    setHoverPreviewReady(false);
+  };
+
+  useEffect(() => clearHoverPreviewDelay, []);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const style = {
@@ -183,7 +202,7 @@ export const FlowCard = React.memo(function FlowCard({
   };
 
   return (
-    <TooltipProvider delayDuration={500}>
+    <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
           <div
@@ -199,6 +218,9 @@ export const FlowCard = React.memo(function FlowCard({
               preflightSeverity === "info" && !selected && "border-primary/35",
             )}
             onClick={onSelect}
+            onMouseEnter={resetHoverPreviewDelay}
+            onMouseMove={resetHoverPreviewDelay}
+            onMouseLeave={clearHoverPreviewDelay}
           >
             <button
               className="flex h-7 w-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/30 transition-colors hover:text-muted-foreground active:cursor-grabbing"
@@ -283,7 +305,11 @@ export const FlowCard = React.memo(function FlowCard({
         </TooltipTrigger>
         <TooltipContent side="left" align="center" sideOffset={12} className="p-1.5 border border-border/60 bg-card">
           <div className="overflow-hidden rounded-md border border-border/40 bg-white" style={{ width: 200, height: 113 }}>
-            <ScaledPreview item={item} targetWidth={200} />
+            {hoverPreviewReady ? (
+              <ScaledPreview item={item} targetWidth={200} />
+            ) : (
+              <div aria-hidden className="h-full w-full bg-muted/35" />
+            )}
           </div>
           <div className="mt-1 px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
             Slide {index + 1} · {item.label || meta.title}
