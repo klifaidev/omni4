@@ -711,6 +711,20 @@ const STATIC_THUMBNAIL_W = 400;
 const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
 const STATIC_THUMBNAIL_TIMEOUT_MS = 8000;
 
+function recordThumbnailMetric(name: string, id?: string): void {
+  if (typeof window === "undefined") return;
+  const perf = window.__OMNI_SLIDES_PERF__ ?? { counts: {}, events: [] };
+  window.__OMNI_SLIDES_PERF__ = perf;
+  const counts = perf.counts ?? {};
+  counts[name] = (counts[name] ?? 0) + 1;
+  if (id) counts[`${name}:${id}`] = (counts[`${name}:${id}`] ?? 0) + 1;
+  perf.counts = counts;
+  if (perf.events) {
+    perf.events.push({ name, id, at: performance.now() });
+    if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
+  }
+}
+
 function waitForAnimationFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
@@ -820,6 +834,79 @@ async function renderStaticThumbnail(item: SlideItem): Promise<string> {
   }
 }
 
+function buildSlideThumbnailKeyFromSignatures({
+  item,
+  pricingMetric,
+  pricingSignature,
+  budgetSignature,
+  forecastSignature,
+  rollingSignature,
+}: {
+  item: SlideItem;
+  pricingMetric: string;
+  pricingSignature: string;
+  budgetSignature: string;
+  forecastSignature: string;
+  rollingSignature: string;
+}): string {
+  return buildSlideThumbnailKey({
+    item,
+    pricingMetric,
+    pricingSignature,
+    budgetSignature,
+    forecastSignature,
+    rollingSignature,
+    renderWidth: STATIC_THUMBNAIL_W,
+  });
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function getSlideThumbnailKeyForItem(item: SlideItem): string {
+  const pricingState = usePricing.getState();
+  return buildSlideThumbnailKeyFromSignatures({
+    item,
+    pricingMetric: pricingState.metric,
+    pricingSignature: slideDataSignature(pricingState.rows),
+    budgetSignature: slideDataSignature(useBudget.getState().rows),
+    forecastSignature: slideDataSignature(useForecast.getState().rows),
+    rollingSignature: slideDataSignature(useRolling.getState().rows),
+  });
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export async function warmSlideThumbnail(item: SlideItem): Promise<"hit" | "generated" | "fallback" | "error"> {
+  const key = getSlideThumbnailKeyForItem(item);
+  const current = getSlideThumbnail(key);
+  if (current?.status === "ready") {
+    recordThumbnailMetric("SlideThumbnail:hit", item.id);
+    return "hit";
+  }
+  if (current?.status === "rendering") return "hit";
+
+  markSlideThumbnailRendering(key);
+  recordThumbnailMetric("SlideThumbnail:render", item.id);
+  try {
+    const capture = renderStaticThumbnail(item);
+    const timeout = new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error("thumbnail-capture-timeout")), STATIC_THUMBNAIL_TIMEOUT_MS);
+    });
+    const dataUrl = await Promise.race([capture, timeout]);
+    setSlideThumbnail(key, dataUrl);
+    recordThumbnailMetric("SlideThumbnail:ready", item.id);
+    return "generated";
+  } catch {
+    const fallback = renderFallbackThumbnail(item);
+    if (fallback) {
+      setSlideThumbnail(key, fallback);
+      recordThumbnailMetric("SlideThumbnail:fallback", item.id);
+      return "fallback";
+    }
+    markSlideThumbnailError(key);
+    recordThumbnailMetric("SlideThumbnail:error", item.id);
+    return "error";
+  }
+}
+
 function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
   recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
@@ -886,14 +973,13 @@ function useSlideThumbnailKey(item: SlideItem): string {
   const rollingSignature = useMemo(() => slideDataSignature(rollingRows), [rollingRows]);
 
   return useMemo(
-    () => buildSlideThumbnailKey({
+    () => buildSlideThumbnailKeyFromSignatures({
       item,
       pricingMetric,
       pricingSignature,
       budgetSignature,
       forecastSignature,
       rollingSignature,
-      renderWidth: STATIC_THUMBNAIL_W,
     }),
     [item, pricingMetric, pricingSignature, budgetSignature, forecastSignature, rollingSignature],
   );
@@ -913,26 +999,10 @@ function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWid
   useEffect(() => {
     const entry = getSlideThumbnail(key);
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
-    let cancelled = false;
     const timer = window.setTimeout(async () => {
-      markSlideThumbnailRendering(key);
-      try {
-        const capture = renderStaticThumbnail(item);
-        const timeout = new Promise<never>((_, reject) => {
-          window.setTimeout(() => reject(new Error("thumbnail-capture-timeout")), STATIC_THUMBNAIL_TIMEOUT_MS);
-        });
-        const dataUrl = await Promise.race([capture, timeout]);
-        if (!cancelled) setSlideThumbnail(key, dataUrl);
-      } catch {
-        if (!cancelled) {
-          const fallback = renderFallbackThumbnail(item);
-          if (fallback) setSlideThumbnail(key, fallback);
-          else markSlideThumbnailError(key);
-        }
-      }
+      await warmSlideThumbnail(item);
     }, STATIC_THUMBNAIL_DEBOUNCE_MS);
     return () => {
-      cancelled = true;
       window.clearTimeout(timer);
     };
   }, [item, key]);

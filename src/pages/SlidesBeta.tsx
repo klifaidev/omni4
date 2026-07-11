@@ -103,6 +103,7 @@ import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/compo
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
 import { PreflightPopover } from "@/components/pricing/slides/SlidesPreflightPopover";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
+import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlidePrecompute";
 import { useSlideExport } from "@/hooks/useSlideExport";
 import {
   createPersistentCollabRoom,
@@ -2413,6 +2414,7 @@ export default function SlidesBeta() {
   };
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
+  useIdleSlidePrecompute(items, selectedId);
   const readyAll = items.every((i) => isItemReady(i).ok);
   const preflight = useMemo(() => buildSlidesPreflight(items), [items]);
   const preflightIssuesBySlide = useMemo(() => {
