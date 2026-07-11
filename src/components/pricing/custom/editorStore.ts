@@ -17,6 +17,7 @@ import { create, useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { temporal } from "zundo";
 import { useEffect, useState } from "react";
+import { markSlidePerf, measureSlidePerf } from "@/lib/slidesPerfCounters";
 import type {
   BlockGroup,
   CustomBlock,
@@ -159,18 +160,34 @@ export function setSpeakerNotesAction(notes: string) {
 export function addBlockAction(kind: CustomBlockKind): string | null {
   const cur = baseStore.getState().config;
   if (!cur) return null;
+  const startMark = `slides:addBlock:${performance.now()}`;
+  markSlidePerf(startMark);
   const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
   const blk = newBlock(kind, zTop);
   mutate("Adicionar bloco", (c) => ({ ...c, blocks: [...c.blocks, blk] }));
+  measureSlidePerf("slides.addBlockAction", startMark, undefined, {
+    kind,
+    blockId: blk.id,
+    previousBlockCount: cur.blocks.length,
+    nextBlockCount: cur.blocks.length + 1,
+  });
   return blk.id;
 }
 
 export function addChartBlockAction(chartType: CustomChartType): string | null {
   const cur = baseStore.getState().config;
   if (!cur) return null;
+  const startMark = `slides:addChartBlock:${performance.now()}`;
+  markSlidePerf(startMark);
   const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
   const blk = newChartBlock(chartType, zTop);
   mutate("Adicionar bloco", (c) => ({ ...c, blocks: [...c.blocks, blk] }));
+  measureSlidePerf("slides.addChartBlockAction", startMark, undefined, {
+    chartType,
+    blockId: blk.id,
+    previousBlockCount: cur.blocks.length,
+    nextBlockCount: cur.blocks.length + 1,
+  });
   return blk.id;
 }
 
@@ -204,9 +221,17 @@ export function duplicateBlockAction(id: string): string | null {
 export function insertBlockAction(blk: CustomBlock, label: EditorActionLabel = "Adicionar bloco"): string | null {
   const cur = baseStore.getState().config;
   if (!cur) return null;
+  const startMark = `slides:insertBlock:${performance.now()}`;
+  markSlidePerf(startMark);
   const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
   const next = { ...blk, z: zTop + 1 } as CustomBlock;
   mutate(label, (c) => ({ ...c, blocks: [...c.blocks, next] }));
+  measureSlidePerf("slides.insertBlockAction", startMark, undefined, {
+    kind: next.kind,
+    blockId: next.id,
+    previousBlockCount: cur.blocks.length,
+    nextBlockCount: cur.blocks.length + 1,
+  });
   return next.id;
 }
 

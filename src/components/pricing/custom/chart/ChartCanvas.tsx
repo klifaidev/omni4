@@ -26,8 +26,25 @@ function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeas
   return dataSource === "forecast" ? "volume" : "rol";
 }
 
+const chartBlockSignatureCache = new WeakMap<ChartBlock, string>();
+
+function chartBlockSignature(block: ChartBlock): string {
+  const cached = chartBlockSignatureCache.get(block);
+  if (cached) return cached;
+  const signature = JSON.stringify(block);
+  chartBlockSignatureCache.set(block, signature);
+  return signature;
+}
+
 function areChartBlocksEqual(prev: ChartBlock, next: ChartBlock): boolean {
-  return prev === next || JSON.stringify(prev) === JSON.stringify(next);
+  if (prev === next) return true;
+  const equal = chartBlockSignature(prev) === chartBlockSignature(next);
+  recordSlidePerfEvent("slides.chartCanvas.memoCompare", {
+    blockId: next.id,
+    chartType: next.chartType,
+    equal,
+  });
+  return equal;
 }
 
 function safeMeasureForSource(
@@ -50,7 +67,7 @@ import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
-import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import {
   computeChartSeriesAsync,
@@ -111,6 +128,7 @@ function useAsyncSlideCalc<T>(
   fallback: T,
   key: string,
   compute: () => Promise<T>,
+  label = "slide-calc",
 ): { value: T; loading: boolean } {
   const [state, setState] = useState<{ value: T; loading: boolean }>({ value: fallback, loading: enabled });
   const computeRef = useRef(compute);
@@ -123,17 +141,24 @@ function useAsyncSlideCalc<T>(
       return () => { cancelled = true; };
     }
 
+    const startMark = `slides:${label}:${key}:start:${performance.now()}`;
+    markSlidePerf(startMark);
+    recordSlidePerfEvent("slides.worker.start", { label, key });
     setState((previous) => ({ value: previous.value, loading: true }));
     computeRef.current()
       .then((value) => {
+        measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "ok" });
+        recordSlidePerfEvent("slides.worker.end", { label, key, status: "ok" });
         if (!cancelled) setState({ value, loading: false });
       })
       .catch(() => {
+        measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "error" });
+        recordSlidePerfEvent("slides.worker.end", { label, key, status: "error" });
         if (!cancelled) setState({ value: fallback, loading: false });
       });
 
     return () => { cancelled = true; };
-  }, [enabled, fallback, key]);
+  }, [enabled, fallback, key, label]);
 
   return state;
 }
@@ -327,7 +352,21 @@ function mapPos(family: Family, p: string): string {
 
 // -- main ------------------------------------------------------------------
 function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?: string }) {
-  recordSlideRender("ChartCanvas", block.id);
+  recordSlideRender("ChartCanvas", block.id, { chartType: block.chartType, cacheSlideId });
+  useEffect(() => {
+    recordSlidePerfEvent("slides.chartCanvas.mount", {
+      blockId: block.id,
+      chartType: block.chartType,
+      cacheSlideId,
+    });
+    return () => {
+      recordSlidePerfEvent("slides.chartCanvas.unmount", {
+        blockId: block.id,
+        chartType: block.chartType,
+        cacheSlideId,
+      });
+    };
+  }, [block.chartType, block.id, cacheSlideId]);
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? fallbackMeasureForSource(block.dataSource);
@@ -598,8 +637,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       filters: block.filters,
       measure: effectiveMeasure,
       breakdown: seriesDim,
-      xDim,
-    }),
+        xDim,
+      }),
+    "chart-series",
   );
   const raw = manualComboRaw ?? workerRaw.value;
   const rawLoading = !manualComboRaw && workerRaw.loading;
@@ -731,8 +771,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       measure: effectiveMeasure,
       topN: 50,
       periodMode: "all",
-      periodValue: null,
-    }),
+        periodValue: null,
+      }),
+    "chart-ranking",
   );
   const ranking = useMemo(() => {
     if (!isRankingChart) return [];

@@ -81,8 +81,18 @@ function MissingLocalData({ label }: { label: string }) {
   );
 }
 
+const blockSignatureCache = new WeakMap<CustomBlock, string>();
+
+function blockSignature(block: CustomBlock): string {
+  const cached = blockSignatureCache.get(block);
+  if (cached) return cached;
+  const signature = JSON.stringify(block);
+  blockSignatureCache.set(block, signature);
+  return signature;
+}
+
 function areBlocksEqual(prev: CustomBlock, next: CustomBlock): boolean {
-  return prev === next || JSON.stringify(prev) === JSON.stringify(next);
+  return prev === next || blockSignature(prev) === blockSignature(next);
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {

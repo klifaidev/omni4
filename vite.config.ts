@@ -7,6 +7,8 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   base: "./",
   define: {
+    "process": JSON.stringify({ env: { NODE_ENV: mode === "production" ? "production" : "development" } }),
+    "process.env": JSON.stringify({ NODE_ENV: mode === "production" ? "production" : "development" }),
     "process.env.NODE_ENV": JSON.stringify(mode === "production" ? "production" : "development"),
   },
   server: {
@@ -26,6 +28,8 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     esbuildOptions: {
       define: {
+        "process": JSON.stringify({ env: { NODE_ENV: mode === "production" ? "production" : "development" } }),
+        "process.env": JSON.stringify({ NODE_ENV: mode === "production" ? "production" : "development" }),
         "process.env.NODE_ENV": JSON.stringify(mode === "production" ? "production" : "development"),
       },
     },

@@ -2,6 +2,7 @@ import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import type { KpiMeasureId, KpiPeriodMode } from "@/lib/customSlide";
 import type { Filters, PricingRow } from "@/lib/types";
+import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent } from "@/lib/slidesPerfCounters";
 import {
   getSlideCalcCacheValue,
   setSlideCalcCacheValue,
@@ -79,12 +80,43 @@ async function computeWithWorker<T>(
   fallback: () => T,
 ): Promise<T> {
   const cached = getSlideCalcCacheValue<T>(cacheInput);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    recordSlidePerfEvent("slides.calc.cacheHit", {
+      op: cacheInput.op,
+      slideId: cacheInput.slideId,
+      blockId: cacheInput.blockId,
+    });
+    return cached;
+  }
+  const startMark = `slides:workerClient:${cacheInput.op}:${cacheInput.blockId ?? "unknown"}:${performance.now()}`;
+  markSlidePerf(startMark);
+  recordSlidePerfEvent("slides.calc.workerDispatch", {
+    op: cacheInput.op,
+    slideId: cacheInput.slideId,
+    blockId: cacheInput.blockId,
+  });
   try {
     const result = await postToWorker<T>(workerPayload);
+    measureSlidePerf("slides.calc.workerClient", startMark, undefined, {
+      op: cacheInput.op,
+      slideId: cacheInput.slideId,
+      blockId: cacheInput.blockId,
+      path: "worker",
+    });
     setSlideCalcCacheValue(cacheInput, result);
     return result;
   } catch {
+    measureSlidePerf("slides.calc.workerClient", startMark, undefined, {
+      op: cacheInput.op,
+      slideId: cacheInput.slideId,
+      blockId: cacheInput.blockId,
+      path: "fallback",
+    });
+    recordSlidePerfEvent("slides.calc.workerFallback", {
+      op: cacheInput.op,
+      slideId: cacheInput.slideId,
+      blockId: cacheInput.blockId,
+    });
     const result = fallback();
     setSlideCalcCacheValue(cacheInput, result);
     return result;

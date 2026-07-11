@@ -107,7 +107,7 @@ describe("SupabaseYjsProvider", () => {
     const text = titleText(docA);
     text.delete(0, text.length);
     text.insert(0, "Titulo editado no cliente A");
-    await wait(30);
+    await waitFor(() => (yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text === "Titulo editado no cliente A");
 
     expect(yDocToCustomSlideConfig(docB).blocks[0]).toMatchObject({
       id: "title-1",
@@ -137,7 +137,7 @@ describe("SupabaseYjsProvider", () => {
     text.insert(text.length, " 1");
     text.insert(text.length, " 2");
     text.insert(text.length, " 3");
-    await wait(60);
+    await waitFor(() => (yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text === "Titulo original 1 2 3");
 
     expect(channelA.sent).toHaveLength(1);
     expect((yDocToCustomSlideConfig(docB).blocks[0] as { text: string }).text).toBe("Titulo original 1 2 3");
