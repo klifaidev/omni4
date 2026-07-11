@@ -35,11 +35,39 @@ Isso mantinha a comparacao por conteudo, mas podia serializar repetidamente bloc
 
 Tambem foi adicionado um polyfill minimo de `process.env` no Vite. Logs antigos do navegador mostraram `ReferenceError: process is not defined` vindo de `react-rnd` durante montagem de `Draggable`, exatamente no caminho com muitos blocos. Esse erro nao apareceu no build, mas era um risco claro para a fluidez do editor em dev/Electron.
 
+### Investigacao do `process.env` em DEV
+
+Foi checado o historico de `vite.config.ts`:
+
+- `7dfb55a` adicionou apenas `process.env.NODE_ENV` em `define` e em `optimizeDeps.esbuildOptions.define`.
+- Essa primeira correcao era incompleta para DEV porque dependencias pre-otimizadas pelo Vite, como `react-rnd`, ainda podiam acessar o objeto global `process` diretamente antes da substituicao fina de `process.env.NODE_ENV`.
+- Nao houve regressao nem commit posterior desfazendo a correcao. O problema era cobertura incompleta.
+- `39b18d9` ampliou a cobertura para `process`, `process.env` e `process.env.NODE_ENV`, tanto no `define` principal quanto no `optimizeDeps.esbuildOptions.define`, cobrindo build e servidor de desenvolvimento.
+
+Validacao desta etapa:
+
+- `http://127.0.0.1:8080` respondeu `200`.
+- O modulo servido em DEV para `src/lib/slidesPerfCounters.ts` ja contem a auto-inicializacao nova de `window.__OMNI_SLIDES_PERF__`.
+- O prebundle atual de `node_modules/.vite/deps/react-rnd.js` nao apresentou ocorrencias remanescentes de `process.env`/`NODE_ENV` na checagem local.
+
 ## Resultado da investigacao de slides quentes
 
 O cache de "ultimos slides quentes" do fullscreen nao mantem editores/canvases montados. O codigo atual apenas adiciona os IDs recentes e chama `warmSlideThumbnail(item)`.
 
 Isso aquece miniatura/dados, mas nao impede remontagem do `CustomSlideEditor` e dos `ChartCanvas` ao alternar slides no fullscreen. Como o `CustomSlideEditor` usa um store global unico (`editorStore.ts`), manter 2-3 instancias vivas em paralelo exigiria uma refatoracao maior para store por instancia. Portanto, a Fase 13.5 nao cobre esse caminho especifico hoje.
+
+### Decisao: adiado, nao esquecido
+
+Decisao desta fase: nao corrigir o cache de slides quentes agora.
+
+Razao tecnica: o editor personalizado usa um store global unico em `src/components/pricing/custom/editorStore.ts`. Manter os ultimos 2-3 slides realmente "quentes" exigiria manter varias instancias de `CustomSlideEditor`/`ChartCanvas` montadas ao mesmo tempo, cada uma com sua propria instancia de store, selecao, historico undo/redo, binding de `onChange`, atalhos, registro de canvas e estado temporario de drag/resize. Fazer isso sem isolar o store por slide criaria risco alto de um editor sobrescrever ou reagir ao estado do outro.
+
+Como revisitar no futuro:
+
+1. Extrair uma fabrica de store por instancia de editor, em vez do singleton atual.
+2. Permitir que o fullscreen mantenha 2-3 `CustomSlideEditor` montados em modo oculto/hibernado.
+3. Suspender listeners caros e interacoes nos editores ocultos, mantendo apenas estado/render quente.
+4. Garantir que exportacao, undo/redo, selecao e Yjs apontem para a instancia correta do slide ativo.
 
 ## Medicao
 
@@ -78,6 +106,44 @@ Indicadores principais:
 - eventos `slides.chartCanvas.mount`: quantos canvases montaram de fato.
 - medidas `slides.addChart.clickToReturn` e `slides.addChartBlockAction`: custo do caminho de add.
 - medidas `slides.worker.duration` e eventos `slides.calc.cacheHit`: se o novo grafico usou worker/cache ou fallback.
+
+Comandos uteis no console:
+
+```js
+// Resumo rapido de renders por componente.
+window.__OMNI_SLIDES_PERF__.counts
+```
+
+```js
+// Quantos ChartCanvas renderizaram ao menos uma vez.
+Object.entries(window.__OMNI_SLIDES_PERF__.counts)
+  .filter(([key]) => key.startsWith("ChartCanvas:"))
+  .length
+```
+
+```js
+// Eventos de mount real de ChartCanvas.
+window.__OMNI_SLIDES_PERF__.events
+  .filter((event) => event.name === "slides.chartCanvas.mount")
+```
+
+```js
+// Duracoes medidas do worker / cache client.
+window.__OMNI_SLIDES_PERF__.measures
+  .filter((measure) => measure.name === "slides.worker.duration" || measure.name === "slides.calc.workerClient")
+```
+
+```js
+// Ver se houve cache hit ou fallback sincronico.
+window.__OMNI_SLIDES_PERF__.events
+  .filter((event) => event.name === "slides.calc.cacheHit" || event.name === "slides.calc.workerFallback")
+```
+
+```js
+// Marcos especificos do clique de inserir grafico.
+window.__OMNI_SLIDES_PERF__.measures
+  .filter((measure) => measure.name.includes("addChart"))
+```
 
 ## Conclusao
 
