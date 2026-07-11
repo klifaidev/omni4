@@ -4,12 +4,17 @@
 // Espelha exatamente: cores, posições, fontes (proporcionalmente), curvas suaves
 // para o Budget Evo (Overview CM/VOL) e bridge waterfall com retângulos pretos
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import html2canvas from "html2canvas";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import { computeBudgetEvoMonthly, isItemReady, type SlideItem } from "@/lib/slidesFlow";
 import { monthLabel } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { AlertCircle, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
@@ -19,6 +24,14 @@ import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
+import {
+  buildSlideThumbnailKey,
+  getSlideThumbnail,
+  markSlideThumbnailError,
+  markSlideThumbnailRendering,
+  setSlideThumbnail,
+  subscribeSlideThumbnail,
+} from "@/lib/slideThumbnailCache";
 
 // ---------------------------------------------------------------------------
 // Tokens (espelhando PPT_COLORS de exportPpt.ts)
@@ -694,8 +707,120 @@ function PreviewContent({ item }: { item: SlideItem }) {
 // budget) o próprio viewBox cuida disso.
 const PREVIEW_W_INSPECTOR = 260;
 const PREVIEW_W_DIALOG = 800;
+const STATIC_THUMBNAIL_W = 400;
+const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
+const STATIC_THUMBNAIL_TIMEOUT_MS = 8000;
 
-export function ScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
+function waitForAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function renderFallbackThumbnail(item: SlideItem): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = STATIC_THUMBNAIL_W;
+  canvas.height = Math.round((CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const sx = canvas.width / CANVAS_W;
+  const sy = canvas.height / CANVAS_H;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+
+  if (item.kind === "cover") {
+    const isDivider = item.config.variant === "divider";
+    ctx.fillStyle = isDivider ? "#ffffff" : "#C8102E";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = isDivider ? "#1C2430" : "#ffffff";
+    ctx.font = "700 22px Calibri, Arial";
+    ctx.fillText(item.config.title || "Titulo do slide", 18, canvas.height / 2);
+    ctx.font = "12px Calibri, Arial";
+    ctx.fillStyle = isDivider ? "#667085" : "rgba(255,255,255,0.82)";
+    ctx.fillText(item.config.subtitle || "Apresentacao", 18, canvas.height / 2 + 22);
+  } else if (item.kind === "custom") {
+    const bg = item.config.background;
+    if (bg) {
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const blocks = [...item.config.blocks].sort((a, b) => a.z - b.z);
+    blocks.forEach((block) => {
+      if (block.hidden) return;
+      const x = block.x * sx;
+      const y = block.y * sy;
+      const w = block.w * sx;
+      const h = block.h * sy;
+      ctx.fillStyle = block.kind === "chart" ? "#eef2ff" : block.kind === "kpi" ? "#f8fafc" : "#ffffff";
+      ctx.strokeStyle = block.kind === "chart" ? "#94a3b8" : "#cbd5e1";
+      ctx.lineWidth = 1;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "#1f2937";
+      ctx.font = block.kind === "title" ? "700 14px Calibri, Arial" : "10px Calibri, Arial";
+      const label = "text" in block ? block.text : block.kind === "chart" ? "Grafico" : block.kind.toUpperCase();
+      ctx.fillText(String(label || block.kind).slice(0, 32), x + 6, y + Math.min(18, h - 4));
+    });
+  } else {
+    ctx.fillStyle = "#C8102E";
+    ctx.fillRect(0, 0, canvas.width, 28);
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 18px Calibri, Arial";
+    ctx.fillText(item.label || (item.kind === "budget_evo" ? "Overview CM/VOL" : "Overview DRE & Bridge"), 18, 70);
+    ctx.strokeStyle = "#C8102E";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(18, 92);
+    ctx.lineTo(canvas.width - 18, canvas.height - 45);
+    ctx.stroke();
+  }
+
+  return canvas.toDataURL("image/png");
+}
+
+async function renderStaticThumbnail(item: SlideItem): Promise<string> {
+  const host = document.createElement("div");
+  const height = (CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W;
+  host.style.cssText = [
+    "position:fixed",
+    "left:0",
+    `top:-${Math.ceil(height + 200)}px`,
+    `width:${STATIC_THUMBNAIL_W}px`,
+    `height:${height}px`,
+    "background:#FFFFFF",
+    "overflow:hidden",
+    "pointer-events:none",
+    "z-index:2147483647",
+  ].join(";");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    flushSync(() => {
+      root.render(<LiveScaledPreview item={item} targetWidth={STATIC_THUMBNAIL_W} />);
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+    const canvas = await html2canvas(host, {
+      backgroundColor: "#ffffff",
+      scale: 1,
+      width: STATIC_THUMBNAIL_W,
+      height,
+      windowWidth: STATIC_THUMBNAIL_W,
+      windowHeight: height,
+      logging: false,
+      useCORS: true,
+      allowTaint: true,
+      ignoreElements: (el) => el instanceof HTMLElement && el.dataset.html2canvasIgnore === "true",
+    });
+    return canvas.toDataURL("image/png");
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+}
+
+function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
   recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
 
@@ -736,6 +861,112 @@ export function ScaledPreview({ item, targetWidth }: { item: SlideItem; targetWi
   );
 }
 
+function SlideThumbnailPlaceholder({ width }: { width: number }) {
+  return (
+    <div
+      aria-hidden
+      className="flex items-center justify-center overflow-hidden rounded-lg border border-border/40 bg-muted/35"
+      style={{ width, height: (CANVAS_H / CANVAS_W) * width }}
+    >
+      <div className="h-6 w-24 rounded-full bg-background/60" />
+    </div>
+  );
+}
+
+function useSlideThumbnailKey(item: SlideItem): string {
+  const pricingRows = usePricing((s) => s.rows);
+  const pricingMetric = usePricing((s) => s.metric);
+  const budgetRows = useBudget((s) => s.rows);
+  const forecastRows = useForecast((s) => s.rows);
+  const rollingRows = useRolling((s) => s.rows);
+
+  const pricingSignature = useMemo(() => slideDataSignature(pricingRows), [pricingRows]);
+  const budgetSignature = useMemo(() => slideDataSignature(budgetRows), [budgetRows]);
+  const forecastSignature = useMemo(() => slideDataSignature(forecastRows), [forecastRows]);
+  const rollingSignature = useMemo(() => slideDataSignature(rollingRows), [rollingRows]);
+
+  return useMemo(
+    () => buildSlideThumbnailKey({
+      item,
+      pricingMetric,
+      pricingSignature,
+      budgetSignature,
+      forecastSignature,
+      rollingSignature,
+      renderWidth: STATIC_THUMBNAIL_W,
+    }),
+    [item, pricingMetric, pricingSignature, budgetSignature, forecastSignature, rollingSignature],
+  );
+}
+
+function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
+  recordSlideRender("StaticScaledPreview", item.id);
+  const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
+  const previewH = (CANVAS_H / CANVAS_W) * previewW;
+  const key = useSlideThumbnailKey(item);
+  const current = useSyncExternalStore(
+    (listener) => subscribeSlideThumbnail(key, listener),
+    () => getSlideThumbnail(key),
+    () => getSlideThumbnail(key),
+  );
+
+  useEffect(() => {
+    const entry = getSlideThumbnail(key);
+    if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      markSlideThumbnailRendering(key);
+      try {
+        const capture = renderStaticThumbnail(item);
+        const timeout = new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error("thumbnail-capture-timeout")), STATIC_THUMBNAIL_TIMEOUT_MS);
+        });
+        const dataUrl = await Promise.race([capture, timeout]);
+        if (!cancelled) setSlideThumbnail(key, dataUrl);
+      } catch {
+        if (!cancelled) {
+          const fallback = renderFallbackThumbnail(item);
+          if (fallback) setSlideThumbnail(key, fallback);
+          else markSlideThumbnailError(key);
+        }
+      }
+    }, STATIC_THUMBNAIL_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [item, key]);
+
+  return (
+    <>
+      {current?.status === "ready" && current.dataUrl ? (
+        <img
+          src={current.dataUrl}
+          alt=""
+          className="block rounded-lg border border-border/40 bg-white object-cover"
+          style={{ width: previewW, height: previewH }}
+          draggable={false}
+        />
+      ) : (
+        <SlideThumbnailPlaceholder width={previewW} />
+      )}
+    </>
+  );
+}
+
+export function ScaledPreview({
+  item,
+  targetWidth,
+  mode = "static",
+}: {
+  item: SlideItem;
+  targetWidth?: number;
+  mode?: "static" | "live";
+}) {
+  if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
+  return <StaticScaledPreview item={item} targetWidth={targetWidth} />;
+}
+
 // ---------------------------------------------------------------------------
 // Wrapper público — preview + botão de expandir
 // ---------------------------------------------------------------------------
@@ -761,7 +992,7 @@ export function SlidePreview({ item }: { item: SlideItem }) {
           Expandir
         </Button>
       </div>
-      <ScaledPreview item={item} />
+      <ScaledPreview item={item} mode="live" />
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="max-w-[860px] p-0 gap-0">
@@ -769,7 +1000,7 @@ export function SlidePreview({ item }: { item: SlideItem }) {
             <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
           </DialogHeader>
           <div className="p-5">
-            <ScaledPreview item={item} targetWidth={800} />
+            <ScaledPreview item={item} targetWidth={800} mode="live" />
           </div>
         </DialogContent>
       </Dialog>

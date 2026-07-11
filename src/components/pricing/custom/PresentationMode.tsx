@@ -482,7 +482,7 @@ function SlideRenderArea({
       );
     }
     // Non-custom: ScaledPreview at full canvas width so it fills the scaled container.
-    return <ScaledPreview item={slide as SlideItem} targetWidth={CANVAS_W} />;
+    return <ScaledPreview item={slide as SlideItem} targetWidth={CANVAS_W} mode="live" />;
   })();
 
   // C28: use slide background for the outer shell so transparent custom slides
