@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import type { CustomSlideConfig } from "@/lib/customSlide";
 import {
+  compactCustomSlideBlockOrder,
   customSlideConfigToYDoc,
   getCustomSlideBlockText,
   getCustomSlideYDocParts,
@@ -10,6 +11,7 @@ import {
   removeCustomSlideBlock,
   reorderCustomSlideBlock,
   setYTextValue,
+  uniqueOrderedBlockIds,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
 
@@ -105,6 +107,15 @@ function blockIds(doc: Y.Doc): string[] {
   return yDocToCustomSlideConfig(doc).blocks.map((block) => block.id);
 }
 
+function rawBlockOrder(doc: Y.Doc): string[] {
+  return getCustomSlideYDocParts(doc).blockOrder.toArray();
+}
+
+function uniqueBlockOrder(doc: Y.Doc): string[] {
+  const { blockOrder, blocks } = getCustomSlideYDocParts(doc);
+  return uniqueOrderedBlockIds(blockOrder.toArray(), blocks);
+}
+
 describe("customSlideYjs", () => {
   it("preserves a CustomSlideConfig through JSON -> Y.Doc -> JSON", () => {
     const doc = customSlideConfigToYDoc(sampleConfig);
@@ -179,6 +190,45 @@ describe("customSlideYjs", () => {
     expect(hostIds).toEqual(guestIds);
     expect(new Set(hostIds)).toEqual(new Set(sampleConfig.blocks.map((block) => block.id)));
     expect(hostIds).toHaveLength(sampleConfig.blocks.length);
+  });
+
+  it("deduplicates dirty concurrent reorder state deterministically on every client", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    reorderCustomSlideBlock(host, "chart-1", "title-1");
+    reorderCustomSlideBlock(guest, "kpi-1", "text-1");
+    syncBoth(host, guest);
+
+    expect(rawBlockOrder(host).length).toBeGreaterThan(sampleConfig.blocks.length);
+    expect(rawBlockOrder(host)).toEqual(rawBlockOrder(guest));
+    expect(uniqueBlockOrder(host)).toEqual(uniqueBlockOrder(guest));
+    expect(uniqueBlockOrder(host)).toHaveLength(sampleConfig.blocks.length);
+    expect(new Set(uniqueBlockOrder(host))).toEqual(new Set(sampleConfig.blocks.map((block) => block.id)));
+  });
+
+  it("compacts repeated dirty reorder conflicts back to one raw id per block", () => {
+    const host = customSlideConfigToYDoc(sampleConfig);
+    const guest = cloneSyncedDoc(host);
+
+    for (let i = 0; i < 8; i += 1) {
+      reorderCustomSlideBlock(host, "chart-1", "title-1");
+      reorderCustomSlideBlock(guest, "kpi-1", "text-1");
+      syncBoth(host, guest);
+      reorderCustomSlideBlock(host, "title-1", "chart-1");
+      reorderCustomSlideBlock(guest, "text-1", "kpi-1");
+      syncBoth(host, guest);
+    }
+
+    expect(rawBlockOrder(host).length).toBeGreaterThan(sampleConfig.blocks.length);
+    const compactedHost = compactCustomSlideBlockOrder(host);
+    const compactedGuest = compactCustomSlideBlockOrder(guest);
+
+    expect(compactedHost).toEqual(compactedGuest);
+    expect(rawBlockOrder(host)).toEqual(compactedHost);
+    expect(rawBlockOrder(guest)).toEqual(compactedGuest);
+    expect(rawBlockOrder(host)).toHaveLength(sampleConfig.blocks.length);
+    expect(new Set(rawBlockOrder(host))).toEqual(new Set(sampleConfig.blocks.map((block) => block.id)));
   });
 
   it("keeps a concurrently edited block deleted from the app view when another collaborator removed it", () => {

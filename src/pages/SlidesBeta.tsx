@@ -127,6 +127,7 @@ import {
   type YjsTextAwarenessState,
 } from "@/lib/supabaseYjsProvider";
 import {
+  compactCustomSlideBlockOrder,
   customSlideConfigToYDoc,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
@@ -2194,11 +2195,21 @@ export default function SlidesBeta() {
     savingRef.current = true;
     setCollabSaveStatus("saving");
     try {
+      const itemsForSnapshot = items.map((item) => {
+        if (item.kind !== "custom") return item;
+        const doc = customYDocsRef.current.get(item.id);
+        if (!doc) return item;
+        compactCustomSlideBlockOrder(doc);
+        return {
+          ...item,
+          config: yDocToCustomSlideConfig(doc),
+        } as SlideItem;
+      });
       const result = await retryAsync(() => savePersistentCollabSnapshot({
         roomId: persistentRoomDbId,
         code: persistentCollabCode,
         expectedPreviousVersion: collabSnapshotVersion,
-        items,
+        items: itemsForSnapshot,
         selectedSlideId: selectedId,
         transition,
         appVersion: APP_VERSION,

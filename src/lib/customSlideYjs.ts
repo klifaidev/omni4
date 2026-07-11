@@ -105,13 +105,30 @@ function removeFromArray<T>(array: Y.Array<T>, predicate: (value: T) => boolean)
   }
 }
 
-function uniqueOrderedBlockIds(ids: string[], blocks: Y.Map<Y.Map<unknown>>): string[] {
+export function uniqueOrderedBlockIds(ids: string[], blocks: Y.Map<Y.Map<unknown>>): string[] {
   const seen = new Set<string>();
   return ids.filter((id) => {
     if (seen.has(id) || !blocks.has(id)) return false;
     seen.add(id);
     return true;
   });
+}
+
+export function compactCustomSlideBlockOrder(doc: Y.Doc): string[] {
+  const { blockOrder, blocks } = getParts(doc);
+  const compacted = uniqueOrderedBlockIds(blockOrder.toArray(), blocks);
+  const current = blockOrder.toArray();
+  const alreadyCompact = current.length === compacted.length
+    && current.every((id, index) => id === compacted[index]);
+
+  if (!alreadyCompact) {
+    doc.transact(() => {
+      blockOrder.delete(0, blockOrder.length);
+      if (compacted.length > 0) blockOrder.insert(0, compacted);
+    });
+  }
+
+  return compacted;
 }
 
 export function getCustomSlideBlockText(doc: Y.Doc, blockId: string, field: string): Y.Text | null {
