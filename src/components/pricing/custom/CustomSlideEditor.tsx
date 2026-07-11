@@ -2075,7 +2075,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           pointerEvents: "none",
                           visibility: blk.hidden ? "hidden" : "visible",
                         }}>
-                          <BlockRenderer block={blk} isEditing={isEditing} />
+                          <BlockRenderer block={blk} isEditing={isEditing} cacheSlideId={slideId} />
                         </div>
                         {isEditing && (
                           <InlineTextEditor
@@ -2246,7 +2246,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           pointerEvents: blk.kind === "chart" ? "auto" : "none",
                           visibility: blk.hidden ? "hidden" : "visible",
                         }}>
-                          <BlockRenderer block={blk} isEditing={isEditing} />
+                          <BlockRenderer block={blk} isEditing={isEditing} cacheSlideId={slideId} />
                         </div>
                         {isEditing && (
                           <InlineTextEditor

@@ -478,7 +478,7 @@ function SlideRenderArea({
       const cfg = liveConfig ?? (slide.config as CustomSlideConfig | undefined);
       if (!cfg) return null;
       return (
-        <CustomCanvasReadOnly config={cfg} animateBlocks={animateBlocks} animKey={animKey} />
+        <CustomCanvasReadOnly config={cfg} slideId={slide.id} animateBlocks={animateBlocks} animKey={animKey} />
       );
     }
     // Non-custom: ScaledPreview at full canvas width so it fills the scaled container.
@@ -514,8 +514,8 @@ function SlideRenderArea({
 }
 
 export function CustomCanvasReadOnly({
-  config, animateBlocks = false, animKey = 0,
-}: { config: CustomSlideConfig; animateBlocks?: boolean; animKey?: number }) {
+  config, slideId, animateBlocks = false, animKey = 0,
+}: { config: CustomSlideConfig; slideId?: string; animateBlocks?: boolean; animKey?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const sorted = [...config.blocks].sort((a, b) => a.z - b.z);
   return (
@@ -550,7 +550,7 @@ export function CustomCanvasReadOnly({
               visibility: blk.hidden ? "hidden" : "visible",
             }}
           >
-            <BlockRenderer block={blk} readOnly />
+            <BlockRenderer block={blk} readOnly cacheSlideId={slideId} />
           </div>
         );
       })}

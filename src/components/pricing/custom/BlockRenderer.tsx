@@ -53,6 +53,7 @@ import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -357,29 +358,32 @@ class BlockErrorBoundary extends React.Component<
   }
 }
 
-export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+type BlockRendererProps = { block: CustomBlock; readOnly?: boolean; isEditing?: boolean; cacheSlideId?: string };
+
+export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing, cacheSlideId }: BlockRendererProps) {
   recordSlideRender("BlockRenderer", block.id);
   return (
     <BlockErrorBoundary block={block}>
-      <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} />
+      <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} cacheSlideId={cacheSlideId} />
     </BlockErrorBoundary>
   );
 }, (prev, next) => (
   areBlocksEqual(prev.block, next.block)
   && prev.readOnly === next.readOnly
   && prev.isEditing === next.isEditing
+  && prev.cacheSlideId === next.cacheSlideId
 ));
 
-function BlockRendererInner({ block, readOnly, isEditing }: { block: CustomBlock; readOnly?: boolean; isEditing?: boolean }) {
+function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId }: BlockRendererProps) {
   switch (block.kind) {
     case "title":  return <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />;
     case "text":   return <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />;
     case "kpi":    return <KpiRender block={block} readOnly={readOnly} />;
     case "image":  return <ImageRender block={block} />;
     case "shape":  return <ShapeRender block={block} />;
-    case "bridge": return <BridgeRender block={block} />;
+    case "bridge": return <BridgeRender block={block} cacheSlideId={cacheSlideId} />;
     case "table":  return <TableRender block={block} readOnly={readOnly} />;
-    case "chart":  return <ChartRender block={block} />;
+    case "chart":  return <ChartRender block={block} cacheSlideId={cacheSlideId} />;
     case "topSku": return <TopSkuRender block={block} />;
     case "dre":    return <DreRender block={block} readOnly={readOnly} />;
     // Omni Analytics
@@ -664,24 +668,34 @@ function ShapeRender({ block: b }: { block: ShapeBlock }) {
   return <ShapeRenderer block={b} />;
 }
 
-function BridgeRender({ block: b }: { block: BridgeBlock }) {
+function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSlideId?: string }) {
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
+  const pricingSignature = useMemo(() => slideDataSignature(pricing), [pricing]);
 
   const pvmResult = useMemo(() => {
     if (!b.base || !b.comp || b.base === b.comp) return { kind: "unconfigured" as const };
-    const filtered = applyOmniFilters(pricing, b);
-    const labels = b.mode === "month" ? {
-      base: (() => { const r = filtered.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
-      comp: (() => { const r = filtered.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
-    } : undefined;
-    try {
-      return { kind: "ok" as const, data: calcPVM(filtered, metric, b.base, b.comp, b.mode, labels) };
-    } catch (err) {
-      console.error("[BridgeRender] calcPVM error:", err);
-      return { kind: "error" as const };
-    }
-  }, [pricing, metric, b.base, b.comp, b.mode, b.filters]);
+    return getOrComputeSlideCalc({
+      op: "custom-bridge-pvm",
+      slideId: cacheSlideId,
+      blockId: b.id,
+      dataSource: "ke30",
+      dataSignature: pricingSignature,
+      params: { metric, base: b.base, comp: b.comp, mode: b.mode, filters: b.filters },
+    }, () => {
+      const filtered = applyOmniFilters(pricing, b);
+      const labels = b.mode === "month" ? {
+        base: (() => { const r = filtered.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
+        comp: (() => { const r = filtered.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
+      } : undefined;
+      try {
+        return { kind: "ok" as const, data: calcPVM(filtered, metric, b.base, b.comp, b.mode, labels) };
+      } catch (err) {
+        console.error("[BridgeRender] calcPVM error:", err);
+        return { kind: "error" as const };
+      }
+    });
+  }, [pricing, pricingSignature, metric, b, cacheSlideId]);
 
   if (pvmResult.kind !== "ok") {
     return (
@@ -1085,8 +1099,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
 // ---------------------------------------------------------------------------
 import { ChartCanvas } from "./chart/ChartCanvas";
 
-function ChartRender({ block }: { block: ChartBlock }) {
-  return <ChartCanvas block={block} />;
+function ChartRender({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?: string }) {
+  return <ChartCanvas block={block} cacheSlideId={cacheSlideId} />;
 }
 
 // ---------------------------------------------------------------------------

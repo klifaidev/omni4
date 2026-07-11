@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
 
 // ---------------------------------------------------------------------------
 // Tokens (espelhando PPT_COLORS de exportPpt.ts)
@@ -142,9 +143,17 @@ function CoverPreview({ item }: { item: Extract<SlideItem, { kind: "cover" }> })
 // ---------------------------------------------------------------------------
 function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_evo" }> }) {
   const budgetRows = useBudget((s) => s.rows);
+  const budgetSignature = useMemo(() => slideDataSignature(budgetRows), [budgetRows]);
   const data = useMemo(
-    () => computeBudgetEvoMonthly(budgetRows, item.config.filters, item.config.start, item.config.end),
-    [budgetRows, item.config.filters, item.config.start, item.config.end],
+    () => getOrComputeSlideCalc({
+      op: "preview-budget-evo",
+      slideId: item.id,
+      blockId: "budget-evo",
+      dataSource: "budget",
+      dataSignature: budgetSignature,
+      params: item.config,
+    }, () => computeBudgetEvoMonthly(budgetRows, item.config.filters, item.config.start, item.config.end)),
+    [budgetRows, budgetSignature, item.id, item.config],
   );
 
   if (data.length === 0) {
@@ -464,25 +473,35 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
   const pricingRows = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const ready = isItemReady(item);
+  const pricingSignature = useMemo(() => slideDataSignature(pricingRows), [pricingRows]);
 
   const pvm = useMemo(() => {
     if (!ready.ok || !item.config.base || !item.config.comp) return null;
-    const filtered = applyFilters(pricingRows, item.config.filters, null);
-    const labels = item.config.mode === "month"
-      ? {
-          base: (() => {
-            const r = filtered.find((x) => x.periodo === item.config.base);
-            return r ? monthLabel(r.mes, r.ano) : item.config.base ?? "";
-          })(),
-          comp: (() => {
-            const r = filtered.find((x) => x.periodo === item.config.comp);
-            return r ? monthLabel(r.mes, r.ano) : item.config.comp ?? "";
-          })(),
-        }
-      : undefined;
-    try { return calcPVM(filtered, metric, item.config.base, item.config.comp, item.config.mode, labels); }
-    catch { return null; }
-  }, [pricingRows, metric, item.config, ready.ok]);
+    return getOrComputeSlideCalc({
+      op: "preview-bridge-pvm",
+      slideId: item.id,
+      blockId: "bridge-pvm",
+      dataSource: "ke30",
+      dataSignature: pricingSignature,
+      params: { metric, config: item.config },
+    }, () => {
+      const filtered = applyFilters(pricingRows, item.config.filters, null);
+      const labels = item.config.mode === "month"
+        ? {
+            base: (() => {
+              const r = filtered.find((x) => x.periodo === item.config.base);
+              return r ? monthLabel(r.mes, r.ano) : item.config.base ?? "";
+            })(),
+            comp: (() => {
+              const r = filtered.find((x) => x.periodo === item.config.comp);
+              return r ? monthLabel(r.mes, r.ano) : item.config.comp ?? "";
+            })(),
+          }
+        : undefined;
+      try { return calcPVM(filtered, metric, item.config.base, item.config.comp, item.config.mode, labels); }
+      catch { return null; }
+    });
+  }, [pricingRows, pricingSignature, metric, item.id, item.config, ready.ok]);
 
   if (!ready.ok) return <Frame label="Bridge PVM"><Empty message={ready.reason ?? "Configure o slide."} /></Frame>;
   if (!pvm) return <Frame label="Bridge PVM"><Empty message="Sem dados para os períodos selecionados." /></Frame>;
@@ -666,7 +685,7 @@ function PreviewContent({ item }: { item: SlideItem }) {
     case "bridge_pvm": return <BridgePvmPreview item={item} />;
     case "budget_evo": return <BudgetEvoPreview item={item} />;
     case "custom":
-      return <CustomCanvasReadOnly config={item.config} />;
+      return <CustomCanvasReadOnly config={item.config} slideId={item.id} />;
   }
 }
 
@@ -711,7 +730,7 @@ export function ScaledPreview({ item, targetWidth }: { item: SlideItem; targetWi
           pointerEvents: "none",
         }}
       >
-        <CustomCanvasReadOnly config={item.config} />
+        <CustomCanvasReadOnly config={item.config} slideId={item.id} />
       </div>
     </div>
   );

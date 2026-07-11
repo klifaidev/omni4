@@ -51,6 +51,7 @@ import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilt
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
 import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
 import {
   ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type ChartStyle,
 } from "./types";
@@ -283,7 +284,7 @@ function mapPos(family: Family, p: string): string {
 }
 
 // -- main ------------------------------------------------------------------
-function ChartCanvasComponent({ block }: { block: ChartBlock }) {
+function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?: string }) {
   recordSlideRender("ChartCanvas", block.id);
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
@@ -360,6 +361,7 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
       return true;
     });
   }, [rawDsRows, incoming]);
+  const dsRowsSignature = useMemo(() => slideDataSignature(dsRows), [dsRows]);
   const rowsForDataSource = useMemo(() => {
     const sourceRows = (dataSource: ChartBlock["dataSource"]) => {
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
@@ -504,13 +506,15 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
     const valuesBySeries = new Map<string, Map<string, number>>();
 
     for (const def of defs) {
-      const computed = computeChartSeries(
-        rowsForDataSource(def.dataSource),
-        block.filters,
-        def.measure,
-        null,
-        xDim,
-      );
+      const sourceRows = rowsForDataSource(def.dataSource);
+      const computed = getOrComputeSlideCalc({
+        op: "chart-series",
+        slideId: cacheSlideId,
+        blockId: block.id,
+        dataSource: def.dataSource,
+        dataSignature: slideDataSignature(sourceRows),
+        params: { filters: block.filters, measure: def.measure, breakdown: null, xDim, comboSeriesName: def.name },
+      }, () => computeChartSeries(sourceRows, block.filters, def.measure, null, xDim));
       const key = def.name?.trim() || `${dataSourceLabel(def.dataSource)} - ${KPI_MEASURES_LABEL[def.measure] ?? def.measure}`;
       const valueMap = new Map<string, number>();
       computed.periodos.forEach((p, i) => {
@@ -531,11 +535,18 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
       values: periodos.map((p) => map.get(p.key) ?? 0),
     }));
     return { periodos, series };
-  }, [block.chartType, block.comboSeries, block.filters, rowsForDataSource, xDim]);
+  }, [block.chartType, block.comboSeries, block.filters, rowsForDataSource, xDim, cacheSlideId, block.id]);
 
   const raw = useMemo(
-    () => manualComboRaw ?? computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim),
-    [manualComboRaw, dsRows, block.filters, effectiveMeasure, seriesDim, xDim],
+    () => manualComboRaw ?? getOrComputeSlideCalc({
+      op: "chart-series",
+      slideId: cacheSlideId,
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: dsRowsSignature,
+      params: { filters: block.filters, measure: effectiveMeasure, seriesDim, xDim },
+    }, () => computeChartSeries(dsRows, block.filters, effectiveMeasure, seriesDim, xDim)),
+    [manualComboRaw, dsRows, dsRowsSignature, block.filters, block.dataSource, block.id, effectiveMeasure, seriesDim, xDim, cacheSlideId],
   );
   const data = useMemo(() => {
     const seriesSum = (ser: (typeof raw.series)[number]) =>
@@ -577,7 +588,14 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
     const tm = safeTooltipMeasure;
     if (!tm) return null;
     try {
-      const r = computeChartSeries(dsRows, block.filters, tm, null, xDim);
+      const r = getOrComputeSlideCalc({
+        op: "chart-tooltip-extra",
+        slideId: cacheSlideId,
+        blockId: block.id,
+        dataSource: block.dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters: block.filters, measure: tm, xDim },
+      }, () => computeChartSeries(dsRows, block.filters, tm, null, xDim));
       const map = new Map<string, number>();
       r.periodos.forEach((p, i) => {
         const total = r.series.reduce((s, ser) => s + (ser.values[i] ?? 0), 0);
@@ -587,47 +605,70 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
       const fmt = inferFormat(tm);
       return { map, label, fmt, measure: tm };
     } catch { return null; }
-  }, [safeTooltipMeasure, dsRows, block.filters, xDim]);
+  }, [safeTooltipMeasure, dsRows, dsRowsSignature, block.filters, block.dataSource, block.id, xDim, cacheSlideId]);
 
   // Combo: optional second measure for line series
   const lineSeriesData = useMemo(() => {
     if (manualComboRaw || block.chartType !== "combo" || !safeMeasureLine) return null;
     try {
-      return computeChartSeries(dsRows, block.filters, safeMeasureLine, seriesDim);
+      return getOrComputeSlideCalc({
+        op: "chart-line-series",
+        slideId: cacheSlideId,
+        blockId: block.id,
+        dataSource: block.dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters: block.filters, measure: safeMeasureLine, seriesDim },
+      }, () => computeChartSeries(dsRows, block.filters, safeMeasureLine, seriesDim));
     } catch {
       return null;
     }
-  }, [manualComboRaw, block.chartType, safeMeasureLine, dsRows, block.filters, seriesDim]);
+  }, [manualComboRaw, block.chartType, block.dataSource, block.id, safeMeasureLine, dsRows, dsRowsSignature, block.filters, seriesDim, cacheSlideId]);
 
   const budgetGap = useMemo(() => {
     if (!block.budgetGap?.enabled || block.dataSource !== "budget_real") return null;
     const measure = safeMeasureForSource(block.budgetGap.measure ?? effectiveMeasure, block.dataSource)
       ?? effectiveMeasure;
-    const realRows = applyFilters(budgetRowsAsPricingFiltered(budget, "real"), block.filters ?? {}, null);
-    const realizedPeriods = new Set(realRows
-      .filter((r) => Math.abs(pickMeasure(aggregateKpi([r]), measure)) > 0)
-      .map((r) => r.periodo));
-    if (realizedPeriods.size === 0) return null;
-    const budgetRows = applyFilters(budgetRowsAsPricingFiltered(budget, "budget"), block.filters ?? {}, null)
-      .filter((r) => realizedPeriods.has(r.periodo));
-    const realValue = pickMeasure(aggregateKpi(realRows.filter((r) => realizedPeriods.has(r.periodo))), measure);
-    const budgetValue = pickMeasure(aggregateKpi(budgetRows), measure);
-    const gap = realValue - budgetValue;
-    return {
-      value: gap,
-      text: block.budgetGap.label ?? compactGapLabel(gap, measure),
-    };
-  }, [block.budgetGap, block.dataSource, block.filters, effectiveMeasure, budget]);
+    return getOrComputeSlideCalc({
+      op: "chart-budget-gap",
+      slideId: cacheSlideId,
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: slideDataSignature(budget),
+      params: { budgetGap: block.budgetGap, filters: block.filters, measure },
+    }, () => {
+      const realRows = applyFilters(budgetRowsAsPricingFiltered(budget, "real"), block.filters ?? {}, null);
+      const realizedPeriods = new Set(realRows
+        .filter((r) => Math.abs(pickMeasure(aggregateKpi([r]), measure)) > 0)
+        .map((r) => r.periodo));
+      if (realizedPeriods.size === 0) return null;
+      const budgetRows = applyFilters(budgetRowsAsPricingFiltered(budget, "budget"), block.filters ?? {}, null)
+        .filter((r) => realizedPeriods.has(r.periodo));
+      const realValue = pickMeasure(aggregateKpi(realRows.filter((r) => realizedPeriods.has(r.periodo))), measure);
+      const budgetValue = pickMeasure(aggregateKpi(budgetRows), measure);
+      const gap = realValue - budgetValue;
+      return {
+        value: gap,
+        text: block.budgetGap.label ?? compactGapLabel(gap, measure),
+      };
+    });
+  }, [block.budgetGap, block.dataSource, block.filters, block.id, effectiveMeasure, budget, cacheSlideId]);
 
   // ---- ranking-style data for pie/donut/bubble/scatter/funnel/treemap ----
   const rankingTypes = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"];
   const ranking = useMemo(() => {
     if (!rankingTypes.includes(block.chartType)) return [];
-    const base = computeTopRanking(
+    const base = getOrComputeSlideCalc({
+      op: "chart-ranking",
+      slideId: cacheSlideId,
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: dsRowsSignature,
+      params: { filters: block.filters, dim: seriesDim ?? "marca", measure: effectiveMeasure, chartType: block.chartType },
+    }, () => computeTopRanking(
       dsRows, block.filters,
       seriesDim ?? "marca",
       effectiveMeasure, 50, "all", null,
-    );
+    ));
     // FIX 2 â€” apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
     const sc = block.sortConfig;
     if (!sc) return base;
@@ -639,7 +680,7 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
       return sc.dir === "asc" ? [...base].reverse() : base;
     }
     return base;
-  }, [dsRows, block.filters, seriesDim, effectiveMeasure, block.chartType, block.sortConfig, block.fieldWells?.colorDim]);
+  }, [dsRows, dsRowsSignature, block.filters, block.dataSource, block.id, seriesDim, effectiveMeasure, block.chartType, block.sortConfig, block.fieldWells?.colorDim, cacheSlideId]);
 
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
@@ -1194,10 +1235,24 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
     const dim = seriesDim ?? "marca";
     const sizeRanking = ranking; // ranks by primary measure (drives size)
     const xRanking = safeMeasureX
-      ? computeTopRanking(dsRows, block.filters, dim, safeMeasureX, 50, "all", null)
+      ? getOrComputeSlideCalc({
+        op: "chart-scatter-axis-ranking",
+        slideId: cacheSlideId,
+        blockId: block.id,
+        dataSource: block.dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters: block.filters, dim, measure: safeMeasureX, axis: "x" },
+      }, () => computeTopRanking(dsRows, block.filters, dim, safeMeasureX, 50, "all", null))
       : null;
     const yRanking = safeMeasureY
-      ? computeTopRanking(dsRows, block.filters, dim, safeMeasureY, 50, "all", null)
+      ? getOrComputeSlideCalc({
+        op: "chart-scatter-axis-ranking",
+        slideId: cacheSlideId,
+        blockId: block.id,
+        dataSource: block.dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters: block.filters, dim, measure: safeMeasureY, axis: "y" },
+      }, () => computeTopRanking(dsRows, block.filters, dim, safeMeasureY, 50, "all", null))
       : null;
     const xByName = new Map(xRanking?.map((r) => [r.name, r.value]) ?? []);
     const yByName = new Map(yRanking?.map((r) => [r.name, r.value]) ?? []);
@@ -1297,6 +1352,7 @@ function ChartCanvasComponent({ block }: { block: ChartBlock }) {
         rows={rows}
         series={data.series}
         dsRows={dsRows}
+        cacheSlideId={cacheSlideId}
       />
     );
   } else if (ct === "funnel") {
@@ -1571,6 +1627,7 @@ function Wrapper({ children, style, hasIncoming }: {
 
 export const ChartCanvas = React.memo(ChartCanvasComponent, (prev, next) =>
   areChartBlocksEqual(prev.block, next.block)
+  && prev.cacheSlideId === next.cacheSlideId
 );
 
 // -- Custom legend with click-to-filter on series dimension ----------------
@@ -1839,13 +1896,14 @@ function mixHex(a: string, b: string, t: number): string {
 // -- Waterfall (custom Recharts composition) -------------------------------
 // FIX 1+2 â€” supports both legacy per-period mode AND smart column-builder mode.
 function WaterfallChart({
-  block, style, series, dsRows: dsRowsProp,
+  block, style, series, dsRows: dsRowsProp, cacheSlideId,
 }: {
   block: ChartBlock;
   style: ChartStyle;
   rows: Record<string, number | string>[];
   series: { name: string; values: number[] }[];
   dsRows?: PricingRow[];
+  cacheSlideId?: string;
 }) {
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? fallbackMeasureForSource(block.dataSource);
@@ -1861,9 +1919,13 @@ function WaterfallChart({
       : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
       : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
       : pricing);
+  const dsRowsSignature = useMemo(() => slideDataSignature(dsRows), [dsRows]);
 
   const wfMode = style.waterfall.mode ?? "pvm";
-  const pvmCfg = style.waterfall.pvm ?? { base: null, comp: null, periodMode: "month" as const, decomposition: "effects", topN: 6, comparisonMode: "prev-month" as const };
+  const pvmCfg = useMemo(
+    () => style.waterfall.pvm ?? { base: null, comp: null, periodMode: "month" as const, decomposition: "effects", topN: 6, comparisonMode: "prev-month" as const },
+    [style.waterfall.pvm],
+  );
   const VALID_DECOMPOSITIONS = new Set([
     "marca", "categoria", "subcategoria", "formato",
     "canal", "canalAjustado", "mercado", "regional", "uf",
@@ -1877,6 +1939,22 @@ function WaterfallChart({
   // PVM mode â€” decomposiÃ§Ã£o igual Ã  aba Bridge (com auto-default de base/comp)
   const pvmItems = useMemo(() => {
     if (wfMode !== "pvm") return null;
+    return getOrComputeSlideCalc({
+      op: "chart-waterfall-pvm",
+      slideId: cacheSlideId,
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: dsRowsSignature,
+      params: {
+        filters: block.filters,
+        metric,
+        effectiveMeasure,
+        pvmCfg,
+        decomposition,
+        topN,
+        comparisonMode,
+      },
+    }, () => {
     const filtered = applyFilters(dsRows, block.filters, null);
     if (filtered.length === 0) return [];
 
@@ -1989,7 +2067,8 @@ function WaterfallChart({
         { label: r.currentLabel, value: r.current,    type: "total" as const },
       ];
     } catch { return []; }
-  }, [wfMode, pvmCfg.base, pvmCfg.comp, pvmCfg.periodMode, comparisonMode, decomposition, topN, dsRows, block.filters, metric]);
+    });
+  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
 
   // Smart column / fallback (modo manual)
   const cols = style.waterfall.columns;
