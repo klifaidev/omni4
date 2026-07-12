@@ -101,6 +101,19 @@ Como revisitar no futuro:
 3. Suspender listeners caros e interacoes nos editores ocultos, mantendo apenas estado/render quente.
 4. Garantir que exportacao, undo/redo, selecao e Yjs apontem para a instancia correta do slide ativo.
 
+## Correcao do gerador de miniaturas congeladas
+
+Diagnostico confirmado por leitura direta: `warmSlideThumbnail()` chamava `renderStaticThumbnail()`, que montava um slide completo fora da tela, forçava `flushSync()` e depois rodava `html2canvas()` para capturar uma imagem pixel-perfect. Esse caminho era acionado automaticamente por `useIdleSlidePrecompute()` e podia repetir o custo para muitos slides do deck, bloqueando a thread principal mesmo quando o usuario tentava interagir com o editor.
+
+Correcao aplicada:
+
+- Removido o uso de `flushSync`, `createRoot` e `html2canvas` do caminho de miniatura congelada em `SlidePreview.tsx`.
+- `warmSlideThumbnail()` agora gera a miniatura diretamente via Canvas 2D simplificado (`renderFallbackThumbnail`), sem montar React/Recharts fora da tela.
+- `useIdleSlidePrecompute()` passou a limitar o aquecimento a no maximo 5 slides proximos do selecionado: selecionado, 2 anteriores e 2 posteriores.
+- A fila continua cancelavel por geracao quando o usuario muda rapidamente de slide, mas deixou de tentar percorrer decks grandes inteiros.
+
+Impacto esperado: abrir um deck grande ou entrar no editor nao deve mais iniciar uma sequencia longa de capturas bloqueantes. O teste manual mais sensivel continua sendo arrastar um bloco imediatamente apos abrir um deck grande, antes que qualquer precompute termine.
+
 ## Medicao
 
 Nao foi possivel coletar os marks internos nesta sessao do navegador interno:

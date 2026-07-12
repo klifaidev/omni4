@@ -5,9 +5,6 @@
 // para o Budget Evo (Overview CM/VOL) e bridge waterfall com retângulos pretos
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
-import html2canvas from "html2canvas";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import { computeBudgetEvoMonthly, isItemReady, type SlideItem } from "@/lib/slidesFlow";
 import { monthLabel } from "@/lib/format";
@@ -710,15 +707,10 @@ const PREVIEW_W_DIALOG = 800;
 const STATIC_THUMBNAIL_W = 400;
 const LIGHTWEIGHT_THUMBNAIL_MAX_W = 128;
 const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
-const STATIC_THUMBNAIL_TIMEOUT_MS = 8000;
 
 function recordThumbnailMetric(name: string, id?: string): void {
   if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
-}
-
-function waitForAnimationFrame(): Promise<void> {
-  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
 function renderFallbackThumbnail(item: SlideItem): string {
@@ -785,47 +777,6 @@ function renderFallbackThumbnail(item: SlideItem): string {
   return canvas.toDataURL("image/png");
 }
 
-async function renderStaticThumbnail(item: SlideItem): Promise<string> {
-  const host = document.createElement("div");
-  const height = (CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W;
-  host.style.cssText = [
-    "position:fixed",
-    "left:0",
-    `top:-${Math.ceil(height + 200)}px`,
-    `width:${STATIC_THUMBNAIL_W}px`,
-    `height:${height}px`,
-    "background:#FFFFFF",
-    "overflow:hidden",
-    "pointer-events:none",
-    "z-index:2147483647",
-  ].join(";");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  try {
-    flushSync(() => {
-      root.render(<LiveScaledPreview item={item} targetWidth={STATIC_THUMBNAIL_W} />);
-    });
-    await waitForAnimationFrame();
-    await waitForAnimationFrame();
-    const canvas = await html2canvas(host, {
-      backgroundColor: "#ffffff",
-      scale: 1,
-      width: STATIC_THUMBNAIL_W,
-      height,
-      windowWidth: STATIC_THUMBNAIL_W,
-      windowHeight: height,
-      logging: false,
-      useCORS: true,
-      allowTaint: true,
-      ignoreElements: (el) => el instanceof HTMLElement && el.dataset.html2canvasIgnore === "true",
-    });
-    return canvas.toDataURL("image/png");
-  } finally {
-    root.unmount();
-    host.remove();
-  }
-}
-
 function buildSlideThumbnailKeyFromSignatures({
   item,
   pricingMetric,
@@ -878,11 +829,7 @@ export async function warmSlideThumbnail(item: SlideItem): Promise<"hit" | "gene
   markSlideThumbnailRendering(key);
   recordThumbnailMetric("SlideThumbnail:render", item.id);
   try {
-    const capture = renderStaticThumbnail(item);
-    const timeout = new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error("thumbnail-capture-timeout")), STATIC_THUMBNAIL_TIMEOUT_MS);
-    });
-    const dataUrl = await Promise.race([capture, timeout]);
+    const dataUrl = renderFallbackThumbnail(item);
     setSlideThumbnail(key, dataUrl);
     recordThumbnailMetric("SlideThumbnail:ready", item.id);
     return "generated";

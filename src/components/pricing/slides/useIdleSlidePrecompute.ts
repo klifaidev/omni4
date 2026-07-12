@@ -34,17 +34,22 @@ function cancelIdle(handle: IdleCallbackHandle): void {
   window.clearTimeout(handle);
 }
 
-function orderedByDistance(items: SlideItem[], selectedId: string | null): SlideItem[] {
+const PRECOMPUTE_RADIUS = 2;
+const PRECOMPUTE_MAX_ITEMS = PRECOMPUTE_RADIUS * 2 + 1;
+
+function nearbyItemsByDistance(items: SlideItem[], selectedId: string | null): SlideItem[] {
   const selectedIndex = selectedId ? items.findIndex((item) => item.id === selectedId) : 0;
   const origin = selectedIndex >= 0 ? selectedIndex : 0;
-  return [...items].sort((a, b) => {
-    const ia = items.findIndex((item) => item.id === a.id);
-    const ib = items.findIndex((item) => item.id === b.id);
+  const start = Math.max(0, origin - PRECOMPUTE_RADIUS);
+  const end = Math.min(items.length, origin + PRECOMPUTE_RADIUS + 1);
+  return items.slice(start, end).sort((a, b) => {
+    const ia = items.indexOf(a);
+    const ib = items.indexOf(b);
     const da = Math.abs(ia - origin);
     const db = Math.abs(ib - origin);
     if (da !== db) return da - db;
     return ia - ib;
-  });
+  }).slice(0, PRECOMPUTE_MAX_ITEMS);
 }
 
 function recordIdleMetric(name: string, id?: string): void {
@@ -55,7 +60,7 @@ function recordIdleMetric(name: string, id?: string): void {
 export function useIdleSlidePrecompute(items: SlideItem[], selectedId: string | null): void {
   const generationRef = useRef(0);
   const runningRef = useRef(false);
-  const ordered = useMemo(() => orderedByDistance(items, selectedId), [items, selectedId]);
+  const ordered = useMemo(() => nearbyItemsByDistance(items, selectedId), [items, selectedId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || ordered.length === 0) return undefined;
