@@ -33,6 +33,7 @@ import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
+import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import { useMemo } from "react";
 import { Trash2, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -202,33 +203,55 @@ export function ChartInspector({
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
-  const dsRows = block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
-    : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
-    : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
-    : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
-    : pricing;
-  const detectedSeries = useMemo(() => {
-    if (ct === "combo" && block.comboSeries?.length) {
-      return block.comboSeries.map((s) => s.name?.trim() || dataSourceLabel(s.dataSource));
+  const dataSource = block.dataSource;
+  const filters = block.filters;
+  const measure = block.measure;
+  const breakdown = block.breakdown;
+  const blockId = block.id;
+  const comboSeries = block.comboSeries;
+  const dsRows = useMemo(() => {
+    if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+    if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
+    if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
+    return pricing;
+  }, [dataSource, pricing, budget, forecast, rolling]);
+  const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
+  const detectedChartSeries = useMemo(() => {
+    try {
+      return getOrComputeSlideCalc({
+        op: "chart-inspector-series",
+        blockId,
+        dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters, measure, breakdown },
+      }, () => computeChartSeries(dsRows, filters, measure, breakdown));
+    } catch {
+      return null;
     }
-    try {
-      const r = computeChartSeries(dsRows, block.filters, block.measure, block.breakdown);
-      return r.series.map((s) => s.name);
-    } catch { return []; }
-  }, [ct, block.comboSeries, dsRows, block.filters, block.measure, block.breakdown]);
+  }, [blockId, dataSource, dsRows, dsRowsSignature, filters, measure, breakdown]);
+  const detectedSeries = useMemo(() => {
+    if (ct === "combo" && comboSeries?.length) {
+      return comboSeries.map((s) => s.name?.trim() || dataSourceLabel(s.dataSource));
+    }
+    return detectedChartSeries?.series.map((s) => s.name) ?? [];
+  }, [ct, comboSeries, detectedChartSeries]);
   const detectedCategories = useMemo(() => {
-    try {
-      const r = computeChartSeries(dsRows, block.filters, block.measure, block.breakdown);
-      return r.periodos.map((p) => p.label);
-    } catch { return []; }
-  }, [dsRows, block.filters, block.measure, block.breakdown]);
+    return detectedChartSeries?.periodos.map((p) => p.label) ?? [];
+  }, [detectedChartSeries]);
   const detectedRanking = useMemo(() => {
     if (!["pie", "donut", "funnel", "treemap"].includes(ct)) return [];
+    const rankingBreakdown = breakdown ?? "marca";
     try {
-      return computeTopRanking(dsRows, block.filters, block.breakdown ?? "marca",
-        block.measure, 50, "all", null).map((r) => r.name);
+      return getOrComputeSlideCalc({
+        op: "chart-inspector-ranking",
+        blockId,
+        dataSource,
+        dataSignature: dsRowsSignature,
+        params: { filters, breakdown: rankingBreakdown, measure, topN: 50, mode: "all" },
+      }, () => computeTopRanking(dsRows, filters, rankingBreakdown, measure, 50, "all", null)).map((r) => r.name);
     } catch { return []; }
-  }, [dsRows, block.filters, block.breakdown, block.measure, ct]);
+  }, [ct, blockId, dataSource, dsRows, dsRowsSignature, filters, breakdown, measure]);
 
   const updSeries = (key: string, patch: Partial<SeriesStyle>) => {
     const next = [...style.series];

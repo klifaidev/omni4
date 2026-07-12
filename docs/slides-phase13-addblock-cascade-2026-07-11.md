@@ -129,6 +129,18 @@ Confirmacao por leitura das stores: `pricing`, `budget`, `forecast` e `rolling` 
 
 Teste automatizado adicionado: duas chamadas com a mesma referencia de array calculam a assinatura uma unica vez; uma nova referencia com o mesmo conteudo recalcula, mas retorna a mesma assinatura.
 
+## Correcao do ChartInspector
+
+Diagnostico confirmado por leitura: o painel de configuracao do grafico (`ChartInspector.tsx`) ainda transformava `dsRows` em toda renderizacao e chamava `computeChartSeries()` duas vezes para detectar series e categorias. Como selecionar/mover/redimensionar um bloco muda a referencia do objeto `block`, isso podia refazer transformacoes de milhares de linhas mesmo quando so `x/y/w/h` tinham mudado.
+
+Correcao aplicada:
+
+- `dsRows` agora usa `useMemo` e depende apenas de `block.dataSource` e das referencias das stores `pricing/budget/forecast/rolling`.
+- A assinatura da base usa `getCachedRowsSignature(dsRows)`.
+- `detectedSeries` e `detectedCategories` derivam de um unico resultado cacheado por `getOrComputeSlideCalc`.
+- `detectedRanking` tambem passou por `getOrComputeSlideCalc`.
+- As dependencias foram reduzidas aos campos que afetam o resultado: `filters`, `measure`, `breakdown`, `dataSource`, `block.id` e assinatura da base. Posicao/tamanho do bloco nao entram no cache de dados.
+
 ## Medicao
 
 Nao foi possivel coletar os marks internos nesta sessao do navegador interno:
