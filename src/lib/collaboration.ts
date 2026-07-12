@@ -4,6 +4,7 @@
 //  - Broadcast "deck-op": eventos de mutação no deck (add/update/remove/...)
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { recordCollabRealtimeSend } from "@/lib/collabRealtimeDiagnostics";
 
 export interface CollabUser {
   id: string;
@@ -49,6 +50,15 @@ export interface CollabEvent {
   role?: "host" | "editor" | "viewer";
 }
 
+export function dedupeCollabUsers(users: CollabUser[]): CollabUser[] {
+  const byId = new Map<string, CollabUser>();
+  users.forEach((user) => {
+    if (!user.id) return;
+    byId.set(user.id, user);
+  });
+  return Array.from(byId.values());
+}
+
 export const CURSOR_COLORS: string[] = [
   "#E63946",
   "#457B9D",
@@ -81,6 +91,7 @@ export function subscribeRoom(
 ): void {
   channel.subscribe(async (status) => {
     if (status === "SUBSCRIBED") {
+      recordCollabRealtimeSend("presence-track");
       await channel.track(user);
     }
     onStatus?.(status);
@@ -90,6 +101,7 @@ export function subscribeRoom(
 const customSlideEventState = new WeakMap<RealtimeChannel, { last: number; pending: number | null; nextEvent: CollabEvent | null }>();
 
 function sendBroadcastEvent(channel: RealtimeChannel, event: CollabEvent): void {
+  recordCollabRealtimeSend("deck-op");
   channel.send({ type: "broadcast", event: "deck-op", payload: event });
 }
 
@@ -141,7 +153,7 @@ export function onPresenceChange(
 ): void {
   channel.on("presence", { event: "sync" }, () => {
     const state = channel.presenceState<CollabUser>();
-    const users = Object.values(state).flat() as CollabUser[];
+    const users = dedupeCollabUsers(Object.values(state).flat() as CollabUser[]);
     handler(users);
   });
 }
@@ -170,6 +182,7 @@ export function updateCursor(
     const next: CollabUser = mine
       ? { ...mine, cursorX: xx, cursorY: yy }
       : { id: userId, name: "", color: "#888", slideId: null, cursorX: xx, cursorY: yy };
+    recordCollabRealtimeSend("presence-track");
     channel.track(next);
   };
   if (now - s.last >= 60) {
@@ -203,6 +216,7 @@ export function updatePresence(
       slideId: null,
       ...patch,
     };
+  recordCollabRealtimeSend("presence-track");
   channel.track(next);
 }
 

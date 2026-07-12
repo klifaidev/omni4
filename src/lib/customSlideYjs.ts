@@ -84,6 +84,26 @@ function blockToYMap(block: CustomBlock): Y.Map<unknown> {
   return blockMap;
 }
 
+function clearYMap<T>(map: Y.Map<T>): void {
+  Array.from(map.keys()).forEach((key) => map.delete(key));
+}
+
+function writeConfigToYDoc(doc: Y.Doc, config: CustomSlideConfig): void {
+  const { meta, blockOrder, blocks } = getParts(doc);
+
+  meta.set("background", config.background);
+  meta.set("showHaraldFooter", config.showHaraldFooter);
+  if (config.theme !== undefined) meta.set("theme", config.theme);
+  if (config.backgroundImage !== undefined) meta.set("backgroundImage", config.backgroundImage);
+  if (config.groups !== undefined) meta.set("groups", config.groups);
+  meta.set(SPEAKER_NOTES, createText(config.speakerNotes ?? ""));
+
+  blockOrder.insert(0, config.blocks.map((block) => block.id));
+  config.blocks.forEach((block) => {
+    blocks.set(block.id, blockToYMap(block));
+  });
+}
+
 function yMapToBlock(blockMap: Y.Map<unknown>): CustomBlock {
   const props = blockMap.get(BLOCK_PROPS) as Y.Map<unknown> | undefined;
   const texts = blockMap.get(BLOCK_TEXTS) as Y.Map<Y.Text> | undefined;
@@ -255,23 +275,19 @@ export function patchCustomSlideBlock(doc: Y.Doc, blockId: string, patch: Partia
 
 export function customSlideConfigToYDoc(config: CustomSlideConfig): Y.Doc {
   const doc = new Y.Doc();
-  const { meta, blockOrder, blocks } = getParts(doc);
-
-  doc.transact(() => {
-    meta.set("background", config.background);
-    meta.set("showHaraldFooter", config.showHaraldFooter);
-    if (config.theme !== undefined) meta.set("theme", config.theme);
-    if (config.backgroundImage !== undefined) meta.set("backgroundImage", config.backgroundImage);
-    if (config.groups !== undefined) meta.set("groups", config.groups);
-    meta.set(SPEAKER_NOTES, createText(config.speakerNotes ?? ""));
-
-    blockOrder.insert(0, config.blocks.map((block) => block.id));
-    config.blocks.forEach((block) => {
-      blocks.set(block.id, blockToYMap(block));
-    });
-  });
+  doc.transact(() => writeConfigToYDoc(doc, config));
 
   return doc;
+}
+
+export function replaceCustomSlideYDoc(doc: Y.Doc, config: CustomSlideConfig): void {
+  const { meta, blockOrder, blocks } = getParts(doc);
+  doc.transact(() => {
+    clearYMap(meta);
+    clearYMap(blocks);
+    if (blockOrder.length > 0) blockOrder.delete(0, blockOrder.length);
+    writeConfigToYDoc(doc, config);
+  });
 }
 
 export function yDocToCustomSlideConfig(doc: Y.Doc): CustomSlideConfig {

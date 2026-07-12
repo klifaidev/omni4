@@ -13,6 +13,7 @@ import {
   type CollabEncryptedYjsAwareness,
   type CollabEncryptedYjsUpdate,
 } from "@/lib/collabCrypto";
+import { recordCollabRealtimeSend } from "@/lib/collabRealtimeDiagnostics";
 
 type YjsUpdateBroadcastPayload = {
   id: string;
@@ -279,6 +280,7 @@ export class SupabaseYjsProvider {
     };
     this.seenMessageIds.add(payload.id);
     try {
+      recordCollabRealtimeSend("yjs-update");
       const result = await this.channel.send({ type: "broadcast", event: this.eventName, payload });
       if (isSendRejected(result)) throw new Error("YJS_SEND_FAILED");
     } catch {
@@ -299,6 +301,7 @@ export class SupabaseYjsProvider {
     };
     this.seenAwarenessMessageIds.add(payload.id);
     try {
+      recordCollabRealtimeSend("yjs-awareness");
       const result = await this.channel.send({ type: "broadcast", event: this.awarenessEventName, payload });
       if (isSendRejected(result)) throw new Error("YJS_SEND_FAILED");
     } catch {

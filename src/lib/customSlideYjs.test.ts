@@ -9,6 +9,7 @@ import {
   insertCustomSlideBlock,
   patchCustomSlideBlock,
   removeCustomSlideBlock,
+  replaceCustomSlideYDoc,
   reorderCustomSlideBlock,
   setYTextValue,
   uniqueOrderedBlockIds,
@@ -122,6 +123,16 @@ describe("customSlideYjs", () => {
     const restored = yDocToCustomSlideConfig(doc);
 
     expect(restored).toEqual(sampleConfig);
+  });
+
+  it("can replace an existing Y.Doc with a previous CustomSlideConfig for undo/redo", () => {
+    const doc = customSlideConfigToYDoc(sampleConfig);
+    patchCustomSlideBlock(doc, "title-1", { text: "Titulo alterado", x: 120 });
+    removeCustomSlideBlock(doc, "text-1");
+
+    replaceCustomSlideYDoc(doc, sampleConfig);
+
+    expect(yDocToCustomSlideConfig(doc)).toEqual(sampleConfig);
   });
 
   it("stores block order, block maps and editable text fields as Yjs structures", () => {

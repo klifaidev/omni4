@@ -116,6 +116,7 @@ import {
   duplicateCustomSlideBlock,
   patchCustomSlideBlock,
   removeCustomSlideBlock,
+  replaceCustomSlideYDoc,
   setYTextValue,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
@@ -147,9 +148,11 @@ import {
   patchBlocksAction, nudgeBlocksAction,
   alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction,
+  commitExternalEditorChange,
   copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction, useCopiedElementStyle,
   insertBlockAction, insertBlocksAction,
   type AlignKind,
+  type EditorActionLabel,
 } from "./editorStore";
 import { useEditorPrefs, snapToGrid, type GridSize, setEditorPrefs, getEditorPrefs } from "./editorPrefs";
 import { getTheme, type SlideTheme } from "@/lib/slideThemes";
@@ -466,10 +469,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, [notifyReadOnly, readOnly]);
   const pendingYBlockPatchesRef = useRef(new Map<string, Partial<CustomBlock>>());
   const yBlockPatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const emitYDocConfig = useCallback(() => {
-    if (!collabYDoc) return;
-    onChange(yDocToCustomSlideConfig(collabYDoc));
+  const commitYDocConfig = useCallback((label: EditorActionLabel) => {
+    if (!collabYDoc) return null;
+    const next = yDocToCustomSlideConfig(collabYDoc);
+    commitExternalEditorChange(label, next);
+    onChange(next);
+    return next;
   }, [collabYDoc, onChange]);
+  const applyUndoRedoToYDoc = useCallback((next: CustomSlideConfig | null) => {
+    if (!collabYDoc || !next) return;
+    replaceCustomSlideYDoc(collabYDoc, next);
+  }, [collabYDoc]);
+  const handleUndo = useCallback(() => {
+    applyUndoRedoToYDoc(undoAction());
+  }, [applyUndoRedoToYDoc]);
+  const handleRedo = useCallback(() => {
+    applyUndoRedoToYDoc(redoAction());
+  }, [applyUndoRedoToYDoc]);
   const maxBlockZ = useCallback(() => (
     config.blocks.reduce((max, block) => Math.max(max, block.z), 0)
   ), [config.blocks]);
@@ -478,10 +494,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const zTop = maxBlockZ();
     const withZ = blocks.map((block, index) => ({ ...block, z: zTop + index + 1 }) as CustomBlock);
     const ids = insertCustomSlideBlocks(collabYDoc, withZ);
-    emitYDocConfig();
+    commitYDocConfig("Adicionar bloco");
     if (selectInserted && ids.length > 0) setSelection(ids);
     return ids;
-  }, [collabYDoc, emitYDocConfig, maxBlockZ]);
+  }, [collabYDoc, commitYDocConfig, maxBlockZ]);
   const flushYBlockPatches = useCallback(() => {
     if (!collabYDoc) return;
     const pending = pendingYBlockPatchesRef.current;
@@ -490,8 +506,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       patchCustomSlideBlock(collabYDoc, id, patch);
     });
     pending.clear();
-    emitYDocConfig();
-  }, [collabYDoc, emitYDocConfig]);
+    commitYDocConfig("Mover bloco");
+  }, [collabYDoc, commitYDocConfig]);
   const queueYBlockPatch = useCallback((id: string, patch: Partial<CustomBlock>) => {
     const pending = pendingYBlockPatchesRef.current;
     pending.set(id, { ...(pending.get(id) ?? {}), ...patch });
@@ -528,11 +544,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         return;
       }
       patchCustomSlideBlock(collabYDoc, id, patch);
-      emitYDocConfig();
+      commitYDocConfig(label);
       return;
     }
     patchBlockAction(id, patch, label);
-  }, [canEdit, collabYDoc, emitYDocConfig, queueYBlockPatch]);
+  }, [canEdit, collabYDoc, commitYDocConfig, queueYBlockPatch]);
   const yBlockText = useCallback((blockId: string, field: string) => (
     collabYDoc ? getCustomSlideBlockText(collabYDoc, blockId, field) : null
   ), [collabYDoc]);
@@ -548,7 +564,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (collabYDoc) {
       const block = newBlock(kind, maxBlockZ()) as CustomBlock;
       insertCustomSlideBlock(collabYDoc, block);
-      emitYDocConfig();
+      commitYDocConfig("Adicionar bloco");
       setSelection([block.id]);
       if (perfEnabled) {
         measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
@@ -570,7 +586,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         previousBlockCount: config.blocks.length,
       });
     }
-  }, [canEdit, collabYDoc, config.blocks.length, emitYDocConfig, maxBlockZ]);
+  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks.length, maxBlockZ]);
   const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
     const perfEnabled = isSlidePerfEnabled();
@@ -581,7 +597,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         ? (newPositivacaoChartBlock(maxBlockZ()) as CustomBlock)
         : (newChartBlock(chartType, maxBlockZ()) as CustomBlock);
       insertCustomSlideBlock(collabYDoc, block);
-      emitYDocConfig();
+      commitYDocConfig("Adicionar bloco");
       setSelection([block.id]);
       if (perfEnabled) {
         measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
@@ -607,7 +623,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         previousBlockCount: config.blocks.length,
       });
     }
-  }, [canEdit, collabYDoc, config.blocks.length, emitYDocConfig, maxBlockZ]);
+  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks.length, maxBlockZ]);
   const insertTextStyle = useCallback((styleId: string, text: string, x: number, y: number, w: number, h: number) => {
     if (!canEdit()) return;
     const style = SLIDE_BRAND_STYLES.find((item) => item.id === styleId);
@@ -1085,13 +1101,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (!canEdit()) return;
     if (collabYDoc) {
       removeCustomSlideBlock(collabYDoc, id);
-      emitYDocConfig();
+      commitYDocConfig("Excluir bloco");
       if (selectedIds.includes(id)) clearSelection();
       return;
     }
     deleteBlockAction(id);
     if (selectedIds.includes(id)) clearSelection();
-  }, [canEdit, collabYDoc, emitYDocConfig, selectedIds]);
+  }, [canEdit, collabYDoc, commitYDocConfig, selectedIds]);
   const duplicateBlock = useCallback((id: string) => {
     if (!canEdit()) return;
     if (collabYDoc) {
@@ -1106,23 +1122,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         locked: false,
       } as CustomBlock;
       const newId = duplicateCustomSlideBlock(collabYDoc, id, clone);
-      emitYDocConfig();
+      commitYDocConfig("Duplicar bloco");
       if (newId) setSelection([newId]);
       return;
     }
     const newId = duplicateBlockAction(id);
     if (newId) setSelection([newId]);
-  }, [canEdit, collabYDoc, config.blocks, emitYDocConfig, maxBlockZ]);
+  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks, maxBlockZ]);
   const removeBlocks = useCallback((ids: string[]) => {
     if (!canEdit() || ids.length === 0) return;
     if (collabYDoc) {
       ids.forEach((id) => removeCustomSlideBlock(collabYDoc, id));
-      emitYDocConfig();
+      commitYDocConfig("Excluir blocos");
       clearSelection();
       return;
     }
     deleteBlocksAction(ids);
-  }, [canEdit, collabYDoc, emitYDocConfig]);
+  }, [canEdit, collabYDoc, commitYDocConfig]);
   const duplicateBlocks = useCallback((ids: string[]) => {
     if (!canEdit() || ids.length === 0) return;
     if (collabYDoc) {
@@ -1142,12 +1158,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         })
         .filter((block): block is CustomBlock => Boolean(block));
       const inserted = insertCustomSlideBlocks(collabYDoc, clones);
-      emitYDocConfig();
+      commitYDocConfig("Duplicar blocos");
       if (inserted.length > 0) setSelection(inserted);
       return;
     }
     duplicateBlocksAction(ids);
-  }, [canEdit, collabYDoc, config.blocks, emitYDocConfig, maxBlockZ]);
+  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks, maxBlockZ]);
   const bringForward = useCallback((id: string) => { if (canEdit()) bringForwardAction(id); }, [canEdit]);
   const sendBack = useCallback((id: string) => { if (canEdit()) sendBackAction(id); }, [canEdit]);
   const bringToFront = useCallback((id: string) => { if (canEdit()) bringToFrontAction(id); }, [canEdit]);
@@ -1319,8 +1335,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
       if (!inField && (e.metaKey || e.ctrlKey)) {
         const k = e.key.toLowerCase();
-        if (k === "z" && !e.shiftKey) { e.preventDefault(); if (canEdit()) undoAction(); return; }
-        if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); if (canEdit()) redoAction(); return; }
+        if (k === "z" && !e.shiftKey) { e.preventDefault(); if (canEdit()) handleUndo(); return; }
+        if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); if (canEdit()) handleRedo(); return; }
         if (k === "0") { e.preventDefault(); prefs.setZoom(1.0); return; }
         if (k === "a") { e.preventDefault(); selectAllOnSlide(); return; }
         if (k === "c" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(false); return; }
@@ -1405,7 +1421,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, collabYDoc, updateBlock]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, collabYDoc, updateBlock, handleUndo, handleRedo]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -1480,14 +1496,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       reordered.forEach((blk, i) => {
         patchCustomSlideBlock(collabYDoc, blk.id, { z: reordered.length - i } as Partial<CustomBlock>);
       });
-      emitYDocConfig();
+      commitYDocConfig("Reordenar camadas");
       return;
     }
     patchBlocksAction(
       reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
       "Reordenar camadas",
     );
-  }, [canEdit, collabYDoc, emitYDocConfig, layersSorted]);
+  }, [canEdit, collabYDoc, commitYDocConfig, layersSorted]);
 
   // Templates
   const [tplOpen, setTplOpen] = useState(false);
@@ -2550,13 +2566,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         {/* Barra de zoom + undo/redo */}
         <div className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border/40 bg-card/40 px-2 py-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => { if (canEdit()) undoAction(); }} disabled={!undoRedo.canUndo || readOnly}
+            onClick={() => { if (canEdit()) handleUndo(); }} disabled={!undoRedo.canUndo || readOnly}
             title={undoRedo.undoLabel ? `Desfazer: ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer (Ctrl+Z)"}
             aria-label={undoRedo.undoLabel ? `Desfazer ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer"}>
             <Undo2 className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7"
-            onClick={() => { if (canEdit()) redoAction(); }} disabled={!undoRedo.canRedo || readOnly}
+            onClick={() => { if (canEdit()) handleRedo(); }} disabled={!undoRedo.canRedo || readOnly}
             title={undoRedo.redoLabel ? `Refazer: ${undoRedo.redoLabel.toLowerCase()}` : "Refazer (Ctrl+Shift+Z)"}
             aria-label={undoRedo.redoLabel ? `Refazer ${undoRedo.redoLabel.toLowerCase()}` : "Refazer"}>
             <Redo2 className="h-3.5 w-3.5" />

@@ -70,6 +70,28 @@ interface EditorState {
 let onChangeRef: ((next: CustomSlideConfig) => void) | null = null;
 let suppressEmit = false;
 
+declare global {
+  interface Window {
+    __OMNI_EDITOR_MUTATION_DIAGNOSTICS__?: boolean;
+  }
+}
+
+function withTemporalPaused(fn: () => void) {
+  const temporalState = baseStore.temporal.getState();
+  const wasTracking = temporalState.isTracking;
+  if (wasTracking) temporalState.pause();
+  try {
+    fn();
+  } finally {
+    if (wasTracking) baseStore.temporal.getState().resume();
+  }
+}
+
+function logSkippedMutation(label: EditorActionLabel): void {
+  if (typeof window === "undefined" || window.__OMNI_EDITOR_MUTATION_DIAGNOSTICS__ !== true) return;
+  console.warn("[omni4-editor-mutate] updater returned the same config reference", { label });
+}
+
 const baseStore = create<EditorState>()(
   temporal(
     () => ({
@@ -97,7 +119,10 @@ function mutate(label: EditorActionLabel, updater: (cfg: CustomSlideConfig) => C
   const cur = baseStore.getState().config;
   if (!cur) return;
   const next = updater(cur);
-  if (next === cur) return;
+  if (next === cur) {
+    logSkippedMutation(label);
+    return;
+  }
   baseStore.setState({ config: next, lastActionLabel: label });
   emit(next);
 }
@@ -128,9 +153,11 @@ export function bindEditorStore(
 /** Apply external config changes from parent without polluting the undo stack. */
 export function syncFromParent(config: CustomSlideConfig) {
   if (baseStore.getState().config === config) return;
-  suppressEmit = true;
-  baseStore.setState({ config });
-  suppressEmit = false;
+  withTemporalPaused(() => {
+    suppressEmit = true;
+    baseStore.setState({ config });
+    suppressEmit = false;
+  });
 }
 
 // ----- Mutations ----------------------------------------------------------
@@ -337,20 +364,22 @@ export function toggleLockAction(id: string) {
 
 // ----- Undo / redo --------------------------------------------------------
 
-export function undo() {
+export function undo(): CustomSlideConfig | null {
   const t = baseStore.temporal.getState();
-  if (t.pastStates.length === 0) return;
+  if (t.pastStates.length === 0) return null;
   t.undo();
   const cur = baseStore.getState().config;
   if (cur) emit(cur);
+  return cur;
 }
 
-export function redo() {
+export function redo(): CustomSlideConfig | null {
   const t = baseStore.temporal.getState();
-  if (t.futureStates.length === 0) return;
+  if (t.futureStates.length === 0) return null;
   t.redo();
   const cur = baseStore.getState().config;
   if (cur) emit(cur);
+  return cur;
 }
 
 // ----- Hooks --------------------------------------------------------------
@@ -403,6 +432,15 @@ export function useEditorBinding(
   useEffect(() => {
     syncFromParent(config);
   }, [config]);
+}
+
+export function commitExternalEditorChange(label: EditorActionLabel, next: CustomSlideConfig): void {
+  const cur = baseStore.getState().config;
+  if (!cur || next === cur) {
+    if (cur && next === cur) logSkippedMutation(label);
+    return;
+  }
+  baseStore.setState({ config: next, lastActionLabel: label });
 }
 
 // ----- Selection (B8.2) ---------------------------------------------------
