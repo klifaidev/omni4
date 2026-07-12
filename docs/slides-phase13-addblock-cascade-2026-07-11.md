@@ -114,6 +114,21 @@ Correcao aplicada:
 
 Impacto esperado: abrir um deck grande ou entrar no editor nao deve mais iniciar uma sequencia longa de capturas bloqueantes. O teste manual mais sensivel continua sendo arrastar um bloco imediatamente apos abrir um deck grande, antes que qualquer precompute termine.
 
+## Correcao do cache global de assinatura de bases
+
+Diagnostico confirmado por leitura: `slideDataSignature()` percorre cada linha da base para gerar hash. Antes, componentes diferentes chamavam essa funcao dentro de `useMemo` local, entao cada miniatura/gráfico recem-montado podia recalcular a mesma assinatura para a mesma base.
+
+Correcao aplicada:
+
+- Criada `getCachedRowsSignature(rows)` em `src/lib/slideCalcCache.ts`, usando `WeakMap<rowsReference, signature>`.
+- `SlidePreview.tsx`, `ChartCanvas.tsx`, `BlockRenderer.tsx` e `slideCalcWorkerClient.ts` passaram a usar a assinatura cacheada.
+- `getSlideThumbnailKeyForItem()` tambem foi corrigida, evitando 4 hashes diretos por chamada.
+- `WeakMap` nao exige limite manual: quando a store substitui a base por um novo array, a referencia antiga deixa de ser necessaria e pode ser coletada pelo garbage collector.
+
+Confirmacao por leitura das stores: `pricing`, `budget`, `forecast` e `rolling` substituem `rows` por novas referencias (`[...keptRows, ...newRows]`, `map(...)` ou `[]`) ao carregar/ajustar dados, em vez de mutar o mesmo array principal em massa. Portanto, o cache invalida naturalmente quando uma base nova entra.
+
+Teste automatizado adicionado: duas chamadas com a mesma referencia de array calculam a assinatura uma unica vez; uma nova referencia com o mesmo conteudo recalcula, mas retorna a mesma assinatura.
+
 ## Medicao
 
 Nao foi possivel coletar os marks internos nesta sessao do navegador interno:

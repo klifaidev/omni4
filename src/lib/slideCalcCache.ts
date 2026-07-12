@@ -19,6 +19,8 @@ const DEFAULT_MAX_ENTRIES = 250;
 let maxEntries = DEFAULT_MAX_ENTRIES;
 let tick = 0;
 const cache = new Map<string, CacheEntry<unknown>>();
+let rowsSignatureCache = new WeakMap<readonly unknown[], string>();
+let rowsSignatureComputeCount = 0;
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -92,6 +94,7 @@ function trimSlideCalcCache(): void {
 }
 
 export function slideDataSignature(rows: readonly unknown[]): string {
+  rowsSignatureComputeCount += 1;
   let hash = 2166136261;
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i] as Record<string, unknown> | undefined;
@@ -116,8 +119,18 @@ export function slideDataSignature(rows: readonly unknown[]): string {
   return `${rows.length}:${(hash >>> 0).toString(36)}`;
 }
 
+export function getCachedRowsSignature(rows: readonly unknown[]): string {
+  const cached = rowsSignatureCache.get(rows);
+  if (cached) return cached;
+  const signature = slideDataSignature(rows);
+  rowsSignatureCache.set(rows, signature);
+  return signature;
+}
+
 export function clearSlideCalcCache(): void {
   cache.clear();
+  rowsSignatureCache = new WeakMap<readonly unknown[], string>();
+  rowsSignatureComputeCount = 0;
 }
 
 export function getSlideCalcCacheSize(): number {
@@ -132,4 +145,8 @@ export function setSlideCalcCacheMaxEntriesForTest(limit: number): void {
 export function resetSlideCalcCacheMaxEntriesForTest(): void {
   maxEntries = DEFAULT_MAX_ENTRIES;
   trimSlideCalcCache();
+}
+
+export function getRowsSignatureComputeCountForTest(): number {
+  return rowsSignatureComputeCount;
 }

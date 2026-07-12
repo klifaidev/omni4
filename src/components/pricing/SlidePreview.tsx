@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 import { incrementSlidePerfCounter, isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
-import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
+import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import {
   buildSlideThumbnailKey,
   getSlideThumbnail,
@@ -153,7 +153,7 @@ function CoverPreview({ item }: { item: Extract<SlideItem, { kind: "cover" }> })
 // ---------------------------------------------------------------------------
 function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_evo" }> }) {
   const budgetRows = useBudget((s) => s.rows);
-  const budgetSignature = useMemo(() => slideDataSignature(budgetRows), [budgetRows]);
+  const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
   const data = useMemo(
     () => getOrComputeSlideCalc({
       op: "preview-budget-evo",
@@ -483,7 +483,7 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
   const pricingRows = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const ready = isItemReady(item);
-  const pricingSignature = useMemo(() => slideDataSignature(pricingRows), [pricingRows]);
+  const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);
 
   const pvm = useMemo(() => {
     if (!ready.ok || !item.config.base || !item.config.comp) return null;
@@ -809,10 +809,10 @@ export function getSlideThumbnailKeyForItem(item: SlideItem): string {
   return buildSlideThumbnailKeyFromSignatures({
     item,
     pricingMetric: pricingState.metric,
-    pricingSignature: slideDataSignature(pricingState.rows),
-    budgetSignature: slideDataSignature(useBudget.getState().rows),
-    forecastSignature: slideDataSignature(useForecast.getState().rows),
-    rollingSignature: slideDataSignature(useRolling.getState().rows),
+    pricingSignature: getCachedRowsSignature(pricingState.rows),
+    budgetSignature: getCachedRowsSignature(useBudget.getState().rows),
+    forecastSignature: getCachedRowsSignature(useForecast.getState().rows),
+    rollingSignature: getCachedRowsSignature(useRolling.getState().rows),
   });
 }
 
@@ -906,10 +906,10 @@ function useSlideThumbnailKey(item: SlideItem): string {
   const forecastRows = useForecast((s) => s.rows);
   const rollingRows = useRolling((s) => s.rows);
 
-  const pricingSignature = useMemo(() => slideDataSignature(pricingRows), [pricingRows]);
-  const budgetSignature = useMemo(() => slideDataSignature(budgetRows), [budgetRows]);
-  const forecastSignature = useMemo(() => slideDataSignature(forecastRows), [forecastRows]);
-  const rollingSignature = useMemo(() => slideDataSignature(rollingRows), [rollingRows]);
+  const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);
+  const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
+  const forecastSignature = useMemo(() => getCachedRowsSignature(forecastRows), [forecastRows]);
+  const rollingSignature = useMemo(() => getCachedRowsSignature(rollingRows), [rollingRows]);
 
   return useMemo(
     () => buildSlideThumbnailKeyFromSignatures({

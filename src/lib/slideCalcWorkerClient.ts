@@ -4,9 +4,9 @@ import type { KpiMeasureId, KpiPeriodMode } from "@/lib/customSlide";
 import type { Filters, PricingRow } from "@/lib/types";
 import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent } from "@/lib/slidesPerfCounters";
 import {
+  getCachedRowsSignature,
   getSlideCalcCacheValue,
   setSlideCalcCacheValue,
-  slideDataSignature,
   type SlideCalcCacheKeyInput,
 } from "@/lib/slideCalcCache";
 
@@ -131,7 +131,7 @@ export function computeChartSeriesAsync(params: {
   breakdown: string | null;
   xDim?: string | null;
 }): Promise<ChartSeriesResult> {
-  const rowsKey = params.cache.dataSignature ?? slideDataSignature(params.rows);
+  const rowsKey = params.cache.dataSignature ?? getCachedRowsSignature(params.rows);
   return computeWithWorker(
     params.cache,
     {
@@ -157,7 +157,7 @@ export function computeTopRankingAsync(params: {
   periodMode: KpiPeriodMode;
   periodValue?: string | null;
 }): Promise<TopRankingResult> {
-  const rowsKey = params.cache.dataSignature ?? slideDataSignature(params.rows);
+  const rowsKey = params.cache.dataSignature ?? getCachedRowsSignature(params.rows);
   return computeWithWorker(
     params.cache,
     {
@@ -193,7 +193,7 @@ export function calcPvmAsync(params: {
   mode: "month" | "fy";
   labels?: { base: string; comp: string };
 }): Promise<PVMResult> {
-  const rowsKey = params.cache.dataSignature ?? slideDataSignature(params.rows);
+  const rowsKey = params.cache.dataSignature ?? getCachedRowsSignature(params.rows);
   return computeWithWorker(
     params.cache,
     {

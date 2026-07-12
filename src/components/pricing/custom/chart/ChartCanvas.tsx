@@ -70,7 +70,7 @@ import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilt
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
-import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
+import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import {
   computeChartSeriesAsync,
   computeTopRankingAsync,
@@ -452,7 +452,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       return true;
     });
   }, [rawDsRows, incoming]);
-  const dsRowsSignature = useMemo(() => slideDataSignature(dsRows), [dsRows]);
+  const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
   const rowsForDataSource = useMemo(() => {
     const sourceRows = (dataSource: ChartBlock["dataSource"]) => {
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
@@ -603,7 +603,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         slideId: cacheSlideId,
         blockId: block.id,
         dataSource: def.dataSource,
-        dataSignature: slideDataSignature(sourceRows),
+        dataSignature: getCachedRowsSignature(sourceRows),
         params: { filters: block.filters, measure: def.measure, breakdown: null, xDim, comboSeriesName: def.name },
       }, () => computeChartSeries(sourceRows, block.filters, def.measure, null, xDim));
       const key = def.name?.trim() || `${dataSourceLabel(def.dataSource)} - ${KPI_MEASURES_LABEL[def.measure] ?? def.measure}`;
@@ -738,7 +738,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       slideId: cacheSlideId,
       blockId: block.id,
       dataSource: block.dataSource,
-      dataSignature: slideDataSignature(budget),
+      dataSignature: getCachedRowsSignature(budget),
       params: { budgetGap: block.budgetGap, filters: block.filters, measure },
     }, () => {
       const realRows = applyFilters(budgetRowsAsPricingFiltered(budget, "real"), block.filters ?? {}, null);
@@ -2062,7 +2062,7 @@ function WaterfallChart({
       : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
       : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
       : pricing);
-  const dsRowsSignature = useMemo(() => slideDataSignature(dsRows), [dsRows]);
+  const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
 
   const wfMode = style.waterfall.mode ?? "pvm";
   const pvmCfg = useMemo(

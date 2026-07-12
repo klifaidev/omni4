@@ -53,7 +53,7 @@ import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
-import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
+import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 
 function useDataSource(
@@ -714,7 +714,7 @@ function ShapeRender({ block: b }: { block: ShapeBlock }) {
 function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSlideId?: string }) {
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
-  const pricingSignature = useMemo(() => slideDataSignature(pricing), [pricing]);
+  const pricingSignature = useMemo(() => getCachedRowsSignature(pricing), [pricing]);
 
   const bridgeCacheInput = useMemo<SlideCalcCacheKeyInput>(() => ({
     op: "custom-bridge-pvm",

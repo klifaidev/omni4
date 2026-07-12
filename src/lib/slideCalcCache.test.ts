@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clearSlideCalcCache,
+  getCachedRowsSignature,
   getOrComputeSlideCalc,
+  getRowsSignatureComputeCountForTest,
   getSlideCalcCacheSize,
   resetSlideCalcCacheMaxEntriesForTest,
   setSlideCalcCacheMaxEntriesForTest,
@@ -82,5 +84,19 @@ describe("slideCalcCache", () => {
 
     expect(slideDataSignature(rowsA)).not.toBe(slideDataSignature(rowsB));
   });
-});
 
+  it("caches row signatures by array reference", () => {
+    const rows = [
+      { periodo: "001.2026", sku: "A", rol: 10 },
+      { periodo: "002.2026", sku: "B", rol: 20 },
+    ];
+
+    const first = getCachedRowsSignature(rows);
+    const second = getCachedRowsSignature(rows);
+    const sameContentNewReference = getCachedRowsSignature([...rows]);
+
+    expect(second).toBe(first);
+    expect(sameContentNewReference).toBe(first);
+    expect(getRowsSignatureComputeCountForTest()).toBe(2);
+  });
+});
