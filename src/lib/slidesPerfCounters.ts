@@ -17,6 +17,7 @@ type SlidePerfState = {
 declare global {
   interface Window {
     __OMNI_SLIDES_PERF__?: SlidePerfState;
+    __OMNI_SLIDES_PERF_ENABLED__?: boolean;
     __OMNI_SLIDES_PERF_DETAILED__?: boolean;
   }
 }
@@ -30,8 +31,14 @@ function isDevRuntime(): boolean {
   return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
 
+export function isSlidePerfEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.__OMNI_SLIDES_PERF_ENABLED__ === true || window.__OMNI_SLIDES_PERF__?.detailed === true;
+}
+
 function getPerfState(): SlidePerfState | null {
   if (typeof window === "undefined") return null;
+  if (!isSlidePerfEnabled()) return null;
   if (!window.__OMNI_SLIDES_PERF__ && isDevRuntime()) {
     try {
       window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] };
@@ -45,7 +52,7 @@ function getPerfState(): SlidePerfState | null {
 function isDetailedEnabled(perf: SlidePerfState): boolean {
   if (perf.detailed === true) return true;
   if (typeof window === "undefined") return false;
-  return window.__OMNI_SLIDES_PERF_DETAILED__ === true;
+  return window.__OMNI_SLIDES_PERF_ENABLED__ === true && window.__OMNI_SLIDES_PERF_DETAILED__ === true;
 }
 
 function pushCircular<T>(target: T[], value: T, max: number): void {
@@ -70,7 +77,6 @@ export function recordSlideRender(name: string, id?: string): void {
 }
 
 export function recordSlidePerfEvent(name: string, detail?: Record<string, unknown>, id?: string): void {
-  if (typeof window === "undefined") return;
   const perf = getPerfState();
   if (!perf) return;
   incrementSlidePerfCounter(name, id);
@@ -81,9 +87,9 @@ export function recordSlidePerfEvent(name: string, detail?: Record<string, unkno
 }
 
 export function markSlidePerf(name: string): void {
-  if (typeof performance === "undefined" || typeof performance.mark !== "function") return;
   const perf = getPerfState();
   if (!perf || !isDetailedEnabled(perf)) return;
+  if (typeof performance === "undefined" || typeof performance.mark !== "function") return;
   performance.mark(name);
 }
 

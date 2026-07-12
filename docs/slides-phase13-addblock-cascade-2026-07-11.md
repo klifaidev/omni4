@@ -22,12 +22,21 @@ Foram adicionados marks/eventos internos de performance em:
 | Worker/cache de calculo | `slides.worker.start`, `slides.worker.end`, `slides.worker.duration`, `slides.calc.workerClient`, `slides.calc.cacheHit`, `slides.calc.workerFallback` |
 | Mount/unmount do inspector | `slides.inspector.mount`, `slides.inspector.unmount` |
 
-O coletor `window.__OMNI_SLIDES_PERF__` agora e criado automaticamente em `DEV` e em `localhost`/`127.0.0.1`, para nao depender de injecao manual pelo DevTools.
+O coletor `window.__OMNI_SLIDES_PERF__` chegou a ser criado automaticamente em `DEV`/localhost para facilitar medicoes, mas isso foi revertido nesta revisao de performance: agora ele e totalmente opt-in.
 
-Atualizacao posterior: para evitar que o proprio diagnostico piore a fluidez do editor, a coleta padrao agora grava apenas contadores numericos em `counts`. Eventos e medidas detalhadas (`events`/`measures`) so sao gravados quando a flag abaixo estiver ligada antes do teste:
+Atualizacao posterior: para evitar que o proprio diagnostico piore a fluidez do editor, a coleta deixou de ser automatica. Mesmo em DEV/localhost, nada e contado se a flag abaixo nao estiver ligada. Isso remove o overhead de chamadas de contagem do caminho quente de render/drag quando ninguem esta medindo.
 
 ```js
+window.__OMNI_SLIDES_PERF_ENABLED__ = true
+window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] }
+```
+
+Eventos e medidas detalhadas (`events`/`measures`) so sao gravados quando a segunda flag tambem estiver ligada antes do teste:
+
+```js
+window.__OMNI_SLIDES_PERF_ENABLED__ = true
 window.__OMNI_SLIDES_PERF_DETAILED__ = true
+window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] }
 location.reload()
 ```
 
@@ -45,7 +54,7 @@ Nao foi possivel repetir a sequencia real com base local/Electron neste ambiente
 | 100.000 | 8.375,97ms | 21,76ms |
 | 200.000 | Estourou timeout de 10s | Nao aplicavel nessa rodada |
 
-Conclusao: a instrumentacao anterior podia, sim, virar parte relevante do problema em sessoes longas ou em fluxos com muitos renders/eventos, especialmente ao ultrapassar 50k eventos. A correcao reduz o modo padrao a contadores numericos e deixa o log detalhado apenas para medicoes pontuais.
+Conclusao: a instrumentacao anterior podia, sim, virar parte relevante do problema em sessoes longas ou em fluxos com muitos renders/eventos, especialmente ao ultrapassar 50k eventos. A correcao atual remove tambem os contadores do modo padrao: sem `window.__OMNI_SLIDES_PERF_ENABLED__ = true`, o caminho de render/drag nao grava nada.
 
 ## Correcao preventiva aplicada
 
@@ -109,9 +118,10 @@ No Electron/Chrome real ou em uma instancia dev limpa:
 1. Carregar dados demo ou uma base real.
 2. Abrir Slides > slide personalizado com 20+ graficos.
 3. Abrir editor em tela cheia.
-4. Para uma medicao leve, no console, limpar a coleta:
+4. Para uma medicao leve, no console, ligar e limpar a coleta:
 
 ```js
+window.__OMNI_SLIDES_PERF_ENABLED__ = true
 window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] }
 ```
 
@@ -125,7 +135,9 @@ window.__OMNI_SLIDES_PERF__.counts
 Para capturar tambem eventos e duracoes, ligue o modo detalhado antes de recarregar a tela:
 
 ```js
+window.__OMNI_SLIDES_PERF_ENABLED__ = true
 window.__OMNI_SLIDES_PERF_DETAILED__ = true
+window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] }
 location.reload()
 ```
 

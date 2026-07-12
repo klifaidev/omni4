@@ -39,11 +39,13 @@ function chartBlockSignature(block: ChartBlock): string {
 function areChartBlocksEqual(prev: ChartBlock, next: ChartBlock): boolean {
   if (prev === next) return true;
   const equal = chartBlockSignature(prev) === chartBlockSignature(next);
-  recordSlidePerfEvent("slides.chartCanvas.memoCompare", {
-    blockId: next.id,
-    chartType: next.chartType,
-    equal,
-  });
+  if (isSlidePerfEnabled()) {
+    recordSlidePerfEvent("slides.chartCanvas.memoCompare", {
+      blockId: next.id,
+      chartType: next.chartType,
+      equal,
+    });
+  }
   return equal;
 }
 
@@ -67,7 +69,7 @@ import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
-import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
+import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import {
   computeChartSeriesAsync,
@@ -141,19 +143,26 @@ function useAsyncSlideCalc<T>(
       return () => { cancelled = true; };
     }
 
-    const startMark = `slides:${label}:${key}:start:${performance.now()}`;
-    markSlidePerf(startMark);
-    recordSlidePerfEvent("slides.worker.start", { label, key });
+    const perfEnabled = isSlidePerfEnabled();
+    const startMark = perfEnabled ? `slides:${label}:${key}:start:${performance.now()}` : "";
+    if (perfEnabled) {
+      markSlidePerf(startMark);
+      recordSlidePerfEvent("slides.worker.start", { label, key });
+    }
     setState((previous) => ({ value: previous.value, loading: true }));
     computeRef.current()
       .then((value) => {
-        measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "ok" });
-        recordSlidePerfEvent("slides.worker.end", { label, key, status: "ok" });
+        if (perfEnabled) {
+          measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "ok" });
+          recordSlidePerfEvent("slides.worker.end", { label, key, status: "ok" });
+        }
         if (!cancelled) setState({ value, loading: false });
       })
       .catch(() => {
-        measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "error" });
-        recordSlidePerfEvent("slides.worker.end", { label, key, status: "error" });
+        if (perfEnabled) {
+          measureSlidePerf("slides.worker.duration", startMark, undefined, { label, key, status: "error" });
+          recordSlidePerfEvent("slides.worker.end", { label, key, status: "error" });
+        }
         if (!cancelled) setState({ value: fallback, loading: false });
       });
 
@@ -352,8 +361,9 @@ function mapPos(family: Family, p: string): string {
 
 // -- main ------------------------------------------------------------------
 function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?: string }) {
-  recordSlideRender("ChartCanvas", block.id, { chartType: block.chartType, cacheSlideId });
+  if (isSlidePerfEnabled()) recordSlideRender("ChartCanvas", block.id);
   useEffect(() => {
+    if (!isSlidePerfEnabled()) return;
     recordSlidePerfEvent("slides.chartCanvas.mount", {
       blockId: block.id,
       chartType: block.chartType,

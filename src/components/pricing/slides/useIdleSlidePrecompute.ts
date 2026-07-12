@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { SlideItem } from "@/lib/slidesFlow";
 import { warmSlideThumbnail } from "@/components/pricing/SlidePreview";
-import { incrementSlidePerfCounter } from "@/lib/slidesPerfCounters";
+import { incrementSlidePerfCounter, isSlidePerfEnabled } from "@/lib/slidesPerfCounters";
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
@@ -48,6 +48,7 @@ function orderedByDistance(items: SlideItem[], selectedId: string | null): Slide
 }
 
 function recordIdleMetric(name: string, id?: string): void {
+  if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
 }
 

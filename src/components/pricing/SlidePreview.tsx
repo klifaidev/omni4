@@ -22,7 +22,7 @@ import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMo
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
-import { incrementSlidePerfCounter, recordSlideRender } from "@/lib/slidesPerfCounters";
+import { incrementSlidePerfCounter, isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
 import {
   buildSlideThumbnailKey,
@@ -713,6 +713,7 @@ const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
 const STATIC_THUMBNAIL_TIMEOUT_MS = 8000;
 
 function recordThumbnailMetric(name: string, id?: string): void {
+  if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
 }
 
@@ -899,7 +900,7 @@ export async function warmSlideThumbnail(item: SlideItem): Promise<"hit" | "gene
 }
 
 function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
-  recordSlideRender("ScaledPreview", item.id);
+  if (isSlidePerfEnabled()) recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
 
   if (item.kind !== "custom") {
@@ -977,7 +978,7 @@ function useSlideThumbnailKey(item: SlideItem): string {
 }
 
 function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
-  recordSlideRender("StaticScaledPreview", item.id);
+  if (isSlidePerfEnabled()) recordSlideRender("StaticScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
   const previewH = (CANVAS_H / CANVAS_W) * previewW;
   const key = useSlideThumbnailKey(item);
@@ -1016,7 +1017,7 @@ function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWid
 }
 
 function LightweightScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
-  recordSlideRender("LightweightScaledPreview", item.id);
+  if (isSlidePerfEnabled()) recordSlideRender("LightweightScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
   const previewH = (CANVAS_H / CANVAS_W) * previewW;
   const dataUrl = useMemo(() => {

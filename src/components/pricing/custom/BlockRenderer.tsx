@@ -52,7 +52,7 @@ import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocal
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
-import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getOrComputeSlideCalc, slideDataSignature, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 
@@ -404,7 +404,7 @@ class BlockErrorBoundary extends React.Component<
 type BlockRendererProps = { block: CustomBlock; readOnly?: boolean; isEditing?: boolean; cacheSlideId?: string };
 
 export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing, cacheSlideId }: BlockRendererProps) {
-  recordSlideRender("BlockRenderer", block.id);
+  if (isSlidePerfEnabled()) recordSlideRender("BlockRenderer", block.id);
   return (
     <BlockErrorBoundary block={block}>
       <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} cacheSlideId={cacheSlideId} />

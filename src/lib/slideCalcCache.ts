@@ -1,4 +1,4 @@
-import { incrementSlidePerfCounter } from "@/lib/slidesPerfCounters";
+import { incrementSlidePerfCounter, isSlidePerfEnabled } from "@/lib/slidesPerfCounters";
 
 export type SlideCalcCacheKeyInput = {
   op: string;
@@ -37,6 +37,7 @@ function hashString(value: string): string {
 }
 
 function recordCacheMetric(name: string, id?: string): void {
+  if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
 }
 

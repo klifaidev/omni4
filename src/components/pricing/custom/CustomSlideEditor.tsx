@@ -166,7 +166,7 @@ import {
   SLIDE_BRAND_STYLES,
   type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
-import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
+import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -308,13 +308,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   collabYDoc,
   textAwareness = [],
 }: Props) {
-  recordSlideRender("CustomSlideEditor", slideId, { blockCount: config.blocks.length });
+  if (isSlidePerfEnabled()) recordSlideRender("CustomSlideEditor", slideId);
   // Bind the parent's config <-> internal Zustand+temporal store first so
   // selection store reflects the right slide on initial render.
   useEditorBinding(config, onChange, slideId);
   const undoRedo = useUndoRedoState();
   const { selectedIds, groupEditMemberId } = useSelection();
   useEffect(() => {
+    if (!isSlidePerfEnabled()) return;
     recordSlidePerfEvent("slides.customEditor.commit", {
       slideId,
       blockCount: config.blocks.length,
@@ -541,34 +542,40 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   ), [textAwareness]);
   const addBlock = useCallback((kind: CustomBlockKind) => {
     if (!canEdit()) return;
-    const startMark = `slides:addBlockClick:${performance.now()}`;
-    markSlidePerf(startMark);
+    const perfEnabled = isSlidePerfEnabled();
+    const startMark = perfEnabled ? `slides:addBlockClick:${performance.now()}` : "";
+    if (perfEnabled) markSlidePerf(startMark);
     if (collabYDoc) {
       const block = newBlock(kind, maxBlockZ()) as CustomBlock;
       insertCustomSlideBlock(collabYDoc, block);
       emitYDocConfig();
       setSelection([block.id]);
-      measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
-        kind,
-        blockId: block.id,
-        mode: "yjs",
-        previousBlockCount: config.blocks.length,
-      });
+      if (perfEnabled) {
+        measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
+          kind,
+          blockId: block.id,
+          mode: "yjs",
+          previousBlockCount: config.blocks.length,
+        });
+      }
       return;
     }
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
-    measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
-      kind,
-      blockId: id ?? undefined,
-      mode: "local",
-      previousBlockCount: config.blocks.length,
-    });
+    if (perfEnabled) {
+      measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
+        kind,
+        blockId: id ?? undefined,
+        mode: "local",
+        previousBlockCount: config.blocks.length,
+      });
+    }
   }, [canEdit, collabYDoc, config.blocks.length, emitYDocConfig, maxBlockZ]);
   const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
-    const startMark = `slides:addChartClick:${performance.now()}`;
-    markSlidePerf(startMark);
+    const perfEnabled = isSlidePerfEnabled();
+    const startMark = perfEnabled ? `slides:addChartClick:${performance.now()}` : "";
+    if (perfEnabled) markSlidePerf(startMark);
     if (collabYDoc) {
       const block = preset === "positivacao"
         ? (newPositivacaoChartBlock(maxBlockZ()) as CustomBlock)
@@ -576,26 +583,30 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       insertCustomSlideBlock(collabYDoc, block);
       emitYDocConfig();
       setSelection([block.id]);
-      measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
-        chartType,
-        preset,
-        blockId: block.id,
-        mode: "yjs",
-        previousBlockCount: config.blocks.length,
-      });
+      if (perfEnabled) {
+        measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
+          chartType,
+          preset,
+          blockId: block.id,
+          mode: "yjs",
+          previousBlockCount: config.blocks.length,
+        });
+      }
       return;
     }
     const id = preset === "positivacao"
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
     if (id) setSelection([id]);
-    measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
-      chartType,
-      preset,
-      blockId: id ?? undefined,
-      mode: "local",
-      previousBlockCount: config.blocks.length,
-    });
+    if (perfEnabled) {
+      measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
+        chartType,
+        preset,
+        blockId: id ?? undefined,
+        mode: "local",
+        previousBlockCount: config.blocks.length,
+      });
+    }
   }, [canEdit, collabYDoc, config.blocks.length, emitYDocConfig, maxBlockZ]);
   const insertTextStyle = useCallback((styleId: string, text: string, x: number, y: number, w: number, h: number) => {
     if (!canEdit()) return;
@@ -3110,6 +3121,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
   getYText?: (field: string) => Y.Text | null;
 }) {
   useEffect(() => {
+    if (!isSlidePerfEnabled()) return;
     recordSlidePerfEvent("slides.inspector.mount", {
       blockId: block.id,
       kind: block.kind,
