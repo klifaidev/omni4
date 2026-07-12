@@ -3,7 +3,7 @@
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
-import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import type * as Y from "yjs";
 import { Rnd } from "react-rnd";
 import { Button } from "@/components/ui/button";
@@ -178,6 +178,8 @@ let crossSlideClipboard: CustomBlock | null = null;
 type Icon = React.ComponentType<{ className?: string }>;
 const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
 const PALETTE_FAVORITES_KEY = "omni4.customSlide.paletteFavorites";
+type PaletteCategory = "favorites" | "models" | "charts" | "elements" | "story" | "omni" | "assets";
+type PalettePanelSide = "right" | "left";
 
 function localId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -333,6 +335,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [showLayers, setShowLayers] = useState(false);
   const [zoomEditing, setZoomEditing] = useState(false);
   const [palettePanelOpen, setPalettePanelOpen] = useState(true);
+  const [activePaletteCategory, setActivePaletteCategory] = useState<PaletteCategory>("models");
+  const [palettePanelSide, setPalettePanelSide] = useState<PalettePanelSide>("right");
   const [templateApplying, setTemplateApplying] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState("");
   const [recentPaletteIds, setRecentPaletteIds] = useState<string[]>(() => {
@@ -375,7 +379,31 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, [inlineEditId, config.blocks]);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const paletteRailRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
+
+  const openPaletteCategory = useCallback((category: PaletteCategory) => {
+    setActivePaletteCategory(category);
+    setPalettePanelOpen((open) => !(open && activePaletteCategory === category));
+  }, [activePaletteCategory]);
+
+  useLayoutEffect(() => {
+    if (!palettePanelOpen) return;
+    const updateSide = () => {
+      const rail = paletteRailRef.current;
+      if (!rail) return;
+      const rect = rail.getBoundingClientRect();
+      const panelWidth = 260;
+      const gap = 8;
+      const margin = 12;
+      const fitsRight = rect.right + gap + panelWidth <= window.innerWidth - margin;
+      const fitsLeft = rect.left - gap - panelWidth >= margin;
+      setPalettePanelSide(fitsRight || !fitsLeft ? "right" : "left");
+    };
+    updateSide();
+    window.addEventListener("resize", updateSide);
+    return () => window.removeEventListener("resize", updateSide);
+  }, [palettePanelOpen, activePaletteCategory]);
 
   const setGuidesImmediate = useCallback((next: { v: number[]; h: number[] }) => {
     if (
@@ -1199,6 +1227,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     });
   }, []);
   const paletteQuery = normalizePaletteText(paletteSearch.trim());
+  const isPaletteSearching = paletteSearch.trim().length > 0;
+  const showPaletteCategory = useCallback((category: PaletteCategory) => (
+    isPaletteSearching || activePaletteCategory === category
+  ), [activePaletteCategory, isPaletteSearching]);
   const matchesPalette = useCallback((...parts: Array<string | undefined | null>) => {
     if (!paletteQuery) return true;
     return normalizePaletteText(parts.filter(Boolean).join(" ")).includes(paletteQuery);
@@ -1233,12 +1265,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       onClick: () => addBlock(it.kind),
     })),
   ];
-  const recentPalette = paletteSearch.trim()
+  const recentPalette = isPaletteSearching
     ? []
     : recentPaletteIds
         .map((id) => paletteActions.find((it) => it.id === id))
         .filter((it): it is typeof paletteActions[number] => Boolean(it));
-  const favoritePalette = paletteSearch.trim()
+  const favoritePalette = isPaletteSearching
     ? []
     : favoritePaletteIds
         .map((id) => paletteActions.find((it) => it.id === id))
@@ -1247,10 +1279,18 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleOmniPalette = OMNI_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.group));
-  const hasPaletteResults = visibleStorytellingPalette.length > 0
-    || visibleChartPalette.length > 0
-    || visibleElementPalette.length > 0
-    || visibleOmniPalette.length > 0;
+  const hasPaletteResults = isPaletteSearching
+    ? visibleStorytellingPalette.length > 0
+      || visibleChartPalette.length > 0
+      || visibleElementPalette.length > 0
+      || visibleOmniPalette.length > 0
+    : activePaletteCategory === "models"
+      || activePaletteCategory === "assets"
+      || (activePaletteCategory === "favorites" && (favoritePalette.length > 0 || recentPalette.length > 0))
+      || (activePaletteCategory === "charts" && visibleChartPalette.length > 0)
+      || activePaletteCategory === "elements"
+      || (activePaletteCategory === "story" && visibleStorytellingPalette.length > 0)
+      || (activePaletteCategory === "omni" && visibleOmniPalette.length > 0);
 
   // Helper: ids that move together when dragging `id`.
   // If id belongs to a group (and we're not in group-edit mode for it),
@@ -1528,7 +1568,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       )}
       {/* ====== Paleta ====== */}
       <div className="relative z-40 min-h-0">
-        <div className="flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 bg-card/70 p-1.5">
+        <div ref={paletteRailRef} className="flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 bg-card/70 p-1.5">
           {([
             { label: "Favoritos", icon: Star },
             { label: "Modelos", icon: BookOpen },
@@ -1539,17 +1579,25 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             { label: "Assets", icon: Images },
           ]).map((item) => {
             const Icon = item.icon;
+            const category: PaletteCategory = item.label === "Favoritos" ? "favorites"
+              : item.label === "Modelos" ? "models"
+              : item.label.startsWith("Gr") ? "charts"
+              : item.label === "Elementos" ? "elements"
+              : item.label === "Story" ? "story"
+              : item.label === "Omni" ? "omni"
+              : "assets";
             return (
               <button
                 key={item.label}
                 type="button"
                 className={cn(
                   "flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-foreground",
-                  palettePanelOpen && "bg-primary/10 text-primary",
+                  palettePanelOpen && activePaletteCategory === category && "bg-primary/10 text-primary",
                 )}
-                onClick={() => setPalettePanelOpen(true)}
+                onClick={() => openPaletteCategory(category)}
                 title={item.label}
                 aria-label={item.label}
+                aria-pressed={palettePanelOpen && activePaletteCategory === category}
               >
                 <Icon className="h-4 w-4" />
               </button>
@@ -1557,7 +1605,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           })}
         </div>
         {palettePanelOpen && (
-          <div className="absolute left-[calc(100%+8px)] top-0 z-50 flex h-full w-[260px] flex-col rounded-lg border border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl">
+          <div
+            className={cn(
+              "absolute top-0 z-50 flex h-full w-[260px] max-w-[calc(100vw-24px)] flex-col rounded-lg border border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl",
+              palettePanelSide === "right" ? "left-[calc(100%+8px)]" : "right-[calc(100%+8px)]",
+            )}
+          >
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocos</span>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)} aria-label="Fechar painel de blocos">
@@ -1566,24 +1619,35 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-1 p-2">
-          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Modelos
-          </div>
-          <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
-            onClick={() => { if (canEdit()) setTplOpen(true); }}
-            disabled={readOnly}>
-            <BookOpen className="h-3.5 w-3.5" /> Aplicar modelo
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 text-xs"
-            onClick={() => setSaveTplOpen(true)}
-            disabled={config.blocks.length === 0 || readOnly}>
-            <Save className="h-3.5 w-3.5" /> Salvar como modelo
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
-            onClick={() => { if (canEdit()) setAssetsOpen(true); }}
-            disabled={readOnly}>
-            <Images className="h-3.5 w-3.5" /> Assets
-          </Button>
+          {showPaletteCategory("models") && !isPaletteSearching && (
+            <>
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Modelos
+              </div>
+              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
+                onClick={() => { if (canEdit()) setTplOpen(true); }}
+                disabled={readOnly}>
+                <BookOpen className="h-3.5 w-3.5" /> Aplicar modelo
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 text-xs"
+                onClick={() => setSaveTplOpen(true)}
+                disabled={config.blocks.length === 0 || readOnly}>
+                <Save className="h-3.5 w-3.5" /> Salvar como modelo
+              </Button>
+            </>
+          )}
+          {showPaletteCategory("assets") && !isPaletteSearching && (
+            <>
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Assets
+              </div>
+              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
+                onClick={() => { if (canEdit()) setAssetsOpen(true); }}
+                disabled={readOnly}>
+                <Images className="h-3.5 w-3.5" /> Abrir biblioteca
+              </Button>
+            </>
+          )}
           <div className="relative px-1 pt-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1618,7 +1682,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </div>
           )}
 
-          {favoritePalette.length > 0 && (
+          {showPaletteCategory("favorites") && favoritePalette.length > 0 && (
             <>
               <PaletteGroup title="Favoritos" defaultOpen>
                 {favoritePalette.map((it) => (
@@ -1636,7 +1700,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {recentPalette.length > 0 && (
+          {showPaletteCategory("favorites") && recentPalette.length > 0 && (
             <>
               <PaletteGroup title="Recentes" defaultOpen>
                 {recentPalette.map((it) => (
@@ -1654,7 +1718,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {!paletteSearch.trim() && (
+          {showPaletteCategory("models") && !isPaletteSearching && (
             <>
               <PaletteGroup title="Layouts rapidos" defaultOpen>
                 <QuickLayoutButton label="Titulo + KPIs" description="Titulo executivo com quatro indicadores." onClick={() => insertQuickLayout("kpis")} />
@@ -1664,6 +1728,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 <QuickLayoutButton label="Bridge + comentario" description="Bridge PVM com bloco de narrativa." onClick={() => insertQuickLayout("bridgeComment")} />
               </PaletteGroup>
               <Separator className="my-2" />
+            </>
+          )}
+
+          {showPaletteCategory("elements") && !isPaletteSearching && (
+            <>
               <PaletteGroup title="Texto" defaultOpen>
                 <TextStyleButton
                   label="Adicionar titulo"
@@ -1685,7 +1754,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {visibleChartPalette.length > 0 && (
+          {showPaletteCategory("charts") && visibleChartPalette.length > 0 && (
             <>
               <PaletteGroup title="Gráficos" defaultOpen>
                 {visibleChartPalette.map((it) => (
@@ -1703,7 +1772,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {visibleStorytellingPalette.length > 0 && (
+          {showPaletteCategory("story") && visibleStorytellingPalette.length > 0 && (
             <>
               <PaletteGroup title="Storytelling" defaultOpen>
                 {visibleStorytellingPalette.map((it) => (
@@ -1721,7 +1790,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {visibleElementPalette.length > 0 && (
+          {showPaletteCategory("elements") && visibleElementPalette.length > 0 && (
             <>
               <PaletteGroup title="Elementos" defaultOpen>
                 {visibleElementPalette.map((it) => (
@@ -1739,7 +1808,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {visibleOmniPalette.length > 0 && (
+          {showPaletteCategory("omni") && visibleOmniPalette.length > 0 && (
             <>
               <PaletteGroup title="Omni Analytics">
                 {OMNI_GROUPS.map((group) => {
@@ -1767,19 +1836,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <Separator className="my-2" />
             </>
           )}
-          <div className="px-2">
-            <Label className="text-[10px] uppercase text-muted-foreground">Fundo do slide</Label>
-            <BgField label="" value={config.background}
-              onChange={(v) => { if (canEdit()) setBackgroundAction(v); }} />
-          </div>
-          <div className="mt-2 flex items-center justify-between px-2 text-[11px]">
-            <span className="text-muted-foreground">Faixa Harald</span>
-            <Switch
-              checked={config.showHaraldFooter}
-              disabled={readOnly}
-              onCheckedChange={(v) => { if (canEdit()) setShowHaraldFooterAction(v); }}
-            />
-          </div>
+          {showPaletteCategory("models") && !isPaletteSearching && (
+            <>
+              <div className="px-2">
+                <Label className="text-[10px] uppercase text-muted-foreground">Fundo do slide</Label>
+                <BgField label="" value={config.background}
+                  onChange={(v) => { if (canEdit()) setBackgroundAction(v); }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between px-2 text-[11px]">
+                <span className="text-muted-foreground">Faixa Harald</span>
+                <Switch
+                  checked={config.showHaraldFooter}
+                  disabled={readOnly}
+                  onCheckedChange={(v) => { if (canEdit()) setShowHaraldFooterAction(v); }}
+                />
+              </div>
+            </>
+          )}
           <p className="mt-2 px-2 text-[10px] leading-relaxed text-muted-foreground">
             Atalhos: <kbd>Ctrl+Z</kbd> desfazer · <kbd>Ctrl+Shift+Z</kbd> refazer · <kbd>Del</kbd> excluir · <kbd>Ctrl+D</kbd> duplicar · <kbd>Ctrl+]</kbd>/<kbd>Ctrl+[</kbd> ordem · <kbd>setas</kbd> mover (Shift = 10px)
           </p>
