@@ -52,6 +52,7 @@ export type SupabaseYjsProviderOptions = {
   awarenessEventName?: string;
   awareness?: Awareness;
   throttleMs?: number;
+  awarenessThrottleMs?: number;
   onSendFailure?: (reason: "send_failed") => void;
   onDiscardedUpdate?: (reason: "decrypt_failed" | "apply_failed" | "invalid_payload") => void;
   onDiscardedAwareness?: (reason: "decrypt_failed" | "apply_failed" | "invalid_payload") => void;
@@ -71,6 +72,7 @@ export type YjsTextAwarenessState = {
 const DEFAULT_EVENT = "yjs-update";
 const DEFAULT_AWARENESS_EVENT = "yjs-awareness";
 const DEFAULT_THROTTLE_MS = 80;
+const DEFAULT_AWARENESS_THROTTLE_MS = 120;
 // Security decision: Awareness does not carry slide text, but it does carry
 // collaborator identity and cursor/selection metadata. Keep it encrypted so
 // every Yjs collaboration message follows the same room-key policy.
@@ -171,6 +173,7 @@ export class SupabaseYjsProvider {
   private readonly awarenessEventName: string;
   private readonly awareness?: Awareness;
   private readonly throttleMs: number;
+  private readonly awarenessThrottleMs: number;
   private readonly onSendFailure?: SupabaseYjsProviderOptions["onSendFailure"];
   private readonly onDiscardedUpdate?: SupabaseYjsProviderOptions["onDiscardedUpdate"];
   private readonly onDiscardedAwareness?: SupabaseYjsProviderOptions["onDiscardedAwareness"];
@@ -179,7 +182,9 @@ export class SupabaseYjsProvider {
   private readonly seenMessageIds = new Set<string>();
   private readonly seenAwarenessMessageIds = new Set<string>();
   private pendingUpdates: Uint8Array[] = [];
+  private pendingAwarenessUpdate: Uint8Array | null = null;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private awarenessFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
   constructor(options: SupabaseYjsProviderOptions) {
@@ -191,6 +196,7 @@ export class SupabaseYjsProvider {
     this.awarenessEventName = options.awarenessEventName ?? DEFAULT_AWARENESS_EVENT;
     this.awareness = options.awareness;
     this.throttleMs = options.throttleMs ?? DEFAULT_THROTTLE_MS;
+    this.awarenessThrottleMs = options.awarenessThrottleMs ?? Math.max(this.throttleMs, DEFAULT_AWARENESS_THROTTLE_MS);
     this.onSendFailure = options.onSendFailure;
     this.onDiscardedUpdate = options.onDiscardedUpdate;
     this.onDiscardedAwareness = options.onDiscardedAwareness;
@@ -211,11 +217,19 @@ export class SupabaseYjsProvider {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    if (this.awarenessFlushTimer !== null) {
+      clearTimeout(this.awarenessFlushTimer);
+      this.awarenessFlushTimer = null;
+    }
     this.pendingUpdates = [];
+    this.pendingAwarenessUpdate = null;
   }
 
   flush(): Promise<void> {
-    return this.flushPendingUpdates();
+    return Promise.all([
+      this.flushPendingUpdates(),
+      this.flushPendingAwarenessUpdate(),
+    ]).then(() => undefined);
   }
 
   private readonly handleLocalUpdate = (update: Uint8Array, origin: unknown) => {
@@ -239,8 +253,12 @@ export class SupabaseYjsProvider {
     if (this.destroyed || !this.awareness || origin === this.remoteOrigin) return;
     const changedClients = [...change.added, ...change.updated, ...change.removed];
     if (changedClients.length === 0) return;
-    const update = encodeAwarenessUpdate(this.awareness, changedClients);
-    void this.sendAwarenessUpdate(update);
+    this.pendingAwarenessUpdate = encodeAwarenessUpdate(this.awareness, changedClients);
+    if (this.awarenessFlushTimer !== null) return;
+    this.awarenessFlushTimer = setTimeout(() => {
+      this.awarenessFlushTimer = null;
+      void this.flushPendingAwarenessUpdate();
+    }, this.awarenessThrottleMs);
   };
 
   private readonly handleRemoteAwarenessMessage = (message: { payload: unknown }) => {
@@ -287,6 +305,13 @@ export class SupabaseYjsProvider {
       this.seenAwarenessMessageIds.delete(payload.id);
       this.onSendFailure?.("send_failed");
     }
+  }
+
+  private async flushPendingAwarenessUpdate(): Promise<void> {
+    if (this.destroyed || !this.pendingAwarenessUpdate) return;
+    const update = this.pendingAwarenessUpdate;
+    this.pendingAwarenessUpdate = null;
+    await this.sendAwarenessUpdate(update);
   }
 
   private async applyRemotePayload(payload: unknown): Promise<void> {

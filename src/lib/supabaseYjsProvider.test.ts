@@ -260,6 +260,7 @@ describe("SupabaseYjsProvider", () => {
       clientId: "client-a",
       awareness: awarenessA,
       throttleMs: 10,
+      awarenessThrottleMs: 10,
     });
     const providerB = createSupabaseYjsProvider({
       doc: docB,
@@ -268,6 +269,7 @@ describe("SupabaseYjsProvider", () => {
       clientId: "client-b",
       awareness: awarenessB,
       throttleMs: 10,
+      awarenessThrottleMs: 10,
     });
 
     awarenessA.setLocalStateField("user", { name: "Ana", color: "#C8102E" });
@@ -278,7 +280,8 @@ describe("SupabaseYjsProvider", () => {
       anchor: 2,
       head: 5,
     });
-    await wait(30);
+    await providerA.flush();
+    await wait(10);
 
     const remoteState = Array.from(awarenessB.getStates().values())
       .find((state) => (state as { user?: { name?: string } }).user?.name === "Ana") as {
@@ -302,6 +305,65 @@ describe("SupabaseYjsProvider", () => {
         head: 5,
       }),
     ]);
+
+    providerA.destroy();
+    providerB.destroy();
+    awarenessA.destroy();
+    awarenessB.destroy();
+  });
+
+  it("debounces frequent Awareness updates and sends only the latest cursor state", async () => {
+    const contentKey = await createSharedKey();
+    const docA = customSlideConfigToYDoc(config);
+    const docB = new Y.Doc();
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+    const awarenessA = new Awareness(docA);
+    const awarenessB = new Awareness(docB);
+    const channelA = new MemoryChannel();
+    const channelB = new MemoryChannel();
+    connectChannels(channelA, channelB);
+    const providerA = createSupabaseYjsProvider({
+      doc: docA,
+      channel: channelA,
+      contentKey,
+      clientId: "client-a",
+      awareness: awarenessA,
+      throttleMs: 10,
+      awarenessThrottleMs: 50,
+    });
+    const providerB = createSupabaseYjsProvider({
+      doc: docB,
+      channel: channelB,
+      contentKey,
+      clientId: "client-b",
+      awareness: awarenessB,
+      throttleMs: 10,
+      awarenessThrottleMs: 50,
+    });
+
+    awarenessA.setLocalStateField("user", { name: "Ana", color: "#C8102E" });
+    for (let i = 0; i < 12; i += 1) {
+      awarenessA.setLocalStateField("textSelection", {
+        slideId: "slide-1",
+        blockId: "title-1",
+        field: "text",
+        anchor: i,
+        head: i + 1,
+      });
+    }
+
+    expect(channelA.sent.filter((message) => message.event === "yjs-awareness")).toHaveLength(0);
+    await providerA.flush();
+    await wait(10);
+
+    const awarenessMessages = channelA.sent.filter((message) => message.event === "yjs-awareness");
+    const remoteState = Array.from(awarenessB.getStates().values())
+      .find((state) => (state as { user?: { name?: string } }).user?.name === "Ana") as {
+        textSelection?: { anchor: number; head: number };
+      } | undefined;
+
+    expect(awarenessMessages).toHaveLength(1);
+    expect(remoteState?.textSelection).toMatchObject({ anchor: 11, head: 12 });
 
     providerA.destroy();
     providerB.destroy();
