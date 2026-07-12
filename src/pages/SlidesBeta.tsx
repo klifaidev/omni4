@@ -1300,7 +1300,7 @@ function Inspector({
   return (
     <ScrollArea className="h-full">
       <div className="space-y-5 p-5">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border", ACCENT_BG[meta.accent])}>
             <Icon className="h-5 w-5" />
           </div>
@@ -1313,32 +1313,32 @@ function Inspector({
               placeholder={meta.title}
               className="-ml-2 h-8 border-transparent bg-transparent px-2 text-base font-medium hover:bg-secondary/40 focus-visible:bg-card"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">{meta.description}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{meta.description}</p>
           </div>
         </div>
 
         <Separator />
 
-        <div className={cn("rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              {statusSeverity ? <AlertTriangle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+        <div className={cn("min-w-0 rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+              {statusSeverity ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
               {preflightSeverityLabel(statusSeverity)}
             </div>
             {statusItems.length > 0 && (
-              <Badge variant="outline" className="h-5 border-current/30 bg-background/50 px-1.5 text-[10px] text-current">
+              <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 text-[10px] text-current">
                 {statusItems.length} ponto(s)
               </Badge>
             )}
           </div>
-          <div className="mt-2 space-y-1.5 text-[11px] leading-snug">
+          <div className="mt-2 min-w-0 space-y-1.5 text-[11px] leading-snug">
             {statusItems.length === 0 ? (
               <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
             ) : (
               statusItems.map((statusItem, idx) => (
-                <div key={`${statusItem.title}-${idx}`} className="rounded-md bg-background/55 px-2 py-1.5">
+                <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-background/55 px-2 py-1.5 [overflow-wrap:anywhere]">
                   <span className="font-medium">{statusItem.title}:</span>{" "}
-                  <span>{statusItem.detail}</span>
+                  <span className="break-words">{statusItem.detail}</span>
                 </div>
               ))
             )}
@@ -1706,45 +1706,47 @@ function PresetsPanel() {
         .slice()
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((p) => (
-          <div key={p.id} className="group flex items-center gap-2 rounded-lg border border-border/40 bg-card/50 p-2 transition-colors hover:border-border/70">
+          <div key={p.id} className="group flex flex-wrap items-center gap-2 rounded-lg border border-border/40 bg-card/50 p-2 transition-colors hover:border-border/70">
             <Bookmark className="h-3.5 w-3.5 shrink-0 text-primary" />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-[110px] flex-1">
               <div className="truncate text-xs font-medium">{p.name}</div>
               <div className="text-[10px] text-muted-foreground">
                 {p.items.length} slide(s) · {new Date(p.updatedAt).toLocaleDateString("pt-BR")}
               </div>
             </div>
-            <Button
-              variant="ghost" size="icon" className="h-6 w-6"
-              title="Carregar"
-              onClick={() => { loadPreset(p.id); toast.success(`"${p.name}" carregado.`); }}
-            >
-              <RotateCcw className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost" size="icon" className="h-6 w-6"
-              title="Sobrescrever com a esteira atual"
-              onClick={() => { overwritePreset(p.id); toast.success(`"${p.name}" atualizado.`); }}
-            >
-              <Save className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost" size="icon" className="h-6 w-6"
-              title="Exportar modelo"
-              onClick={() => {
-                exportPresetModel(p);
-                toast.success(`Modelo "${p.name}" exportado.`);
-              }}
-            >
-              <Download className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive"
-              title="Excluir"
-              onClick={() => { if (confirm(`Excluir "${p.name}"?`)) deletePreset(p.id); }}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6"
+                title="Carregar"
+                onClick={() => { loadPreset(p.id); toast.success(`"${p.name}" carregado.`); }}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6"
+                title="Sobrescrever com a esteira atual"
+                onClick={() => { overwritePreset(p.id); toast.success(`"${p.name}" atualizado.`); }}
+              >
+                <Save className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6"
+                title="Exportar modelo"
+                onClick={() => {
+                  exportPresetModel(p);
+                  toast.success(`Modelo "${p.name}" exportado.`);
+                }}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive"
+                title="Excluir"
+                onClick={() => { if (confirm(`Excluir "${p.name}"?`)) deletePreset(p.id); }}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
         ))}
     </div>
@@ -1832,8 +1834,8 @@ export default function SlidesBeta() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
-  const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 292, 220, 420);
-  const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 340, 280, 520);
+  const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 320, 300, 460);
+  const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 360, 340, 540);
   const [templateApplying, setTemplateApplying] = useState(false);
   const [importApplying, setImportApplying] = useState(false);
   const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
