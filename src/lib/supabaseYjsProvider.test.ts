@@ -233,7 +233,8 @@ describe("SupabaseYjsProvider", () => {
     expect(yDocToCustomSlideConfig(doc)).toEqual(config);
 
     titleText(peerDoc).insert(titleText(peerDoc).length, " depois do payload invalido");
-    await wait(30);
+    await peerProvider.flush();
+    await wait(10);
 
     expect((yDocToCustomSlideConfig(doc).blocks[0] as { text: string }).text)
       .toBe("Titulo original depois do payload invalido");

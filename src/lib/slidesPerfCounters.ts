@@ -9,13 +9,20 @@ type SlidePerfState = {
   counts?: Record<string, number>;
   events?: SlidePerfEvent[];
   measures?: Array<{ name: string; duration: number; startTime: number; detail?: Record<string, unknown> }>;
+  detailed?: boolean;
+  maxEvents?: number;
+  maxMeasures?: number;
 };
 
 declare global {
   interface Window {
     __OMNI_SLIDES_PERF__?: SlidePerfState;
+    __OMNI_SLIDES_PERF_DETAILED__?: boolean;
   }
 }
+
+const DEFAULT_MAX_EVENTS = 200;
+const DEFAULT_MAX_MEASURES = 200;
 
 function isDevRuntime(): boolean {
   if (import.meta.env?.DEV) return true;
@@ -35,8 +42,18 @@ function getPerfState(): SlidePerfState | null {
   return window.__OMNI_SLIDES_PERF__ ?? null;
 }
 
-export function recordSlideRender(name: string, id?: string, detail?: Record<string, unknown>): void {
-  if (typeof window === "undefined") return;
+function isDetailedEnabled(perf: SlidePerfState): boolean {
+  if (perf.detailed === true) return true;
+  if (typeof window === "undefined") return false;
+  return window.__OMNI_SLIDES_PERF_DETAILED__ === true;
+}
+
+function pushCircular<T>(target: T[], value: T, max: number): void {
+  target.push(value);
+  if (target.length > max) target.splice(0, target.length - max);
+}
+
+export function incrementSlidePerfCounter(name: string, id?: string): void {
   const perf = getPerfState();
   if (!perf) return;
   const counts = perf.counts ?? {};
@@ -46,23 +63,27 @@ export function recordSlideRender(name: string, id?: string, detail?: Record<str
     counts[scoped] = (counts[scoped] ?? 0) + 1;
   }
   perf.counts = counts;
-  if (perf.events) {
-    perf.events.push({ name, id, at: performance.now(), detail });
-    if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
-  }
+}
+
+export function recordSlideRender(name: string, id?: string): void {
+  incrementSlidePerfCounter(name, id);
 }
 
 export function recordSlidePerfEvent(name: string, detail?: Record<string, unknown>, id?: string): void {
   if (typeof window === "undefined") return;
   const perf = getPerfState();
-  if (!perf?.events) return;
-  perf.events.push({ name, id, at: performance.now(), detail });
-  if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
+  if (!perf) return;
+  incrementSlidePerfCounter(name, id);
+  if (!isDetailedEnabled(perf)) return;
+  const events = perf.events ?? [];
+  pushCircular(events, { name, id, at: performance.now(), detail }, perf.maxEvents ?? DEFAULT_MAX_EVENTS);
+  perf.events = events;
 }
 
 export function markSlidePerf(name: string): void {
   if (typeof performance === "undefined" || typeof performance.mark !== "function") return;
-  if (!getPerfState()) return;
+  const perf = getPerfState();
+  if (!perf || !isDetailedEnabled(perf)) return;
   performance.mark(name);
 }
 
@@ -75,6 +96,8 @@ export function measureSlidePerf(
   if (typeof performance === "undefined" || typeof performance.measure !== "function") return;
   const perf = getPerfState();
   if (!perf) return;
+  incrementSlidePerfCounter(name);
+  if (!isDetailedEnabled(perf)) return;
   try {
     if (endMark) performance.measure(name, startMark, endMark);
     else performance.measure(name, startMark);
@@ -82,8 +105,11 @@ export function measureSlidePerf(
     const latest = entries[entries.length - 1];
     if (latest) {
       const measures = perf.measures ?? [];
-      measures.push({ name, duration: latest.duration, startTime: latest.startTime, detail });
-      if (measures.length > 10_000) measures.splice(0, measures.length - 10_000);
+      pushCircular(
+        measures,
+        { name, duration: latest.duration, startTime: latest.startTime, detail },
+        perf.maxMeasures ?? DEFAULT_MAX_MEASURES,
+      );
       perf.measures = measures;
     }
   } catch {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { SlideItem } from "@/lib/slidesFlow";
 import { warmSlideThumbnail } from "@/components/pricing/SlidePreview";
+import { incrementSlidePerfCounter } from "@/lib/slidesPerfCounters";
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
@@ -47,17 +48,7 @@ function orderedByDistance(items: SlideItem[], selectedId: string | null): Slide
 }
 
 function recordIdleMetric(name: string, id?: string): void {
-  if (typeof window === "undefined") return;
-  const perf = window.__OMNI_SLIDES_PERF__ ?? { counts: {}, events: [] };
-  window.__OMNI_SLIDES_PERF__ = perf;
-  const counts = perf.counts ?? {};
-  counts[name] = (counts[name] ?? 0) + 1;
-  if (id) counts[`${name}:${id}`] = (counts[`${name}:${id}`] ?? 0) + 1;
-  perf.counts = counts;
-  if (perf.events) {
-    perf.events.push({ name, id, at: performance.now() });
-    if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
-  }
+  incrementSlidePerfCounter(name, id);
 }
 
 export function useIdleSlidePrecompute(items: SlideItem[], selectedId: string | null): void {

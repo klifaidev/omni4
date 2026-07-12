@@ -1,3 +1,5 @@
+import { incrementSlidePerfCounter } from "@/lib/slidesPerfCounters";
+
 export type SlideCalcCacheKeyInput = {
   op: string;
   slideId?: string | null;
@@ -35,17 +37,7 @@ function hashString(value: string): string {
 }
 
 function recordCacheMetric(name: string, id?: string): void {
-  if (typeof window === "undefined") return;
-  const perf = window.__OMNI_SLIDES_PERF__;
-  if (!perf) return;
-  const counts = perf.counts ?? {};
-  counts[name] = (counts[name] ?? 0) + 1;
-  if (id) counts[`${name}:${id}`] = (counts[`${name}:${id}`] ?? 0) + 1;
-  perf.counts = counts;
-  if (perf.events) {
-    perf.events.push({ name, id, at: performance.now() });
-    if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
-  }
+  incrementSlidePerfCounter(name, id);
 }
 
 export function buildSlideCalcCacheKey(input: SlideCalcCacheKeyInput): string {

@@ -22,7 +22,7 @@ import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMo
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
-import { recordSlideRender } from "@/lib/slidesPerfCounters";
+import { incrementSlidePerfCounter, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getOrComputeSlideCalc, slideDataSignature } from "@/lib/slideCalcCache";
 import {
   buildSlideThumbnailKey,
@@ -713,17 +713,7 @@ const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
 const STATIC_THUMBNAIL_TIMEOUT_MS = 8000;
 
 function recordThumbnailMetric(name: string, id?: string): void {
-  if (typeof window === "undefined") return;
-  const perf = window.__OMNI_SLIDES_PERF__ ?? { counts: {}, events: [] };
-  window.__OMNI_SLIDES_PERF__ = perf;
-  const counts = perf.counts ?? {};
-  counts[name] = (counts[name] ?? 0) + 1;
-  if (id) counts[`${name}:${id}`] = (counts[`${name}:${id}`] ?? 0) + 1;
-  perf.counts = counts;
-  if (perf.events) {
-    perf.events.push({ name, id, at: performance.now() });
-    if (perf.events.length > 50_000) perf.events.splice(0, perf.events.length - 50_000);
-  }
+  incrementSlidePerfCounter(name, id);
 }
 
 function waitForAnimationFrame(): Promise<void> {

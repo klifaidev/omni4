@@ -24,6 +24,29 @@ Foram adicionados marks/eventos internos de performance em:
 
 O coletor `window.__OMNI_SLIDES_PERF__` agora e criado automaticamente em `DEV` e em `localhost`/`127.0.0.1`, para nao depender de injecao manual pelo DevTools.
 
+Atualizacao posterior: para evitar que o proprio diagnostico piore a fluidez do editor, a coleta padrao agora grava apenas contadores numericos em `counts`. Eventos e medidas detalhadas (`events`/`measures`) so sao gravados quando a flag abaixo estiver ligada antes do teste:
+
+```js
+window.__OMNI_SLIDES_PERF_DETAILED__ = true
+location.reload()
+```
+
+Os buffers detalhados tambem passaram a ser circulares, mantendo somente os ultimos 200 eventos e as ultimas 200 medidas, em vez de crescerem ate dezenas de milhares de entradas.
+
+### Diagnostico do overhead da instrumentacao
+
+Nao foi possivel repetir a sequencia real com base local/Electron neste ambiente, mas o overhead do coletor em si foi isolado com um microbenchmark local simulando chamadas frequentes de render:
+
+| Eventos simulados | Coletor anterior (`events.push` + corte em 50k) | Coletor leve atual (`counts` apenas) |
+| --- | ---: | ---: |
+| 10.000 | 4,25ms | 1,96ms |
+| 50.000 | 14,74ms | 10,51ms |
+| 60.000 | 1.132,63ms | 11,18ms |
+| 100.000 | 8.375,97ms | 21,76ms |
+| 200.000 | Estourou timeout de 10s | Nao aplicavel nessa rodada |
+
+Conclusao: a instrumentacao anterior podia, sim, virar parte relevante do problema em sessoes longas ou em fluxos com muitos renders/eventos, especialmente ao ultrapassar 50k eventos. A correcao reduz o modo padrao a contadores numericos e deixa o log detalhado apenas para medicoes pontuais.
+
 ## Correcao preventiva aplicada
 
 Os comparadores de memoizacao de blocos/graficos usavam `JSON.stringify` diretamente:
@@ -86,26 +109,34 @@ No Electron/Chrome real ou em uma instancia dev limpa:
 1. Carregar dados demo ou uma base real.
 2. Abrir Slides > slide personalizado com 20+ graficos.
 3. Abrir editor em tela cheia.
-4. No console, limpar a coleta:
+4. Para uma medicao leve, no console, limpar a coleta:
 
 ```js
 window.__OMNI_SLIDES_PERF__ = { counts: {}, events: [], measures: [] }
 ```
 
 5. Inserir um grafico `Linha`.
-6. Ler:
+6. Ler os contadores:
 
 ```js
-window.__OMNI_SLIDES_PERF__
+window.__OMNI_SLIDES_PERF__.counts
+```
+
+Para capturar tambem eventos e duracoes, ligue o modo detalhado antes de recarregar a tela:
+
+```js
+window.__OMNI_SLIDES_PERF_DETAILED__ = true
+location.reload()
 ```
 
 Indicadores principais:
 
 - `counts.ChartCanvas`: quantos `ChartCanvas` executaram.
 - `counts["ChartCanvas:<blockId>"]`: quais blocos renderizaram.
-- eventos `slides.chartCanvas.mount`: quantos canvases montaram de fato.
-- medidas `slides.addChart.clickToReturn` e `slides.addChartBlockAction`: custo do caminho de add.
-- medidas `slides.worker.duration` e eventos `slides.calc.cacheHit`: se o novo grafico usou worker/cache ou fallback.
+- `counts["slides.chartCanvas.mount"]`: quantos canvases montaram de fato no modo leve.
+- `counts["slides.addChart.clickToReturn"]` e `counts["slides.addChartBlockAction"]`: quantas vezes o caminho de add foi acionado.
+- `counts["slides.calc.cacheHit"]` e `counts["slides.calc.workerFallback"]`: se o novo grafico usou cache ou fallback.
+- No modo detalhado, `measures` mostra duracao real de `slides.addChart.clickToReturn`, `slides.addChartBlockAction`, `slides.worker.duration` e `slides.calc.workerClient`.
 
 Comandos uteis no console:
 
@@ -123,24 +154,30 @@ Object.entries(window.__OMNI_SLIDES_PERF__.counts)
 
 ```js
 // Eventos de mount real de ChartCanvas.
+// Requer window.__OMNI_SLIDES_PERF_DETAILED__ = true antes do reload.
 window.__OMNI_SLIDES_PERF__.events
   .filter((event) => event.name === "slides.chartCanvas.mount")
 ```
 
 ```js
 // Duracoes medidas do worker / cache client.
+// Requer window.__OMNI_SLIDES_PERF_DETAILED__ = true antes do reload.
 window.__OMNI_SLIDES_PERF__.measures
   .filter((measure) => measure.name === "slides.worker.duration" || measure.name === "slides.calc.workerClient")
 ```
 
 ```js
 // Ver se houve cache hit ou fallback sincronico.
-window.__OMNI_SLIDES_PERF__.events
-  .filter((event) => event.name === "slides.calc.cacheHit" || event.name === "slides.calc.workerFallback")
+const c = window.__OMNI_SLIDES_PERF__.counts
+({
+  cacheHit: c["slides.calc.cacheHit"] ?? 0,
+  workerFallback: c["slides.calc.workerFallback"] ?? 0
+})
 ```
 
 ```js
 // Marcos especificos do clique de inserir grafico.
+// Requer window.__OMNI_SLIDES_PERF_DETAILED__ = true antes do reload.
 window.__OMNI_SLIDES_PERF__.measures
   .filter((measure) => measure.name.includes("addChart"))
 ```
