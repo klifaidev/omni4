@@ -28,13 +28,13 @@ export function ShapeInspector({ block, onChange }: {
         <div className="space-y-2">
           {SHAPE_GROUPS.map((g) => (
             <div key={g.label}>
-              <div className="text-[10px] uppercase text-muted-foreground mb-1">{g.label}</div>
+              <div className="mb-1 slides-type-label">{g.label}</div>
               <div className="grid grid-cols-6 gap-1">
                 {g.shapes.map((s) => (
                   <button key={s} type="button" title={SHAPE_LABELS[s]}
                     onClick={() => onChange({ shape: s })}
                     className={cn(
-                      "h-9 rounded border bg-background flex items-center justify-center transition-colors",
+                      "flex h-9 items-center justify-center rounded border bg-surface-base transition-colors",
                       b.shape === s ? "border-primary ring-1 ring-primary" : "border-border hover:border-foreground/40",
                     )}>
                     <ShapeMiniPreview shape={s} size={22} />
@@ -150,8 +150,8 @@ export function ShapeInspector({ block, onChange }: {
 // ---------- primitives ----------
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border bg-card/50 p-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{title}</div>
+    <div className="surface-raised rounded-md border border-border p-2">
+      <div className="mb-2 slides-type-label">{title}</div>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -167,7 +167,7 @@ function ColorField({ label, value, onChange, allowTransparent = false, onTransp
   const v = isTransparent ? "" : (value || "").replace("#", "");
   return (
     <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
+      <Label className="slides-type-label">{label}</Label>
       {allowTransparent && (
         <label className="mb-1 mt-0.5 flex cursor-pointer items-center justify-between text-[10px] text-muted-foreground">
           <span>Sem fundo</span>
@@ -179,7 +179,7 @@ function ColorField({ label, value, onChange, allowTransparent = false, onTransp
         <Popover>
           <PopoverTrigger asChild>
             <button type="button" disabled={isTransparent}
-              className={cn("h-7 w-7 rounded border border-border shrink-0",
+              className={cn("h-7 w-7 shrink-0 rounded border border-border",
                 isTransparent && "cursor-not-allowed opacity-90")}
               style={isTransparent ? CHECKER_BG_STYLE : { background: `#${v || "FFFFFF"}` }} />
           </PopoverTrigger>
@@ -211,7 +211,7 @@ function NumStepper({ label, value, min, max, onChange }: {
 }) {
   return (
     <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
+      <Label className="slides-type-label">{label}</Label>
       <Input type="number" className="h-7 text-xs" value={value} min={min} max={max}
         onChange={(e) => {
           const n = parseInt(e.target.value, 10);
@@ -227,7 +227,7 @@ function SliderField({ label, value, min, max, step, onChange, disabled = false 
 }) {
   return (
     <div className={disabled ? "opacity-50 pointer-events-none" : ""}>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
+      <Label className="slides-type-label">{label}</Label>
       <Slider value={[value]} min={min} max={max} step={step}
         onValueChange={(v) => onChange(v[0])} className="mt-2" />
     </div>
@@ -238,7 +238,7 @@ function SegField<T extends string>({ label, value, options, onChange }: {
 }) {
   return (
     <div className="col-span-2">
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
+      <Label className="slides-type-label">{label}</Label>
       <div className="flex gap-1 mt-1">
         {options.map((o) => (
           <button key={o.v} type="button" onClick={() => onChange(o.v)}
@@ -256,7 +256,7 @@ function SegField<T extends string>({ label, value, options, onChange }: {
 function ToggleField({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between">
-      <Label className="text-xs">{label}</Label>
+      <Label className="slides-type-helper text-foreground">{label}</Label>
       <Switch checked={value} onCheckedChange={onChange} />
     </div>
   );

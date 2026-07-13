@@ -54,6 +54,12 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        surface: {
+          base: "hsl(var(--surface-base))",
+          panel: "hsl(var(--surface-panel))",
+          raised: "hsl(var(--surface-raised))",
+          overlay: "hsl(var(--surface-overlay))",
+        },
         pvm: {
           volume: "hsl(var(--pvm-volume))",
           price: "hsl(var(--pvm-price))",

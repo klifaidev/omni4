@@ -678,7 +678,7 @@ function StripThumbnail({
       {...listeners}
       onClick={onClick}
       className={cn(
-        "group relative cursor-pointer rounded-md border bg-card transition-colors",
+        "surface-raised group relative cursor-pointer rounded-md border transition-colors",
         active ? "border-primary ring-2 ring-primary/40" : "border-border/40 hover:border-border/80",
         preflightSeverity === "error" && !active && "border-destructive/50",
         preflightSeverity === "warning" && !active && "border-warning/50",
@@ -725,7 +725,7 @@ function StripThumbnail({
           )}
         </div>
       </div>
-      <div className="truncate px-1.5 pb-1.5 text-[10px] font-medium" title={item.label ?? meta.title}>
+      <div className="truncate px-1.5 pb-1.5 text-[11px] font-semibold leading-tight" title={item.label ?? meta.title}>
         {item.label ?? meta.title}
       </div>
       {editors.length > 1 && (
@@ -1233,11 +1233,11 @@ function InspectorSection({
   children: React.ReactNode;
 }) {
   return (
-    <AccordionItem value={value} className="rounded-lg border border-border/50 bg-card/35 px-3">
+    <AccordionItem value={value} className="surface-raised rounded-lg border border-border/50 px-3">
       <AccordionTrigger className="py-3 text-left hover:no-underline">
         <div className="space-y-0.5">
-          <div className="text-sm font-semibold tracking-tight">{title}</div>
-          <p className="text-[11px] font-normal leading-snug text-muted-foreground">{description}</p>
+          <div className="slides-type-section">{title}</div>
+          <p className="slides-type-helper leading-snug">{description}</p>
         </div>
       </AccordionTrigger>
       <AccordionContent className="pb-3 pt-0">
@@ -1269,8 +1269,8 @@ function Inspector({
           <Layers className="h-5 w-5" />
         </div>
         <div className="space-y-1">
-          <p className="text-sm font-medium tracking-tight">Nenhum slide selecionado</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="slides-type-section">Nenhum slide selecionado</p>
+          <p className="slides-type-helper">
             Selecione um slide na esteira para ver a prévia e ajustar filtros.
           </p>
         </div>
@@ -1305,15 +1305,15 @@ function Inspector({
             <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.title}</div>
+            <div className="slides-type-label">{meta.title}</div>
             <Input
               value={item.label ?? ""}
               readOnly={readOnly}
               onChange={(e) => guardedUpdateItem((it) => ({ ...it, label: e.target.value } as SlideItem))}
               placeholder={meta.title}
-              className="-ml-2 h-8 border-transparent bg-transparent px-2 text-base font-medium hover:bg-secondary/40 focus-visible:bg-card"
+              className="-ml-2 h-8 border-transparent bg-transparent px-2 slides-type-title hover:bg-secondary/40 focus-visible:bg-card"
             />
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{meta.description}</p>
+            <p className="mt-1 slides-type-helper">{meta.description}</p>
           </div>
         </div>
 
@@ -1321,22 +1321,22 @@ function Inspector({
 
         <div className={cn("min-w-0 rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+            <div className="flex min-w-0 items-center gap-2 slides-type-section">
               {statusSeverity ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
               {preflightSeverityLabel(statusSeverity)}
             </div>
             {statusItems.length > 0 && (
-              <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 text-[10px] text-current">
+              <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 slides-type-badge text-current">
                 {statusItems.length} ponto(s)
               </Badge>
             )}
           </div>
-          <div className="mt-2 min-w-0 space-y-1.5 text-[11px] leading-snug">
+          <div className="mt-2 min-w-0 space-y-1.5 slides-type-helper leading-snug">
             {statusItems.length === 0 ? (
               <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
             ) : (
               statusItems.map((statusItem, idx) => (
-                <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-background/55 px-2 py-1.5 [overflow-wrap:anywhere]">
+                <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-surface-base/70 px-2 py-1.5 [overflow-wrap:anywhere]">
                   <span className="font-medium">{statusItem.title}:</span>{" "}
                   <span className="break-words">{statusItem.detail}</span>
                 </div>
@@ -2599,8 +2599,8 @@ export default function SlidesBeta() {
         }}
       >
         {/* ===== Coluna esquerda: catálogo + presets ===== */}
-        <aside className="relative z-50 flex min-h-0 border-r border-border/40 bg-sidebar/70">
-          <div className="flex w-14 flex-col items-center gap-1 border-r border-border/40 py-3">
+        <aside className="surface-panel relative z-50 flex min-h-0 border-r border-border/40">
+          <div className="flex w-14 flex-col items-center gap-1 border-r border-border/40 bg-surface-panel/80 py-3">
             {([
               { id: "catalog" as const, label: "Catálogo", icon: LayoutTemplate },
               { id: "templates" as const, label: "Templates", icon: Sparkles },
@@ -2615,7 +2615,7 @@ export default function SlidesBeta() {
                   type="button"
                   onClick={() => setActiveRailTab(active ? null : tab.id)}
                   className={cn(
-                    "flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-card hover:text-foreground",
+                    "flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-raised hover:text-foreground",
                     active && "bg-primary/15 text-primary ring-1 ring-primary/20",
                   )}
                   aria-label={tab.label}
@@ -2629,7 +2629,7 @@ export default function SlidesBeta() {
 
           {activeRailTab && (
             <div
-              className="absolute left-14 top-0 z-40 flex h-full min-h-0 flex-col border-r border-border/50 bg-sidebar/95 shadow-2xl backdrop-blur-xl"
+              className="surface-overlay absolute left-14 top-0 z-40 flex h-full min-h-0 flex-col border-r border-border/50"
               style={{ width: leftPanelWidth }}
             >
               <ResizeHandle side="right" onResize={(delta) => setLeftPanelWidth(leftPanelWidth + delta)} />
@@ -2639,7 +2639,7 @@ export default function SlidesBeta() {
                   {activeRailTab === "templates" && <Sparkles className="h-4 w-4 text-primary" />}
                   {activeRailTab === "assets" && <ImageIcon className="h-4 w-4 text-primary" />}
                   {activeRailTab === "presets" && <Bookmark className="h-4 w-4 text-primary" />}
-                  <span className="text-sm font-semibold">
+                  <span className="slides-type-section">
                     {activeRailTab === "catalog" ? "Catálogo" : activeRailTab === "templates" ? "Templates" : activeRailTab === "assets" ? "Assets" : "Modelos"}
                   </span>
                 </div>
@@ -2657,7 +2657,7 @@ export default function SlidesBeta() {
                           value={catalogSearch}
                           onChange={(e) => setCatalogSearch(e.target.value)}
                           placeholder="Buscar slides..."
-                          className="h-9 bg-background pl-8 text-sm"
+                          className="h-9 bg-surface-base pl-8 text-sm"
                         />
                       </div>
                       <Button
@@ -2667,11 +2667,11 @@ export default function SlidesBeta() {
                       >
                         <Plus className="h-4 w-4" />
                         <span className="flex flex-col items-start leading-tight">
-                          <span className="text-sm font-semibold">Slide em branco</span>
-                          <span className="text-[11px] font-normal opacity-80">Canvas livre para montar sua analise.</span>
+                          <span className="slides-type-section">Slide em branco</span>
+                          <span className="slides-type-helper font-normal opacity-80">Canvas livre para montar sua analise.</span>
                         </span>
                       </Button>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
+                      <div className="slides-type-label text-muted-foreground/60">
                         Slides disponíveis
                       </div>
                       <div className="flex flex-col gap-1.5">
@@ -2717,27 +2717,27 @@ export default function SlidesBeta() {
         </aside>
 
         {/* ===== Coluna central: esteira ===== */}
-        <main className="relative flex flex-col overflow-hidden bg-background/60">
+        <main className="surface-base relative flex flex-col overflow-hidden">
           {/* Header da esteira */}
-          <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-card/30 px-4 py-2.5 backdrop-blur-xl">
+          <div className="surface-panel flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-sm font-semibold tracking-tight">Esteira</h2>
-              <Badge variant="secondary" className="h-5 px-2 text-[10px] font-semibold tabular-nums">
+              <h2 className="slides-type-section">Esteira</h2>
+              <Badge variant="secondary" className="h-5 px-2 slides-type-badge tabular-nums">
                 {items.length} {items.length === 1 ? "slide" : "slides"}
               </Badge>
               {items.length > 0 && (
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 tabular-nums">
+                 <span className="slides-type-label text-muted-foreground/70 tabular-nums">
                   ~{Math.max(1, Math.round((items.length * 30) / 60))} min
                 </span>
               )}
               {!readyAll && items.length > 0 && (
-                <Badge variant="outline" className="h-5 border-warning/40 px-2 text-[10px] text-warning">
+                 <Badge variant="outline" className="h-5 border-warning/40 px-2 slides-type-badge text-warning">
                   Incompleto
                 </Badge>
               )}
               {roomId && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 slides-type-badge text-success">
                     <span className="relative inline-flex h-1.5 w-1.5">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
                       <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
@@ -2762,7 +2762,7 @@ export default function SlidesBeta() {
                       <span className="text-muted-foreground">- {collaborators.length}</span>
                     )}
                   </span>
-                  <span className="hidden max-w-[520px] truncate text-[10px] text-muted-foreground xl:inline">
+                  <span className="hidden max-w-[520px] truncate slides-type-helper xl:inline">
                     {COLLAB_PRIVACY_NOTICE}
                   </span>
                 </div>
@@ -2790,18 +2790,18 @@ export default function SlidesBeta() {
                       Compartilhar
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-[360px] p-4">
+                  <PopoverContent align="end" className="surface-overlay w-[360px] p-4">
                     <div className="space-y-4">
                       <div>
-                        <div className="flex items-center gap-2 text-sm font-semibold">
+                        <div className="flex items-center gap-2 slides-type-section">
                           <Users2 className="h-4 w-4 text-primary" />
                           Sala colaborativa persistente
                         </div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        <p className="mt-1 slides-type-helper">
                           Crie uma sala segura ou entre com um codigo recebido.
                         </p>
                       </div>
-                      <div className="space-y-3 rounded-lg border border-border/50 bg-muted/20 p-3">
+                      <div className="surface-raised space-y-3 rounded-lg border border-border/50 p-3">
                         {roomId ? (
                           <div className="flex items-center justify-between gap-2">
                             <div>
@@ -3049,19 +3049,19 @@ export default function SlidesBeta() {
                       <ChevronDown className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-72 p-1.5">
+                  <DropdownMenuContent align="end" className="surface-overlay w-72 p-1.5">
                     <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(false)}>
                       <MonitorPlay className="mt-0.5 h-4 w-4 text-primary" />
                       <span className="space-y-0.5">
-                        <span className="block text-sm font-medium">Tela cheia</span>
-                        <span className="block text-xs text-muted-foreground">Apresente o deck no modo atual de tela cheia.</span>
+                        <span className="block slides-type-section">Tela cheia</span>
+                        <span className="block slides-type-helper">Apresente o deck no modo atual de tela cheia.</span>
                       </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(true)}>
                       <Timer className="mt-0.5 h-4 w-4 text-primary" />
                       <span className="space-y-0.5">
-                        <span className="block text-sm font-medium">Visao do apresentador</span>
-                        <span className="block text-xs text-muted-foreground">Ja abre com notas do apresentador e timer ativos.</span>
+                        <span className="block slides-type-section">Visao do apresentador</span>
+                        <span className="block slides-type-helper">Ja abre com notas do apresentador e timer ativos.</span>
                       </span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -3077,8 +3077,8 @@ export default function SlidesBeta() {
                       <FileText className="h-4 w-4" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 p-3">
-                    <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  <PopoverContent align="end" className="surface-overlay w-72 p-3">
+                    <Label className="slides-type-label">
                       Nome do arquivo
                     </Label>
                     <Input
@@ -3132,16 +3132,16 @@ export default function SlidesBeta() {
           {/* Painel de filtros (drawer lateral direito) */}
           <div
             className={cn(
-              "absolute right-0 top-0 z-40 flex h-full w-[280px] flex-col border-l border-border/40 bg-card/95 backdrop-blur-xl transition-transform duration-200",
+              "surface-overlay absolute right-0 top-0 z-40 flex h-full w-[280px] flex-col border-l border-border/40 transition-transform duration-200",
               filtersOpen ? "translate-x-0" : "translate-x-full",
             )}
           >
             <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4" />
-                <span className="text-sm font-medium">Filtros</span>
+                <span className="slides-type-section">Filtros</span>
                 {globalActiveFilterCount > 0 && (
-                  <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                  <Badge variant="secondary" className="h-5 px-1.5 slides-type-badge">
                     {globalActiveFilterCount}
                   </Badge>
                 )}
@@ -3155,14 +3155,14 @@ export default function SlidesBeta() {
               <div className="space-y-5 p-4">
                 {/* Período */}
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Label className="slides-type-label">
                     Período
                   </Label>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => setAllPeriods()}
                       className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                      "rounded-full border px-2.5 py-0.5 slides-type-badge transition-colors",
                         selectedPeriods === null
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border/60 text-muted-foreground hover:border-primary/40",
@@ -3175,7 +3175,7 @@ export default function SlidesBeta() {
                         key={m.periodo}
                         onClick={() => togglePeriod(m.periodo)}
                         className={cn(
-                          "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                          "rounded-full border px-2.5 py-0.5 slides-type-badge transition-colors",
                           selectedPeriods?.includes(m.periodo)
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border/60 text-muted-foreground hover:border-primary/40",
@@ -3193,7 +3193,7 @@ export default function SlidesBeta() {
                   if (opts.length === 0) return null;
                   return (
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Label className="slides-type-label">
                         Marca
                       </Label>
                       <MultiSelectFilter
@@ -3212,7 +3212,7 @@ export default function SlidesBeta() {
                   if (opts.length === 0) return null;
                   return (
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Label className="slides-type-label">
                         Canal
                       </Label>
                       <MultiSelectFilter
@@ -3231,7 +3231,7 @@ export default function SlidesBeta() {
                   if (opts.length === 0) return null;
                   return (
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Label className="slides-type-label">
                         Categoria
                       </Label>
                       <MultiSelectFilter
@@ -3246,7 +3246,7 @@ export default function SlidesBeta() {
 
                 {/* Métrica */}
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Label className="slides-type-label">
                     Métrica
                   </Label>
                   <div className="flex gap-2">
@@ -3255,7 +3255,7 @@ export default function SlidesBeta() {
                         key={m}
                         onClick={() => setMetric(m)}
                         className={cn(
-                          "flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors uppercase",
+                          "flex-1 rounded-lg border py-1.5 slides-type-badge uppercase transition-colors",
                           metric === m
                             ? "border-primary bg-primary/10 text-primary"
                             : "border-border/60 text-muted-foreground hover:border-primary/40",
@@ -3283,13 +3283,13 @@ export default function SlidesBeta() {
           </div>
           {(templateApplying || importApplying || exporting) && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/55 backdrop-blur-sm">
-              <div className="flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-2xl">
+              <div className="surface-overlay flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
                 <div>
-                  <div className="text-sm font-medium">
+                  <div className="slides-type-section">
                     {exporting ? "Preparando exportação" : importApplying ? "Inserindo slides no deck" : "Aplicando template"}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="slides-type-helper">
                     {exporting ? "Renderizando os slides e gerando o arquivo." : "Organizando os slides e atualizando a esteira."}
                   </div>
                 </div>
@@ -3299,14 +3299,14 @@ export default function SlidesBeta() {
         </main>
 
         {/* ===== Coluna direita: inspector (recolhível) ===== */}
-        <aside className="relative flex min-h-0 flex-col border-l border-border/40 bg-sidebar/40 transition-all duration-200 ease-out">
+        <aside className="surface-panel relative flex min-h-0 flex-col border-l border-border/40 transition-all duration-200 ease-out">
           {inspectorOpen && (
             <ResizeHandle side="left" onResize={(delta) => setRightPanelWidth(rightPanelWidth + delta)} />
           )}
           <button
             type="button"
             onClick={() => setInspectorOpen((v) => !v)}
-            className="absolute left-0 top-20 z-10 flex h-9 w-7 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-md transition-all hover:scale-105 hover:text-foreground"
+            className="surface-raised absolute left-0 top-20 z-10 flex h-9 w-7 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-all hover:scale-105 hover:text-foreground"
             aria-label={inspectorOpen ? "Recolher painel" : "Expandir painel"}
             title={inspectorOpen ? "Recolher prévia e filtros" : "Expandir prévia e filtros"}
           >

@@ -1554,21 +1554,21 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className={cn("relative grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
+    <div className={cn("surface-base relative grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
       {templateApplying && (
         <div className="absolute inset-0 z-[99999999] flex items-center justify-center bg-background/55 backdrop-blur-sm">
-          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-2xl">
+          <div className="surface-overlay flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div>
-              <div className="text-sm font-medium">Aplicando modelo</div>
-              <div className="text-xs text-muted-foreground">Atualizando blocos do canvas.</div>
+              <div className="slides-type-section">Aplicando modelo</div>
+              <div className="slides-type-helper">Atualizando blocos do canvas.</div>
             </div>
           </div>
         </div>
       )}
       {/* ====== Paleta ====== */}
       <div className="relative z-40 min-h-0">
-        <div ref={paletteRailRef} className="flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 bg-card/70 p-1.5">
+        <div ref={paletteRailRef} className="surface-panel flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 p-1.5">
           {([
             { label: "Favoritos", icon: Star },
             { label: "Modelos", icon: BookOpen },
@@ -1591,7 +1591,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 key={item.label}
                 type="button"
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-secondary hover:text-foreground",
+                  "flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-surface-raised hover:text-foreground",
                   palettePanelOpen && activePaletteCategory === category && "bg-primary/10 text-primary",
                 )}
                 onClick={() => openPaletteCategory(category)}
@@ -1607,12 +1607,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         {palettePanelOpen && (
           <div
             className={cn(
-              "absolute top-0 z-50 flex h-full w-[260px] max-w-[calc(100vw-24px)] flex-col rounded-lg border border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl",
+              "surface-overlay absolute top-0 z-50 flex h-full w-[260px] max-w-[calc(100vw-24px)] flex-col rounded-lg border border-border/50",
               palettePanelSide === "right" ? "left-[calc(100%+8px)]" : "right-[calc(100%+8px)]",
             )}
           >
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocos</span>
+              <span className="slides-type-label">Blocos</span>
               <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)} aria-label="Fechar painel de blocos">
                 <X className="h-4 w-4" />
               </Button>
@@ -1621,15 +1621,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <div className="flex flex-col gap-1 p-2">
           {showPaletteCategory("models") && !isPaletteSearching && (
             <>
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="px-2 py-1 slides-type-label">
                 Modelos
               </div>
-              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
+              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => { if (canEdit()) setTplOpen(true); }}
                 disabled={readOnly}>
                 <BookOpen className="h-3.5 w-3.5" /> Aplicar modelo
               </Button>
-              <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 text-xs"
+              <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => setSaveTplOpen(true)}
                 disabled={config.blocks.length === 0 || readOnly}>
                 <Save className="h-3.5 w-3.5" /> Salvar como modelo
@@ -1638,10 +1638,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           )}
           {showPaletteCategory("assets") && !isPaletteSearching && (
             <>
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="px-2 py-1 slides-type-label">
                 Assets
               </div>
-              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 text-xs"
+              <Button size="sm" variant="outline" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => { if (canEdit()) setAssetsOpen(true); }}
                 disabled={readOnly}>
                 <Images className="h-3.5 w-3.5" /> Abrir biblioteca
@@ -1677,7 +1677,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           <Separator className="my-2" />
 
           {!hasPaletteResults && (
-            <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-[11px] text-muted-foreground">
+            <div className="rounded-md border border-dashed border-border/70 p-3 text-center slides-type-helper">
               Nenhum bloco encontrado.
             </div>
           )}
@@ -4563,7 +4563,7 @@ function PaletteGroup({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+      <CollapsibleTrigger className="flex w-full items-center justify-between px-2 py-1 slides-type-label hover:text-foreground">
         <span>{title}</span>
         <ChevronDown className={cn("h-3 w-3 transition-transform", open ? "" : "-rotate-90")} />
       </CollapsibleTrigger>
@@ -4584,11 +4584,11 @@ function PaletteButton({
   onToggleFavorite?: () => void;
 }) {
   return (
-    <div className="group flex items-center rounded-md hover:bg-secondary">
+    <div className="group flex items-center rounded-md hover:bg-surface-raised">
       <button
         type="button"
         onClick={onClick}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium"
       >
         <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
         <span className="truncate">{label}</span>
@@ -4628,10 +4628,10 @@ function QuickLayoutButton({
     <button
       type="button"
       onClick={onClick}
-      className="mb-1 w-full rounded-lg border border-border/50 bg-background/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
     >
-      <div className="text-[11px] font-semibold text-foreground">{label}</div>
-      <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{description}</div>
+      <div className="slides-type-section text-[12px]">{label}</div>
+      <div className="mt-0.5 slides-type-helper leading-snug">{description}</div>
     </button>
   );
 }
@@ -4649,7 +4649,7 @@ function TextStyleButton({
     <button
       type="button"
       onClick={onClick}
-      className="mb-1 w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
     >
       <span className={cn("block leading-tight", className)}>{label}</span>
     </button>
@@ -5237,15 +5237,15 @@ function SpeakerNotesBar({
   const currentValue = useYTextValue(yText, value);
   const trimmed = currentValue.slice(0, MAX);
   return (
-    <div className="shrink-0 rounded-lg border border-border/40 bg-card/40">
+    <div className="surface-raised shrink-0 rounded-lg border border-border/40">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary/40"
+        className="flex w-full items-center gap-2 px-3 py-1.5 slides-type-helper font-medium hover:bg-secondary/40"
       >
         <StickyNote className="h-3.5 w-3.5" />
         Anotações do apresentador
-        {currentValue.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px]">{currentValue.length}</Badge>}
+        {currentValue.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px] font-semibold">{currentValue.length}</Badge>}
         <ChevronUp className={cn("ml-auto h-3 w-3 transition-transform", !open && "rotate-180")} />
       </button>
       {open && (

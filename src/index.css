@@ -18,6 +18,13 @@
     --popover: 240 30% 8%;
     --popover-foreground: 220 20% 96%;
 
+    /* Surface materials for dense workspaces such as Slides */
+    --surface-base: 240 30% 6%;
+    --surface-panel: 240 25% 9.5%;
+    --surface-raised: 240 22% 12%;
+    --surface-overlay: 240 24% 14%;
+    --surface-border: 220 30% 100%;
+
     --primary: 217 91% 60%;
     --primary-foreground: 222 47% 11%;
     --primary-glow: 217 91% 70%;
@@ -93,6 +100,9 @@
     --shadow-glass: 0 8px 32px -4px hsl(240 60% 2% / 0.6), inset 0 1px 0 0 hsl(220 30% 100% / 0.06);
     --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.25);
     --shadow-elegant: 0 20px 60px -20px hsl(240 60% 2% / 0.8);
+    --shadow-surface-panel: 0 10px 30px -18px hsl(240 60% 2% / 0.8), inset 0 1px 0 hsl(var(--surface-border) / 0.035);
+    --shadow-surface-raised: 0 18px 48px -22px hsl(240 60% 2% / 0.9), inset 0 1px 0 hsl(var(--surface-border) / 0.06);
+    --shadow-surface-overlay: 0 24px 70px -28px hsl(240 70% 2% / 0.95), inset 0 1px 0 hsl(var(--surface-border) / 0.08);
 
     --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -116,6 +126,12 @@
 
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
+
+    --surface-base: 220 20% 96%;
+    --surface-panel: 0 0% 100%;
+    --surface-raised: 220 30% 98%;
+    --surface-overlay: 0 0% 100%;
+    --surface-border: 220 20% 10%;
 
     --primary: 217 91% 50%;
     --primary-foreground: 0 0% 100%;
@@ -176,6 +192,9 @@
     --shadow-glass: 0 4px 16px -4px hsl(220 20% 10% / 0.1), inset 0 1px 0 0 hsl(0 0% 100% / 0.8);
     --shadow-glow: 0 0 40px hsl(217 91% 50% / 0.18);
     --shadow-elegant: 0 20px 60px -20px hsl(220 20% 10% / 0.18);
+    --shadow-surface-panel: 0 10px 28px -22px hsl(220 30% 10% / 0.22), inset 0 1px 0 hsl(0 0% 100% / 0.8);
+    --shadow-surface-raised: 0 18px 42px -24px hsl(220 30% 10% / 0.26), inset 0 1px 0 hsl(0 0% 100% / 0.9);
+    --shadow-surface-overlay: 0 24px 64px -30px hsl(220 30% 10% / 0.32), inset 0 1px 0 hsl(0 0% 100% / 0.95);
 
     --sidebar-background: 220 14% 96%;
     --sidebar-foreground: 222 47% 20%;
@@ -290,6 +309,47 @@
   .glow-blue { box-shadow: 0 0 60px hsl(217 91% 60% / 0.18); }
   .glow-green { box-shadow: 0 0 60px hsl(158 64% 52% / 0.18); }
   .glow-red { box-shadow: 0 0 60px hsl(0 84% 65% / 0.18); }
+
+  .surface-base {
+    background-color: hsl(var(--surface-base));
+  }
+
+  .surface-panel {
+    background-color: hsl(var(--surface-panel) / 0.94);
+    box-shadow: var(--shadow-surface-panel);
+  }
+
+  .surface-raised {
+    background-color: hsl(var(--surface-raised) / 0.96);
+    box-shadow: var(--shadow-surface-raised);
+  }
+
+  .surface-overlay {
+    background-color: hsl(var(--surface-overlay) / 0.98);
+    box-shadow: var(--shadow-surface-overlay);
+    backdrop-filter: blur(18px) saturate(130%);
+    -webkit-backdrop-filter: blur(18px) saturate(130%);
+  }
+
+  .slides-type-title {
+    @apply text-base font-semibold leading-tight tracking-tight text-foreground;
+  }
+
+  .slides-type-section {
+    @apply text-[13px] font-semibold leading-snug tracking-tight text-foreground;
+  }
+
+  .slides-type-label {
+    @apply text-[10px] font-semibold uppercase leading-none tracking-[0.16em] text-muted-foreground;
+  }
+
+  .slides-type-helper {
+    @apply text-[11px] font-normal leading-relaxed text-muted-foreground;
+  }
+
+  .slides-type-badge {
+    @apply text-[10px] font-semibold leading-none tracking-normal;
+  }
 }
 
 @layer utilities {

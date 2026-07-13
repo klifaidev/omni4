@@ -24,10 +24,10 @@ export function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-border/50 bg-card/40">
+    <div className="surface-raised rounded-lg border border-border/50">
       <div className="flex items-center justify-between px-3 py-2">
         <button onClick={() => setOpen((o) => !o)}
-          className="flex flex-1 items-center gap-1.5 text-left text-[12px] font-medium text-foreground/85 hover:text-foreground">
+          className="flex flex-1 items-center gap-1.5 text-left slides-type-section text-foreground/85 hover:text-foreground">
           <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", !open && "-rotate-90")} />
           <span>{title}</span>
         </button>
@@ -46,7 +46,7 @@ export function Section({
 export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <Label className="min-w-0 flex-1 truncate text-[12px] font-normal text-muted-foreground">{label}</Label>
+      <Label className="min-w-0 flex-1 truncate slides-type-helper">{label}</Label>
       <div className="min-w-0 flex-1 max-w-[62%]">{children}</div>
     </div>
   );
@@ -56,7 +56,7 @@ export function ToggleField({ label, value, onChange }:
   { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between">
-      <Label className="text-[12px] font-normal text-muted-foreground">{label}</Label>
+      <Label className="slides-type-helper">{label}</Label>
       <Switch checked={value} onCheckedChange={onChange} />
     </div>
   );
@@ -74,7 +74,7 @@ export function NumberStepper({
     return n;
   };
   return (
-    <div className="flex h-8 items-center rounded-md border border-input bg-background">
+    <div className="flex h-8 items-center rounded-md border border-input bg-surface-base">
       <button type="button" className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
         onClick={() => onChange(clamp(value - step))}>
         <Minus className="h-3 w-3" />
@@ -185,7 +185,7 @@ export function Segmented<T extends string>({
   options: { value: T; label: string; icon?: React.ReactNode; title?: string }[];
 }) {
   return (
-    <div className="flex h-8 rounded-md border border-input bg-background overflow-hidden">
+    <div className="flex h-8 overflow-hidden rounded-md border border-input bg-surface-base">
       {options.map((o) => (
         <button key={o.value} type="button" title={o.title}
           onClick={() => onChange(o.value)}
