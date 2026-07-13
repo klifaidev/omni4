@@ -1563,10 +1563,15 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
             <span className="text-[12px] font-medium">#{i + 1}</span>
             <div className="flex gap-1">
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                onClick={() => move(i, -1)}><ChevronUp className="h-3.5 w-3.5" /></Button>
+                onClick={() => move(i, -1)} title="Mover regra acima" aria-label="Mover regra de formatacao acima">
+                <ChevronUp className="h-3.5 w-3.5" />
+              </Button>
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                onClick={() => move(i, 1)}><ChevronDown className="h-3.5 w-3.5" /></Button>
+                onClick={() => move(i, 1)} title="Mover regra abaixo" aria-label="Mover regra de formatacao abaixo">
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
               <button type="button" onClick={() => del(i)}
+                title="Remover regra" aria-label="Remover regra de formatacao"
                 className="text-muted-foreground hover:text-destructive">
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -1690,10 +1695,15 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
             <span className="text-[12px] font-medium">#{i + 1}</span>
             <div className="flex gap-1">
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                onClick={() => move(i, -1)}><ChevronUp className="h-3.5 w-3.5" /></Button>
+                onClick={() => move(i, -1)} title="Reordenar coluna acima" aria-label="Reordenar coluna do bridge acima">
+                <ChevronUp className="h-3.5 w-3.5" />
+              </Button>
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                onClick={() => move(i, 1)}><ChevronDown className="h-3.5 w-3.5" /></Button>
+                onClick={() => move(i, 1)} title="Reordenar coluna abaixo" aria-label="Reordenar coluna do bridge abaixo">
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
               <button type="button" onClick={() => del(i)}
+                title="Remover coluna" aria-label="Remover coluna do bridge"
                 className="text-muted-foreground hover:text-destructive">
                 <Trash2 className="h-3 w-3" />
               </button>

@@ -3,7 +3,7 @@
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import type * as Y from "yjs";
 import { Rnd } from "react-rnd";
 import { Button } from "@/components/ui/button";
@@ -149,7 +149,7 @@ import {
   alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction,
   commitExternalEditorChange,
-  copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction, useCopiedElementStyle,
+  copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction,
   insertBlockAction, insertBlocksAction,
   type AlignKind,
   type EditorActionLabel,
@@ -329,7 +329,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     });
   });
   const prefs = useEditorPrefs();
-  const copiedStyle = useCopiedElementStyle();
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
@@ -1569,6 +1568,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {/* ====== Paleta ====== */}
       <div className="relative z-40 min-h-0">
         <div ref={paletteRailRef} className="surface-panel flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 p-1.5">
+          <TooltipProvider delayDuration={180}>
           {([
             { label: "Favoritos", icon: Star },
             { label: "Modelos", icon: BookOpen },
@@ -1586,23 +1586,29 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               : item.label === "Story" ? "story"
               : item.label === "Omni" ? "omni"
               : "assets";
+            const isActive = palettePanelOpen && activePaletteCategory === category;
             return (
-              <button
-                key={item.label}
-                type="button"
-                className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-surface-raised hover:text-foreground",
-                  palettePanelOpen && activePaletteCategory === category && "bg-primary/10 text-primary",
-                )}
-                onClick={() => openPaletteCategory(category)}
-                title={item.label}
-                aria-label={item.label}
-                aria-pressed={palettePanelOpen && activePaletteCategory === category}
-              >
-                <Icon className="h-4 w-4" />
-              </button>
+              <Tooltip key={item.label}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "relative flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-surface-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                      isActive && "bg-primary/15 text-primary shadow-sm ring-1 ring-primary/25",
+                    )}
+                    onClick={() => openPaletteCategory(category)}
+                    aria-label={`Abrir categoria ${item.label}`}
+                    aria-pressed={isActive}
+                  >
+                    {isActive && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary" aria-hidden="true" />}
+                    <Icon className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
             );
           })}
+          </TooltipProvider>
         </div>
         {palettePanelOpen && (
           <div
@@ -2499,11 +2505,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   onDelete={() => removeBlock(selected.id)}
                   onForward={() => bringForward(selected.id)}
                   onBack={() => sendBack(selected.id)}
-                  onToFront={() => bringToFront(selected.id)}
-                  onToBack={() => sendToBack(selected.id)}
-                  onStyle={() => toast.info("Ajuste cor, fonte e estilo no painel à direita.")}
-                  onComment={() => toast.info("Comentários por bloco entram na próxima etapa da colaboração.")}
-                />
+                onToFront={() => bringToFront(selected.id)}
+                onToBack={() => sendToBack(selected.id)}
+                onToggleLock={() => toggleLock(selected.id)}
+                onStyle={() => toast.info("Ajuste cor, fonte e estilo no painel à direita.")}
+                onComment={() => toast.info("Comentários por bloco entram na próxima etapa da colaboração.")}
+              />
               )}
 
               {/* Inline text edit toolbar. */}
@@ -2811,53 +2818,18 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <Badge variant="secondary" className="text-[10px]">{BLOCK_LABELS[selected.kind]}</Badge>
-                <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={readOnly} onClick={() => bringForward(selected.id)} title="Trazer para frente" aria-label="Trazer bloco para frente">
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => sendBack(selected.id)} title="Enviar para tras" aria-label="Enviar bloco para tras">
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicateBlock(selected.id)} title="Duplicar" aria-label="Duplicar bloco">
-                    <CopyIcon className="h-3.5 w-3.5" />
-                  </Button>
-                  {(
-                    <Button
-                      size="icon"
-                      variant={copiedStyle.hasCopy && copiedStyle.sourceId === selected.id ? "default" : "ghost"}
-                      className="h-7 w-7"
-                      disabled={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && !canPasteElementStyleAction(selected.id)}
-                      aria-label={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id
-                        ? "Colar estilo neste bloco"
-                        : "Copiar estilo deste bloco"}
-                      onClick={() => {
-                        if (copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id && canPasteElementStyleAction(selected.id)) {
-                          if (pasteElementStyleAction(selected.id)) toast.success("Estilo colado");
-                        } else {
-                          if (copyElementStyleAction(selected.id)) toast.success("Estilo copiado");
-                        }
-                      }}
-                      title={copiedStyle.hasCopy && copiedStyle.sourceId !== selected.id
-                        ? "Colar estilo neste bloco"
-                        : "Copiar estilo deste bloco"}>
-                      <Paintbrush className="h-3.5 w-3.5" />
-                    </Button>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="secondary" className="slides-type-badge">{BLOCK_LABELS[selected.kind]}</Badge>
+                  {selected.locked && (
+                    <Badge variant="outline" className="slides-type-badge gap-1">
+                      <Lock className="h-3 w-3" /> Bloqueado
+                    </Badge>
                   )}
-                  <Button size="icon" variant="ghost" className="h-7 w-7"
-                    onClick={() => toggleLock(selected.id)}
-                    title={selected.locked ? "Desbloquear posicao" : "Bloquear posicao"}
-                    aria-label={selected.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
-                    aria-pressed={!!selected.locked}>
-                    {selected.locked
-                      ? <Unlock className="h-3.5 w-3.5" />
-                      : <Lock className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive" onClick={() => removeBlock(selected.id)} title="Remover" aria-label="Remover bloco">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
                 </div>
+                <p className="slides-type-helper">
+                  Configure o bloco aqui. Acoes rapidas como duplicar, camadas, comentario e excluir ficam na toolbar sobre o bloco.
+                </p>
               </div>
 
               <PositionInputs block={selected} onChange={(p) => updateBlock(selected.id, p)} />
@@ -2986,6 +2958,7 @@ function FloatingBlockToolbar({
   onBack,
   onToFront,
   onToBack,
+  onToggleLock,
   onStyle,
   onComment,
 }: {
@@ -2996,36 +2969,57 @@ function FloatingBlockToolbar({
   onBack: () => void;
   onToFront: () => void;
   onToBack: () => void;
+  onToggleLock: () => void;
   onStyle: () => void;
   onComment: () => void;
 }) {
-  const toolbarW = 308;
+  const toolbarW = 370;
   const x = Math.min(Math.max(block.x + block.w / 2 - toolbarW / 2, 8), CANVAS_W - toolbarW - 8);
   const y = block.y < 52 ? Math.min(block.y + block.h + 10, CANVAS_H - 44) : block.y - 46;
+  const iconButton = (label: string, onClick: () => void, icon: ReactNode) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onClick} title={label} aria-label={label}>
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
   return (
+    <TooltipProvider delayDuration={160}>
     <div
       data-export-hide="true"
       className="absolute z-[9999999] flex h-9 items-center gap-1 rounded-full border border-border/60 bg-card/95 px-1.5 shadow-xl backdrop-blur-md transition-all duration-200"
       style={{ left: x, top: y, width: toolbarW }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
+      aria-label="Acoes rapidas do bloco selecionado"
     >
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onStyle} title="Editar estilo" aria-label="Editar estilo do bloco">
-        <Paintbrush className="h-3.5 w-3.5" />
-      </Button>
+      {iconButton("Editar estilo do bloco", onStyle, <Paintbrush className="h-3.5 w-3.5" />)}
       <Separator orientation="vertical" className="h-5" />
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onBack} title="Enviar para trás" aria-label="Enviar bloco para trás">
-        <ArrowDown className="h-3.5 w-3.5" />
-      </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onForward} title="Trazer para frente" aria-label="Trazer bloco para frente">
-        <ArrowUp className="h-3.5 w-3.5" />
-      </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDuplicate} title="Duplicar" aria-label="Duplicar bloco">
-        <CopyIcon className="h-3.5 w-3.5" />
-      </Button>
-      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onComment} title="Comentar" aria-label="Comentar no bloco">
-        <MessageSquare className="h-3.5 w-3.5" />
-      </Button>
+      <span className="px-1 text-[10px] font-semibold uppercase text-muted-foreground">Camada</span>
+      {iconButton("Enviar uma camada para tras", onBack, <ArrowDown className="h-3.5 w-3.5" />)}
+      {iconButton("Trazer uma camada para frente", onForward, <ArrowUp className="h-3.5 w-3.5" />)}
+      <Separator orientation="vertical" className="h-5" />
+      {iconButton("Duplicar bloco", onDuplicate, <CopyIcon className="h-3.5 w-3.5" />)}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={onToggleLock}
+            title={block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
+            aria-label={block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
+            aria-pressed={!!block.locked}
+          >
+            {block.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}</TooltipContent>
+      </Tooltip>
+      {iconButton("Comentar no bloco", onComment, <MessageSquare className="h-3.5 w-3.5" />)}
       <Popover>
         <PopoverTrigger asChild>
           <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações" aria-label="Abrir mais ações do bloco">
@@ -3045,6 +3039,7 @@ function FloatingBlockToolbar({
         </PopoverContent>
       </Popover>
     </div>
+    </TooltipProvider>
   );
 }
 
