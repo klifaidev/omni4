@@ -53,7 +53,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, Bell, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X,
+  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X, MoreHorizontal,
   MonitorPlay, RefreshCw, Share2, Timer,
   Search,
 } from "lucide-react";
@@ -1453,7 +1453,13 @@ function SpeakerNotesInspector({ item, onChange, readOnly = false }: { item: Sli
 // ----------------------------------------------------------------------------
 // Diálogos de presets
 // ----------------------------------------------------------------------------
-function SavePresetDialog() {
+function SavePresetDialog({
+  triggerClassName = "h-8 w-8 text-muted-foreground",
+  triggerLabel,
+}: {
+  triggerClassName?: string;
+  triggerLabel?: string;
+}) {
   const items = useSlidesFlow((s) => s.items);
   const savePreset = useSlidesFlow((s) => s.savePreset);
   const [open, setOpen] = useState(false);
@@ -1464,12 +1470,15 @@ function SavePresetDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
-          variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+          variant="ghost"
+          size={triggerLabel ? "sm" : "icon"}
+          className={triggerClassName}
           disabled={items.length === 0}
           aria-label="Salvar pré-definição"
           title="Salvar pré-definição"
         >
           <Save className="h-4 w-4" />
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -1627,11 +1636,12 @@ function QuickAddSlideButton({
         <button
           type="button"
           disabled={readOnly}
-          className="mx-auto mt-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-primary/50 bg-primary/10 text-primary shadow-[0_10px_30px_-18px_hsl(var(--primary)/0.8)] transition hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+          className="mx-auto mt-5 flex min-h-16 w-[172px] items-center justify-center gap-2 rounded-2xl border border-primary/35 bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_45px_-22px_hsl(var(--primary)/0.9)] transition hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_22px_52px_-24px_hsl(var(--primary)/0.95)] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Adicionar slide"
           title="Adicionar slide"
         >
-          <Plus className="h-7 w-7" />
+          <Plus className="h-5 w-5" />
+          Novo slide
         </button>
       </PopoverTrigger>
       <PopoverContent align="center" className="w-56 p-2">
@@ -2915,10 +2925,76 @@ export default function SlidesBeta() {
                     </div>
                   </PopoverContent>
                 </Popover>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" aria-label="Mais opcoes da apresentacao">
+                      <MoreHorizontal className="h-4 w-4" />
+                      Mais
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="surface-overlay w-72 p-2">
+                    <div className="px-2 pb-1 slides-type-label text-muted-foreground/70">Mais opcoes</div>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                      onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
+                    >
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                      Importar PPTX
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                      onClick={() => setHistoryOpen(true)}
+                    >
+                      <History className="h-4 w-4 text-muted-foreground" />
+                      Historico de alteracoes
+                    </button>
+                    <SavePresetDialog triggerClassName="h-8 w-full justify-start gap-2 px-2 text-xs text-muted-foreground" triggerLabel="Salvar pre-definicao" />
+                    {items.length > 0 && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          if (guardViewOnly()) return;
+                          duplicateDeck();
+                          toast.success(`Deck duplicado (${items.length} slides)`);
+                        }}
+                        disabled={viewOnly}
+                      >
+                        <Copy className="h-4 w-4 text-muted-foreground" />
+                        Duplicar deck inteiro
+                      </button>
+                    )}
+                    {items.length > 0 && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => {
+                          if (guardViewOnly()) return;
+                          if (confirm("Limpar a esteira atual?")) clearItems();
+                        }}
+                        disabled={viewOnly}
+                      >
+                        <X className="h-4 w-4" />
+                        Limpar esteira
+                      </button>
+                    )}
+                    <div className="mt-2 border-t border-border/40 px-2 pt-2">
+                      <Label className="slides-type-label">Nome do arquivo</Label>
+                      <Input
+                        value={fileName}
+                        onChange={(e) => setFileName(e.target.value)}
+                        className="mt-1.5 h-8 text-xs"
+                        placeholder="apresentacao.pptx"
+                      />
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5"
+                      variant="outline" size="sm" className="hidden"
                       onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
                       aria-label="Importar slides de PowerPoint"
                     >
@@ -2928,7 +3004,7 @@ export default function SlidesBeta() {
                   </TooltipTrigger>
                   <TooltipContent>Importar slides de um arquivo .pptx</TooltipContent>
                 </Tooltip>
-                <SavePresetDialog />
+                <SavePresetDialog triggerClassName="hidden" />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="hidden">
@@ -2949,7 +3025,7 @@ export default function SlidesBeta() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="ghost" size="sm" className="h-8 gap-1.5"
+                      variant="ghost" size="sm" className="hidden"
                       onClick={() => setHistoryOpen(true)}
                       aria-label="Histórico de alterações"
                     >
@@ -2963,7 +3039,7 @@ export default function SlidesBeta() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+                        variant="ghost" size="icon" className="hidden"
                         onClick={() => {
                           if (guardViewOnly()) return;
                           duplicateDeck();
@@ -2982,7 +3058,7 @@ export default function SlidesBeta() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+                        variant="ghost" size="icon" className="hidden"
                         onClick={() => {
                           if (guardViewOnly()) return;
                           if (confirm("Limpar a esteira atual?")) clearItems();
@@ -2996,7 +3072,7 @@ export default function SlidesBeta() {
                     <TooltipContent>Limpar esteira</TooltipContent>
                   </Tooltip>
                 )}
-                <div className="mx-1 h-5 w-px bg-border/50" />
+                <div className="mx-2 h-6 w-px bg-border/50" />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -3026,12 +3102,12 @@ export default function SlidesBeta() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5"
+                      variant="default" size="sm" className="h-10 gap-2 rounded-r-none px-4 text-sm font-semibold shadow-[0_14px_34px_-20px_hsl(var(--primary)/0.9)]"
                       disabled={items.length === 0}
                       onClick={() => openPresentation(false)}
                       aria-label="Iniciar apresentação"
                     >
-                      <Play className="h-3.5 w-3.5" />
+                      <Play className="h-4 w-4" />
                       Apresentar
                     </Button>
                   </TooltipTrigger>
@@ -3040,9 +3116,9 @@ export default function SlidesBeta() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      variant="outline"
+                      variant="default"
                       size="sm"
-                      className="h-8 px-2"
+                      className="-ml-1.5 h-10 rounded-l-none border-l border-primary-foreground/20 px-2 shadow-[0_14px_34px_-20px_hsl(var(--primary)/0.9)]"
                       disabled={items.length === 0}
                       aria-label="Escolher modo de apresentacao"
                     >
@@ -3066,11 +3142,11 @@ export default function SlidesBeta() {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <div className="mx-1 h-5 w-px bg-border/50" />
+                <div className="hidden" />
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
-                      variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+                      variant="ghost" size="icon" className="hidden"
                       aria-label="Nome do arquivo"
                       title={`Nome do arquivo: ${fileName}`}
                     >
