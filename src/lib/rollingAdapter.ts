@@ -3,8 +3,12 @@ import type { PricingRow } from "./types";
 import type { KpiMeasureId } from "./customSlide";
 import { BUDGET_FILTER_DIMS } from "./budgetAdapter";
 
+const rollingRowsCache = new WeakMap<RollingRow[], PricingRow[]>();
+
 export function rollingRowsAsPricing(rows: RollingRow[]): PricingRow[] {
-  return rows.map((r) => ({
+  const cached = rollingRowsCache.get(rows);
+  if (cached) return cached;
+  const converted = rows.map((r) => ({
     periodo: r.periodo,
     mes: r.mes,
     ano: r.ano,
@@ -39,6 +43,8 @@ export function rollingRowsAsPricing(rows: RollingRow[]): PricingRow[] {
     frete: r.frete,
     comissao: r.comissao,
   }));
+  rollingRowsCache.set(rows, converted);
+  return converted;
 }
 
 export const ROLLING_UNSUPPORTED_MEASURES: ReadonlySet<KpiMeasureId> = new Set([

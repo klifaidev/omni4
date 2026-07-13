@@ -62,10 +62,6 @@ interface SlidesFlowState {
   renamePreset: (id: string, name: string, description?: string) => void;
 }
 
-function cloneItem(item: SlideItem): SlideItem {
-  return JSON.parse(JSON.stringify(item)) as SlideItem;
-}
-
 function uniqueId(existing: Set<string>, candidate?: string): string {
   let id = candidate && !existing.has(candidate) ? candidate : newId();
   while (existing.has(id)) id = newId();
@@ -77,32 +73,50 @@ function sanitizeCustomSlideItem(item: Extract<SlideItem, { kind: "custom" }>): 
   const blockIds = new Set<string>();
   const groupIds = new Set<string>();
   const blockReplacements = new Map<string, string[]>();
+  let blocksChanged = false;
 
   const blocks = item.config.blocks.map((block) => {
     const id = uniqueId(blockIds, block.id);
     const replacements = blockReplacements.get(block.id) ?? [];
     replacements.push(id);
     blockReplacements.set(block.id, replacements);
-    return id === block.id ? block : { ...block, id };
+    if (id === block.id) return block;
+    blocksChanged = true;
+    return { ...block, id };
   });
 
   const validBlockIds = new Set(blocks.map((block) => block.id));
+  let groupsChanged = false;
   const groups = (item.config.groups ?? [])
     .map((group) => {
       const memberIds = Array.from(new Set(
         group.memberIds.flatMap((memberId) => blockReplacements.get(memberId) ?? [memberId]),
       )).filter((memberId) => validBlockIds.has(memberId));
       const id = uniqueId(groupIds, group.id);
-      return { ...group, id, memberIds };
+      if (id !== group.id || memberIds.length !== group.memberIds.length
+        || memberIds.some((memberId, index) => memberId !== group.memberIds[index])) {
+        groupsChanged = true;
+        return { ...group, id, memberIds };
+      }
+      return group;
     })
-    .filter((group) => group.memberIds.length > 1);
+    .filter((group) => {
+      const keep = group.memberIds.length > 1;
+      if (!keep) groupsChanged = true;
+      return keep;
+    });
+  const nextGroups = groups.length > 0 ? groups : undefined;
+  const currentGroups = item.config.groups;
+  const groupPresenceChanged = (currentGroups?.length ?? 0) !== (nextGroups?.length ?? 0);
+
+  if (!blocksChanged && !groupsChanged && !groupPresenceChanged) return item;
 
   return {
     ...item,
     config: {
       ...item.config,
       blocks,
-      groups: groups.length > 0 ? groups : undefined,
+      groups: nextGroups,
     },
   };
 }
@@ -110,9 +124,8 @@ function sanitizeCustomSlideItem(item: Extract<SlideItem, { kind: "custom" }>): 
 export function sanitizeSlidesFlowItems(items: SlideItem[]): SlideItem[] {
   const slideIds = new Set<string>();
   return items.map((item) => {
-    const cloned = cloneItem(item);
-    const id = uniqueId(slideIds, cloned.id);
-    const withUniqueSlideId = id === cloned.id ? cloned : ({ ...cloned, id } as SlideItem);
+    const id = uniqueId(slideIds, item.id);
+    const withUniqueSlideId = id === item.id ? item : ({ ...item, id } as SlideItem);
     return withUniqueSlideId.kind === "custom"
       ? sanitizeCustomSlideItem(withUniqueSlideId)
       : withUniqueSlideId;

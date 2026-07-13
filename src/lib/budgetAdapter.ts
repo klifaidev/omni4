@@ -17,9 +17,14 @@ import type { PricingRow } from "./types";
 import type { BudgetRow } from "./budget";
 import type { KpiMeasureId } from "./customSlide";
 
+const budgetRowsCache = new WeakMap<BudgetRow[], PricingRow[]>();
+const budgetRowsFilteredCache = new WeakMap<BudgetRow[], Partial<Record<"budget" | "real" | "all", PricingRow[]>>>();
+
 /** Converte linhas Budget em PricingRow (campos ausentes ficam 0/undefined). */
 export function budgetRowsAsPricing(rows: BudgetRow[]): PricingRow[] {
-  return rows.map((b) => ({
+  const cached = budgetRowsCache.get(rows);
+  if (cached) return cached;
+  const converted = rows.map((b) => ({
     periodo: b.periodo,
     mes: b.mes,
     ano: b.ano,
@@ -54,6 +59,8 @@ export function budgetRowsAsPricing(rows: BudgetRow[]): PricingRow[] {
     frete: 0,
     comissao: 0,
   }));
+  budgetRowsCache.set(rows, converted);
+  return converted;
 }
 
 /** Converte linhas Budget filtradas por kind. */
@@ -61,8 +68,47 @@ export function budgetRowsAsPricingFiltered(
   rows: BudgetRow[],
   kind: "budget" | "real" | "all",
 ): PricingRow[] {
+  const cachedByKind = budgetRowsFilteredCache.get(rows);
+  const cached = cachedByKind?.[kind];
+  if (cached) return cached;
   const filtered = kind === "all" ? rows : rows.filter((r) => r.kind === kind);
-  return budgetRowsAsPricing(filtered);
+  const converted = kind === "all" ? budgetRowsAsPricing(rows) : filtered.map((b) => ({
+    periodo: b.periodo,
+    mes: b.mes,
+    ano: b.ano,
+    fy: b.fy,
+    fyNum: b.fyNum,
+    marca: b.marca,
+    canal: b.canal,
+    canalAjustado: b.canalAjustado,
+    categoria: b.categoria,
+    subcategoria: b.subcategoria,
+    formato: b.formato,
+    sku: b.sku,
+    skuDesc: b.skuDesc,
+    mercado: b.mercado,
+    mercadoAjustado: undefined,
+    sabor: b.sabor,
+    tecnologia: b.tecnologia,
+    faixaPeso: b.faixaPeso,
+    inovacao: b.inovacao,
+    legado: b.legado,
+    regiao: undefined,
+    uf: undefined,
+    regional: undefined,
+    cliente: undefined,
+    rol: b.receita,
+    volumeKg: b.volumeKg,
+    cogs: b.cpv,
+    custoVariavel: b.cpv,
+    custoFixo: 0,
+    margemBruta: 0,
+    contribMarginal: b.cm,
+    frete: 0,
+    comissao: 0,
+  }));
+  budgetRowsFilteredCache.set(rows, { ...cachedByKind, [kind]: converted });
+  return converted;
 }
 
 /** Medidas que NÃO existem na base Budget (devem ser desabilitadas na UI). */

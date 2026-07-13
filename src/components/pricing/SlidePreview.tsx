@@ -721,7 +721,6 @@ function PreviewContent({ item }: { item: SlideItem }) {
 const PREVIEW_W_INSPECTOR = 260;
 const PREVIEW_W_DIALOG = 800;
 const STATIC_THUMBNAIL_W = 400;
-const LIGHTWEIGHT_THUMBNAIL_MAX_W = 128;
 const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
 
 function recordThumbnailMetric(name: string, id?: string): void {
@@ -1454,27 +1453,6 @@ function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWid
   );
 }
 
-function LightweightScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
-  if (isSlidePerfEnabled()) recordSlideRender("LightweightScaledPreview", item.id);
-  const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
-  const previewH = (CANVAS_H / CANVAS_W) * previewW;
-  const dataUrl = useMemo(() => {
-    if (typeof document === "undefined") return "";
-    return renderFallbackThumbnail(item);
-  }, [item]);
-
-  if (!dataUrl) return <SlideThumbnailPlaceholder width={previewW} />;
-  return (
-    <img
-      src={dataUrl}
-      alt=""
-      className="block rounded-lg border border-border/40 bg-white object-cover"
-      style={{ width: previewW, height: previewH }}
-      draggable={false}
-    />
-  );
-}
-
 export function ScaledPreview({
   item,
   targetWidth,
@@ -1485,9 +1463,6 @@ export function ScaledPreview({
   mode?: "static" | "live";
 }) {
   if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
-  if ((targetWidth ?? PREVIEW_W_INSPECTOR) <= LIGHTWEIGHT_THUMBNAIL_MAX_W) {
-    return <LightweightScaledPreview item={item} targetWidth={targetWidth} />;
-  }
   return <StaticScaledPreview item={item} targetWidth={targetWidth} />;
 }
 

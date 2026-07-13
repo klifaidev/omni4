@@ -3,12 +3,15 @@ import type { PricingRow } from "./types";
 import type { KpiMeasureId } from "./customSlide";
 import { BUDGET_FILTER_DIMS } from "./budgetAdapter";
 
+const forecastRowsCache = new WeakMap<ForecastRow[], PricingRow[]>();
+const forecastLatestRowsCache = new WeakMap<ForecastRow[], PricingRow[]>();
+
 function periodRank(periodo: string | undefined): number {
   if (!periodo) return -Infinity;
   const text = String(periodo).trim();
   let year = 0;
   let month = 0;
-  const appFormat = text.match(/^0*(\d{1,2})[.\/-](\d{4})$/);
+  const appFormat = text.match(/^0*(\d{1,2})[./-](\d{4})$/);
   const isoFormat = text.match(/^(\d{4})-(\d{1,2})$/);
   if (appFormat) {
     month = Number(appFormat[1]);
@@ -35,7 +38,9 @@ export function getLatestForecastCycle(rows: ForecastRow[]): string | null {
 }
 
 export function forecastRowsAsPricing(rows: ForecastRow[]): PricingRow[] {
-  return rows.map((f) => ({
+  const cached = forecastRowsCache.get(rows);
+  if (cached) return cached;
+  const converted = rows.map((f) => ({
     periodo: f.periodo,
     mes: f.mes,
     ano: f.ano,
@@ -70,12 +75,22 @@ export function forecastRowsAsPricing(rows: ForecastRow[]): PricingRow[] {
     frete: 0,
     comissao: 0,
   }));
+  forecastRowsCache.set(rows, converted);
+  return converted;
 }
 
 export function forecastRowsAsPricingLatest(rows: ForecastRow[]): PricingRow[] {
+  const cached = forecastLatestRowsCache.get(rows);
+  if (cached) return cached;
   const latestCycle = getLatestForecastCycle(rows);
-  if (!latestCycle) return [];
-  return forecastRowsAsPricing(rows.filter((r) => r.forecastCycle === latestCycle));
+  if (!latestCycle) {
+    forecastLatestRowsCache.set(rows, []);
+    return [];
+  }
+  const latestRows = rows.filter((r) => r.forecastCycle === latestCycle);
+  const converted = forecastRowsAsPricing(latestRows);
+  forecastLatestRowsCache.set(rows, converted);
+  return converted;
 }
 
 export const FORECAST_UNSUPPORTED_MEASURES: ReadonlySet<KpiMeasureId> = new Set([

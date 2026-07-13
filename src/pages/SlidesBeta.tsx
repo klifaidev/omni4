@@ -235,12 +235,16 @@ function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, ove
   const isPreviewVisible = useCallback((index: number) => (
     index >= range.start && index < range.end
   ), [range.end, range.start]);
+  const topSpacerHeight = range.start * estimatedItemHeight;
+  const bottomSpacerHeight = Math.max(0, (count - range.end) * estimatedItemHeight);
 
   return {
     viewportRef,
     onScroll: recompute,
     isPreviewVisible,
     range,
+    topSpacerHeight,
+    bottomSpacerHeight,
   };
 }
 
@@ -1082,6 +1086,11 @@ function FullscreenCustomEditor({
     }
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
+  const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
+  const visibleStripItems = useMemo(
+    () => items.slice(stripPreviewWindow.range.start, stripPreviewWindow.range.end),
+    [items, stripPreviewWindow.range.end, stripPreviewWindow.range.start],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1180,26 +1189,35 @@ function FullscreenCustomEditor({
               className="flex-1 overflow-y-auto"
             >
               <DndContext sensors={stripSensors} collisionDetection={closestCenter} onDragEnd={onStripDragEnd}>
-                <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={stripSortableIds} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col gap-1.5 p-1.5">
-                    {items.map((it, i) => (
-                      <StripThumbnail
-                        key={it.id}
-                        item={it}
-                        index={i}
-                        active={it.id === current?.id}
-                        editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
-                        currentUser={currentUser}
-                        onCommentEvent={onCommentEvent}
-                        preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
-                        previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
-                        onClick={() => {
-                          if (it.id === current?.id) return;
-                          select(it.id);
-                          if (it.kind !== "custom") onOpenChange(false);
-                        }}
-                      />
-                    ))}
+                    {stripPreviewWindow.topSpacerHeight > 0 && (
+                      <div aria-hidden style={{ height: stripPreviewWindow.topSpacerHeight }} />
+                    )}
+                    {visibleStripItems.map((it, offset) => {
+                      const i = stripPreviewWindow.range.start + offset;
+                      return (
+                        <StripThumbnail
+                          key={it.id}
+                          item={it}
+                          index={i}
+                          active={it.id === current?.id}
+                          editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
+                          currentUser={currentUser}
+                          onCommentEvent={onCommentEvent}
+                          preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
+                          previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
+                          onClick={() => {
+                            if (it.id === current?.id) return;
+                            select(it.id);
+                            if (it.kind !== "custom") onOpenChange(false);
+                          }}
+                        />
+                      );
+                    })}
+                    {stripPreviewWindow.bottomSpacerHeight > 0 && (
+                      <div aria-hidden style={{ height: stripPreviewWindow.bottomSpacerHeight }} />
+                    )}
                   </div>
                 </SortableContext>
               </DndContext>
@@ -2683,6 +2701,11 @@ export default function SlidesBeta() {
   }, [items, roomId, selectedId, transition]);
 
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
+  const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
+  const visibleFlowItems = useMemo(
+    () => items.slice(flowPreviewWindow.range.start, flowPreviewWindow.range.end),
+    [items, flowPreviewWindow.range.end, flowPreviewWindow.range.start],
+  );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
@@ -3389,21 +3412,30 @@ export default function SlidesBeta() {
                 {items.length === 0 ? (
                   <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => { if (guardViewOnly()) return; setGalleryOpen(true); }} />
                 ) : (
-                  <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                  <SortableContext items={flowSortableIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
-                      {items.map((item, idx) => (
-                        <FlowCard
-                          key={item.id}
-                          item={item}
-                          index={idx}
-                          selected={selectedId === item.id}
-                          preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
-                          previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
-                          onSelect={() => select(item.id)}
-                          onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
-                          onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
-                        />
-                      ))}
+                      {flowPreviewWindow.topSpacerHeight > 0 && (
+                        <div aria-hidden style={{ height: flowPreviewWindow.topSpacerHeight }} />
+                      )}
+                      {visibleFlowItems.map((item, offset) => {
+                        const idx = flowPreviewWindow.range.start + offset;
+                        return (
+                          <FlowCard
+                            key={item.id}
+                            item={item}
+                            index={idx}
+                            selected={selectedId === item.id}
+                            preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
+                            previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
+                            onSelect={() => select(item.id)}
+                            onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
+                            onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
+                          />
+                        );
+                      })}
+                      {flowPreviewWindow.bottomSpacerHeight > 0 && (
+                        <div aria-hidden style={{ height: flowPreviewWindow.bottomSpacerHeight }} />
+                      )}
                       <QuickAddSlideButton onAdd={addSlideFromShortcut} readOnly={viewOnly} />
                     </div>
                   </SortableContext>

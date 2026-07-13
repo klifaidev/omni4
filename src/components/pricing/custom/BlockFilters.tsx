@@ -50,6 +50,19 @@ export function BlockFilters({
     if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return applyFilters(pricing, {}, null).filter((r) => getDeParaBySku(r.sku));
   }, [dataSource, pricing, budget, forecast, rolling]);
+  const filterOptionsByKey = useMemo(() => {
+    const fields = [...SKU_FIELDS, ...COMERCIAL_FIELDS];
+    return Object.fromEntries(
+      fields.map((field) => [field.key, uniqueValues(baseRows, field.key as keyof PricingRow)]),
+    ) as Partial<Record<FilterKey, string[]>>;
+  }, [baseRows]);
+  const skuDescriptions = useMemo(() => {
+    const desc = new Map<string, string>();
+    for (const row of baseRows) {
+      if (row.sku && row.skuDesc && !desc.has(row.sku)) desc.set(row.sku, row.skuDesc);
+    }
+    return desc;
+  }, [baseRows]);
   // Em Budget só mostramos campos suportados (sem UF/Regional/Mercado Ajustado/Cliente).
   const isLimitedSource = dataSource === "budget" || dataSource === "budget_real" || dataSource === "forecast" || dataSource === "rolling";
   const setKey = (k: FilterKey, vals: string[]) => {
@@ -64,14 +77,12 @@ export function BlockFilters({
     f: { key: FilterKey; label: string },
     variant: "sku" | "comercial",
   ) => {
-    const opts = uniqueValues(baseRows, f.key as keyof PricingRow);
+    const opts = filterOptionsByKey[f.key] ?? [];
     if (opts.length === 0) return null;
     let optionItems: { value: string; label: string }[];
     if (f.key === "sku") {
-      const desc = new Map<string, string>();
-      for (const r of baseRows) if (r.sku && r.skuDesc && !desc.has(r.sku)) desc.set(r.sku, r.skuDesc);
       optionItems = opts
-        .map((o) => ({ value: o, label: desc.get(o) ? `${o} - ${desc.get(o)}` : o }))
+        .map((o) => ({ value: o, label: skuDescriptions.get(o) ? `${o} - ${skuDescriptions.get(o)}` : o }))
         .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
     } else {
       optionItems = opts
