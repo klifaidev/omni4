@@ -17,9 +17,17 @@ interface TopbarProps {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  showPeriodStrip?: boolean;
+  periodSummaryLabel?: string;
 }
 
-export function Topbar({ title, subtitle, actions }: TopbarProps) {
+export function Topbar({
+  title,
+  subtitle,
+  actions,
+  showPeriodStrip = true,
+  periodSummaryLabel,
+}: TopbarProps) {
   const months = useMonthsInfo();
   const selected = usePricing((s) => s.selectedPeriods);
   const togglePeriod = usePricing((s) => s.togglePeriod);
@@ -109,6 +117,9 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
                     ) : (
                       <CalendarRange className="h-3 w-3 text-primary" />
                     )}
+                    {periodSummaryLabel && (
+                      <span className="text-foreground/70">{periodSummaryLabel}:</span>
+                    )}
                     {periodBadge}
                     {isStale && (
                       <span
@@ -137,7 +148,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
           <InnovationToggle />
         </div>
 
-        {months.length > 0 && (
+        {showPeriodStrip && months.length > 0 && (
           <MonthsStrip
             months={months}
             selected={selected}

@@ -2561,6 +2561,8 @@ export default function SlidesBeta() {
     <>
       <Topbar
         title="Slides"
+        showPeriodStrip={false}
+        periodSummaryLabel="Filtro global"
         subtitle="Monte uma apresentação combinando slides com filtros independentes"
       />
       {viewOnly && (
@@ -3215,7 +3217,7 @@ export default function SlidesBeta() {
             <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4" />
-                <span className="slides-type-section">Filtros</span>
+                <span className="slides-type-section">Filtros globais</span>
                 {globalActiveFilterCount > 0 && (
                   <Badge variant="secondary" className="h-5 px-1.5 slides-type-badge">
                     {globalActiveFilterCount}
@@ -3232,8 +3234,11 @@ export default function SlidesBeta() {
                 {/* Período */}
                 <div className="space-y-2">
                   <Label className="slides-type-label">
-                    Período
+                    Periodo global do deck
                   </Label>
+                  <p className="slides-type-helper">
+                    Afeta a aba Slides e os slides que usam filtros globais. Filtros especificos continuam no inspector do slide.
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => setAllPeriods()}
