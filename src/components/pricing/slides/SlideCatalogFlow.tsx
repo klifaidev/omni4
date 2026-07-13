@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertTriangle, Copy, Filter as FilterIcon, GripVertical, Plus, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Filter as FilterIcon, GripVertical, MessageSquare, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +12,7 @@ import { CANVAS_H, CANVAS_W } from "@/lib/customSlide";
 import { SLIDE_CATALOG, isItemReady, metaOf, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
 import type { SlidePreflightIssue, SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { SLIDE_ACCENT_BG, SLIDE_ICON_MAP } from "./slideUiTokens";
+import { getUnresolvedCount, subscribe as subscribeComments } from "@/lib/slideComments";
 
 const PREFLIGHT_SEVERITY_RANK: Record<SlidePreflightSeverity, number> = {
   error: 3,
@@ -174,8 +175,13 @@ export const FlowCard = React.memo(function FlowCard({
     ? Object.values(item.config.filters).filter((v) => v && v.length > 0).length
     : 0;
   const preflightSeverity = highestPreflightSeverity(preflightIssues);
+  const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
+  const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
+  const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
+  const [, forceCommentsUpdate] = useState(0);
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const [hoverPreviewReady, setHoverPreviewReady] = useState(false);
+  const unresolvedCount = getUnresolvedCount(item.id);
 
   const resetHoverPreviewDelay = () => {
     if (hoverPreviewTimerRef.current) window.clearTimeout(hoverPreviewTimerRef.current);
@@ -193,6 +199,7 @@ export const FlowCard = React.memo(function FlowCard({
   };
 
   useEffect(() => clearHoverPreviewDelay, []);
+  useEffect(() => subscribeComments(() => forceCommentsUpdate((n) => n + 1)), []);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const style = {
@@ -236,7 +243,7 @@ export const FlowCard = React.memo(function FlowCard({
               {String(index + 1).padStart(2, "0")}
             </span>
 
-            <div className="pointer-events-none w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
+            <div className="pointer-events-none relative w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
               {previewVisible ? (
                 <ScaledPreview item={item} targetWidth={104} />
               ) : (
@@ -245,6 +252,39 @@ export const FlowCard = React.memo(function FlowCard({
                   className="rounded-lg bg-muted/40"
                   style={{ width: "100%", aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
                 />
+              )}
+              <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-1">
+                {statusSeverity && (
+                  <span
+                    className={cn(
+                      "inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border px-1 text-[9px] font-semibold shadow-sm",
+                      statusSeverity === "error" && "border-destructive/40 bg-destructive text-destructive-foreground",
+                      statusSeverity === "warning" && "border-warning/40 bg-warning text-warning-foreground",
+                      statusSeverity === "info" && "border-primary/40 bg-primary text-primary-foreground",
+                    )}
+                    title={!ready.ok ? `Incompleto: ${ready.reason}` : `${preflightSeverityLabel(statusSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    {statusCount}
+                  </span>
+                )}
+                {hasNotes && (
+                  <span
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-sm"
+                    title="Possui anotacoes do apresentador"
+                  >
+                    <StickyNote className="h-3 w-3" />
+                  </span>
+                )}
+              </div>
+              {unresolvedCount > 0 && (
+                <span
+                  className="absolute bottom-1 right-1 z-10 inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-background/70 bg-card/95 px-1 text-[9px] font-semibold text-foreground shadow-sm"
+                  title={`${unresolvedCount} comentario(s) pendente(s)`}
+                >
+                  <MessageSquare className="h-3 w-3" />
+                  {unresolvedCount}
+                </span>
               )}
             </div>
 
@@ -262,25 +302,6 @@ export const FlowCard = React.memo(function FlowCard({
               {filtersCount > 0 && (
                 <span className="inline-flex items-center gap-0.5">
                   <FilterIcon className="h-3 w-3" /> {filtersCount}
-                </span>
-              )}
-              {!ready.ok && (
-                <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
-                  {ready.reason}
-                </span>
-              )}
-              {preflightSeverity && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]",
-                    preflightSeverity === "error" && "border-destructive/40 bg-destructive/10 text-destructive",
-                    preflightSeverity === "warning" && "border-warning/40 bg-warning/10 text-warning",
-                    preflightSeverity === "info" && "border-primary/30 bg-primary/10 text-primary",
-                  )}
-                  title={`${preflightSeverityLabel(preflightSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  {preflightIssues.length}
                 </span>
               )}
             </div>

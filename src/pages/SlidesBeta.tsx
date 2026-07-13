@@ -662,7 +662,10 @@ function StripThumbnail({
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
+  const ready = isItemReady(item);
   const preflightSeverity = highestPreflightSeverity(preflightIssues);
+  const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
+  const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
 
   // Subscribe to comment changes so the badge updates live.
   const [, force] = useState(0);
@@ -686,23 +689,24 @@ function StripThumbnail({
         preflightSeverity && "shadow-[0_0_0_1px_hsl(var(--background))]",
       )}
     >
-      {preflightSeverity && (
+      {statusSeverity && (
         <div
           className={cn(
-            "absolute left-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full border bg-background shadow-sm",
-            preflightSeverityClasses(preflightSeverity),
+            "absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border px-1 text-[9px] font-semibold shadow-sm",
+            preflightSeverityClasses(statusSeverity),
           )}
-          title={`${preflightSeverityLabel(preflightSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
+          title={!ready.ok ? `Incompleto: ${ready.reason}` : `${preflightSeverityLabel(statusSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
         >
-          <AlertTriangle className="h-2.5 w-2.5" />
+          <AlertTriangle className="h-3 w-3" />
+          {statusCount}
         </div>
       )}
       {hasNotes && (
         <div
-          className="absolute right-1 top-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-sm"
+          className="absolute right-1 top-7 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-sm"
           title="Possui anotações do apresentador"
         >
-          <StickyNote className="h-2.5 w-2.5" />
+          <StickyNote className="h-3 w-3" />
         </div>
       )}
       <div className="flex items-center gap-1.5 px-1.5 pt-1.5 pb-0.5">
@@ -730,7 +734,7 @@ function StripThumbnail({
       </div>
       {editors.length > 1 && (
         <div
-          className="absolute bottom-1 right-1 z-10 rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
+          className="absolute bottom-1 left-1 z-10 rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
           style={{ background: firstEditorColor ?? "#333" }}
           title={`${editors.length} pessoas editando`}
         >
@@ -746,7 +750,7 @@ function StripThumbnail({
             onClick={(e) => { e.stopPropagation(); setCommentsOpen((v) => !v); }}
             onPointerDown={(e) => e.stopPropagation()}
             className={cn(
-              "absolute left-1 top-1 z-10 flex h-5 items-center gap-0.5 rounded-md bg-card/90 px-1 text-muted-foreground shadow-sm transition-opacity hover:text-foreground",
+              "absolute bottom-1 right-1 z-10 flex h-5 items-center gap-0.5 rounded-full border border-background/70 bg-card/95 px-1 text-muted-foreground shadow-sm transition-opacity hover:text-foreground",
               unresolvedCount > 0 ? "opacity-100" : "opacity-0 group-hover:opacity-100",
             )}
             aria-label="Comentários do slide"
@@ -1319,108 +1323,131 @@ function Inspector({
 
         <Separator />
 
-        <div className={cn("min-w-0 rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2 slides-type-section">
-              {statusSeverity ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
-              {preflightSeverityLabel(statusSeverity)}
+        <Tabs defaultValue="status" className="space-y-4">
+          <TabsList className="grid h-9 w-full grid-cols-4 rounded-lg bg-surface-raised p-1">
+            <TabsTrigger value="status" className="text-[11px]">Status</TabsTrigger>
+            <TabsTrigger value="preview" className="text-[11px]">Previa</TabsTrigger>
+            <TabsTrigger value="config" className="text-[11px]">Config.</TabsTrigger>
+            <TabsTrigger value="notes" className="text-[11px]">Notas</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="status" className="mt-0 space-y-3">
+            <div className="space-y-1">
+              <div className="slides-type-section">Saude do slide</div>
+              <p className="slides-type-helper">Mostra pendencias de preenchimento, alertas de exportacao e pontos do preflight.</p>
             </div>
-            {statusItems.length > 0 && (
-              <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 slides-type-badge text-current">
-                {statusItems.length} ponto(s)
-              </Badge>
-            )}
-          </div>
-          <div className="mt-2 min-w-0 space-y-1.5 slides-type-helper leading-snug">
-            {statusItems.length === 0 ? (
-              <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
-            ) : (
-              statusItems.map((statusItem, idx) => (
-                <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-surface-base/70 px-2 py-1.5 [overflow-wrap:anywhere]">
-                  <span className="font-medium">{statusItem.title}:</span>{" "}
-                  <span className="break-words">{statusItem.detail}</span>
+            <div className={cn("min-w-0 rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2 slides-type-section">
+                  {statusSeverity ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
+                  {preflightSeverityLabel(statusSeverity)}
                 </div>
-              ))
-            )}
-          </div>
-        </div>
+                {statusItems.length > 0 && (
+                  <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 slides-type-badge text-current">
+                    {statusItems.length} ponto(s)
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-2 min-w-0 space-y-1.5 slides-type-helper leading-snug">
+                {statusItems.length === 0 ? (
+                  <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
+                ) : (
+                  statusItems.map((statusItem, idx) => (
+                    <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-surface-base/70 px-2 py-1.5 [overflow-wrap:anywhere]">
+                      <span className="font-medium">{statusItem.title}:</span>{" "}
+                      <span className="break-words">{statusItem.detail}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </TabsContent>
 
-        <Separator />
+          <TabsContent value="preview" className="mt-0 space-y-3">
+            <div className="space-y-1">
+              <div className="slides-type-section">Previa do slide</div>
+              <p className="slides-type-helper">Mostra como este slide vai entrar na apresentacao.</p>
+            </div>
+            <div className="surface-raised rounded-lg border border-border/50 p-3">
+              <SlidePreview item={item} />
+            </div>
+          </TabsContent>
 
-        <Accordion type="multiple" defaultValue={["preview", "period", "filters", "appearance", "notes"]} className="space-y-3">
-          <InspectorSection
-            value="preview"
-            title="Previa"
-            description="Mostra como este slide vai entrar na apresentacao."
-          >
-            <SlidePreview item={item} />
-          </InspectorSection>
-
-          {(item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
-            <InspectorSection
-              value="period"
-              title="Periodo"
-              description="Define a janela de dados usada neste slide."
-            >
-              {item.kind === "bridge_pvm" && (
-                <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+          <TabsContent value="config" className="mt-0 space-y-3">
+            <div className="space-y-1">
+              <div className="slides-type-section">Configuracao</div>
+              <p className="slides-type-helper">Ajusta periodo, filtros e aparencia especificos deste slide.</p>
+            </div>
+            <Accordion type="multiple" defaultValue={["period", "filters", "appearance"]} className="space-y-3">
+              {(item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
+                <InspectorSection
+                  value="period"
+                  title="Periodo do slide"
+                  description="Define a janela de dados usada somente neste slide."
+                >
+                  {item.kind === "bridge_pvm" && (
+                    <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+                  )}
+                  {item.kind === "budget_evo" && (
+                    <BudgetEvoConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+                  )}
+                </InspectorSection>
               )}
-              {item.kind === "budget_evo" && (
-                <BudgetEvoConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+
+              {item.kind === "cover" && (
+                <InspectorSection
+                  value="appearance"
+                  title="Aparencia"
+                  description="Controla textos e estilo visual da capa ou divisor."
+                >
+                  <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
+                </InspectorSection>
               )}
-            </InspectorSection>
-          )}
 
-          {item.kind === "cover" && (
-            <InspectorSection
-              value="appearance"
-              title="Aparencia"
-              description="Controla textos e estilo visual da capa ou divisor."
-            >
-              <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
-            </InspectorSection>
-          )}
+              {item.kind === "custom" && (
+                <InspectorSection
+                  value="appearance"
+                  title="Aparencia"
+                  description="Abre o Canva para ajustar blocos, layout e visual do slide."
+                >
+                  <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
+                </InspectorSection>
+              )}
 
-          {item.kind === "custom" && (
-            <InspectorSection
-              value="appearance"
-              title="Aparencia"
-              description="Abre o Canva para ajustar blocos, layout e visual do slide."
-            >
-              <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
-            </InspectorSection>
-          )}
+              {meta.supportsFilters && (item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
+                <InspectorSection
+                  value="filters"
+                  title="Filtros do slide"
+                  description="Refina os dados deste slide sem alterar o restante do deck."
+                >
+                  <FiltersPanel
+                    value={item.config.filters}
+                    readOnly={readOnly}
+                    onChange={(filters) => guardedUpdateItem((it) => {
+                      if (it.kind !== "bridge_pvm" && it.kind !== "budget_evo") return it;
+                      return { ...it, config: { ...it.config, filters } } as SlideItem;
+                    })}
+                    pricing={pricing}
+                    budget={budget}
+                  />
+                </InspectorSection>
+              )}
+            </Accordion>
+          </TabsContent>
 
-          {meta.supportsFilters && (item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
-            <InspectorSection
-              value="filters"
-              title="Filtros"
-              description="Refina os dados deste slide sem alterar o restante do deck."
-            >
-              <FiltersPanel
-                value={item.config.filters}
-                readOnly={readOnly}
-                onChange={(filters) => guardedUpdateItem((it) => {
-                  if (it.kind !== "bridge_pvm" && it.kind !== "budget_evo") return it;
-                  return { ...it, config: { ...it.config, filters } } as SlideItem;
-                })}
-                pricing={pricing}
-                budget={budget}
-              />
-            </InspectorSection>
-          )}
-
-          <InspectorSection
-            value="notes"
-            title="Notas"
-            description="Guarda lembretes para quem for apresentar este slide."
-          >
-            <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
-              ...it,
-              config: { ...(it.config as object), speakerNotes: notes },
-            } as SlideItem))} />
-          </InspectorSection>
-        </Accordion>
+          <TabsContent value="notes" className="mt-0 space-y-3">
+            <div className="space-y-1">
+              <div className="slides-type-section">Notas do apresentador</div>
+              <p className="slides-type-helper">Guarda lembretes visiveis durante a apresentacao em modo apresentador.</p>
+            </div>
+            <div className="surface-raised rounded-lg border border-border/50 p-3">
+              <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
+                ...it,
+                config: { ...(it.config as object), speakerNotes: notes },
+              } as SlideItem))} />
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </ScrollArea>
   );
