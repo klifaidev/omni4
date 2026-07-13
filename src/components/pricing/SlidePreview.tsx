@@ -14,7 +14,23 @@ import { useForecast } from "@/store/forecast";
 import { useRolling } from "@/store/rolling";
 import { AlertCircle, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
+import {
+  CANVAS_W,
+  CANVAS_H,
+  isMeasureAvailable,
+  type BlockDataSource,
+  type ChartBlock,
+  type CustomBlock,
+  type KpiBlock,
+  type ShapeBlock,
+  type TextBlock,
+  type TitleBlock,
+} from "@/lib/customSlide";
+import type { PricingRow } from "@/lib/types";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { computeChartSeries, computeKpiBlock } from "@/lib/customKpi";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -713,7 +729,488 @@ function recordThumbnailMetric(name: string, id?: string): void {
   incrementSlidePerfCounter(name, id);
 }
 
+type ThumbnailRect = { x: number; y: number; w: number; h: number };
+type ChartSeriesForThumbnail = ReturnType<typeof computeChartSeries>;
+
+const THUMB_COLORS = {
+  border: "#d8dee8",
+  softBorder: "#e7ebf2",
+  panel: "#ffffff",
+  panelAlt: "#f8fafc",
+  ink: "#182230",
+  muted: "#667085",
+  red: "#C8102E",
+  blue: "#2f6fed",
+  green: "#16a34a",
+  amber: "#d97706",
+  violet: "#7c3aed",
+  teal: "#0f766e",
+};
+
+const THUMB_SERIES_COLORS = [
+  THUMB_COLORS.red,
+  THUMB_COLORS.blue,
+  THUMB_COLORS.green,
+  THUMB_COLORS.amber,
+  THUMB_COLORS.violet,
+  THUMB_COLORS.teal,
+];
+
+function normalizeCanvasColor(value: string | undefined, fallback: string): string {
+  if (!value || value === "transparent") return fallback;
+  if (value.startsWith("#") || value.startsWith("rgb")) return value;
+  return `#${value}`;
+}
+
+function clampRect(rect: ThumbnailRect, canvas: HTMLCanvasElement): ThumbnailRect {
+  const x = Math.max(0, Math.min(canvas.width, rect.x));
+  const y = Math.max(0, Math.min(canvas.height, rect.y));
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(canvas.width - x, rect.w)),
+    h: Math.max(0, Math.min(canvas.height - y, rect.h)),
+  };
+}
+
+function blockRect(block: CustomBlock, sx: number, sy: number, canvas: HTMLCanvasElement): ThumbnailRect {
+  return clampRect({ x: block.x * sx, y: block.y * sy, w: block.w * sx, h: block.h * sy }, canvas);
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  rect: ThumbnailRect,
+  radius: number,
+  fill: string,
+  stroke?: string,
+) {
+  const r = Math.max(0, Math.min(radius, rect.w / 2, rect.h / 2));
+  ctx.beginPath();
+  ctx.moveTo(rect.x + r, rect.y);
+  ctx.lineTo(rect.x + rect.w - r, rect.y);
+  ctx.quadraticCurveTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + r);
+  ctx.lineTo(rect.x + rect.w, rect.y + rect.h - r);
+  ctx.quadraticCurveTo(rect.x + rect.w, rect.y + rect.h, rect.x + rect.w - r, rect.y + rect.h);
+  ctx.lineTo(rect.x + r, rect.y + rect.h);
+  ctx.quadraticCurveTo(rect.x, rect.y + rect.h, rect.x, rect.y + rect.h - r);
+  ctx.lineTo(rect.x, rect.y + r);
+  ctx.quadraticCurveTo(rect.x, rect.y, rect.x + r, rect.y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function ellipsizeCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(`${text.slice(0, mid)}...`).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${text.slice(0, lo).trimEnd()}...`;
+}
+
+function wrapCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+): string[] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    if (lines.length >= maxLines) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (lines.length === maxLines) {
+    lines[maxLines - 1] = ellipsizeCanvasText(ctx, lines[maxLines - 1], maxWidth);
+  }
+  return lines;
+}
+
+function drawWrappedCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  rect: ThumbnailRect,
+  options: { font: string; color: string; lineHeight: number; align?: CanvasTextAlign; maxLines?: number },
+) {
+  const padding = Math.max(4, Math.min(10, rect.w * 0.06));
+  const maxWidth = Math.max(0, rect.w - padding * 2);
+  const maxLines = options.maxLines ?? Math.max(1, Math.floor((rect.h - padding * 2) / options.lineHeight));
+  ctx.save();
+  ctx.font = options.font;
+  ctx.fillStyle = options.color;
+  ctx.textBaseline = "top";
+  ctx.textAlign = options.align ?? "left";
+  const lines = wrapCanvasText(ctx, text, maxWidth, maxLines);
+  const baseX = options.align === "center" ? rect.x + rect.w / 2 : options.align === "right" ? rect.x + rect.w - padding : rect.x + padding;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, baseX, rect.y + padding + index * options.lineHeight);
+  });
+  ctx.restore();
+}
+
+function rowsForThumbnailDataSource(dataSource: BlockDataSource | undefined): PricingRow[] {
+  const pricing = usePricing.getState().rows;
+  if (!dataSource || dataSource === "ke30") return pricing;
+  if (dataSource === "budget") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "budget");
+  if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "real");
+  if (dataSource === "forecast") return forecastRowsAsPricingLatest(useForecast.getState().rows);
+  if (dataSource === "rolling") return rollingRowsAsPricing(useRolling.getState().rows);
+  return pricing;
+}
+
+function fallbackChartMeasure(block: ChartBlock) {
+  return isMeasureAvailable(block.measure, block.dataSource)
+    ? block.measure
+    : block.dataSource === "forecast"
+      ? "volume"
+      : "rol";
+}
+
+function getThumbnailChartSeries(slideId: string, block: ChartBlock): ChartSeriesForThumbnail | null {
+  const rows = rowsForThumbnailDataSource(block.dataSource);
+  if (!rows.length) return null;
+  const measure = fallbackChartMeasure(block);
+  const xDim = block.fieldWells?.xDim ?? null;
+  const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
+  try {
+    return getOrComputeSlideCalc({
+      op: "thumbnail-chart-series",
+      slideId,
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: getCachedRowsSignature(rows),
+      params: { filters: block.filters, measure, seriesDim, xDim, chartType: block.chartType },
+    }, () => computeChartSeries(rows, block.filters, measure, seriesDim, xDim));
+  } catch {
+    return null;
+  }
+}
+
+function getThumbnailKpiValue(block: KpiBlock): string {
+  if (block.source === "manual") return block.manualValue?.trim() || "-";
+  const rows = rowsForThumbnailDataSource(block.dataSource);
+  if (!rows.length) return "-";
+  try {
+    return getOrComputeSlideCalc({
+      op: "thumbnail-kpi",
+      blockId: block.id,
+      dataSource: block.dataSource,
+      dataSignature: getCachedRowsSignature(rows),
+      params: {
+        filters: block.filters,
+        measure: block.measure,
+        periodMode: block.periodMode,
+        periodValue: block.periodValue,
+        format: block.format,
+      },
+    }, () => computeKpiBlock(rows, block));
+  } catch {
+    return "-";
+  }
+}
+
+function drawTextThumbnailBlock(
+  ctx: CanvasRenderingContext2D,
+  block: TitleBlock | TextBlock,
+  rect: ThumbnailRect,
+  sx: number,
+) {
+  const bg = normalizeCanvasColor(block.backgroundColor, "transparent");
+  if (bg !== "transparent") {
+    drawRoundedRect(ctx, rect, Math.max(0, (block.borderRadius ?? 0) * sx), bg);
+  }
+  const fontPx = Math.max(block.kind === "title" ? 10 : 8, Math.min(28, block.size * sx));
+  const weight = block.kind === "title" && block.bold ? "700" : block.kind === "title" ? "600" : "400";
+  drawWrappedCanvasText(ctx, block.text || (block.kind === "title" ? "Titulo" : "Texto"), rect, {
+    font: `${block.italic ? "italic " : ""}${weight} ${fontPx}px ${block.fontFamily || "Calibri, Arial"}`,
+    color: normalizeCanvasColor(block.color, THUMB_COLORS.ink),
+    lineHeight: Math.max(10, fontPx * (block.lineHeight ?? 1.12)),
+    align: block.align,
+  });
+}
+
+function drawKpiThumbnailBlock(ctx: CanvasRenderingContext2D, block: KpiBlock, rect: ThumbnailRect) {
+  drawRoundedRect(ctx, rect, 8, normalizeCanvasColor(block.cardBg, THUMB_COLORS.panelAlt), THUMB_COLORS.softBorder);
+  const value = getThumbnailKpiValue(block);
+  const valuePx = Math.max(13, Math.min(32, rect.h * 0.34));
+  ctx.save();
+  ctx.fillStyle = THUMB_COLORS.muted;
+  ctx.font = "600 9px Calibri, Arial";
+  ctx.textBaseline = "top";
+  ctx.fillText(ellipsizeCanvasText(ctx, block.label || "KPI", Math.max(20, rect.w - 14)), rect.x + 7, rect.y + 7);
+  ctx.fillStyle = normalizeCanvasColor(block.color, THUMB_COLORS.red);
+  ctx.font = `700 ${valuePx}px Calibri, Arial`;
+  ctx.fillText(ellipsizeCanvasText(ctx, value, Math.max(20, rect.w - 14)), rect.x + 7, rect.y + Math.max(20, rect.h * 0.38));
+  ctx.restore();
+}
+
+function flattenChartValues(data: ChartSeriesForThumbnail): number[] {
+  return data.series.flatMap((series) => series.values).filter((value) => Number.isFinite(value));
+}
+
+function drawChartAxes(ctx: CanvasRenderingContext2D, rect: ThumbnailRect) {
+  ctx.strokeStyle = THUMB_COLORS.softBorder;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(rect.x + 10, rect.y + rect.h - 15);
+  ctx.lineTo(rect.x + rect.w - 8, rect.y + rect.h - 15);
+  ctx.moveTo(rect.x + 10, rect.y + 20);
+  ctx.lineTo(rect.x + 10, rect.y + rect.h - 15);
+  ctx.stroke();
+}
+
+function drawFallbackChartSkeleton(ctx: CanvasRenderingContext2D, rect: ThumbnailRect, type: ChartBlock["chartType"]) {
+  drawChartAxes(ctx, rect);
+  const plot = { x: rect.x + 14, y: rect.y + 24, w: Math.max(10, rect.w - 28), h: Math.max(10, rect.h - 44) };
+  if (type === "line" || type === "area" || type === "combo") {
+    ctx.strokeStyle = THUMB_COLORS.red;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i += 1) {
+      const x = plot.x + (plot.w / 5) * i;
+      const y = plot.y + plot.h * (0.75 - Math.sin(i * 0.9) * 0.22);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    return;
+  }
+  for (let i = 0; i < 5; i += 1) {
+    const barH = plot.h * (0.25 + ((i * 17) % 50) / 100);
+    ctx.fillStyle = THUMB_SERIES_COLORS[i % THUMB_SERIES_COLORS.length];
+    ctx.fillRect(plot.x + i * (plot.w / 5) + 2, plot.y + plot.h - barH, Math.max(3, plot.w / 8), barH);
+  }
+}
+
+function drawBarsThumbnail(ctx: CanvasRenderingContext2D, rect: ThumbnailRect, values: number[]) {
+  const plot = { x: rect.x + 14, y: rect.y + 24, w: Math.max(10, rect.w - 28), h: Math.max(10, rect.h - 44) };
+  const shown = values.slice(0, 8);
+  const maxAbs = Math.max(1, ...shown.map((v) => Math.abs(v)));
+  const slot = plot.w / Math.max(1, shown.length);
+  shown.forEach((value, index) => {
+    const barH = Math.max(2, (Math.abs(value) / maxAbs) * plot.h);
+    ctx.fillStyle = THUMB_SERIES_COLORS[index % THUMB_SERIES_COLORS.length];
+    ctx.fillRect(plot.x + index * slot + slot * 0.2, plot.y + plot.h - barH, Math.max(3, slot * 0.55), barH);
+  });
+}
+
+function drawLineThumbnail(ctx: CanvasRenderingContext2D, rect: ThumbnailRect, data: ChartSeriesForThumbnail, fillArea = false) {
+  const plot = { x: rect.x + 14, y: rect.y + 24, w: Math.max(10, rect.w - 28), h: Math.max(10, rect.h - 44) };
+  const values = flattenChartValues(data);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = max - min || 1;
+  data.series.slice(0, 3).forEach((series, seriesIndex) => {
+    const valuesForSeries = series.values.slice(0, 12);
+    if (valuesForSeries.length < 2) return;
+    ctx.beginPath();
+    valuesForSeries.forEach((value, index) => {
+      const x = plot.x + (plot.w / Math.max(1, valuesForSeries.length - 1)) * index;
+      const y = plot.y + plot.h - ((value - min) / range) * plot.h;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    if (fillArea) {
+      ctx.lineTo(plot.x + plot.w, plot.y + plot.h);
+      ctx.lineTo(plot.x, plot.y + plot.h);
+      ctx.closePath();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = THUMB_SERIES_COLORS[seriesIndex % THUMB_SERIES_COLORS.length];
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = THUMB_SERIES_COLORS[seriesIndex % THUMB_SERIES_COLORS.length];
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+function drawPieThumbnail(ctx: CanvasRenderingContext2D, rect: ThumbnailRect, values: number[], donut: boolean) {
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2 + 4;
+  const r = Math.max(8, Math.min(rect.w, rect.h) * 0.28);
+  const shown = values.slice(0, 5).map((value) => Math.abs(value)).filter((value) => value > 0);
+  const total = shown.reduce((sum, value) => sum + value, 0) || 1;
+  let angle = -Math.PI / 2;
+  shown.forEach((value, index) => {
+    const next = angle + (value / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, next);
+    ctx.closePath();
+    ctx.fillStyle = THUMB_SERIES_COLORS[index % THUMB_SERIES_COLORS.length];
+    ctx.fill();
+    angle = next;
+  });
+  if (donut) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = THUMB_COLORS.panel;
+    ctx.fill();
+  }
+}
+
+function drawChartThumbnailBlock(ctx: CanvasRenderingContext2D, slideId: string, block: ChartBlock, rect: ThumbnailRect) {
+  drawRoundedRect(ctx, rect, 8, "#f8fbff", "#d7e3f8");
+  ctx.save();
+  ctx.fillStyle = THUMB_COLORS.ink;
+  ctx.font = "600 9px Calibri, Arial";
+  ctx.textBaseline = "top";
+  const title = block.title?.trim() || "Grafico";
+  ctx.fillText(ellipsizeCanvasText(ctx, title, Math.max(20, rect.w - 16)), rect.x + 8, rect.y + 7);
+
+  const data = getThumbnailChartSeries(slideId, block);
+  if (!data || data.series.length === 0 || flattenChartValues(data).length === 0) {
+    drawFallbackChartSkeleton(ctx, rect, block.chartType);
+    ctx.restore();
+    return;
+  }
+
+  drawChartAxes(ctx, rect);
+  const values = data.series.length > 1
+    ? data.series.map((series) => series.values.reduce((sum, value) => sum + value, 0))
+    : data.series[0].values;
+  if (block.chartType === "line" || block.chartType === "combo") drawLineThumbnail(ctx, rect, data);
+  else if (block.chartType === "area" || block.chartType === "stackedArea") drawLineThumbnail(ctx, rect, data, true);
+  else if (block.chartType === "pie" || block.chartType === "donut") drawPieThumbnail(ctx, rect, values, block.chartType === "donut");
+  else drawBarsThumbnail(ctx, rect, values);
+  ctx.restore();
+}
+
+function drawShapeThumbnailBlock(ctx: CanvasRenderingContext2D, block: ShapeBlock, rect: ThumbnailRect, sx: number) {
+  const fill = normalizeCanvasColor(block.fill, "#f8fafc");
+  const stroke = normalizeCanvasColor(block.strokeColor, THUMB_COLORS.border);
+  ctx.save();
+  ctx.globalAlpha = block.fillOpacity != null ? Math.max(0, Math.min(1, block.fillOpacity / 100)) : 1;
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(1, (block.strokeWidth ?? 1) * sx);
+  if (block.shape === "circle" || block.shape === "ellipse") {
+    ctx.beginPath();
+    ctx.ellipse(rect.x + rect.w / 2, rect.y + rect.h / 2, rect.w / 2, rect.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else if (block.shape === "line" || block.shape === "dashed-line" || block.shape === "arrow" || block.shape === "double-arrow") {
+    ctx.globalAlpha = 1;
+    if (block.shape === "dashed-line") ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(rect.x, rect.y + rect.h / 2);
+    ctx.lineTo(rect.x + rect.w, rect.y + rect.h / 2);
+    ctx.stroke();
+  } else if (block.shape === "triangle" || block.shape === "right-triangle") {
+    ctx.beginPath();
+    ctx.moveTo(rect.x + rect.w / 2, rect.y);
+    ctx.lineTo(rect.x + rect.w, rect.y + rect.h);
+    ctx.lineTo(rect.x, rect.y + rect.h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    drawRoundedRect(ctx, rect, block.shape === "roundRect" ? 8 : 2, fill, stroke);
+  }
+  ctx.restore();
+}
+
+function drawImageThumbnailBlock(ctx: CanvasRenderingContext2D, rect: ThumbnailRect) {
+  drawRoundedRect(ctx, rect, 6, "#f8fafc", THUMB_COLORS.border);
+  ctx.save();
+  ctx.strokeStyle = "#94a3b8";
+  ctx.lineWidth = 1.5;
+  const pad = Math.max(6, Math.min(12, rect.w * 0.1));
+  ctx.strokeRect(rect.x + pad, rect.y + pad, Math.max(8, rect.w - pad * 2), Math.max(8, rect.h - pad * 2));
+  ctx.beginPath();
+  ctx.moveTo(rect.x + pad + 5, rect.y + rect.h - pad - 6);
+  ctx.lineTo(rect.x + rect.w * 0.45, rect.y + rect.h * 0.55);
+  ctx.lineTo(rect.x + rect.w - pad - 5, rect.y + rect.h - pad - 6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(rect.x + rect.w - pad - 10, rect.y + pad + 10, 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTableThumbnailBlock(ctx: CanvasRenderingContext2D, rect: ThumbnailRect) {
+  drawRoundedRect(ctx, rect, 6, THUMB_COLORS.panel, THUMB_COLORS.border);
+  const rows = 4;
+  const cols = 3;
+  const pad = 7;
+  const top = rect.y + pad;
+  const left = rect.x + pad;
+  const cellW = Math.max(8, (rect.w - pad * 2) / cols);
+  const cellH = Math.max(6, (rect.h - pad * 2) / rows);
+  ctx.fillStyle = "#eef2f7";
+  ctx.fillRect(left, top, cellW * cols, cellH);
+  ctx.strokeStyle = THUMB_COLORS.softBorder;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= rows; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(left, top + i * cellH);
+    ctx.lineTo(left + cellW * cols, top + i * cellH);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= cols; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(left + i * cellW, top);
+    ctx.lineTo(left + i * cellW, top + cellH * rows);
+    ctx.stroke();
+  }
+}
+
+function drawGenericAnalyticsBlock(ctx: CanvasRenderingContext2D, block: CustomBlock, rect: ThumbnailRect) {
+  drawRoundedRect(ctx, rect, 8, THUMB_COLORS.panelAlt, THUMB_COLORS.border);
+  ctx.save();
+  ctx.fillStyle = THUMB_COLORS.muted;
+  ctx.font = "600 8px Calibri, Arial";
+  ctx.textBaseline = "top";
+  const label = block.kind.replace(/^omni_/, "").replaceAll("_", " ");
+  ctx.fillText(ellipsizeCanvasText(ctx, label, Math.max(20, rect.w - 14)), rect.x + 7, rect.y + 7);
+  drawFallbackChartSkeleton(ctx, rect, "bar");
+  ctx.restore();
+}
+
+function drawCustomThumbnailBlock(
+  ctx: CanvasRenderingContext2D,
+  slideId: string,
+  block: CustomBlock,
+  rect: ThumbnailRect,
+  sx: number,
+) {
+  if (rect.w < 3 || rect.h < 3) return;
+  if (block.kind === "title" || block.kind === "text") drawTextThumbnailBlock(ctx, block, rect, sx);
+  else if (block.kind === "kpi") drawKpiThumbnailBlock(ctx, block, rect);
+  else if (block.kind === "chart") drawChartThumbnailBlock(ctx, slideId, block, rect);
+  else if (block.kind === "shape") drawShapeThumbnailBlock(ctx, block, rect, sx);
+  else if (block.kind === "image") drawImageThumbnailBlock(ctx, rect);
+  else if (block.kind === "table" || block.kind === "dre") drawTableThumbnailBlock(ctx, rect);
+  else if (block.kind === "bridge") {
+    drawRoundedRect(ctx, rect, 8, THUMB_COLORS.panel, THUMB_COLORS.border);
+    drawFallbackChartSkeleton(ctx, rect, "waterfall");
+  } else if (block.kind === "topSku") {
+    drawRoundedRect(ctx, rect, 8, THUMB_COLORS.panel, THUMB_COLORS.border);
+    drawBarsThumbnail(ctx, rect, [9, 7, 5, 4, 3]);
+  } else drawGenericAnalyticsBlock(ctx, block, rect);
+}
+
 function renderFallbackThumbnail(item: SlideItem): string {
+  const startedAt = isSlidePerfEnabled() && typeof performance !== "undefined" ? performance.now() : 0;
   const canvas = document.createElement("canvas");
   canvas.width = STATIC_THUMBNAIL_W;
   canvas.height = Math.round((CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W);
@@ -746,19 +1243,7 @@ function renderFallbackThumbnail(item: SlideItem): string {
     const blocks = [...item.config.blocks].sort((a, b) => a.z - b.z);
     blocks.forEach((block) => {
       if (block.hidden) return;
-      const x = block.x * sx;
-      const y = block.y * sy;
-      const w = block.w * sx;
-      const h = block.h * sy;
-      ctx.fillStyle = block.kind === "chart" ? "#eef2ff" : block.kind === "kpi" ? "#f8fafc" : "#ffffff";
-      ctx.strokeStyle = block.kind === "chart" ? "#94a3b8" : "#cbd5e1";
-      ctx.lineWidth = 1;
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeRect(x, y, w, h);
-      ctx.fillStyle = "#1f2937";
-      ctx.font = block.kind === "title" ? "700 14px Calibri, Arial" : "10px Calibri, Arial";
-      const label = "text" in block ? block.text : block.kind === "chart" ? "Grafico" : block.kind.toUpperCase();
-      ctx.fillText(String(label || block.kind).slice(0, 32), x + 6, y + Math.min(18, h - 4));
+      drawCustomThumbnailBlock(ctx, item.id, block, blockRect(block, sx, sy, canvas), sx);
     });
   } else {
     ctx.fillStyle = "#C8102E";
@@ -772,6 +1257,12 @@ function renderFallbackThumbnail(item: SlideItem): string {
     ctx.moveTo(18, 92);
     ctx.lineTo(canvas.width - 18, canvas.height - 45);
     ctx.stroke();
+  }
+
+  if (startedAt) {
+    const elapsed = performance.now() - startedAt;
+    recordThumbnailMetric("SlideThumbnail:fallbackRich", item.id);
+    if (elapsed > 16) recordThumbnailMetric("SlideThumbnail:fallbackRich:over16ms", item.id);
   }
 
   return canvas.toDataURL("image/png");
