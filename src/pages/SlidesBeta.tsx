@@ -70,6 +70,7 @@ import {
 } from "@/lib/slidesFlow";
 import { buildSlidesPreflight, type SlidePreflightIssue, type SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { smartDefaults } from "@/lib/slidesSmartDefaults";
+import { warmSlideChartData } from "@/lib/slideDeckPreparation";
 import { guardSlideReadOnly } from "@/lib/slidesReadOnly";
 import { ChevronDown } from "lucide-react";
 import {
@@ -1974,8 +1975,9 @@ export default function SlidesBeta() {
 
         try {
           await warmSlideThumbnail(item);
+          await warmSlideChartData(item, { onBlock: yieldDeckPreparationFrame });
         } catch {
-          // Uma miniatura com erro nao deve impedir o restante do deck de aquecer.
+          // Uma miniatura ou calculo com erro nao deve impedir o restante do deck de aquecer.
         }
 
         const done = index + 1;
