@@ -49,6 +49,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Progress } from "@/components/ui/progress";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
@@ -148,6 +149,17 @@ const APP_VERSION = (() => {
 })();
 const COLLAB_PROTOCOL_VERSION = 1;
 const DOWNLOAD_URL = "https://github.com/klifaidev/omni4/releases/latest";
+const DECK_PREP_THRESHOLD = 8;
+
+type DeckPreparationState = {
+  visible: boolean;
+  title: string;
+  total: number;
+  done: number;
+  currentLabel: string;
+  etaLabel: string;
+  skipped: boolean;
+};
 
 function slideToastSuccess(message: string) {
   toast.success(message, { icon: <CheckCheck className="h-4 w-4 text-success" /> });
@@ -159,6 +171,29 @@ function slideToastInfo(message: string) {
 
 function slideToastError(message: string) {
   toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
+}
+
+function deckPreparationSignature(items: SlideItem[]): string {
+  return `${items.length}:${items.map((item) => item.id).join("|")}`;
+}
+
+function formatDeckPreparationEta(startedAt: number, done: number, total: number): string {
+  if (done <= 0 || done >= total) return done >= total ? "Concluindo..." : "Calculando tempo restante...";
+  const elapsed = Date.now() - startedAt;
+  const remainingMs = Math.max(0, Math.round((elapsed / done) * (total - done)));
+  const seconds = Math.ceil(remainingMs / 1000);
+  if (seconds <= 1) return "Menos de 1s restante";
+  if (seconds < 60) return `${seconds}s restantes`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest > 0 ? `${minutes}min ${rest}s restantes` : `${minutes}min restantes`;
+}
+
+function yieldDeckPreparationFrame(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
 }
 
 function stableBlock(prev: CustomBlock | undefined, next: CustomBlock): CustomBlock {
@@ -1729,7 +1764,7 @@ function ShareActionButton({
   );
 }
 
-function PresetsPanel() {
+function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], name: string) => void }) {
   const presets = useSlidesFlow((s) => s.presets);
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
   const deletePreset = useSlidesFlow((s) => s.deletePreset);
@@ -1760,7 +1795,11 @@ function PresetsPanel() {
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
                 title="Carregar"
-                onClick={() => { loadPreset(p.id); toast.success(`"${p.name}" carregado.`); }}
+                onClick={() => {
+                  loadPreset(p.id);
+                  onLoadedDeck?.(useSlidesFlow.getState().items, p.name);
+                  toast.success(`"${p.name}" carregado.`);
+                }}
               >
                 <RotateCcw className="h-3 w-3" />
               </Button>
@@ -1880,6 +1919,11 @@ export default function SlidesBeta() {
   const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 360, 340, 540);
   const [templateApplying, setTemplateApplying] = useState(false);
   const [importApplying, setImportApplying] = useState(false);
+  const [deckPreparation, setDeckPreparation] = useState<DeckPreparationState | null>(null);
+  const deckPreparationGenerationRef = useRef(0);
+  const deckPreparationSkippedRef = useRef(false);
+  const preparedDeckSignaturesRef = useRef(new Set<string>());
+  const initialDeckPreparationCheckedRef = useRef(false);
   const [exportConfirm, setExportConfirm] = useState<ExportFormat | null>(null);
   const filteredSlideCatalog = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase();
@@ -1889,6 +1933,78 @@ export default function SlidesBeta() {
       return `${meta.title} ${meta.description} ${slide.kind}`.toLowerCase().includes(q);
     });
   }, [catalogSearch]);
+
+  const startDeckPreparation = useCallback((deckItems: SlideItem[], title = "Preparando deck") => {
+    if (deckItems.length <= DECK_PREP_THRESHOLD) return false;
+    if (typeof window === "undefined") return false;
+    const signature = deckPreparationSignature(deckItems);
+    if (preparedDeckSignaturesRef.current.has(signature)) return false;
+
+    deckPreparationGenerationRef.current += 1;
+    const generation = deckPreparationGenerationRef.current;
+    deckPreparationSkippedRef.current = false;
+    const queuedItems = [...deckItems];
+    const total = queuedItems.length;
+    const startedAt = Date.now();
+
+    setDeckPreparation({
+      visible: true,
+      title,
+      total,
+      done: 0,
+      currentLabel: `Preparando slide 1 de ${total}`,
+      etaLabel: "Calculando tempo restante...",
+      skipped: false,
+    });
+
+    void (async () => {
+      for (let index = 0; index < queuedItems.length; index += 1) {
+        if (generation !== deckPreparationGenerationRef.current) return;
+        const item = queuedItems[index];
+        const slideName = item.label || metaOf(item.kind).title;
+        setDeckPreparation((previous) => previous && generation === deckPreparationGenerationRef.current
+          ? {
+              ...previous,
+              visible: !deckPreparationSkippedRef.current,
+              currentLabel: `Preparando slide ${index + 1} de ${total}: ${slideName}`,
+              etaLabel: formatDeckPreparationEta(startedAt, index, total),
+              skipped: deckPreparationSkippedRef.current,
+            }
+          : previous);
+
+        try {
+          await warmSlideThumbnail(item);
+        } catch {
+          // Uma miniatura com erro nao deve impedir o restante do deck de aquecer.
+        }
+
+        const done = index + 1;
+        setDeckPreparation((previous) => previous && generation === deckPreparationGenerationRef.current
+          ? {
+              ...previous,
+              visible: !deckPreparationSkippedRef.current,
+              done,
+              currentLabel: done >= total ? "Deck preparado" : `Preparando slide ${Math.min(done + 1, total)} de ${total}`,
+              etaLabel: formatDeckPreparationEta(startedAt, done, total),
+              skipped: deckPreparationSkippedRef.current,
+            }
+          : previous);
+        await yieldDeckPreparationFrame();
+      }
+
+      if (generation !== deckPreparationGenerationRef.current) return;
+      preparedDeckSignaturesRef.current.add(signature);
+      setDeckPreparation(null);
+    })();
+
+    return true;
+  }, []);
+
+  const skipDeckPreparationOverlay = useCallback(() => {
+    deckPreparationSkippedRef.current = true;
+    setDeckPreparation((previous) => previous ? { ...previous, visible: false, skipped: true } : previous);
+    slideToastInfo("Preparacao continua em segundo plano.");
+  }, []);
 
   // ====== Colaboração em tempo real ======
   const [collabOpen, setCollabOpen] = useState(false);
@@ -2463,7 +2579,11 @@ export default function SlidesBeta() {
       if (!created) continue;
       updateItem(created.id, () => ({ ...slide, id: created.id } as SlideItem));
     }
+        const nextDeck = useSlidesFlow.getState().items;
         slideToastSuccess(`Template "${tpl.name}" aplicado`);
+        setTemplateApplying(false);
+        startDeckPreparation(nextDeck, `Preparando template "${tpl.name}"`);
+        return;
       } catch {
         slideToastError("Não foi possível aplicar o template.");
       } finally {
@@ -2474,6 +2594,11 @@ export default function SlidesBeta() {
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
   useIdleSlidePrecompute(items, selectedId);
+  useEffect(() => {
+    if (initialDeckPreparationCheckedRef.current || items.length === 0) return;
+    initialDeckPreparationCheckedRef.current = true;
+    startDeckPreparation(items, "Preparando deck");
+  }, [items, startDeckPreparation]);
   const readyAll = items.every((i) => isItemReady(i).ok);
   const preflight = useMemo(() => buildSlidesPreflight(items), [items]);
   const preflightIssuesBySlide = useMemo(() => {
@@ -2629,6 +2754,45 @@ export default function SlidesBeta() {
           </div>
         </div>
       )}
+      {deckPreparation?.visible && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-background/70 px-4 backdrop-blur-md">
+          <div className="surface-overlay w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-2xl">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="slides-type-section text-sm">{deckPreparation.title}</div>
+                <p className="slides-type-helper leading-snug">
+                  Estamos preparando miniaturas e dados do deck inteiro para deixar a navegacao fluida depois.
+                </p>
+              </div>
+            </div>
+            <Progress
+              value={Math.round((deckPreparation.done / Math.max(1, deckPreparation.total)) * 100)}
+              className="h-2"
+            />
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground">{deckPreparation.currentLabel}</div>
+                <div className="text-muted-foreground">{deckPreparation.etaLabel}</div>
+              </div>
+              <div className="shrink-0 font-semibold tabular-nums text-primary">
+                {deckPreparation.done}/{deckPreparation.total}
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-4 w-full text-muted-foreground"
+              onClick={skipDeckPreparationOverlay}
+            >
+              Pular e continuar em segundo plano
+            </Button>
+          </div>
+        </div>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -2753,7 +2917,13 @@ export default function SlidesBeta() {
                       </Button>
                     </div>
                   )}
-                  {activeRailTab === "presets" && <PresetsPanel />}
+                  {activeRailTab === "presets" && (
+                    <PresetsPanel
+                      onLoadedDeck={(loadedItems, name) => {
+                        startDeckPreparation(loadedItems, `Preparando modelo "${name}"`);
+                      }}
+                    />
+                  )}
                 </div>
               </ScrollArea>
             </div>
@@ -3546,6 +3716,10 @@ export default function SlidesBeta() {
               slideToastSuccess(
                 `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
               );
+              const nextDeck = useSlidesFlow.getState().items;
+              setImportApplying(false);
+              startDeckPreparation(nextDeck, "Preparando slides importados");
+              return;
             } catch {
               slideToastError("Não foi possível inserir os slides importados.");
             } finally {
