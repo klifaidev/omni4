@@ -140,7 +140,7 @@ type Icon = ComponentType<{ className?: string }>;
 const CUSTOM_YJS_STORE_SYNC_MS = 120;
 const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
 const FLOW_CARD_ESTIMATED_HEIGHT = 98;
-const SLIDE_PREVIEW_OVERSCAN = 3;
+const SLIDE_PREVIEW_OVERSCAN = 8;
 const COLLAB_PRIVACY_NOTICE =
   "A sala sincroniza de forma criptografada estrutura, layout, textos, blocos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
 const APP_VERSION = (() => {
@@ -1087,10 +1087,6 @@ function FullscreenCustomEditor({
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
-  const visibleStripItems = useMemo(
-    () => items.slice(stripPreviewWindow.range.start, stripPreviewWindow.range.end),
-    [items, stripPreviewWindow.range.end, stripPreviewWindow.range.start],
-  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1191,33 +1187,24 @@ function FullscreenCustomEditor({
               <DndContext sensors={stripSensors} collisionDetection={closestCenter} onDragEnd={onStripDragEnd}>
                 <SortableContext items={stripSortableIds} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col gap-1.5 p-1.5">
-                    {stripPreviewWindow.topSpacerHeight > 0 && (
-                      <div aria-hidden style={{ height: stripPreviewWindow.topSpacerHeight }} />
-                    )}
-                    {visibleStripItems.map((it, offset) => {
-                      const i = stripPreviewWindow.range.start + offset;
-                      return (
-                        <StripThumbnail
-                          key={it.id}
-                          item={it}
-                          index={i}
-                          active={it.id === current?.id}
-                          editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
-                          currentUser={currentUser}
-                          onCommentEvent={onCommentEvent}
-                          preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
-                          previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
-                          onClick={() => {
-                            if (it.id === current?.id) return;
-                            select(it.id);
-                            if (it.kind !== "custom") onOpenChange(false);
-                          }}
-                        />
-                      );
-                    })}
-                    {stripPreviewWindow.bottomSpacerHeight > 0 && (
-                      <div aria-hidden style={{ height: stripPreviewWindow.bottomSpacerHeight }} />
-                    )}
+                    {items.map((it, i) => (
+                      <StripThumbnail
+                        key={it.id}
+                        item={it}
+                        index={i}
+                        active={it.id === current?.id}
+                        editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
+                        currentUser={currentUser}
+                        onCommentEvent={onCommentEvent}
+                        preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
+                        previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
+                        onClick={() => {
+                          if (it.id === current?.id) return;
+                          select(it.id);
+                          if (it.kind !== "custom") onOpenChange(false);
+                        }}
+                      />
+                    ))}
                   </div>
                 </SortableContext>
               </DndContext>
@@ -2702,10 +2689,6 @@ export default function SlidesBeta() {
 
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
   const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
-  const visibleFlowItems = useMemo(
-    () => items.slice(flowPreviewWindow.range.start, flowPreviewWindow.range.end),
-    [items, flowPreviewWindow.range.end, flowPreviewWindow.range.start],
-  );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
@@ -3414,28 +3397,19 @@ export default function SlidesBeta() {
                 ) : (
                   <SortableContext items={flowSortableIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
-                      {flowPreviewWindow.topSpacerHeight > 0 && (
-                        <div aria-hidden style={{ height: flowPreviewWindow.topSpacerHeight }} />
-                      )}
-                      {visibleFlowItems.map((item, offset) => {
-                        const idx = flowPreviewWindow.range.start + offset;
-                        return (
-                          <FlowCard
-                            key={item.id}
-                            item={item}
-                            index={idx}
-                            selected={selectedId === item.id}
-                            preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
-                            previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
-                            onSelect={() => select(item.id)}
-                            onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
-                            onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
-                          />
-                        );
-                      })}
-                      {flowPreviewWindow.bottomSpacerHeight > 0 && (
-                        <div aria-hidden style={{ height: flowPreviewWindow.bottomSpacerHeight }} />
-                      )}
+                      {items.map((item, idx) => (
+                        <FlowCard
+                          key={item.id}
+                          item={item}
+                          index={idx}
+                          selected={selectedId === item.id}
+                          preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
+                          previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
+                          onSelect={() => select(item.id)}
+                          onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
+                          onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
+                        />
+                      ))}
                       <QuickAddSlideButton onAdd={addSlideFromShortcut} readOnly={viewOnly} />
                     </div>
                   </SortableContext>
