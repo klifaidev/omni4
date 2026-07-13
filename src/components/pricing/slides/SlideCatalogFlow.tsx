@@ -178,6 +178,7 @@ export const FlowCard = React.memo(function FlowCard({
   const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
   const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
+  const displayName = item.label || meta.title;
   const [, forceCommentsUpdate] = useState(0);
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const [hoverPreviewReady, setHoverPreviewReady] = useState(false);
@@ -288,13 +289,17 @@ export const FlowCard = React.memo(function FlowCard({
               )}
             </div>
 
-            <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border max-[900px]:hidden", SLIDE_ACCENT_BG[meta.accent])}>
+            <div className={cn("hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border min-[1500px]:flex", SLIDE_ACCENT_BG[meta.accent])}>
               <Icon className="h-4 w-4" />
             </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium tracking-tight">
-                {item.label || meta.title}
+            <div className="min-w-0 flex-[1_1_260px] pr-1">
+              <div
+                className="line-clamp-2 text-sm font-semibold leading-snug tracking-tight"
+                title={displayName}
+                aria-label={displayName}
+              >
+                {displayName}
               </div>
             </div>
 

@@ -8,6 +8,7 @@ import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
 import { setYTextValue } from "@/lib/customSlideYjs";
+import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 
 type TextLikeBlock = TitleBlock | TextBlock;
 
@@ -88,7 +89,7 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
         outline: "none",
         resize: "none",
         background: "transparent",
-        fontFamily: "Calibri, sans-serif",
+        fontFamily: block.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
         fontSize: block.size,
         fontWeight: isTitle && (block as TitleBlock).bold ? 700 : 400,
         fontStyle: block.italic ? "italic" : "normal",

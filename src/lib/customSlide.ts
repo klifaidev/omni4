@@ -3,6 +3,7 @@
 // para 13.33" x 7.5" do LAYOUT_WIDE do PPT — basta dividir por 100).
 
 import type { Filters } from "./types";
+import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
 
 export const CANVAS_W = 1333;
 export const CANVAS_H = 750;
@@ -631,7 +632,7 @@ export function defaultCustomSlide(): CustomSlideConfig {
         id: rid(), kind: "title", z: 1,
         x: 40, y: 30, w: 1240, h: 70,
         text: "Título do slide", size: 44, bold: true,
-        color: "C8102E", align: "left",
+        color: "C8102E", align: "left", fontFamily: SLIDE_DEFAULT_FONT_FAMILY,
       } as TitleBlock,
     ],
   };
@@ -643,10 +644,12 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
   switch (kind) {
     case "title":
       return { id, kind, z, x: 60, y: 60, w: 1200, h: 70,
-        text: "Novo título", size: 40, bold: true, color: "C8102E", align: "left" };
+        text: "Novo título", size: 40, bold: true, color: "C8102E", align: "left",
+        fontFamily: SLIDE_DEFAULT_FONT_FAMILY };
     case "text":
       return { id, kind, z, x: 60, y: 150, w: 600, h: 60,
-        text: "Clique para editar este texto.", size: 18, color: "1C2430", align: "left" };
+        text: "Clique para editar este texto.", size: 18, color: "1C2430", align: "left",
+        fontFamily: SLIDE_DEFAULT_FONT_FAMILY };
     case "kpi":
       return {
         id, kind, z, x: 60, y: 200, w: 280, h: 130,

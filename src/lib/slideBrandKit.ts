@@ -10,6 +10,9 @@ import type {
 
 export type SlideBrandStyleTarget = "text" | "kpi" | "shape" | "table" | "dre";
 
+export const SLIDE_DEFAULT_FONT_LABEL = "Inter";
+export const SLIDE_DEFAULT_FONT_FAMILY = "Inter";
+
 export interface SlideBrandStyle {
   id: string;
   name: string;

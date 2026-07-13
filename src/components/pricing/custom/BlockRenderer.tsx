@@ -30,6 +30,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { SLIDE_CHART_PALETTE, SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 import { formatPct, formatTon, formatNum } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
@@ -456,7 +457,7 @@ function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isE
       width: "100%", height: "100%", display: "flex",
       alignItems: "center", justifyContent: justifyMap[b.align] ?? "flex-start",
       boxSizing: "border-box",
-      fontFamily: b.fontFamily ?? "Calibri, sans-serif",
+      fontFamily: b.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
       fontSize,
       fontWeight: b.bold ? 700 : 400,
       fontStyle: b.italic ? "italic" : "normal",
@@ -488,7 +489,7 @@ function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEdi
       width: "100%", height: "100%", display: "flex",
       alignItems: "flex-start", justifyContent: b.align,
       boxSizing: "border-box",
-      fontFamily: b.fontFamily ?? "Calibri, sans-serif",
+      fontFamily: b.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
       fontSize,
       fontStyle: b.italic ? "italic" : "normal",
       color: `#${b.color}`,

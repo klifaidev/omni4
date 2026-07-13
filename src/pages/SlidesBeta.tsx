@@ -666,6 +666,7 @@ function StripThumbnail({
   const preflightSeverity = highestPreflightSeverity(preflightIssues);
   const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
   const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
+  const displayName = item.label ?? meta.title;
 
   // Subscribe to comment changes so the badge updates live.
   const [, force] = useState(0);
@@ -729,8 +730,12 @@ function StripThumbnail({
           )}
         </div>
       </div>
-      <div className="truncate px-1.5 pb-1.5 text-[11px] font-semibold leading-tight" title={item.label ?? meta.title}>
-        {item.label ?? meta.title}
+      <div
+        className="line-clamp-2 min-h-[28px] px-1.5 pb-1.5 text-[11px] font-semibold leading-tight"
+        title={displayName}
+        aria-label={displayName}
+      >
+        {displayName}
       </div>
       {editors.length > 1 && (
         <div
@@ -771,7 +776,7 @@ function StripThumbnail({
         >
           <CommentsThread
             slideId={item.id}
-            slideLabel={item.label ?? meta.title}
+            slideLabel={displayName}
             currentUser={currentUser}
             onCommentEvent={onCommentEvent}
           />
@@ -3207,7 +3212,7 @@ export default function SlidesBeta() {
             onScroll={flowPreviewWindow.onScroll}
             className="flex-1 overflow-y-auto"
           >
-            <div className="mx-auto max-w-2xl px-4 py-5">
+            <div className="mx-auto max-w-3xl px-4 py-5">
               <FlowDropZone>
                 {items.length === 0 ? (
                   <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => { if (guardViewOnly()) return; setGalleryOpen(true); }} />

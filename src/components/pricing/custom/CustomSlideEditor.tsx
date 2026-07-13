@@ -166,6 +166,8 @@ import {
   buildBrandStylePatch,
   getBrandStyleTarget,
   getBrandStylesForBlock,
+  SLIDE_DEFAULT_FONT_FAMILY,
+  SLIDE_DEFAULT_FONT_LABEL,
   SLIDE_BRAND_STYLES,
   type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
@@ -4121,6 +4123,7 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
 // Shared inspector for TitleBlock + TextBlock
 // ---------------------------------------------------------------------------
 const FONT_FAMILIES = [
+  { value: SLIDE_DEFAULT_FONT_FAMILY, label: SLIDE_DEFAULT_FONT_LABEL },
   { value: "Calibri, sans-serif", label: "Calibri" },
   { value: "Arial, sans-serif", label: "Arial" },
   { value: "Georgia, serif", label: "Georgia" },
@@ -4206,7 +4209,7 @@ function TextTitleInspector({ block, onChange }: {
 
       <Section title="Tipografia" defaultOpen>
         <Row label="Fonte">
-          <Select value={block.fontFamily ?? "Calibri, sans-serif"}
+          <Select value={block.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY}
             onValueChange={(v) => onChange({ fontFamily: v })}>
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
