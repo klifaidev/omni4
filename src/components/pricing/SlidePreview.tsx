@@ -1516,7 +1516,7 @@ export function SlidePreview({ item }: { item: SlideItem }) {
           Expandir
         </Button>
       </div>
-      <ScaledPreview item={item} mode="live" />
+      <ScaledPreview item={item} />
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="max-w-[860px] p-0 gap-0">
