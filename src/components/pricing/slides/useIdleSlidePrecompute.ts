@@ -34,22 +34,17 @@ function cancelIdle(handle: IdleCallbackHandle): void {
   window.clearTimeout(handle);
 }
 
-const PRECOMPUTE_RADIUS = 2;
-const PRECOMPUTE_MAX_ITEMS = PRECOMPUTE_RADIUS * 2 + 1;
-
 function nearbyItemsByDistance(items: SlideItem[], selectedId: string | null): SlideItem[] {
   const selectedIndex = selectedId ? items.findIndex((item) => item.id === selectedId) : 0;
   const origin = selectedIndex >= 0 ? selectedIndex : 0;
-  const start = Math.max(0, origin - PRECOMPUTE_RADIUS);
-  const end = Math.min(items.length, origin + PRECOMPUTE_RADIUS + 1);
-  return items.slice(start, end).sort((a, b) => {
+  return [...items].sort((a, b) => {
     const ia = items.indexOf(a);
     const ib = items.indexOf(b);
     const da = Math.abs(ia - origin);
     const db = Math.abs(ib - origin);
     if (da !== db) return da - db;
     return ia - ib;
-  }).slice(0, PRECOMPUTE_MAX_ITEMS);
+  });
 }
 
 function recordIdleMetric(name: string, id?: string): void {

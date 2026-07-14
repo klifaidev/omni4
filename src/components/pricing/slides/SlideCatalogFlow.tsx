@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { cn } from "@/lib/utils";
-import { CANVAS_H, CANVAS_W } from "@/lib/customSlide";
 import { SLIDE_CATALOG, isItemReady, metaOf, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
 import type { SlidePreflightIssue, SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { SLIDE_ACCENT_BG, SLIDE_ICON_MAP } from "./slideUiTokens";
@@ -245,15 +244,11 @@ export const FlowCard = React.memo(function FlowCard({
             </span>
 
             <div className="pointer-events-none relative w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
-              {previewVisible ? (
-                <ScaledPreview item={item} targetWidth={104} />
-              ) : (
-                <div
-                  aria-hidden
-                  className="rounded-lg bg-muted/40"
-                  style={{ width: "100%", aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
-                />
-              )}
+              <ScaledPreview
+                item={item}
+                targetWidth={104}
+                deferUntilVisible={!previewVisible}
+              />
               <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-1">
                 {statusSeverity && (
                   <span

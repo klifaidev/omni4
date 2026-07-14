@@ -759,15 +759,11 @@ function StripThumbnail({
       </div>
       <div className="thumb px-1 pb-1">
         <div className="pointer-events-none mx-auto w-full max-w-[132px] min-w-[82px] overflow-hidden rounded-sm">
-          {previewVisible ? (
-            <ScaledPreview item={item} targetWidth={112} />
-          ) : (
-            <div
-              aria-hidden
-              className="rounded-lg border border-border/30 bg-muted/40"
-              style={{ width: "100%", aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
-            />
-          )}
+          <ScaledPreview
+            item={item}
+            targetWidth={112}
+            deferUntilVisible={!previewVisible}
+          />
         </div>
       </div>
       <div

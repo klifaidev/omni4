@@ -1414,7 +1414,15 @@ function useSlideThumbnailKey(item: SlideItem): string {
   );
 }
 
-function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
+function StaticScaledPreview({
+  item,
+  targetWidth,
+  deferUntilVisible = false,
+}: {
+  item: SlideItem;
+  targetWidth?: number;
+  deferUntilVisible?: boolean;
+}) {
   if (isSlidePerfEnabled()) recordSlideRender("StaticScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
   const previewH = (CANVAS_H / CANVAS_W) * previewW;
@@ -1428,13 +1436,14 @@ function StaticScaledPreview({ item, targetWidth }: { item: SlideItem; targetWid
   useEffect(() => {
     const entry = getSlideThumbnail(key);
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
+    if (deferUntilVisible) return;
     const timer = window.setTimeout(async () => {
       await warmSlideThumbnail(item);
     }, STATIC_THUMBNAIL_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [item, key]);
+  }, [deferUntilVisible, item, key]);
 
   return (
     <>
@@ -1457,13 +1466,15 @@ export function ScaledPreview({
   item,
   targetWidth,
   mode = "static",
+  deferUntilVisible = false,
 }: {
   item: SlideItem;
   targetWidth?: number;
   mode?: "static" | "live";
+  deferUntilVisible?: boolean;
 }) {
   if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
-  return <StaticScaledPreview item={item} targetWidth={targetWidth} />;
+  return <StaticScaledPreview item={item} targetWidth={targetWidth} deferUntilVisible={deferUntilVisible} />;
 }
 
 // ---------------------------------------------------------------------------
