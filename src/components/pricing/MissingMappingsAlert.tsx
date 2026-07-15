@@ -1,10 +1,19 @@
 import { useState, useMemo } from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, X, Copy, Check, FileSpreadsheet, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { usePricing } from "@/store/pricing";
 import { toast } from "sonner";
 import { exportMissingSkusXlsx } from "@/lib/exportMissingSkusXlsx";
 import { formatNum, formatPct } from "@/lib/format";
+import {
+  DEPARA_FIELDS,
+  upsertDeParaEntries,
+  type DeParaEntry,
+} from "@/lib/depara";
+import type { MissingSkuItem } from "@/lib/csv";
 
 const isEmpty = (v?: string) => {
   const s = (v ?? "").trim();
@@ -15,8 +24,10 @@ export function MissingMappingsAlert() {
   const missing = usePricing((s) => s.missing);
   const rows = usePricing((s) => s.rows);
   const dismiss = usePricing((s) => s.dismissMissing);
+  const applySkuDeParaEntries = usePricing((s) => s.applySkuDeParaEntries);
   const [open, setOpen] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const volStats = useMemo(() => {
     if (rows.length === 0) return null;
@@ -119,6 +130,15 @@ export function MissingMappingsAlert() {
             <div className="flex shrink-0 items-center gap-1">
               {missing.skus.length > 0 && (
                 <Button
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setEditorOpen(true)}
+                >
+                  Corrigir no app
+                </Button>
+              )}
+              {missing.skus.length > 0 && (
+                <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs text-warning hover:bg-warning/15 hover:text-warning"
@@ -210,7 +230,192 @@ export function MissingMappingsAlert() {
           )}
         </div>
       </div>
+      <SkuDeParaEditorDialog
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        items={missing.skus}
+        onSave={(entries) => {
+          upsertDeParaEntries(entries);
+          applySkuDeParaEntries(entries);
+          toast.success(`${Object.keys(entries).length} SKU(s) atualizados no De/Para do app.`);
+          setEditorOpen(false);
+        }}
+      />
     </div>
+  );
+}
+
+const FIELD_LABELS: Record<keyof DeParaEntry, string> = {
+  categoria: "Categoria",
+  subcategoria: "Subcategoria",
+  marca: "Marca",
+  tecnologia: "Tecnologia",
+  formato: "Formato",
+  mercado: "Mercado",
+  faixaPeso: "Faixa/Peso",
+  sabor: "Sabor",
+  skuDesc: "Descrição SKU",
+};
+
+function draftFromItem(item: MissingSkuItem): DeParaEntry {
+  return {
+    categoria: item.entry?.categoria ?? "",
+    subcategoria: item.entry?.subcategoria ?? "",
+    marca: item.entry?.marca ?? "",
+    tecnologia: item.entry?.tecnologia ?? "",
+    formato: item.entry?.formato ?? "",
+    mercado: item.entry?.mercado ?? "",
+    faixaPeso: item.entry?.faixaPeso ?? "",
+    sabor: item.entry?.sabor ?? "",
+    skuDesc: item.entry?.skuDesc ?? item.descricao ?? "",
+  };
+}
+
+function SkuDeParaEditorDialog({
+  open,
+  onOpenChange,
+  items,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: MissingSkuItem[];
+  onSave: (entries: Record<string, DeParaEntry>) => void;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, DeParaEntry>>({});
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+
+  const visibleItems = useMemo(() => items.slice(0, 200), [items]);
+  const activeSku = selectedSku ?? visibleItems[0]?.sku ?? null;
+  const activeItem = visibleItems.find((item) => item.sku === activeSku) ?? visibleItems[0] ?? null;
+  const activeDraft = activeItem ? drafts[activeItem.sku] ?? draftFromItem(activeItem) : null;
+  const completeCount = visibleItems.filter((item) => {
+    const draft = drafts[item.sku] ?? draftFromItem(item);
+    return DEPARA_FIELDS.every((field) => !isEmpty(draft[field]));
+  }).length;
+
+  const setField = (sku: string, field: keyof DeParaEntry, value: string) => {
+    setDrafts((cur) => ({
+      ...cur,
+      [sku]: {
+        ...(cur[sku] ?? draftFromItem(items.find((item) => item.sku === sku)!)),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveCompleted = () => {
+    const entries: Record<string, DeParaEntry> = {};
+    for (const item of visibleItems) {
+      const draft = drafts[item.sku] ?? draftFromItem(item);
+      if (DEPARA_FIELDS.every((field) => !isEmpty(draft[field]))) {
+        entries[item.sku] = Object.fromEntries(
+          DEPARA_FIELDS.map((field) => [field, draft[field].trim()]),
+        ) as unknown as DeParaEntry;
+      }
+    }
+    if (Object.keys(entries).length === 0) {
+      toast.info("Preencha todos os campos de ao menos um SKU para salvar.");
+      return;
+    }
+    onSave(entries);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-6xl">
+        <DialogHeader>
+          <DialogTitle>Corrigir De/Para de SKUs</DialogTitle>
+        </DialogHeader>
+        <div className="grid min-h-[520px] grid-cols-[280px_minmax(0,1fr)] gap-4">
+          <aside className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold">Pendências</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {completeCount} de {visibleItems.length} prontos
+                </div>
+              </div>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                {items.length}
+              </span>
+            </div>
+            <div className="max-h-[455px] space-y-1 overflow-auto pr-1">
+              {visibleItems.map((item) => {
+                const draft = drafts[item.sku] ?? draftFromItem(item);
+                const pending = DEPARA_FIELDS.filter((field) => isEmpty(draft[field])).length;
+                return (
+                  <button
+                    key={item.sku}
+                    type="button"
+                    onClick={() => setSelectedSku(item.sku)}
+                    className={[
+                      "w-full rounded-lg border px-2 py-2 text-left transition-colors",
+                      activeItem?.sku === item.sku
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-border/50 bg-card/50 hover:bg-secondary/50",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-semibold">{item.sku}</span>
+                      <span className={pending === 0 ? "text-[10px] text-success" : "text-[10px] text-warning"}>
+                        {pending === 0 ? "Pronto" : `${pending} campos`}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {draft.skuDesc || item.descricao || "Sem descrição"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {items.length > visibleItems.length && (
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Exibindo os primeiros {visibleItems.length}. Salve este lote e continue com os próximos.
+              </p>
+            )}
+          </aside>
+
+          <section className="rounded-xl border border-border/60 bg-card/70 p-4">
+            {activeItem && activeDraft ? (
+              <>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">SKU</div>
+                    <h3 className="text-lg font-semibold">{activeItem.sku}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Complete os campos abaixo. Ao salvar, o app reaplica o De/Para na base Real já carregada.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={saveCompleted}>
+                    Salvar prontos ({completeCount})
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {DEPARA_FIELDS.map((field) => (
+                    <div key={field} className={field === "skuDesc" ? "col-span-2" : undefined}>
+                      <Label className="text-[10px] uppercase text-muted-foreground">
+                        {FIELD_LABELS[field]}
+                      </Label>
+                      <Input
+                        className="mt-1 h-8 text-xs"
+                        value={activeDraft[field] ?? ""}
+                        placeholder={activeItem.missingFields.includes(field) ? "Preencher" : ""}
+                        onChange={(e) => setField(activeItem.sku, field, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Nenhum SKU pendente para corrigir.
+              </div>
+            )}
+          </section>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

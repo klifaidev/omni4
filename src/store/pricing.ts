@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Filters, LoadedFile, Metric, PricingRow } from "@/lib/types";
 import type { MissingMappings } from "@/lib/csv";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
+import { getDeParaBySku, getMissingDeParaFields, type DeParaEntry } from "@/lib/depara";
 
 interface PricingState {
   rows: PricingRow[];
@@ -37,6 +38,7 @@ interface PricingState {
   clearAll: () => void;
   dismissMissing: () => void;
   reclassifyInovacao: () => void;
+  applySkuDeParaEntries: (entries: Record<string, DeParaEntry>) => void;
 
   setPvm: (base: string | null, comp: string | null) => void;
   setPvmMode: (mode: "fy" | "month") => void;
@@ -154,6 +156,37 @@ export const usePricing = create<PricingState>((set, get) => ({
         legado: getLegado(r.sku),
       })),
     })),
+
+  applySkuDeParaEntries: (entries) =>
+    set((s) => {
+      const changedSkus = new Set(Object.keys(entries));
+      const rows = s.rows.map((r) => {
+        if (!r.sku || !changedSkus.has(r.sku)) return r;
+        const dp = getDeParaBySku(r.sku);
+        if (!dp) return r;
+        return {
+          ...r,
+          categoria: dp.categoria || r.categoria,
+          subcategoria: dp.subcategoria || r.subcategoria,
+          formato: dp.formato || r.formato,
+          marca: dp.marca || r.marca,
+          tecnologia: dp.tecnologia || r.tecnologia,
+          mercado: dp.mercado || r.mercado,
+          faixaPeso: dp.faixaPeso || r.faixaPeso,
+          sabor: dp.sabor || r.sabor,
+          skuDesc: dp.skuDesc || r.skuDesc,
+        };
+      });
+      const skus = s.missing.skus
+        .map((item) => {
+          if (!changedSkus.has(item.sku)) return item;
+          const entry = getDeParaBySku(item.sku);
+          const missingFields = getMissingDeParaFields(item.sku);
+          return { ...item, entry: entry ?? item.entry, missingFields };
+        })
+        .filter((item) => item.missingFields.length > 0);
+      return { rows, missing: { ...s.missing, skus } };
+    }),
 
   setPvm: (base, comp) => set({ pvmBase: base, pvmComp: comp }),
   setPvmMode: (mode) => set({ pvmMode: mode, pvmBase: null, pvmComp: null }),

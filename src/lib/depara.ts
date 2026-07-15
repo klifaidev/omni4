@@ -15,13 +15,37 @@ export interface DeParaEntry {
 }
 
 const RAW = deparaJson as Record<string, DeParaEntry>;
+const OVERRIDES_STORAGE_KEY = "omni4.depara.skuOverrides.v1";
+
+let runtimeOverrides: Record<string, DeParaEntry> = loadStoredOverrides();
+
+function loadStoredOverrides(): Record<string, DeParaEntry> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(OVERRIDES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, DeParaEntry>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistOverrides() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(runtimeOverrides));
+  } catch {
+    // Sem persistência local disponível; mantém a correção em memória nesta sessão.
+  }
+}
 
 /** Lookup direto por código SKU (string). */
 export function getDeParaBySku(sku: string | undefined | null): DeParaEntry | null {
   if (!sku) return null;
   const key = String(sku).trim();
   if (!key) return null;
-  return RAW[key] ?? null;
+  return runtimeOverrides[key] ?? RAW[key] ?? null;
 }
 
 export const DEPARA_SIZE = Object.keys(RAW).length;
@@ -56,3 +80,11 @@ export function getMissingDeParaFields(sku: string | undefined | null): (keyof D
   return DEPARA_FIELDS.filter((f) => isBlank(entry[f]));
 }
 
+export function upsertDeParaEntries(entries: Record<string, DeParaEntry>) {
+  runtimeOverrides = { ...runtimeOverrides, ...entries };
+  persistOverrides();
+}
+
+export function getDeParaOverrides(): Record<string, DeParaEntry> {
+  return { ...runtimeOverrides };
+}
