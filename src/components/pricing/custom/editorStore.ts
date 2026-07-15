@@ -184,6 +184,10 @@ export function setSpeakerNotesAction(notes: string) {
   mutate("Alterar slide", (c) => ({ ...c, speakerNotes: notes }));
 }
 
+export function setSourceFooterAction(sourceFooter: CustomSlideConfig["sourceFooter"]) {
+  mutate("Alterar slide", (c) => ({ ...c, sourceFooter }));
+}
+
 export function addBlockAction(kind: CustomBlockKind): string | null {
   const cur = baseStore.getState().config;
   if (!cur) return null;

@@ -98,6 +98,7 @@ function writeConfigToYDoc(doc: Y.Doc, config: CustomSlideConfig): void {
   if (config.theme !== undefined) meta.set("theme", config.theme);
   if (config.backgroundImage !== undefined) meta.set("backgroundImage", config.backgroundImage);
   if (config.groups !== undefined) meta.set("groups", config.groups);
+  if (config.sourceFooter !== undefined) meta.set("sourceFooter", config.sourceFooter);
   meta.set(SPEAKER_NOTES, createText(config.speakerNotes ?? ""));
 
   blockOrder.insert(0, config.blocks.map((block) => block.id));
@@ -307,11 +308,13 @@ export function yDocToCustomSlideConfig(doc: Y.Doc): CustomSlideConfig {
   const theme = meta.get("theme");
   const backgroundImage = meta.get("backgroundImage");
   const groups = meta.get("groups");
+  const sourceFooter = meta.get("sourceFooter");
   const notes = speakerNotes?.toString() ?? "";
 
   if (theme !== undefined) config.theme = theme as CustomSlideConfig["theme"];
   if (backgroundImage !== undefined) config.backgroundImage = backgroundImage as string;
   if (groups !== undefined) config.groups = groups as CustomSlideConfig["groups"];
+  if (sourceFooter !== undefined) config.sourceFooter = sourceFooter as CustomSlideConfig["sourceFooter"];
   if (notes) config.speakerNotes = notes;
 
   return config;

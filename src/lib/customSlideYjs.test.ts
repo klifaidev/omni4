@@ -22,6 +22,7 @@ const sampleConfig: CustomSlideConfig = {
   theme: "harald-classic",
   backgroundImage: "https://example.com/bg.png",
   speakerNotes: "Abrir reforcando margem e mix.",
+  sourceFooter: { mode: "manual", manualText: "Fonte: Superbase (Abr/25-Mar/26)" },
   groups: [{ id: "group-1", memberIds: ["title-1", "text-1"] }],
   blocks: [
     {

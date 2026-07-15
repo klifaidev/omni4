@@ -5,6 +5,7 @@
 import type { Filters } from "./types";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
 import type { PeriodSelectionMode, RelativePeriodPreset } from "./relativePeriods";
+import type { SlideSourceFooterConfig } from "./customSlideSourceFooter";
 
 export const CANVAS_W = 1333;
 export const CANVAS_H = 750;
@@ -648,6 +649,7 @@ export interface CustomSlideConfig {
   groups?: BlockGroup[];
   /** Notas do apresentador (não exportadas para PPTX). */
   speakerNotes?: string;
+  sourceFooter?: SlideSourceFooterConfig;
 }
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,14 @@ import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { usePricing } from "@/store/pricing";
+import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
 
 interface Props {
   /** Editor's current slide id — used as initial slide. */
@@ -513,6 +521,50 @@ function SlideRenderArea({
   );
 }
 
+function useSourceFooterRows(): SourceRowsByDataSource {
+  const pricingRows = usePricing((s) => s.rows);
+  const budgetRows = useBudget((s) => s.rows);
+  const forecastRows = useForecast((s) => s.rows);
+  const rollingRows = useRolling((s) => s.rows);
+
+  return useMemo<SourceRowsByDataSource>(() => ({
+    ke30: pricingRows,
+    budget: budgetRowsAsPricingFiltered(budgetRows, "budget"),
+    budget_real: budgetRowsAsPricingFiltered(budgetRows, "real"),
+    forecast: forecastRowsAsPricingLatest(forecastRows),
+    rolling: rollingRowsAsPricing(rollingRows),
+  }), [pricingRows, budgetRows, forecastRows, rollingRows]);
+}
+
+function SlideSourceFooterReadOnly({ config }: { config: CustomSlideConfig }) {
+  const rowsBySource = useSourceFooterRows();
+  const text = getSourceFooterText(config, rowsBySource);
+  if (!text) return null;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 40,
+        bottom: config.showHaraldFooter ? 13 : 18,
+        maxWidth: 720,
+        zIndex: 100000,
+        pointerEvents: "none",
+        color: config.showHaraldFooter ? SLIDE_HEX.white : SLIDE_HEX.slate500,
+        fontFamily: "Calibri, sans-serif",
+        fontSize: 11,
+        fontStyle: "italic",
+        fontWeight: 700,
+        lineHeight: 1.1,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
 export function CustomCanvasReadOnly({
   config, slideId, animateBlocks = false, animKey = 0,
 }: { config: CustomSlideConfig; slideId?: string; animateBlocks?: boolean; animKey?: number }) {
@@ -554,6 +606,8 @@ export function CustomCanvasReadOnly({
           </div>
         );
       })}
+      <SlideSourceFooterReadOnly config={config} />
+
       {config.showHaraldFooter && (
         <img
           src={haraldFooterPng}

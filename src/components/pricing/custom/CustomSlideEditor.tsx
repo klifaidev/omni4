@@ -91,6 +91,9 @@ import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
 import { useRolling } from "@/store/rolling";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
+import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
+import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
 import type { Filters } from "@/lib/types";
@@ -129,6 +132,10 @@ import {
   type PeriodSelectionMode,
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
+import {
+  getSourceFooterText,
+  type SourceRowsByDataSource,
+} from "@/lib/customSlideSourceFooter";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
@@ -180,6 +187,92 @@ function RelativePresetSelect({
     </Select>
   );
 }
+
+function SlideSourceFooterEditor({
+  config,
+  rowsBySource,
+  readOnly,
+}: {
+  config: CustomSlideConfig;
+  rowsBySource: SourceRowsByDataSource;
+  readOnly: boolean;
+}) {
+  const text = getSourceFooterText(config, rowsBySource);
+  if (!text && config.sourceFooter?.mode !== "manual") return null;
+
+  const mode = config.sourceFooter?.mode ?? "auto";
+  const manualText = config.sourceFooter?.manualText ?? "";
+  const footerColor = config.showHaraldFooter ? SLIDE_HEX.white : SLIDE_HEX.slate500;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={readOnly}
+          title={readOnly ? text : "Editar fonte de dados do rodape"}
+          aria-label="Fonte de dados do slide"
+          style={{
+            position: "absolute",
+            left: 40,
+            bottom: config.showHaraldFooter ? 13 : 18,
+            maxWidth: 720,
+            zIndex: 100000,
+            border: 0,
+            background: "transparent",
+            padding: 0,
+            margin: 0,
+            color: footerColor,
+            fontFamily: "Calibri, sans-serif",
+            fontSize: 11,
+            fontStyle: "italic",
+            fontWeight: 700,
+            lineHeight: 1.1,
+            textAlign: "left",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            cursor: readOnly ? "default" : "pointer",
+            pointerEvents: readOnly ? "none" : "auto",
+          }}
+        >
+          {text || "Fonte: "}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-80 space-y-3">
+        <div>
+          <p className="text-sm font-semibold">Fonte do rodape</p>
+          <p className="text-xs text-muted-foreground">Use o texto automatico ou escreva uma fonte personalizada para este slide.</p>
+        </div>
+        <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
+          <span className="text-xs font-medium">Automatico</span>
+          <Switch
+            checked={mode === "auto"}
+            onCheckedChange={(checked) => {
+              setSourceFooterAction(checked
+                ? { mode: "auto" }
+                : { mode: "manual", manualText: text });
+            }}
+          />
+        </div>
+        {mode === "manual" ? (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Texto manual</Label>
+            <Input
+              value={manualText}
+              onChange={(event) => setSourceFooterAction({ mode: "manual", manualText: event.target.value })}
+              placeholder="Ex.: Fonte: KE30 - Abr/25 a Mar/26"
+            />
+          </div>
+        ) : (
+          <div className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+            {text || "Nenhuma fonte detectada nos blocos deste slide."}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
 import {
   useEditorBinding, useUndoRedoState,
   addBlockAction, addChartBlockAction, deleteBlockAction, duplicateBlockAction,
@@ -188,6 +281,7 @@ import {
   setShowHaraldFooter as setShowHaraldFooterAction,
   setBackground as setBackgroundAction,
   setSpeakerNotesAction,
+  setSourceFooterAction,
   useSelection, selectBlock, setSelection, clearSelection,
   selectAllOnSlide, enterGroupEdit, exitGroupEdit,
   deleteBlocksAction, duplicateBlocksAction,
@@ -369,6 +463,17 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   useEditorBinding(config, onChange, slideId);
   const undoRedo = useUndoRedoState();
   const { selectedIds, groupEditMemberId } = useSelection();
+  const pricingRows = usePricing((s) => s.rows);
+  const budgetRows = useBudget((s) => s.rows);
+  const forecastRows = useForecast((s) => s.rows);
+  const rollingRows = useRolling((s) => s.rows);
+  const sourceFooterRows = useMemo<SourceRowsByDataSource>(() => ({
+    ke30: pricingRows,
+    budget: budgetRowsAsPricingFiltered(budgetRows, "budget"),
+    budget_real: budgetRowsAsPricingFiltered(budgetRows, "real"),
+    forecast: forecastRowsAsPricingLatest(forecastRows),
+    rolling: rollingRowsAsPricing(rollingRows),
+  }), [pricingRows, budgetRows, forecastRows, rollingRows]);
   useEffect(() => {
     if (!isSlidePerfEnabled()) return;
     recordSlidePerfEvent("slides.customEditor.commit", {
@@ -2677,6 +2782,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 ))}
 
               {/* Faixa Harald (não editável, sempre por cima) */}
+              <SlideSourceFooterEditor config={config} rowsBySource={sourceFooterRows} readOnly={readOnly} />
+
               {config.showHaraldFooter && (
                 <img
                   src={haraldFooterPng}
