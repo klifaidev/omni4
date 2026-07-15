@@ -968,9 +968,10 @@ async function plotLineRow(
     budGet: (r: BudgetEvoRow) => number | null;
     fmt: (v: number) => string;
     deltaFmt?: (delta: number) => string;
+    showRealPoint?: (r: BudgetEvoRow) => boolean;
   },
 ) {
-  const { x, y, w, h, title, headerNote, data, realGet, budGet, fmt, deltaFmt } = opts;
+  const { x, y, w, h, title, headerNote, data, realGet, budGet, fmt, deltaFmt, showRealPoint } = opts;
 
   // Title rotated 90° to the left (vertical, reading bottom to top)
   slide.addText(title, {
@@ -1013,20 +1014,31 @@ async function plotLineRow(
 
   // Build smooth curves rendered as inline SVG image (rounded, no markers, no month labels)
   const SCALE = 100;
-  const realPts: { x: number; y: number }[] = [];
+  const realSegments: { x: number; y: number }[][] = [];
+  let currentRealSegment: { x: number; y: number }[] = [];
   const budPts: { x: number; y: number }[] = [];
   data.forEach((r, i) => {
     const a = realGet(r);
     const b = budGet(r);
     const px = (xOf(i) - plotX) * SCALE;
-    if (a != null && isFinite(a)) realPts.push({ x: px, y: (yOf(a) - plotY) * SCALE });
+    if (a != null && isFinite(a) && (showRealPoint?.(r) ?? true)) {
+      currentRealSegment.push({ x: px, y: (yOf(a) - plotY) * SCALE });
+    } else if (currentRealSegment.length > 0) {
+      realSegments.push(currentRealSegment);
+      currentRealSegment = [];
+    }
     if (b != null && isFinite(b) && b !== 0) budPts.push({ x: px, y: (yOf(b) - plotY) * SCALE });
   });
+  if (currentRealSegment.length > 0) realSegments.push(currentRealSegment);
 
   const svgW = plotW * SCALE;
   const svgH = plotH * SCALE;
+  const realPaths = realSegments
+    .filter((segment) => segment.length > 1)
+    .map((segment) => `<path d="${smoothPathD(segment)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`)
+    .join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">`
-    + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+    + realPaths
     + (budPts.length > 0 ? `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14,8"/>` : "")
     + `</svg>`;
   const chartData = await svgToPngDataUrl(svg, svgW, svgH, 4);
@@ -1072,7 +1084,7 @@ async function plotLineRow(
     const b = budGet(r);
     const cx = xOf(i);
     const items: { v: number; color: string }[] = [];
-    if (a != null && isFinite(a)) items.push({ v: a, color: PPT_COLORS.haraldRed });
+    if (a != null && isFinite(a) && (showRealPoint?.(r) ?? true)) items.push({ v: a, color: PPT_COLORS.haraldRed });
     if (b != null && isFinite(b)) items.push({ v: b, color: "000000" });
     if (items.length === 0) return;
     items.sort((p, q) => q.v - p.v);
@@ -1232,6 +1244,7 @@ export async function addBudgetEvoSlide(
     realGet: (r) => r.realCm || null,
     budGet: (r) => r.budCm || null,
     fmt: (v) => fmtMoneyAbs(v),
+    showRealPoint: (r) => r.realVol > 0,
     deltaFmt: (delta) => (delta >= 0 ? "+" : "") + fmtMoneyAbs(delta / 1000) + " Mi",
   });
   curY += rowH;

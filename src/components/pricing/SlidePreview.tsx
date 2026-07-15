@@ -208,6 +208,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
         {/* 4 linhas com separadores */}
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
+          showRealPoint={(row) => row.realVol > 0}
           deltaFmt={(v) => (v >= 0 ? "+" : "") + fmtIntBR(v / 1000) + " Mi"} />
         <line x1={35} y1={95 + 135} x2={1295} y2={95 + 135} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135} title="CM/%" data={data}
@@ -225,7 +226,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
 }
 
 function LineRow({
-  y, title, headerNote, data, realKey, budKey, fmt, deltaFmt,
+  y, title, headerNote, data, realKey, budKey, fmt, deltaFmt, showRealPoint,
 }: {
   y: number;
   title: string;
@@ -235,6 +236,7 @@ function LineRow({
   budKey: string;
   fmt: (v: number) => string;
   deltaFmt?: (delta: number) => string;
+  showRealPoint?: (row: PreviewDataRow) => boolean;
 }) {
   const x = 35;
   const w = 1260;
@@ -262,13 +264,20 @@ function LineRow({
   const yOf = (v: number) => plotY + (1 - (v - yMin) / (yMax - yMin)) * plotH;
   const xOf = (i: number) => plotX + colW * (i + 0.5);
 
-  const realPts: { x: number; y: number }[] = [];
+  const realSegments: { x: number; y: number }[][] = [];
+  let currentRealSegment: { x: number; y: number }[] = [];
   const budPts: { x: number; y: number }[] = [];
   data.forEach((r, i) => {
     const a = r[realKey], b = r[budKey];
-    if (a != null && isFinite(a)) realPts.push({ x: xOf(i), y: yOf(a) });
+    if (a != null && isFinite(a) && (showRealPoint?.(r) ?? true)) {
+      currentRealSegment.push({ x: xOf(i), y: yOf(a) });
+    } else if (currentRealSegment.length > 0) {
+      realSegments.push(currentRealSegment);
+      currentRealSegment = [];
+    }
     if (b != null && isFinite(b) && b !== 0) budPts.push({ x: xOf(i), y: yOf(b) });
   });
+  if (currentRealSegment.length > 0) realSegments.push(currentRealSegment);
 
   // Separador vertical Real / Budget
   const sepColIdx = data.findIndex((r) => {
@@ -309,8 +318,12 @@ function LineRow({
       )}
 
       {/* Curves */}
-      <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={7} fill="none"
-        strokeLinecap="round" strokeLinejoin="round" />
+      {realSegments.map((segment, idx) => (
+        segment.length > 1 ? (
+          <path key={idx} d={smoothPathD(segment)} stroke={C.haraldRed} strokeWidth={7} fill="none"
+            strokeLinecap="round" strokeLinejoin="round" />
+        ) : null
+      ))}
       {budPts.length > 0 && (
         <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={5} fill="none"
           strokeLinecap="round" strokeLinejoin="round" strokeDasharray="14,8" />
@@ -338,7 +351,7 @@ function LineRow({
       {data.map((r, i) => {
         const a = r[realKey], b = r[budKey];
         const items: { v: number; color: string }[] = [];
-        if (a != null && isFinite(a) && a !== 0) items.push({ v: a, color: C.haraldRed });
+        if (a != null && isFinite(a) && a !== 0 && (showRealPoint?.(r) ?? true)) items.push({ v: a, color: C.haraldRed });
         if (b != null && isFinite(b) && b !== 0) items.push({ v: b, color: C.black });
         if (items.length === 0) return null;
         items.sort((p, q) => q.v - p.v);
