@@ -8,6 +8,7 @@ import { applyFilters, computeKPIs } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
 import type { PricingRow } from "@/lib/types";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { Lightbulb, PackageCheck, Percent, Scale, Sparkles } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
@@ -16,6 +17,8 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -50,9 +53,19 @@ interface MarginBridgeStep {
   color: string;
 }
 
+interface CohortPoint {
+  monthIndex: number;
+  label: string;
+  [safra: string]: number | string;
+}
+
 const PALETTE = [
   "hsl(var(--primary))",
   "hsl(var(--muted-foreground))",
+  "hsl(var(--success))",
+  "hsl(var(--warning))",
+  "hsl(var(--destructive))",
+  "hsl(var(--accent))",
 ];
 
 function isInnovationRow(row: PricingRow): boolean {
@@ -86,6 +99,14 @@ function monthLabel(row: PricingRow): string {
 
 function formatPp(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp`;
+}
+
+function parseLaunchYear(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const match = String(value).match(/\d{4}/);
+  if (!match) return null;
+  const year = Number(match[0]);
+  return Number.isFinite(year) && year >= 2000 && year <= 2099 ? year : null;
 }
 
 function KpiTile({
@@ -232,6 +253,7 @@ export default function Inovacao() {
   const metric = usePricing((s) => s.metric);
   const filters = usePricing((s) => s.filters);
   const selected = usePricing((s) => s.selectedPeriods);
+  const innovationMap = useInovacaoDepara((s) => s.map);
 
   const filtered = useMemo(() => applyFilters(rows, filters, selected), [rows, filters, selected]);
   const innovationRows = useMemo(() => filtered.filter(isInnovationRow), [filtered]);
@@ -309,6 +331,79 @@ export default function Inovacao() {
       months: points.length,
     };
   }, [monthlyMix]);
+
+  const maturity = useMemo(() => {
+    const firstSeenBySku = new Map<string, { ano: number; mes: number }>();
+    const launchMonthBySku = new Map<string, { ano: number; mes: number; safra: string }>();
+
+    for (const row of rows) {
+      const sku = row.sku?.trim();
+      if (!sku) continue;
+      const current = firstSeenBySku.get(sku);
+      if (!current || row.ano < current.ano || (row.ano === current.ano && row.mes < current.mes)) {
+        firstSeenBySku.set(sku, { ano: row.ano, mes: row.mes });
+      }
+    }
+
+    for (const row of rows) {
+      const sku = row.sku?.trim();
+      if (!sku) continue;
+      const entry = innovationMap[sku];
+      if (!entry || !/inova/i.test(entry.classificacao ?? "")) continue;
+      const launchYear = parseLaunchYear(entry.anoLancamento);
+      if (!launchYear) continue;
+      if (row.ano !== launchYear) continue;
+      const current = launchMonthBySku.get(sku);
+      if (!current || row.mes < current.mes) {
+        launchMonthBySku.set(sku, { ano: launchYear, mes: row.mes, safra: String(launchYear) });
+      }
+    }
+
+    for (const [sku, firstSeen] of firstSeenBySku.entries()) {
+      if (launchMonthBySku.has(sku)) continue;
+      const entry = innovationMap[sku];
+      if (!entry || !/inova/i.test(entry.classificacao ?? "")) continue;
+      const launchYear = parseLaunchYear(entry.anoLancamento);
+      if (!launchYear) continue;
+      launchMonthBySku.set(sku, { ano: firstSeen.ano, mes: firstSeen.mes, safra: String(launchYear) });
+    }
+
+    const acc = new Map<string, Map<number, number>>();
+    for (const row of filtered) {
+      const sku = row.sku?.trim();
+      if (!sku) continue;
+      const launch = launchMonthBySku.get(sku);
+      if (!launch) continue;
+      const monthIndex = (row.ano - launch.ano) * 12 + (row.mes - launch.mes) + 1;
+      if (monthIndex < 1 || monthIndex > 36) continue;
+      const byMonth = acc.get(launch.safra) ?? new Map<number, number>();
+      byMonth.set(monthIndex, (byMonth.get(monthIndex) ?? 0) + row.volumeKg);
+      acc.set(launch.safra, byMonth);
+    }
+
+    const cohorts = Array.from(acc.entries())
+      .map(([safra, byMonth]) => ({
+        safra,
+        total: Array.from(byMonth.values()).reduce((sum, value) => sum + value, 0),
+        months: byMonth.size,
+        byMonth,
+      }))
+      .filter((cohort) => cohort.total > 0)
+      .sort((a, b) => Number(b.safra) - Number(a.safra) || b.total - a.total)
+      .slice(0, 4);
+
+    const maxMonth = Math.max(0, ...cohorts.flatMap((cohort) => Array.from(cohort.byMonth.keys())));
+    const data: CohortPoint[] = Array.from({ length: maxMonth }, (_, index) => {
+      const monthIndex = index + 1;
+      const point: CohortPoint = { monthIndex, label: `M+${monthIndex}` };
+      for (const cohort of cohorts) {
+        if (cohort.byMonth.has(monthIndex)) point[cohort.safra] = cohort.byMonth.get(monthIndex)! / 1000;
+      }
+      return point;
+    });
+
+    return { cohorts, data };
+  }, [filtered, innovationMap, rows]);
 
   if (rows.length === 0) {
     return (
@@ -570,6 +665,95 @@ export default function Inovacao() {
               <span className={innovationMixEffectPp >= 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>{formatPp(innovationMixEffectPp)}</span>{" "}
               e leva o total para <span className="font-semibold text-foreground">{formatPct(totalKpis.margemPct)}</span>.
             </p>
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Curva de maturação por safra" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: {
+              chartType: "line",
+              measure: "volume",
+              dimension: "anoLancamento",
+              filters,
+              selectedPeriods: selected,
+              view: "innovation_cohort_maturity",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Curva de maturação por safra</h2>
+                <p className="text-xs text-muted-foreground">
+                  Volume por ano de lançamento, alinhado por meses desde o lançamento do SKU.
+                </p>
+              </div>
+              <Badge variant="outline">
+                {maturity.cohorts.length} safra{maturity.cohorts.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+
+            {maturity.cohorts.length < 2 ? (
+              <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
+                <div>
+                  <p className="text-sm font-medium">Dados insuficientes para comparar safras</p>
+                  <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                    A curva aparece quando pelo menos duas safras de inovação têm volume no recorte atual.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={330}>
+                  <LineChart data={maturity.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                    <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                    <YAxis
+                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                      tickFormatter={(value) => formatTon(Number(value))}
+                    />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        return (
+                          <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+                            <div className="mb-1 font-semibold">{label}</div>
+                            {payload.map((entry) => (
+                              <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
+                                  Safra {String(entry.dataKey)}
+                                </span>
+                                <span className="tabular-nums text-foreground">{formatTon(Number(entry.value))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => `Safra ${value}`} />
+                    {maturity.cohorts.map((cohort, index) => (
+                      <Line
+                        key={cohort.safra}
+                        type="monotone"
+                        name={cohort.safra}
+                        dataKey={cohort.safra}
+                        stroke={PALETTE[index % PALETTE.length]}
+                        strokeWidth={2.5}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls={false}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Cada linha usa o primeiro mês vendido do SKU como M+1. Safras recentes podem parar antes das demais por ainda não terem meses suficientes.
+                </p>
+              </>
+            )}
           </GlassCard>
         </SendToSlideHover>
 
