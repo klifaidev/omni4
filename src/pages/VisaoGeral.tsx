@@ -461,7 +461,7 @@ export default function VisaoGeral() {
               config: { dim: "skuDesc", variant: "villain", sortBy: "margemPct", topN: 5, filters, selectedPeriods: selected },
             }}
           >
-          <GlassCard className="border-l-4 border-destructive">
+          <GlassCard glow="red" className="border border-destructive/25">
             <h3 className="mb-1 text-sm font-medium text-destructive">⚠️ Ofensores (Top 5 SKUs por Margem %)</h3>
             <p className="mb-4 text-[11px] text-muted-foreground">
               Menor margem % — apenas SKUs com ROL ≥ {formatBRL(minRolForPct, { compact: true })}

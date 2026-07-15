@@ -21,6 +21,7 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
     return variant === "hero" ? b.margem - a.margem : a.margem - b.margem;
   });
   const top = sorted.slice(0, limit);
+  const totalVolumeKg = rows.reduce((sum, r) => sum + Math.max(0, r.volumeKg), 0);
   const max = Math.max(
     ...top.map((r) =>
       sortBy === "volume" ? Math.abs(r.volumeKg) : sortBy === "margemPct" ? Math.abs(r.margemPct) : Math.abs(r.margem),
@@ -43,6 +44,7 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
             : sortBy === "margemPct"
             ? formatPct(r.margemPct)
             : formatBRL(r.margem, { compact: true });
+        const volumeShare = totalVolumeKg > 0 ? r.volumeKg / totalVolumeKg : 0;
         return (
           <li key={r.key} className="animate-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
             <div className="mb-1 flex items-start justify-between gap-2 text-[11px]">
@@ -66,11 +68,23 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
                 style={{ width: `${pct * 100}%`, opacity: 0.85 }}
               />
             </div>
-            <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+            <div
+              className={cn(
+                "mt-1 text-[10px] text-muted-foreground",
+                sortBy === "margemPct" ? "grid grid-cols-3 gap-2" : "flex items-center justify-between",
+              )}
+            >
               {sortBy === "margemPct" ? (
                 <>
-                  <span>{formatBRL(r.margem, { compact: true })}</span>
-                  <span>ROL: {formatBRL(r.rol, { compact: true })}</span>
+                  <span className="truncate" title={formatBRL(r.margem)}>
+                    {formatBRL(r.margem, { compact: true })}
+                  </span>
+                  <span className="truncate text-center" title={formatBRL(r.rol)}>
+                    ROL: {formatBRL(r.rol, { compact: true })}
+                  </span>
+                  <span className="truncate text-right tabular-nums" title={`Importância em volume: ${formatPct(volumeShare)}`}>
+                    Imp. vol: {formatPct(volumeShare)}
+                  </span>
                 </>
               ) : (
                 <>
