@@ -1535,7 +1535,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         if (k === "a") { e.preventDefault(); selectAllOnSlide(); return; }
         if (k === "c" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(false); return; }
         if (k === "x" && !e.shiftKey) { e.preventDefault(); copySelectionToClipboard(true); return; }
-        if (k === "v" && !e.shiftKey) { e.preventDefault(); pasteFromClipboard(); return; }
+        // Ctrl/Cmd+V is handled by the native paste event so image clipboard
+        // items from screenshots can be detected before falling back to blocks.
         if (k === "g" && !e.shiftKey) {
           e.preventDefault();
           if (!canEdit()) return;
@@ -1619,6 +1620,30 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
+    const fitImageToCanvas = (naturalW: number, naturalH: number) => {
+      const maxW = CANVAS_W * 0.62;
+      const maxH = (CANVAS_H - FOOTER_H) * 0.68;
+      const safeW = Math.max(1, naturalW || 600);
+      const safeH = Math.max(1, naturalH || 400);
+      const scale = Math.min(maxW / safeW, maxH / safeH, 1);
+      const w = Math.max(120, Math.round(safeW * scale));
+      const h = Math.max(80, Math.round(safeH * scale));
+      return {
+        w,
+        h,
+        x: Math.round((CANVAS_W - w) / 2),
+        y: Math.round((CANVAS_H - FOOTER_H - h) / 2),
+      };
+    };
+
+    const readImageSize = (src: string) =>
+      new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new window.Image();
+        img.onload = () => resolve(fitImageToCanvas(img.naturalWidth, img.naturalHeight));
+        img.onerror = () => resolve(fitImageToCanvas(600, 400));
+        img.src = src;
+      });
+
     const handlePaste = (e: ClipboardEvent) => {
       const active = document.activeElement;
       const inField =
@@ -1629,7 +1654,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
       const items = Array.from(e.clipboardData?.items ?? []);
       const imageItem = items.find((item) => item.type.startsWith("image/"));
-      if (!imageItem) return;
+      if (!imageItem) {
+        if (crossSlideClipboard && canEdit()) {
+          e.preventDefault();
+          pasteFromClipboard();
+        }
+        return;
+      }
       if (!canEdit()) return;
 
       e.preventDefault();
@@ -1637,20 +1668,24 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const dataUrl = reader.result as string;
-        const W = 600, H = 400;
-        const id = addBlockAction("image");
-        if (!id) return;
-        patchBlockAction(
-          id,
-          { src: dataUrl, w: W, h: H,
-            x: Math.round((CANVAS_W - W) / 2),
-            y: Math.round((CANVAS_H - H) / 2),
-          } as Partial<CustomBlock>,
-          "Colar imagem",
-        );
-        setSelection([id]);
+        const bounds = await readImageSize(dataUrl);
+        const block: ImageBlock = {
+          id: crypto.randomUUID(),
+          kind: "image",
+          z: 1,
+          src: dataUrl,
+          fit: "contain",
+          ...bounds,
+        };
+
+        if (collabYDoc) {
+          insertYBlocks([block]);
+        } else {
+          const id = insertBlockAction(block, "Colar imagem");
+          if (id) setSelection([id]);
+        }
         toast.success("Imagem colada no slide.");
       };
       reader.readAsDataURL(file);
@@ -1658,7 +1693,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [canEdit]);
+  }, [canEdit, collabYDoc, insertYBlocks, pasteFromClipboard]);
 
   // Smart guides ? compute lines + snap target for the dragging block.
   // Snap is applied by react-rnd via onDrag's returned coords; we mutate
