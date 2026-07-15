@@ -1231,11 +1231,6 @@ export async function addBudgetEvoSlide(
   const rowW = 12.6;
   let curY = 0.95;
 
-  const addSep = (atY: number) => slide.addShape("line", {
-    x: rowX, y: atY, w: rowW, h: 0,
-    line: { color: "E2E8F0", width: 0.5 },
-  });
-
   await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM ABS",
@@ -1248,7 +1243,6 @@ export async function addBudgetEvoSlide(
     deltaFmt: (delta) => (delta >= 0 ? "+" : "") + fmtMoneyAbs(delta / 1000) + " Mi",
   });
   curY += rowH;
-  addSep(curY);
 
   await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
@@ -1259,7 +1253,6 @@ export async function addBudgetEvoSlide(
     fmt: (v) => `${(v * 100).toFixed(1)}%`,
   });
   curY += rowH;
-  addSep(curY);
 
   await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
@@ -1270,7 +1263,6 @@ export async function addBudgetEvoSlide(
     fmt: (v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   });
   curY += rowH;
-  addSep(curY);
 
   plotVolBars(slide, {
     x: rowX, y: curY, w: rowW, h: rowH - 0.1,

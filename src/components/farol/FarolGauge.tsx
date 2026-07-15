@@ -39,10 +39,10 @@ export function FarolGauge({
   value,
   size = 200,
   label = "positivado",
-  textColor = "white",
-  mutedTextColor = "rgba(255,255,255,0.5)",
-  trackColor = "rgba(255,255,255,0.12)",
-  innerTrackColor = "rgba(255,255,255,0.03)",
+  textColor = "hsl(var(--foreground))",
+  mutedTextColor = "hsl(var(--muted-foreground))",
+  trackColor = "hsl(var(--border) / 0.55)",
+  innerTrackColor = "hsl(var(--border) / 0.25)",
   glow = true,
 }: FarolGaugeProps) {
   const cx = 100;

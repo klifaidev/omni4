@@ -205,18 +205,15 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
           Overview CM/VOL
         </text>
 
-        {/* 4 linhas com separadores */}
+        {/* 4 linhas de gráficos */}
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
           showRealPoint={(row) => row.realVol > 0}
           deltaFmt={(v) => (v >= 0 ? "+" : "") + fmtIntBR(v / 1000) + " Mi"} />
-        <line x1={35} y1={95 + 135} x2={1295} y2={95 + 135} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135} title="CM/%" data={data}
           realKey="realCmPct" budKey="budCmPct" fmt={(v) => fmtPctBR(v, 1)} />
-        <line x1={35} y1={95 + 135 * 2} x2={1295} y2={95 + 135 * 2} stroke="#E2E8F0" strokeWidth={1} />
         <LineRow y={95 + 135 * 2} title="CM/Kg" data={data}
           realKey="realCmKg" budKey="budCmKg" fmt={(v) => fmtDecimalBR(v, 2)} />
-        <line x1={35} y1={95 + 135 * 3} x2={1295} y2={95 + 135 * 3} stroke="#E2E8F0" strokeWidth={1} />
         <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.vol} />
 
         <HaraldFooterStripe />
