@@ -181,6 +181,36 @@ function MissingLocalData({ label }: { label: string }) {
 }
 
 // -- helpers ---------------------------------------------------------------
+const MOJIBAKE_FIXES: Array<[string, string]> = [
+  ["ÃƒÂ§", "ç"],
+  ["ÃƒÂ£", "ã"],
+  ["ÃƒÂ¡", "á"],
+  ["ÃƒÂ©", "é"],
+  ["ÃƒÂª", "ê"],
+  ["ÃƒÂ­", "í"],
+  ["ÃƒÂ³", "ó"],
+  ["ÃƒÂ´", "ô"],
+  ["ÃƒÂº", "ú"],
+  ["ÃƒÂ‡", "Ç"],
+  ["ÃƒÂƒ", "Ã"],
+  ["Ã§", "ç"],
+  ["Ã£", "ã"],
+  ["Ã¡", "á"],
+  ["Ã©", "é"],
+  ["Ãª", "ê"],
+  ["Ã­", "í"],
+  ["Ã³", "ó"],
+  ["Ã´", "ô"],
+  ["Ãº", "ú"],
+  ["Ã‡", "Ç"],
+  ["Ãƒ", "Ã"],
+  ["â€¦", "..."],
+];
+
+function repairMojibakeLabel(label: string): string {
+  return MOJIBAKE_FIXES.reduce((text, [bad, good]) => text.replaceAll(bad, good), label);
+}
+
 function fmtVal(v: number, style: ChartStyle, fallback: ReturnType<typeof inferFormat>) {
   const f = style.dataLabels.format === "auto" ? fallback : style.dataLabels.format;
   return formatValue(v, f, "rol", style.dataLabels.decimals);
@@ -2200,14 +2230,14 @@ function WaterfallChart({
 
       // ---- DecomposiÃ§Ã£o padrÃ£o por efeitos PVM ----
       return [
-        { label: r.baseLabel,    value: r.base,       type: "start" as const },
+        { label: repairMojibakeLabel(r.baseLabel), value: r.base,       type: "start" as const },
         { label: "Volume",       value: r.volume,     type: t(r.volume) },
-        { label: "PreÃ§o",        value: r.price,      type: t(r.price) },
+        { label: "Preço",        value: r.price,      type: t(r.price) },
         { label: "Custo",        value: r.cost,       type: t(r.cost) },
         { label: "Frete",        value: r.freight,    type: t(r.freight) },
-        { label: "ComissÃ£o",     value: r.commission, type: t(r.commission) },
+        { label: "Comissão",     value: r.commission, type: t(r.commission) },
         { label: "Outros",       value: r.others,     type: t(r.others) },
-        { label: r.currentLabel, value: r.current,    type: "total" as const },
+        { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
       ];
     } catch { return []; }
     });
@@ -2219,7 +2249,7 @@ function WaterfallChart({
     if (wfMode === "pvm") return pvmItems ?? [];
     if (cols && cols.length > 0) {
       const resolved = resolveBridgeColumns(cols, dsRows, block.filters, effectiveMeasure);
-      return resolved.map((r) => ({ label: r.label, value: r.value, type: r.type }));
+      return resolved.map((r) => ({ label: repairMojibakeLabel(r.label), value: r.value, type: r.type }));
     }
     const s0 = series[0];
     if (!s0) return [];
@@ -2253,7 +2283,7 @@ function WaterfallChart({
         signed = v;
         acc = next;
       }
-      return { label: it.label, base, delta, end, signed, type: it.type };
+      return { label: repairMojibakeLabel(it.label), base, delta, end, signed, type: it.type };
     });
   }, [items]);
 
@@ -2304,7 +2334,8 @@ function WaterfallChart({
         const valFmt = (v: number) => formatValue(v, style.dataLabels.format === "auto" ? measureFmt : style.dataLabels.format, "rol", style.dataLabels.decimals);
         const truncLabel = (lbl: string) => {
           const maxChars = Math.max(4, Math.floor(slot / (labelFs * 0.6)));
-          return lbl.length > maxChars ? `${lbl.slice(0, Math.max(1, maxChars - 1))}â€¦` : lbl;
+          const cleanLabel = repairMojibakeLabel(lbl);
+          return cleanLabel.length > maxChars ? `${cleanLabel.slice(0, Math.max(1, maxChars - 1))}...` : cleanLabel;
         };
 
         return (
