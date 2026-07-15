@@ -77,7 +77,8 @@ export default function VisaoGeral() {
   const selected = usePricing((s) => s.selectedPeriods);
 
   const [perfBy, setPerfBy] = useState<PerfBy>("categoria");
-  const [heatMetric, setHeatMetric] = useState<HeatMetric>(metric);
+  const heatMetric: HeatMetric = metric;
+  const heatMetricLabel = heatMetric === "cm" ? "Margem de Contribuição %" : "Margem Bruta %";
 
   const filtered = useMemo(() => applyFilters(rows, filters, selected), [rows, filters, selected]);
   const kpis = useMemo(() => computeKPIs(filtered, metric), [filtered, metric]);
@@ -378,16 +379,9 @@ export default function VisaoGeral() {
                 Identifique padrões sazonais. Cores relativas ao mínimo e máximo do conjunto filtrado.
               </p>
             </div>
-            <ToggleGroup
-              type="single"
-              value={heatMetric}
-              onValueChange={(v) => v && setHeatMetric(v as HeatMetric)}
-              variant="outline"
-              size="sm"
-            >
-              <ToggleGroupItem value="cm">CM%</ToggleGroupItem>
-              <ToggleGroupItem value="mb">MB%</ToggleGroupItem>
-            </ToggleGroup>
+            <Badge variant="outline" className="shrink-0">
+              {heatMetricLabel}
+            </Badge>
           </header>
 
           {!heatmap.hasData ? (
