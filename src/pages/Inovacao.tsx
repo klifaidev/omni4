@@ -59,6 +59,28 @@ interface CohortPoint {
   [safra: string]: number | string;
 }
 
+interface LegacyPairPoint {
+  periodo: string;
+  label: string;
+  innovationTon: number;
+  legacyTon: number;
+}
+
+interface LegacyPairAnalysis {
+  legado: string;
+  launchLabel: string;
+  innovationVolumeKg: number;
+  substitutionKg: number;
+  incrementalKg: number;
+  substitutionPct: number;
+  incrementalPct: number;
+  legacyBeforeAvgKg: number;
+  legacyAfterAvgKg: number;
+  hasLegacyRows: boolean;
+  classification: "Substituição" | "Incremental" | "Misto";
+  series: LegacyPairPoint[];
+}
+
 const PALETTE = [
   "hsl(var(--primary))",
   "hsl(var(--muted-foreground))",
@@ -95,6 +117,10 @@ function classifyTrend(slope: number): "Crescendo" | "Estável" | "Deteriorando"
 
 function monthLabel(row: PricingRow): string {
   return `${String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}`;
+}
+
+function periodRankFromParts(ano: number, mes: number): number {
+  return ano * 12 + mes;
 }
 
 function formatPp(value: number): string {
@@ -404,6 +430,159 @@ export default function Inovacao() {
 
     return { cohorts, data };
   }, [filtered, innovationMap, rows]);
+
+  const legacyImpact = useMemo(() => {
+    const historyRows = applyFilters(rows, filters, null);
+    const firstSeenBySku = new Map<string, { ano: number; mes: number }>();
+    const skuToLegacy = new Map<string, string>();
+    const skuToLaunch = new Map<string, { ano: number; mes: number }>();
+
+    for (const row of rows) {
+      const sku = row.sku?.trim();
+      if (!sku) continue;
+      const current = firstSeenBySku.get(sku);
+      if (!current || periodRankFromParts(row.ano, row.mes) < periodRankFromParts(current.ano, current.mes)) {
+        firstSeenBySku.set(sku, { ano: row.ano, mes: row.mes });
+      }
+    }
+
+    for (const [sku, entry] of Object.entries(innovationMap)) {
+      if (!/inova/i.test(entry.classificacao ?? "")) continue;
+      const legacy = String(entry.legado ?? "").trim();
+      if (legacy) skuToLegacy.set(sku, legacy);
+    }
+
+    for (const row of rows) {
+      const sku = row.sku?.trim();
+      if (!sku || !skuToLegacy.has(sku)) continue;
+      const launchYear = parseLaunchYear(innovationMap[sku]?.anoLancamento);
+      if (!launchYear || row.ano !== launchYear) continue;
+      const current = skuToLaunch.get(sku);
+      if (!current || row.mes < current.mes) skuToLaunch.set(sku, { ano: launchYear, mes: row.mes });
+    }
+
+    for (const [sku] of skuToLegacy.entries()) {
+      if (!skuToLaunch.has(sku)) {
+        const firstSeen = firstSeenBySku.get(sku);
+        if (firstSeen) skuToLaunch.set(sku, firstSeen);
+      }
+    }
+
+    const noLegacyInnovationKg = innovationRows.reduce((sum, row) => {
+      const sku = row.sku?.trim();
+      return sum + (sku && skuToLegacy.has(sku) ? 0 : row.volumeKg);
+    }, 0);
+
+    const pairCodes = Array.from(new Set(Array.from(skuToLegacy.values()))).sort();
+    const pairs: LegacyPairAnalysis[] = [];
+
+    for (const legacyCode of pairCodes) {
+      const skus = Array.from(skuToLegacy.entries())
+        .filter(([, legacy]) => legacy === legacyCode)
+        .map(([sku]) => sku);
+      const skuSet = new Set(skus);
+      const launches = skus.map((sku) => skuToLaunch.get(sku)).filter(Boolean) as { ano: number; mes: number }[];
+      if (launches.length === 0) continue;
+      const launch = launches.sort((a, b) => periodRankFromParts(a.ano, a.mes) - periodRankFromParts(b.ano, b.mes))[0];
+      const launchRank = periodRankFromParts(launch.ano, launch.mes);
+
+      const selectedInnovationKg = filtered.reduce((sum, row) => {
+        const sku = row.sku?.trim();
+        return sum + (sku && skuSet.has(sku) ? row.volumeKg : 0);
+      }, 0);
+      if (selectedInnovationKg <= 0) continue;
+
+      const monthMap = new Map<string, { ano: number; mes: number; label: string; innovationKg: number; legacyKg: number }>();
+      for (const row of historyRows) {
+        const sku = row.sku?.trim();
+        if (!sku) continue;
+        const isPairInnovation = skuSet.has(sku);
+        const isPairLegacy = !isInnovationRow(row) && (row.legado === legacyCode || row.sku === legacyCode);
+        if (!isPairInnovation && !isPairLegacy) continue;
+        const current = monthMap.get(row.periodo) ?? {
+          ano: row.ano,
+          mes: row.mes,
+          label: monthLabel(row),
+          innovationKg: 0,
+          legacyKg: 0,
+        };
+        if (isPairInnovation) current.innovationKg += row.volumeKg;
+        if (isPairLegacy) current.legacyKg += row.volumeKg;
+        monthMap.set(row.periodo, current);
+      }
+
+      const months = Array.from(monthMap.entries())
+        .sort(([, a], [, b]) => periodRankFromParts(a.ano, a.mes) - periodRankFromParts(b.ano, b.mes));
+      const before = months.filter(([, value]) => periodRankFromParts(value.ano, value.mes) < launchRank);
+      const afterSelected = applyFilters(rows, filters, selected).filter((row) => {
+        const rowRank = periodRankFromParts(row.ano, row.mes);
+        return rowRank >= launchRank && !isInnovationRow(row) && (row.legado === legacyCode || row.sku === legacyCode);
+      });
+      const selectedPeriodsForPair = new Set(filtered
+        .filter((row) => {
+          const sku = row.sku?.trim();
+          return sku && skuSet.has(sku);
+        })
+        .map((row) => row.periodo));
+
+      const beforeAvgKg = before.length > 0
+        ? before.reduce((sum, [, value]) => sum + value.legacyKg, 0) / before.length
+        : 0;
+      const afterLegacyKg = afterSelected.reduce((sum, row) => sum + row.volumeKg, 0);
+      const comparableMonths = Math.max(1, selectedPeriodsForPair.size);
+      const expectedLegacyKg = beforeAvgKg * comparableMonths;
+      const legacyDropKg = Math.max(0, expectedLegacyKg - afterLegacyKg);
+      const substitutionKg = Math.min(selectedInnovationKg, legacyDropKg);
+      const incrementalKg = Math.max(0, selectedInnovationKg - substitutionKg);
+      const substitutionPct = selectedInnovationKg > 0 ? substitutionKg / selectedInnovationKg : 0;
+      const incrementalPct = selectedInnovationKg > 0 ? incrementalKg / selectedInnovationKg : 0;
+      const hasLegacyRows = months.some(([, value]) => value.legacyKg > 0);
+      const classification = substitutionPct >= 0.65 ? "Substituição" : incrementalPct >= 0.65 ? "Incremental" : "Misto";
+
+      const series = months
+        .filter(([, value]) => {
+          const rank = periodRankFromParts(value.ano, value.mes);
+          return rank >= launchRank - 6 && rank <= launchRank + 18;
+        })
+        .map(([periodo, value]) => ({
+          periodo,
+          label: value.label,
+          innovationTon: value.innovationKg / 1000,
+          legacyTon: value.legacyKg / 1000,
+        }));
+
+      pairs.push({
+        legado: legacyCode,
+        launchLabel: `${String(launch.mes).padStart(2, "0")}/${String(launch.ano).slice(-2)}`,
+        innovationVolumeKg: selectedInnovationKg,
+        substitutionKg,
+        incrementalKg,
+        substitutionPct,
+        incrementalPct,
+        legacyBeforeAvgKg: beforeAvgKg,
+        legacyAfterAvgKg: afterLegacyKg / comparableMonths,
+        hasLegacyRows,
+        classification,
+        series,
+      });
+    }
+
+    const sortedPairs = pairs.sort((a, b) => b.innovationVolumeKg - a.innovationVolumeKg);
+    const substitutionKg = sortedPairs.reduce((sum, pair) => sum + pair.substitutionKg, 0);
+    const incrementalKg = sortedPairs.reduce((sum, pair) => sum + pair.incrementalKg, 0) + noLegacyInnovationKg;
+    const totalInnovationKg = substitutionKg + incrementalKg;
+
+    return {
+      pairs: sortedPairs,
+      featured: sortedPairs[0] ?? null,
+      noLegacyInnovationKg,
+      substitutionKg,
+      incrementalKg,
+      substitutionPct: totalInnovationKg > 0 ? substitutionKg / totalInnovationKg : 0,
+      incrementalPct: totalInnovationKg > 0 ? incrementalKg / totalInnovationKg : 0,
+      totalInnovationKg,
+    };
+  }, [filtered, filters, innovationMap, innovationRows, rows, selected]);
 
   if (rows.length === 0) {
     return (
@@ -753,6 +932,147 @@ export default function Inovacao() {
                   Cada linha usa o primeiro mês vendido do SKU como M+1. Safras recentes podem parar antes das demais por ainda não terem meses suficientes.
                 </p>
               </>
+            )}
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Substituição vs incremental" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: {
+              chartType: "combo",
+              measure: "volume",
+              dimension: "legado",
+              filters,
+              selectedPeriods: selected,
+              view: "innovation_legacy_incrementality",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Substituição de legado vs crescimento incremental</h2>
+                <p className="text-xs text-muted-foreground">
+                  Estimativa do volume de inovação que substitui produtos legado versus volume líquido adicional.
+                </p>
+              </div>
+              <Badge variant="outline">
+                {legacyImpact.pairs.length} legado{legacyImpact.pairs.length === 1 ? "" : "s"} analisado{legacyImpact.pairs.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+
+            <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Substituição estimada</p>
+                <p className="mt-2 text-2xl font-semibold text-warning">{formatPct(legacyImpact.substitutionPct)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatTon(legacyImpact.substitutionKg / 1000)} do volume de inovação</p>
+              </div>
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Incremental líquido</p>
+                <p className="mt-2 text-2xl font-semibold text-success">{formatPct(legacyImpact.incrementalPct)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatTon(legacyImpact.incrementalKg / 1000)} estimado como volume novo</p>
+              </div>
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sem legado associado</p>
+                <p className="mt-2 text-2xl font-semibold">{formatTon(legacyImpact.noLegacyInnovationKg / 1000)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Tratado como 100% incremental por definição</p>
+              </div>
+            </div>
+
+            {legacyImpact.featured ? (
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-medium">Par em destaque: Legado {legacyImpact.featured.legado}</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Lançamento observado em {legacyImpact.featured.launchLabel}. Linhas em toneladas.
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        legacyImpact.featured.classification === "Substituição"
+                          ? "border-warning/30 bg-warning/10 text-warning"
+                          : legacyImpact.featured.classification === "Incremental"
+                            ? "border-success/30 bg-success/10 text-success"
+                            : "border-primary/30 bg-primary/10 text-primary"
+                      }
+                    >
+                      {legacyImpact.featured.classification}
+                    </Badge>
+                  </div>
+                  {legacyImpact.featured.series.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={legacyImpact.featured.series} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                        <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                        <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} tickFormatter={(value) => formatTon(Number(value))} />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (!active || !payload?.length) return null;
+                            return (
+                              <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+                                <div className="mb-1 font-semibold">{label}</div>
+                                {payload.map((entry) => (
+                                  <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
+                                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                                      <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
+                                      {entry.dataKey === "innovationTon" ? "Inovação" : "Legado"}
+                                    </span>
+                                    <span className="tabular-nums text-foreground">{formatTon(Number(entry.value))}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" name="Inovação" dataKey="innovationTon" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
+                        <Line type="monotone" name="Legado" dataKey="legacyTon" stroke="hsl(var(--muted-foreground))" strokeWidth={2.5} strokeDasharray="5 4" dot={{ r: 3 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
+                      <p className="text-sm text-muted-foreground">Sem série mensal suficiente para o par em destaque.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  {legacyImpact.pairs.slice(0, 3).map((pair) => (
+                    <div key={pair.legado} className="rounded-xl border border-border/50 bg-secondary/25 p-3">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">Legado {pair.legado}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {pair.hasLegacyRows ? `Baseline legado ${formatTon(pair.legacyBeforeAvgKg / 1000)}/mês` : "Sem volume de legado observado"}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="shrink-0">{pair.classification}</Badge>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full bg-warning" style={{ width: `${Math.min(100, pair.substitutionPct * 100)}%` }} />
+                      </div>
+                      <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
+                        <span>{formatPct(pair.substitutionPct)} substituição</span>
+                        <span>{formatPct(pair.incrementalPct)} incremental</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
+                <div>
+                  <p className="text-sm font-medium">Sem pares legado/inovação no recorte</p>
+                  <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                    As inovações sem legado associado continuam classificadas como 100% incrementais.
+                  </p>
+                </div>
+              </div>
             )}
           </GlassCard>
         </SendToSlideHover>
