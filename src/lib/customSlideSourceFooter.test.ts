@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CustomSlideConfig } from "./customSlide";
-import type { PricingRow } from "./types";
 import { buildAutomaticSourceFooterText, getSourceFooterText, type SourceRowsByDataSource } from "./customSlideSourceFooter";
+import type { PricingRow } from "./types";
 
 const baseRows = [
   { periodo: "001.2026", mes: 1, ano: 2026, fy: "FY 2026", fyNum: 2026 },
@@ -65,10 +65,10 @@ describe("customSlideSourceFooter", () => {
     };
 
     expect(buildAutomaticSourceFooterText(config, rowsBySource()))
-      .toBe("Fonte: KE30 (Jan/26) · Superbase (Jan/26–Mar/26)");
+      .toBe("Fonte: KE30 · Superbase");
   });
 
-  it("resolves relative periods against the currently loaded rows", () => {
+  it("keeps relative sources stable when loaded rows change", () => {
     const config: CustomSlideConfig = {
       background: "FFFFFF",
       showHaraldFooter: true,
@@ -96,11 +96,11 @@ describe("customSlideSourceFooter", () => {
       ],
     };
 
-    expect(buildAutomaticSourceFooterText(config, rowsBySource())).toBe("Fonte: KE30 (Fev/26)");
+    expect(buildAutomaticSourceFooterText(config, rowsBySource())).toBe("Fonte: KE30");
     expect(buildAutomaticSourceFooterText(config, rowsBySource([
       ...baseRows,
       { periodo: "004.2026", mes: 4, ano: 2026, fy: "FY 2026", fyNum: 2026 } as PricingRow,
-    ]))).toBe("Fonte: KE30 (Mar/26)");
+    ]))).toBe("Fonte: KE30");
   });
 
   it("uses manual text literally until the slide returns to automatic mode", () => {
