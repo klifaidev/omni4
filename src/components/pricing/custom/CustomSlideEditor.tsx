@@ -61,6 +61,7 @@ import {
   type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
   type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock,
   type OmniCustoEvolucaoBlock, type OmniCustoComposicaoBlock, type OmniCustoPressaoBlock,
+  type OmniPositivacaoBlock, type OmniUfMapBlock,
   type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock,
   type OmniAbcCurvaBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock,
   type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
@@ -283,6 +284,7 @@ type OmniPaletteEntry = { id: string; kind: CustomBlockKind; label: string; icon
 const OMNI_PALETTE: OmniPaletteEntry[] = [
   // Visão Geral
   { id: "omni_evolucao_mensal",      kind: "omni_evolucao_mensal",      label: "Evolução Mensal",      icon: TrendingUp,        group: "Visão Geral" },
+  { id: "omni_positivacao",          kind: "omni_positivacao",          label: "Positivação",          icon: LineChartIcon,     group: "Visão Geral" },
   { id: "omni_heatmap_sazonalidade", kind: "omni_heatmap_sazonalidade", label: "Heatmap Sazonalidade", icon: Grid3x3,           group: "Visão Geral" },
   { id: "omni_herois_ofensores",     kind: "omni_herois_ofensores",     label: "Heróis/Ofensores",     icon: Zap,               group: "Visão Geral" },
   // Canais
@@ -294,6 +296,7 @@ const OMNI_PALETTE: OmniPaletteEntry[] = [
   { id: "omni_custo_pressao",        kind: "omni_custo_pressao",        label: "Pressão de Custo",      icon: Activity,          group: "Custos" },
   // Preço / Bridge
   { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: "Decomp. Preço",         icon: PanelTop,          group: "Preço" },
+  { id: "omni_uf_map",               kind: "omni_uf_map",               label: "Mapa por UF",           icon: Network,           group: "Preço" },
   { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: "Bridge PVM",            icon: GitBranch,         group: "Preço" },
   // ABC / Farol
   { id: "omni_farol",                kind: "omni_farol",                label: "Farol Positivação",     icon: Gauge,             group: "ABC/Farol" },
@@ -3373,6 +3376,10 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
       return <OmniCustoInspector block={block as OmniCustoComposicaoBlock} onChange={onChange as (p: Partial<OmniCustoComposicaoBlock>) => void} />;
     case "omni_custo_pressao":
       return <OmniCustoPressaoInspector block={block as OmniCustoPressaoBlock} onChange={onChange as (p: Partial<OmniCustoPressaoBlock>) => void} />;
+    case "omni_positivacao":
+      return <OmniPositivacaoInspector block={block as OmniPositivacaoBlock} onChange={onChange as (p: Partial<OmniPositivacaoBlock>) => void} />;
+    case "omni_uf_map":
+      return <OmniUfMapInspector block={block as OmniUfMapBlock} onChange={onChange as (p: Partial<OmniUfMapBlock>) => void} />;
     case "omni_price_decomp":
       return <OmniPriceDecompInspector block={block as OmniPriceDecompBlock} onChange={onChange as (p: Partial<OmniPriceDecompBlock>) => void} />;
     case "omni_bridge_pvm":
@@ -5891,6 +5898,75 @@ function OmniCustoPressaoInspector({ block, onChange }: {
         </Row>
         <Row label="Legenda">
           <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
+    </div>
+  );
+}
+
+/** Positivação */
+function OmniPositivacaoInspector({ block, onChange }: {
+  block: OmniPositivacaoBlock;
+  onChange: (p: Partial<OmniPositivacaoBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Positivação" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Dimensão">
+          <SelectField
+            value={block.dim}
+            onChange={(v) => onChange({ dim: v as OmniPositivacaoBlock["dim"] })}
+            options={[
+              { value: "categoria", label: "Categoria" },
+              { value: "marca", label: "Marca" },
+              { value: "canalAjustado", label: "Canal" },
+              { value: "gestorResp", label: "Gestor Resp." },
+            ]}
+          />
+        </Row>
+        <Row label="Tipo">
+          <SelectField
+            value={block.chartType}
+            onChange={(v) => onChange({ chartType: v as OmniPositivacaoBlock["chartType"] })}
+            options={[{ value: "line", label: "Linha" }, { value: "bar", label: "Barra" }, { value: "area", label: "Área" }]}
+          />
+        </Row>
+        <Row label="Top N">
+          <NumberStepper value={block.topN ?? 8} min={3} max={12} step={1} onChange={(v) => onChange({ topN: v })} />
+        </Row>
+        <Row label="Legenda">
+          <ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" />
+        </Row>
+      </Section>
+      <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
+    </div>
+  );
+}
+
+/** Mapa por UF */
+function OmniUfMapInspector({ block, onChange }: {
+  block: OmniUfMapBlock;
+  onChange: (p: Partial<OmniUfMapBlock>) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Mapa por UF" onChange={onChange} />
+      <Section label="Dados">
+        <Row label="Métrica">
+          <SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} />
+        </Row>
+        <Row label="Rótulo">
+          <SelectField
+            value={block.labelMode}
+            onChange={(v) => onChange({ labelMode: v as OmniUfMapBlock["labelMode"] })}
+            options={[
+              { value: "uf", label: "UF" },
+              { value: "value", label: "Valor" },
+              { value: "both", label: "UF + valor" },
+            ]}
+          />
         </Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />

@@ -368,17 +368,25 @@ export default function Preco() {
               <DecompositionCards result={result} />
             </SendToSlideHover>
             <ReadingCard result={result} />
-            <PriceUfMapSection
-              rows={filtered}
-              base={base}
-              comp={comp}
-              periodMode={periodMode}
-              filters={filters}
-              selectedUf={selectedUf}
-              onSelectedUfChange={setSelectedUf}
-              onApplyUfFilter={(values) => setFilter("uf", values)}
-              onProductFilterChange={setFilter}
-            />
+            <SendToSlideHover
+              payload={{
+                source: { page: "Análise de Preço", visualization: "Mapa do Brasil por UF" },
+                target: { blockKind: "omni_uf_map", blockLabel: "Mapa por UF" },
+                config: { metric: "margemPct", labelMode: "both", filters, selectedPeriods: comp ? [comp] : selectedPeriods },
+              }}
+            >
+              <PriceUfMapSection
+                rows={filtered}
+                base={base}
+                comp={comp}
+                periodMode={periodMode}
+                filters={filters}
+                selectedUf={selectedUf}
+                onSelectedUfChange={setSelectedUf}
+                onApplyUfFilter={(values) => setFilter("uf", values)}
+                onProductFilterChange={setFilter}
+              />
+            </SendToSlideHover>
             <SendToSlideHover
               payload={{
                 source: { page: "Análise de Preço", visualization: "Ranking de SKUs por variação de preço" },

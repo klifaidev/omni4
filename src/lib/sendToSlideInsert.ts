@@ -336,6 +336,8 @@ export function buildCustomBlockFromPayload(payload: SendToSlidePayload, config:
     if ("metric" in omni) omni.metric = (asString(payload.config.metric) ?? omni.metric) as OmniBaseBlock["metric"];
     if ("breakdown" in omni) omni.breakdown = asString(payload.config.breakdown);
     if ("dim" in omni) omni.dim = (asString(payload.config.dim) ?? omni.dim) as typeof omni.dim;
+    if ("chartType" in omni) omni.chartType = (asString(payload.config.chartType) ?? omni.chartType) as typeof omni.chartType;
+    if ("labelMode" in omni) omni.labelMode = (asString(payload.config.labelMode) ?? omni.labelMode) as typeof omni.labelMode;
     if ("variant" in omni) omni.variant = (asString(payload.config.variant) ?? omni.variant) as typeof omni.variant;
     if ("sortBy" in omni) omni.sortBy = (asString(payload.config.sortBy) ?? omni.sortBy) as typeof omni.sortBy;
     if ("topN" in omni) omni.topN = asNumber(payload.config.topN) ?? omni.topN;

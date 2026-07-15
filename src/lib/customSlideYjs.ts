@@ -34,6 +34,8 @@ const TEXT_FIELDS_BY_KIND: Record<string, string[]> = {
   omni_custo_evolucao: ["title", "subtitle", "insight"],
   omni_custo_composicao: ["title", "subtitle", "insight"],
   omni_custo_pressao: ["title", "subtitle", "insight"],
+  omni_positivacao: ["title", "subtitle", "insight"],
+  omni_uf_map: ["title", "subtitle", "insight"],
   omni_price_decomp: ["title", "subtitle", "insight"],
   omni_bridge_pvm: ["title", "subtitle", "insight"],
   omni_farol: ["title", "subtitle", "insight"],

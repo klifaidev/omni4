@@ -31,6 +31,8 @@ export type CustomBlockKind =
   | "omni_custo_evolucao"
   | "omni_custo_composicao"
   | "omni_custo_pressao"
+  | "omni_positivacao"
+  | "omni_uf_map"
   | "omni_price_decomp"
   | "omni_bridge_pvm"
   | "omni_farol"
@@ -540,6 +542,18 @@ export interface OmniCustoPressaoBlock extends OmniBaseBlock {
   showCustoFixo: boolean;
 }
 
+export interface OmniPositivacaoBlock extends OmniBaseBlock {
+  kind: "omni_positivacao";
+  dim: "categoria" | "marca" | "canalAjustado" | "gestorResp";
+  chartType: "line" | "bar" | "area";
+  topN: number;
+}
+
+export interface OmniUfMapBlock extends OmniBaseBlock {
+  kind: "omni_uf_map";
+  labelMode: "uf" | "value" | "both";
+}
+
 export interface OmniPriceDecompBlock extends OmniBaseBlock {
   kind: "omni_price_decomp";
   /** Período base (string "FY YYYY" ou periodo "005.2025"). null = auto */
@@ -608,6 +622,8 @@ export type OmniBlock =
   | OmniCustoEvolucaoBlock
   | OmniCustoComposicaoBlock
   | OmniCustoPressaoBlock
+  | OmniPositivacaoBlock
+  | OmniUfMapBlock
   | OmniPriceDecompBlock
   | OmniBridgePvmBlock
   | OmniFarolBlock
@@ -800,6 +816,20 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         periodos: null, canal: null, canalAjustado: null, categoria: null,
         subcategoria: null, marca: null, formato: null, regional: null, uf: null,
       } as OmniCustoPressaoBlock;
+    case "omni_positivacao":
+      return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
+        showTitle: true, showLegend: true, title: "Positivação",
+        metric: "margemPct", dim: "categoria", chartType: "line", topN: 8,
+        periodos: null, canal: null, canalAjustado: null, categoria: null,
+        subcategoria: null, marca: null, formato: null, regional: null, uf: null,
+      } as OmniPositivacaoBlock;
+    case "omni_uf_map":
+      return { id, kind, z, x: 80, y: 120, w: 760, h: 560,
+        showTitle: true, showLegend: false, title: "Mapa por UF",
+        metric: "margemPct", labelMode: "both",
+        periodos: null, canal: null, canalAjustado: null, categoria: null,
+        subcategoria: null, marca: null, formato: null, regional: null, uf: null,
+      } as OmniUfMapBlock;
     case "omni_price_decomp":
       return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
         showTitle: true, showLegend: false, title: "Decomposição de Preço",
@@ -952,6 +982,8 @@ export const BLOCK_LABELS: Record<CustomBlockKind, string> = {
   omni_custo_composicao: "Composição de Custos",
   omni_custo_pressao: "Pressão de Custo sobre Receita",
   omni_price_decomp: "Decomposição de Preço",
+  omni_positivacao: "Positivação",
+  omni_uf_map: "Mapa por UF",
   omni_bridge_pvm: "Bridge PVM",
   omni_farol: "Farol de Positivação",
   omni_abc_curva: "Curva ABC / Pareto",

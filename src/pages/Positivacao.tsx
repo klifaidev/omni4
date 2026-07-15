@@ -109,8 +109,8 @@ export default function Positivacao() {
         <SendToSlideHover
           payload={{
             source: { page: "Positivação", visualization: "Evolutivo de positivação" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: { chartType: "line", measure: "positivacao", breakdown: chartDim, dataSource: "ke30" },
+            target: { blockKind: "omni_positivacao", blockLabel: "Positivação" },
+            config: { chartType: "line", dim: chartDim, topN: 8, dataSource: "ke30" },
           }}
         >
         <GlassCard glow="blue">

@@ -9,6 +9,7 @@ import type {
   OmniEvolucaoMensalBlock, OmniHeatmapSazonalidadeBlock, OmniHeroisOfensoresBlock,
   OmniCanalTrendBlock, OmniCanalMixBlock, OmniCustoEvolucaoBlock, OmniCustoComposicaoBlock,
   OmniCustoPressaoBlock,
+  OmniPositivacaoBlock, OmniUfMapBlock,
   OmniPriceDecompBlock, OmniBridgePvmBlock, OmniFarolBlock,
   OmniAbcCurvaBlock, OmniPortfolioMatrixBlock, OmniAbcBarsBlock,
   OmniMetric,
@@ -57,6 +58,9 @@ import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters"
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 import { resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
+import { buildPositivacaoSeries } from "@/lib/positivacao";
+import { getUfFromRegiao } from "@/lib/deparaComercial";
+import brMapRaw from "@/assets/br.svg?raw";
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -440,6 +444,8 @@ function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId }: BlockR
     case "omni_custo_evolucao":       return <OmniCustoEvolucaoRender block={block} />;
     case "omni_custo_composicao":     return <OmniCustoComposicaoRender block={block} />;
     case "omni_custo_pressao":        return <OmniCustoPressaoRender block={block} />;
+    case "omni_positivacao":          return <OmniPositivacaoRender block={block} />;
+    case "omni_uf_map":               return <OmniUfMapRender block={block} />;
     case "omni_price_decomp":         return <OmniPriceDecompRender block={block} />;
     case "omni_bridge_pvm":           return <OmniBridgePvmRender block={block} />;
     case "omni_farol":                return <OmniFarolRender block={block} />;
@@ -1797,6 +1803,75 @@ function canalTrendValue(pt: ReturnType<typeof computeCanalTrend>[number], metri
   }
 }
 
+type BrazilStatePath = { uf: string; name: string; d: string };
+type UfMapPoint = { uf: string; label: string; x: number; y: number };
+
+const SVG_UF_ID = /^BR([A-Z]{2})$/;
+
+function decodeSvgText(value: string): string {
+  const doc = new DOMParser().parseFromString(`<textarea>${value}</textarea>`, "text/html");
+  return doc.querySelector("textarea")?.value ?? value;
+}
+
+function parseBrazilSvg(raw: string): { states: BrazilStatePath[]; labelPoints: UfMapPoint[] } {
+  const doc = new DOMParser().parseFromString(raw, "image/svg+xml");
+  const states = Array.from(doc.querySelectorAll("g#features path"))
+    .map((path) => {
+      const id = path.getAttribute("id") ?? "";
+      const match = id.match(SVG_UF_ID);
+      const d = path.getAttribute("d") ?? "";
+      if (!match || !d) return null;
+      return { uf: match[1], name: decodeSvgText(path.getAttribute("name") ?? match[1]), d };
+    })
+    .filter((state): state is BrazilStatePath => Boolean(state));
+
+  const labelPoints = Array.from(doc.querySelectorAll("g#label_points circle"))
+    .map((circle) => {
+      const id = circle.getAttribute("id") ?? "";
+      const match = id.match(SVG_UF_ID);
+      if (!match) return null;
+      return {
+        uf: match[1],
+        label: decodeSvgText(circle.getAttribute("class") ?? match[1]),
+        x: Number(circle.getAttribute("cx") ?? 0),
+        y: Number(circle.getAttribute("cy") ?? 0),
+      };
+    })
+    .filter((point): point is UfMapPoint => Boolean(point && point.x && point.y));
+
+  return { states, labelPoints };
+}
+
+function normalizeUf(value: string | undefined | null): string | null {
+  const text = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^[A-Z]{2}$/.test(text)) return text;
+  const brCode = text.match(/\bBR\s*\/\s*([A-Z]{2})\b/)?.[1];
+  return brCode ?? null;
+}
+
+function rowUf(row: PricingRow): string | null {
+  return normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+}
+
+function omniRowValue(row: PricingRow, metric: OmniMetric): number {
+  switch (metric) {
+    case "cm": return row.contribMarginal;
+    case "mb": return row.margemBruta;
+    case "rol": return row.rol;
+    case "volume": return row.volumeKg;
+    case "margemPct": return row.contribMarginal;
+  }
+}
+
+function omniAggregatedValue(sum: { value: number; rol: number }, metric: OmniMetric): number {
+  return metric === "margemPct" ? (sum.rol > 0 ? sum.value / sum.rol : 0) : sum.value;
+}
+
 // ---- omni_evolucao_mensal ----
 function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock }) {
   const pricing = usePricing((s) => s.rows);
@@ -2099,6 +2174,149 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
             <Line type="monotone" dataKey="cf" name="Custo Fixo" stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_positivacao ----
+function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
+  const dim = b.dim ?? "categoria";
+  const series = useMemo(() => buildPositivacaoSeries(filtered, dim, 13), [filtered, dim]);
+
+  if (series.chartData.length === 0 || series.chartKeys.length === 0) return omniEmpty();
+
+  const DataElement = (key: string, i: number) => {
+    const color = OMNI_COLORS[i % OMNI_COLORS.length];
+    if (b.chartType === "bar") {
+      return <Bar key={key} dataKey={key} fill={color} radius={[3, 3, 0, 0]} isAnimationActive={false} />;
+    }
+    if (b.chartType === "area") {
+      return <Area key={key} type="monotone" dataKey={key} stroke={color} fill={`${color}33`} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />;
+    }
+    return <Line key={key} type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />;
+  };
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
+      {b.showTitle && omniTitle(b.title || "Positivação")}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={series.chartData} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
+            <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={44} />
+            <Tooltip formatter={(v: number) => [formatNum(Number(v), 0), "Clientes"]} />
+            {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
+            {series.chartKeys.slice(0, b.topN ?? 8).map(DataElement)}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- omni_uf_map ----
+function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
+  const pricing = usePricing((s) => s.rows);
+  const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
+  const { states, labelPoints } = useMemo(() => parseBrazilSvg(brMapRaw), []);
+  const labelPointByUf = useMemo(() => new Map(labelPoints.map((point) => [point.uf, point])), [labelPoints]);
+  const info = omniMetricInfo(b.metric);
+
+  const data = useMemo(() => {
+    const sums = new Map<string, { value: number; rol: number; volumeKg: number }>();
+    for (const row of filtered) {
+      const uf = rowUf(row);
+      if (!uf) continue;
+      const cur = sums.get(uf) ?? { value: 0, rol: 0, volumeKg: 0 };
+      cur.value += omniRowValue(row, b.metric);
+      cur.rol += row.rol;
+      cur.volumeKg += row.volumeKg;
+      sums.set(uf, cur);
+    }
+    return states.map((state) => {
+      const sum = sums.get(state.uf);
+      const point = labelPointByUf.get(state.uf);
+      return {
+        ...state,
+        label: point?.label ?? state.name,
+        x: point?.x ?? 0,
+        y: point?.y ?? 0,
+        value: sum ? omniAggregatedValue(sum, b.metric) : null,
+        volumeKg: sum?.volumeKg ?? 0,
+      };
+    });
+  }, [filtered, b.metric, states, labelPointByUf]);
+
+  const active = data.filter((point) => point.value !== null && point.volumeKg > 0 && point.x > 0 && point.y > 0);
+  if (active.length === 0) return omniEmpty("Sem dados por UF.");
+
+  const values = active.map((point) => point.value!).filter(Number.isFinite);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const dataByUf = new Map(data.map((point) => [point.uf, point]));
+  const colorFor = (value: number | null) => {
+    if (value === null || !Number.isFinite(value)) return "hsl(var(--muted) / 0.75)";
+    const span = max - min;
+    const t = span > 0 ? (value - min) / span : 0.5;
+    return `hsl(${(t * 220).toFixed(0)} 78% 52%)`;
+  };
+
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 6, overflow: "hidden" }}>
+      {b.showTitle && omniTitle(b.title || "Mapa por UF")}
+      <svg viewBox="0 0 1000 912" role="img" aria-label="Mapa do Brasil por UF" style={{ flex: 1, minHeight: 0, width: "100%" }}>
+        {states.map((state) => {
+          const stateData = dataByUf.get(state.uf);
+          const hasValue = stateData?.value !== null && (stateData?.volumeKg ?? 0) > 0;
+          return (
+            <path
+              key={state.uf}
+              d={state.d}
+              fill={colorFor(stateData?.value ?? null)}
+              opacity={hasValue ? 0.9 : 0.45}
+              stroke={SLIDE_HEX.white}
+              strokeWidth={0.9}
+            >
+              <title>{state.name}{hasValue ? ` - ${info.fmt(stateData!.value!)}` : " - sem dados"}</title>
+            </path>
+          );
+        })}
+        {labelPoints.map((point) => {
+          const stateData = dataByUf.get(point.uf);
+          const hasValue = stateData?.value !== null && (stateData?.volumeKg ?? 0) > 0;
+          if (!hasValue) return null;
+          const text = b.labelMode === "value"
+            ? info.fmt(stateData!.value!)
+            : b.labelMode === "both"
+            ? `${point.uf} ${info.fmt(stateData!.value!)}`
+            : point.uf;
+          return (
+            <text
+              key={point.uf}
+              x={point.x}
+              y={point.y + 5}
+              textAnchor="middle"
+              paintOrder="stroke"
+              stroke={SLIDE_HEX.chart2}
+              strokeWidth={1.2}
+              fill={SLIDE_HEX.white}
+              fontSize={b.labelMode === "both" ? 14 : 18}
+              fontWeight={800}
+              style={{ pointerEvents: "none" }}
+            >
+              {text}
+            </text>
+          );
+        })}
+      </svg>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "hsl(var(--muted-foreground))", padding: "2px 4px" }}>
+        <span>{info.fmt(min)}</span>
+        <div style={{ height: 6, flex: 1, borderRadius: 999, background: "linear-gradient(90deg, hsl(0 78% 52%), hsl(110 78% 52%), hsl(220 78% 52%))" }} />
+        <span>{info.fmt(max)}</span>
       </div>
     </div>
   );
