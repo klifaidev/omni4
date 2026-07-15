@@ -10,7 +10,7 @@ import type { PricingRow } from "@/lib/types";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
 import { Lightbulb, PackageCheck, Percent, Scale, Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -39,6 +39,15 @@ interface InnovationMixPoint {
   regularVolumeKg: number;
   innovation: number;
   regular: number;
+}
+
+interface MarginBridgeStep {
+  label: string;
+  value: number;
+  start: number;
+  end: number;
+  total: boolean;
+  color: string;
 }
 
 const PALETTE = [
@@ -75,6 +84,10 @@ function monthLabel(row: PricingRow): string {
   return `${String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}`;
 }
 
+function formatPp(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp`;
+}
+
 function KpiTile({
   label,
   value,
@@ -85,7 +98,7 @@ function KpiTile({
   label: string;
   value: string;
   helper: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   tone?: "primary" | "success" | "warning" | "destructive";
 }) {
   const toneClass = {
@@ -108,6 +121,91 @@ function KpiTile({
         </div>
       </div>
     </GlassCard>
+  );
+}
+
+function MarginBridge({ steps }: { steps: MarginBridgeStep[] }) {
+  const values = steps.flatMap((step) => [step.start, step.end, 0]);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = Math.max(1, range * 0.16);
+  const yMin = min - pad;
+  const yMax = max + pad;
+  const W = 900;
+  const H = 260;
+  const padL = 56;
+  const padR = 28;
+  const padT = 28;
+  const padB = 58;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xStep = innerW / steps.length;
+  const barW = xStep * 0.52;
+  const yOf = (value: number) => padT + (1 - (value - yMin) / (yMax - yMin || 1)) * innerH;
+  const zeroY = yOf(0);
+  const ticks = [yMin, yMin + (yMax - yMin) / 2, yMax];
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Bridge de margem de inovação">
+        {ticks.map((tick, index) => (
+          <g key={index}>
+            <line
+              x1={padL}
+              x2={W - padR}
+              y1={yOf(tick)}
+              y2={yOf(tick)}
+              stroke="hsl(var(--border))"
+              strokeOpacity={0.32}
+              strokeDasharray={Math.abs(tick) < 0.001 ? "" : "3 4"}
+            />
+            <text x={padL - 8} y={yOf(tick) + 4} textAnchor="end" fontSize="10" fill="hsl(var(--muted-foreground))">
+              {tick.toFixed(1)}%
+            </text>
+          </g>
+        ))}
+
+        {steps.slice(0, -1).map((step, index) => {
+          const next = steps[index + 1];
+          if (next.total) return null;
+          const x1 = padL + index * xStep + xStep / 2 + barW / 2;
+          const x2 = padL + (index + 1) * xStep + xStep / 2 - barW / 2;
+          return (
+            <line
+              key={`connector-${step.label}`}
+              x1={x1}
+              x2={x2}
+              y1={yOf(step.end)}
+              y2={yOf(next.start)}
+              stroke="hsl(var(--muted-foreground))"
+              strokeOpacity={0.38}
+              strokeDasharray="3 3"
+            />
+          );
+        })}
+
+        {steps.map((step, index) => {
+          const x = padL + index * xStep + (xStep - barW) / 2;
+          const top = yOf(Math.max(step.start, step.end));
+          const height = Math.max(3, Math.abs(yOf(step.end) - yOf(step.start)));
+          const rectY = step.total ? Math.min(zeroY, yOf(step.end)) : top;
+          const rectH = step.total ? Math.max(3, Math.abs(yOf(step.end) - zeroY)) : height;
+          const labelY = H - padB + 20;
+          return (
+            <g key={step.label}>
+              <rect x={x} y={rectY} width={barW} height={rectH} rx={5} fill={step.color} opacity={step.total ? 0.92 : 0.82} />
+              <text x={x + barW / 2} y={rectY - 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="hsl(var(--foreground))">
+                {step.total ? `${step.end.toFixed(1)}%` : formatPp(step.value)}
+              </text>
+              <text x={x + barW / 2} y={labelY} textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">
+                {step.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -262,7 +360,35 @@ export default function Inovacao() {
   const volumeMix = totalKpis.volumeKg > 0 ? innovationKpis.volumeKg / totalKpis.volumeKg : 0;
   const rolMix = totalKpis.rol > 0 ? innovationKpis.rol / totalKpis.rol : 0;
   const marginDiffPp = (innovationKpis.margemPct - regularKpis.margemPct) * 100;
+  const innovationRolShare = totalKpis.rol > 0 ? innovationKpis.rol / totalKpis.rol : 0;
+  const innovationMixEffectPp = innovationRolShare * marginDiffPp;
   const metricLabel = metric === "cm" ? "CM" : "MB";
+  const marginBridgeSteps: MarginBridgeStep[] = [
+    {
+      label: "Regular",
+      value: regularKpis.margemPct * 100,
+      start: 0,
+      end: regularKpis.margemPct * 100,
+      total: true,
+      color: "hsl(var(--muted-foreground))",
+    },
+    {
+      label: "Efeito mix inovação",
+      value: innovationMixEffectPp,
+      start: regularKpis.margemPct * 100,
+      end: regularKpis.margemPct * 100 + innovationMixEffectPp,
+      total: false,
+      color: innovationMixEffectPp >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))",
+    },
+    {
+      label: "Total",
+      value: totalKpis.margemPct * 100,
+      start: 0,
+      end: totalKpis.margemPct * 100,
+      total: true,
+      color: "hsl(var(--primary))",
+    },
+  ];
 
   return (
     <>
@@ -285,7 +411,7 @@ export default function Inovacao() {
           />
           <KpiTile
             label={`Diferença de ${metricLabel} %`}
-            value={`${marginDiffPp >= 0 ? "+" : ""}${marginDiffPp.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp`}
+            value={formatPp(marginDiffPp)}
             helper={`Inovação ${formatPct(innovationKpis.margemPct)} vs Regular ${formatPct(regularKpis.margemPct)}`}
             icon={<Percent className="h-5 w-5" />}
             tone={marginDiffPp >= 0 ? "success" : "destructive"}
@@ -339,8 +465,7 @@ export default function Inovacao() {
               <span className="font-semibold text-foreground">{mixTrend.last.toFixed(1)}%</span>
               {mixTrend.months > 1 && (
                 <>
-                  {" "}no período analisado ({mixTrend.deltaPp >= 0 ? "+" : ""}
-                  {mixTrend.deltaPp.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp).
+                  {" "}no período analisado ({formatPp(mixTrend.deltaPp)}).
                 </>
               )}
             </p>
@@ -385,6 +510,66 @@ export default function Inovacao() {
                 <Bar name="Regular" dataKey="regular" stackId="volumeMix" fill={PALETTE[1]} fillOpacity={0.55} />
               </BarChart>
             </ResponsiveContainer>
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Margem Inovação vs Regular" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: {
+              chartType: "waterfall",
+              measure: metric,
+              dimension: "inovacao",
+              filters,
+              selectedPeriods: selected,
+              view: "innovation_margin_bridge",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Margem Inovação vs Regular</h2>
+                <p className="text-xs text-muted-foreground">
+                  Comparativo de {metricLabel} % e efeito do mix de inovação na margem consolidada.
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className={innovationMixEffectPp >= 0 ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"}
+              >
+                {formatPp(innovationMixEffectPp)} no total
+              </Badge>
+            </div>
+
+            <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inovação</p>
+                <p className="mt-2 text-2xl font-semibold">{formatPct(innovationKpis.margemPct)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatPct(innovationRolShare)} do ROL filtrado</p>
+              </div>
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Regular</p>
+                <p className="mt-2 text-2xl font-semibold">{formatPct(regularKpis.margemPct)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatPct(1 - innovationRolShare)} do ROL filtrado</p>
+              </div>
+              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Prêmio de margem</p>
+                <p className={`mt-2 text-2xl font-semibold ${marginDiffPp >= 0 ? "text-success" : "text-destructive"}`}>
+                  {formatPp(marginDiffPp)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">Diferença Inovação - Regular</p>
+              </div>
+            </div>
+
+            <MarginBridge steps={marginBridgeSteps} />
+            <p className="mt-3 text-xs text-muted-foreground">
+              Leitura: se os SKUs de inovação tivessem a margem da linha Regular, a margem consolidada partiria de{" "}
+              <span className="font-semibold text-foreground">{formatPct(regularKpis.margemPct)}</span>. O mix de inovação adiciona{" "}
+              <span className={innovationMixEffectPp >= 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>{formatPp(innovationMixEffectPp)}</span>{" "}
+              e leva o total para <span className="font-semibold text-foreground">{formatPct(totalKpis.margemPct)}</span>.
+            </p>
           </GlassCard>
         </SendToSlideHover>
 
