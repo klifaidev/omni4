@@ -7,6 +7,7 @@ import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import { NoResultsBanner } from "@/components/pricing/NoResultsBanner";
 import { ShortcutsHelp } from "@/components/pricing/ShortcutsHelp";
 import { CommandPalette } from "@/components/pricing/CommandPalette";
+import { SendToSlideDestinationDialog } from "@/components/pricing/SendToSlideDestinationDialog";
 import { useCommandPalette } from "@/store/commandPalette";
 import { useNotifications } from "@/store/notifications";
 import { loadState as loadKanban } from "@/lib/kanban";
@@ -271,6 +272,7 @@ export default function AppShell() {
       </main>
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+      <SendToSlideDestinationDialog />
       <UpdateNotification />
     </div>
   );

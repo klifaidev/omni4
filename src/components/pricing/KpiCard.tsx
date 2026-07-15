@@ -72,5 +72,20 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
 
   if (!sendToSlide) return card;
 
-  return <SendToSlideHover payload={sendToSlide}>{card}</SendToSlideHover>;
+  return (
+    <SendToSlideHover
+      payload={{
+        ...sendToSlide,
+        config: {
+          ...sendToSlide.config,
+          displayValue: value,
+          displaySubValue: subValue,
+          delta,
+          deltaLabel,
+        },
+      }}
+    >
+      {card}
+    </SendToSlideHover>
+  );
 }

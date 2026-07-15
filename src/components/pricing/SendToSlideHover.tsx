@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Send } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { captureSendToSlide, type SendToSlidePayload } from "@/lib/sendToSlide";
 import { cn } from "@/lib/utils";
@@ -23,8 +22,7 @@ export function SendToSlideHover({ payload, children, className }: SendToSlideHo
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          const detail = captureSendToSlide(payload);
-          toast.info(`Configuração capturada: ${detail.source.visualization}`);
+          captureSendToSlide(payload);
         }}
       >
         <Send className="h-3.5 w-3.5" />
