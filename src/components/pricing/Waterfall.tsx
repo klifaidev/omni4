@@ -5,7 +5,7 @@ import { useMemo } from "react";
 interface WaterfallProps {
   data: PVMResult;
   height?: number;
-  /** Ângulo de inclinação dos labels do eixo X. 0 = horizontal (padrão). Sugestão: -35 ou -45. */
+  /** Angulo de inclinacao dos labels do eixo X. 0 = horizontal (padrao). */
   labelAngle?: number;
 }
 
@@ -31,7 +31,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
     [data],
   );
 
-  // Compute bar geometry
   const cumulative: { start: number; end: number; value: number }[] = [];
   let running = 0;
   for (const s of steps) {
@@ -75,7 +74,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
   return (
     <div className="w-full overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-        {/* Grid */}
         {tickVals.map((tv, i) => (
           <g key={i}>
             <line
@@ -93,7 +91,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
           </g>
         ))}
 
-        {/* Connectors */}
         {cumulative.slice(0, -1).map((c, i) => {
           const next = cumulative[i + 1];
           const x1 = padL + i * xStep + xStep / 2 + barW / 2;
@@ -115,13 +112,14 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
           );
         })}
 
-        {/* Bars */}
         {cumulative.map((c, i) => {
           const s = steps[i];
           const x = padL + i * xStep + (xStep - barW) / 2;
           const top = yOf(Math.max(c.start, c.end));
           const h = Math.abs(yOf(c.end) - yOf(c.start));
           const isNeg = !s.total && c.value < 0;
+          const labelX = x + barW / 2;
+          const labelY = H - padB + 14;
           return (
             <g key={`bar-${i}`} className="animate-fade-up">
               <rect
@@ -133,7 +131,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
                 fill={s.color}
                 opacity={isNeg ? 0.85 : 0.95}
               />
-              {/* Value */}
               <text
                 x={x + barW / 2}
                 y={(s.total ? Math.min(zeroY, yOf(c.end)) : top) - 6}
@@ -145,7 +142,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
                 {s.total ? formatBRL(c.value, { compact: true }) :
                   `${c.value >= 0 ? "+" : ""}${formatBRL(c.value, { compact: true })}`}
               </text>
-              {/* Label */}
               {labelAngle === 0 ? (
                 <text
                   x={x + barW / 2}
@@ -159,14 +155,14 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
                 </text>
               ) : (
                 <text
-                  x={x + barW / 2}
-                  y={H - padB + 14}
+                  x={labelX}
+                  y={labelY}
                   fontSize="11"
                   textAnchor="end"
                   dominantBaseline="middle"
                   fill="hsl(var(--muted-foreground))"
                   fontWeight="500"
-                  transform={`rotate(${labelAngle}, ${x + barW / 2}, ${H - padB + 14})`}
+                  transform={`rotate(${labelAngle}, ${labelX}, ${labelY})`}
                 >
                   {s.label}
                 </text>
@@ -175,7 +171,6 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
           );
         })}
 
-        {/* Zero line */}
         <line x1={padL} x2={W - padR} y1={zeroY} y2={zeroY} stroke="hsl(var(--border))" strokeOpacity={0.6} />
       </svg>
     </div>
