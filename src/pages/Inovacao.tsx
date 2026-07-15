@@ -4,7 +4,7 @@ import { DataTable, type DataTableColumn } from "@/components/pricing/DataTable"
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { Badge } from "@/components/ui/badge";
-import { applyFilters, computeKPIs } from "@/lib/analytics";
+import { applyFilters, computeKPIs, getKpiComparisonContext, measureOf } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
 import type { PricingRow } from "@/lib/types";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -79,6 +79,25 @@ interface LegacyPairAnalysis {
   hasLegacyRows: boolean;
   classification: "Substituição" | "Incremental" | "Misto";
   series: LegacyPairPoint[];
+}
+
+interface HeroVillainRow {
+  sku: string;
+  label: string;
+  volumeKg: number;
+  volumeDeltaKg: number;
+  margemPct: number;
+  margemDeltaPp: number;
+  rol: number;
+}
+
+interface ChannelMixRow {
+  canal: string;
+  innovationVolumeKg: number;
+  regularVolumeKg: number;
+  innovationPenetration: number;
+  regularPenetration: number;
+  innovationMix: number;
 }
 
 const PALETTE = [
@@ -584,6 +603,110 @@ export default function Inovacao() {
     };
   }, [filtered, filters, innovationMap, innovationRows, rows, selected]);
 
+  const heroesOffenders = useMemo(() => {
+    const prevCtx = getKpiComparisonContext(rows, filters, selected);
+    const previousInnovationRows = prevCtx ? prevCtx.previousRows.filter(isInnovationRow) : [];
+    const previousBySku = new Map<string, { volumeKg: number; margem: number; rol: number }>();
+
+    for (const row of previousInnovationRows) {
+      const key = row.sku || row.skuDesc || "—";
+      const current = previousBySku.get(key) ?? { volumeKg: 0, margem: 0, rol: 0 };
+      current.volumeKg += row.volumeKg;
+      current.margem += measureOf(row, metric);
+      current.rol += row.rol;
+      previousBySku.set(key, current);
+    }
+
+    const currentBySku = new Map<string, HeroVillainRow>();
+    for (const row of innovationRows) {
+      const key = row.sku || row.skuDesc || "—";
+      const current = currentBySku.get(key) ?? {
+        sku: key,
+        label: row.skuDesc || row.sku || "—",
+        volumeKg: 0,
+        volumeDeltaKg: 0,
+        margemPct: 0,
+        margemDeltaPp: 0,
+        rol: 0,
+      };
+      current.volumeKg += row.volumeKg;
+      current.rol += row.rol;
+      current.margemPct += measureOf(row, metric);
+      currentBySku.set(key, current);
+    }
+
+    const rowsBySku = Array.from(currentBySku.values()).map((item) => {
+      const prev = previousBySku.get(item.sku);
+      const margemAbs = item.margemPct;
+      const currentMarginPct = item.rol > 0 ? margemAbs / item.rol : 0;
+      const prevMarginPct = prev && prev.rol > 0 ? prev.margem / prev.rol : 0;
+      return {
+        ...item,
+        margemPct: currentMarginPct,
+        margemDeltaPp: currentMarginPct - prevMarginPct,
+        volumeDeltaKg: item.volumeKg - (prev?.volumeKg ?? 0),
+      };
+    });
+
+    const minVolumeKg = Math.max(1, innovationKpis.volumeKg * 0.005);
+    const eligible = rowsBySku.filter((item) => item.volumeKg >= minVolumeKg || Math.abs(item.volumeDeltaKg) >= minVolumeKg);
+    return {
+      heroes: [...eligible]
+        .filter((item) => item.volumeDeltaKg > 0 || item.margemDeltaPp > 0)
+        .sort((a, b) => (b.volumeDeltaKg - a.volumeDeltaKg) || (b.margemDeltaPp - a.margemDeltaPp))
+        .slice(0, 5),
+      offenders: [...eligible]
+        .filter((item) => item.volumeDeltaKg < 0 || item.margemDeltaPp < 0)
+        .sort((a, b) => (a.volumeDeltaKg - b.volumeDeltaKg) || (a.margemDeltaPp - b.margemDeltaPp))
+        .slice(0, 5),
+      comparisonLabel: prevCtx?.label ?? "sem período anterior comparável",
+    };
+  }, [filters, innovationKpis.volumeKg, innovationRows, metric, rows, selected]);
+
+  const priceComparison = useMemo(() => {
+    const innovationPrice = innovationKpis.volumeKg > 0 ? innovationKpis.rol / innovationKpis.volumeKg : 0;
+    const regularPrice = regularKpis.volumeKg > 0 ? regularKpis.rol / regularKpis.volumeKg : 0;
+    const delta = innovationPrice - regularPrice;
+    const deltaPct = regularPrice > 0 ? delta / regularPrice : 0;
+    return {
+      innovationPrice,
+      regularPrice,
+      delta,
+      deltaPct,
+      data: [
+        { name: "Inovação", value: innovationPrice },
+        { name: "Regular", value: regularPrice },
+      ],
+    };
+  }, [innovationKpis, regularKpis]);
+
+  const channelMix = useMemo<ChannelMixRow[]>(() => {
+    const map = new Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>();
+    for (const row of filtered) {
+      const canal = row.canalAjustado || row.canal || "Sem canal";
+      const current = map.get(canal) ?? { innovationVolumeKg: 0, regularVolumeKg: 0 };
+      if (isInnovationRow(row)) current.innovationVolumeKg += row.volumeKg;
+      else current.regularVolumeKg += row.volumeKg;
+      map.set(canal, current);
+    }
+
+    return Array.from(map.entries())
+      .map(([canal, value]) => {
+        const total = value.innovationVolumeKg + value.regularVolumeKg;
+        return {
+          canal,
+          innovationVolumeKg: value.innovationVolumeKg,
+          regularVolumeKg: value.regularVolumeKg,
+          innovationPenetration: total > 0 ? value.innovationVolumeKg / total : 0,
+          regularPenetration: total > 0 ? value.regularVolumeKg / total : 0,
+          innovationMix: innovationKpis.volumeKg > 0 ? value.innovationVolumeKg / innovationKpis.volumeKg : 0,
+        };
+      })
+      .filter((item) => item.innovationVolumeKg > 0 || item.regularVolumeKg > 0)
+      .sort((a, b) => b.innovationVolumeKg - a.innovationVolumeKg)
+      .slice(0, 8);
+  }, [filtered, innovationKpis.volumeKg]);
+
   if (rows.length === 0) {
     return (
       <>
@@ -1073,6 +1196,219 @@ export default function Inovacao() {
                   </p>
                 </div>
               </div>
+            )}
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Heróis e ofensores de inovação" },
+            target: { blockKind: "omni_herois_ofensores", blockLabel: "Heróis e Ofensores" },
+            config: {
+              metric,
+              filters,
+              selectedPeriods: selected,
+              scope: "inovacao",
+              view: "innovation_heroes_offenders",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Heróis e ofensores de inovação</h2>
+                <p className="text-xs text-muted-foreground">
+                  Maiores altas e quedas entre SKUs de inovação ({heroesOffenders.comparisonLabel}).
+                </p>
+              </div>
+              <Badge variant="outline">{metricLabel}</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-xl border border-success/25 bg-success/5 p-4">
+                <h3 className="mb-3 text-sm font-medium text-success">Heróis</h3>
+                <div className="space-y-2">
+                  {heroesOffenders.heroes.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Sem altas relevantes no recorte.</p>
+                  ) : (
+                    heroesOffenders.heroes.map((item) => (
+                      <div key={item.sku} className="rounded-lg border border-border/50 bg-background/40 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{item.label}</p>
+                            <p className="text-[11px] text-muted-foreground">{item.sku}</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-success">{formatTon(item.volumeDeltaKg / 1000)}</span>
+                        </div>
+                        <div className="mt-2 flex justify-between gap-3 text-[11px] text-muted-foreground">
+                          <span>Volume atual {formatTon(item.volumeKg / 1000)}</span>
+                          <span>{formatPp(item.margemDeltaPp * 100)} margem</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
+                <h3 className="mb-3 text-sm font-medium text-destructive">Ofensores</h3>
+                <div className="space-y-2">
+                  {heroesOffenders.offenders.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Sem quedas relevantes no recorte.</p>
+                  ) : (
+                    heroesOffenders.offenders.map((item) => (
+                      <div key={item.sku} className="rounded-lg border border-border/50 bg-background/40 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{item.label}</p>
+                            <p className="text-[11px] text-muted-foreground">{item.sku}</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-destructive">{formatTon(item.volumeDeltaKg / 1000)}</span>
+                        </div>
+                        <div className="mt-2 flex justify-between gap-3 text-[11px] text-muted-foreground">
+                          <span>Volume atual {formatTon(item.volumeKg / 1000)}</span>
+                          <span>{formatPp(item.margemDeltaPp * 100)} margem</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Preço médio Inovação vs Regular" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: {
+              chartType: "column",
+              measure: "precoMedio",
+              dimension: "inovacao",
+              filters,
+              selectedPeriods: selected,
+              view: "innovation_price_comparison",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Preço médio Inovação vs Regular</h2>
+                <p className="text-xs text-muted-foreground">Comparação de ROL/kg no período filtrado.</p>
+              </div>
+              <Badge
+                variant="outline"
+                className={priceComparison.delta >= 0 ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"}
+              >
+                {priceComparison.delta >= 0 ? "+" : ""}
+                {formatBRL(priceComparison.delta, { digits: 2 })}/kg
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="grid grid-cols-1 gap-3">
+                <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inovação</p>
+                  <p className="mt-2 text-2xl font-semibold">{formatBRL(priceComparison.innovationPrice, { digits: 2 })}/kg</p>
+                </div>
+                <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Regular</p>
+                  <p className="mt-2 text-2xl font-semibold">{formatBRL(priceComparison.regularPrice, { digits: 2 })}/kg</p>
+                </div>
+              </div>
+
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={priceComparison.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                  <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                    tickFormatter={(value) => formatBRL(Number(value), { digits: 2 })}
+                  />
+                  <Tooltip formatter={(value) => [`${formatBRL(Number(value), { digits: 2 })}/kg`, "Preço médio"]} />
+                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <p className="mt-3 text-xs text-muted-foreground">
+              Diferença relativa: {formatPct(priceComparison.deltaPct)} vs. Regular.
+            </p>
+          </GlassCard>
+        </SendToSlideHover>
+
+        <SendToSlideHover
+          payload={{
+            source: { page: "Inovação", visualization: "Mix de inovação por canal" },
+            target: { blockKind: "omni_canal_mix", blockLabel: "Mix por Canal" },
+            config: {
+              measure: "volume",
+              dimension: "canalAjustado",
+              filters,
+              selectedPeriods: selected,
+              scope: "inovacao",
+              view: "innovation_channel_mix",
+            },
+          }}
+        >
+          <GlassCard>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium">Mix de inovação por canal</h2>
+                <p className="text-xs text-muted-foreground">
+                  Penetração da inovação dentro de cada canal, comparada à linha Regular.
+                </p>
+              </div>
+              <Badge variant="outline">Top {channelMix.length}</Badge>
+            </div>
+
+            {channelMix.length === 0 ? (
+              <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
+                <p className="text-sm text-muted-foreground">Sem canais com volume no recorte atual.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={channelMix} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 96 }}>
+                  <CartesianGrid stroke="hsl(var(--border) / 0.35)" strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    domain={[0, 1]}
+                    tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`}
+                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                  />
+                  <YAxis type="category" dataKey="canal" width={92} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0].payload as ChannelMixRow;
+                      return (
+                        <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+                          <div className="mb-1 font-semibold">{label}</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">Penetração Inovação</span>
+                              <span>{formatPct(row.innovationPenetration)}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">Penetração Regular</span>
+                              <span>{formatPct(row.regularPenetration)}</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">Volume Inovação</span>
+                              <span>{formatTon(row.innovationVolumeKg / 1000)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar name="Inovação" dataKey="innovationPenetration" stackId="penetration" fill="hsl(var(--primary))" fillOpacity={0.9} />
+                  <Bar name="Regular" dataKey="regularPenetration" stackId="penetration" fill="hsl(var(--muted-foreground))" fillOpacity={0.45} />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </GlassCard>
         </SendToSlideHover>
