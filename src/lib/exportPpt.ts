@@ -1192,7 +1192,7 @@ function plotVolBars(
   }
 
   // Legenda posicionada abaixo das barras
-  const legY = plotY + plotH + 0.05;
+  const legY = plotY + plotH + 0.35;
   const legX = plotX + plotW - 1.5;
   slide.addShape("rect", { x: legX, y: legY + 0.05, w: 0.2, h: 0.1, fill: { color: PPT_COLORS.haraldRed }, line: { color: PPT_COLORS.haraldRed, width: 0 } });
   slide.addText("REAL", { x: legX + 0.23, y: legY, w: 0.4, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: PPT_COLORS.haraldRed, margin: 0 });

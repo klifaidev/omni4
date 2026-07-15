@@ -465,7 +465,7 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
       )}
 
       {/* Legenda REAL / BUDGET — canto inferior direito do plot */}
-      <g transform={`translate(${plotX + plotW - 180} ${y + h + 8})`}>
+      <g transform={`translate(${plotX + plotW - 180} ${y + h + 34})`}>
         <rect width={18} height={10} fill={C.haraldRed} />
         <text x={26} y={9} fontFamily="Calibri" fontSize="11" fontWeight={700} fill={C.ink}>REAL</text>
         <rect x={80} width={18} height={10} fill={C.black} />
