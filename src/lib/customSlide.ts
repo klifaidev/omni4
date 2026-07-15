@@ -4,6 +4,7 @@
 
 import type { Filters } from "./types";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
+import type { PeriodSelectionMode, RelativePeriodPreset } from "./relativePeriods";
 
 export const CANVAS_W = 1333;
 export const CANVAS_H = 750;
@@ -138,6 +139,8 @@ export interface KpiBlock extends BaseBlock {
   periodMode?: KpiPeriodMode;
   /** Período específico (FY string ou periodo "005.2025") */
   periodValue?: string | null;
+  periodSelectionMode?: PeriodSelectionMode;
+  relativePeriod?: RelativePeriodPreset;
   /** Filtros adicionais aplicados ao bloco */
   filters?: Filters;
   /** Formato; "auto" infere a partir da medida */
@@ -283,6 +286,10 @@ export interface BridgeBlock extends BaseBlock {
   kind: "bridge";
   base: string | null;
   comp: string | null;
+  baseSelectionMode?: PeriodSelectionMode;
+  baseRelativePeriod?: RelativePeriodPreset;
+  compSelectionMode?: PeriodSelectionMode;
+  compRelativePeriod?: RelativePeriodPreset;
   mode: "fy" | "month";
   filters: Filters;
 }
@@ -407,6 +414,8 @@ export interface TopSkuBlock extends BaseBlock {
   topN: number;
   periodMode: KpiPeriodMode;
   periodValue?: string | null;
+  periodSelectionMode?: PeriodSelectionMode;
+  relativePeriod?: RelativePeriodPreset;
   filters: Filters;
   showShare: boolean;
   title?: string;
@@ -424,6 +433,8 @@ export interface DreBlock extends BaseBlock {
   kind: "dre";
   /** Períodos a exibir. null = últimos 6 meses disponíveis. */
   periodos: string[] | null;
+  periodosSelectionMode?: PeriodSelectionMode;
+  periodosRelativePeriod?: RelativePeriodPreset;
   /** Modo de período. Default "month". */
   periodMode: "month" | "fy";
   /** Linhas a exibir (IDs de DreLine). null = todas. */
@@ -535,6 +546,10 @@ export interface OmniPriceDecompBlock extends OmniBaseBlock {
   base: string | null;
   /** Período comparação. null = auto */
   comp: string | null;
+  baseSelectionMode?: PeriodSelectionMode;
+  baseRelativePeriod?: RelativePeriodPreset;
+  compSelectionMode?: PeriodSelectionMode;
+  compRelativePeriod?: RelativePeriodPreset;
   periodMode: "fy" | "month";
 }
 
@@ -542,6 +557,10 @@ export interface OmniBridgePvmBlock extends OmniBaseBlock {
   kind: "omni_bridge_pvm";
   base: string | null;
   comp: string | null;
+  baseSelectionMode?: PeriodSelectionMode;
+  baseRelativePeriod?: RelativePeriodPreset;
+  compSelectionMode?: PeriodSelectionMode;
+  compRelativePeriod?: RelativePeriodPreset;
   periodMode: "fy" | "month";
 }
 
@@ -656,8 +675,10 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         label: "ROL", valueSize: 36, color: "C8102E",
         source: "dynamic",
         measure: "rol",
-        periodMode: "all",
+        periodMode: "month",
         periodValue: null,
+        periodSelectionMode: "relative",
+        relativePeriod: "latest_month_minus_1",
         filters: {},
         format: "auto",
         manualValue: "",
@@ -676,7 +697,10 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         shadowOpacity: 30, shadowBlur: 8, shadowX: 2, shadowY: 2 };
     case "bridge":
       return { id, kind, z, x: 60, y: 200, w: 1200, h: 380,
-        base: null, comp: null, mode: "month", filters: {} };
+        base: null, comp: null, mode: "month",
+        baseSelectionMode: "relative", baseRelativePeriod: "latest_month_minus_2",
+        compSelectionMode: "relative", compRelativePeriod: "latest_month_minus_1",
+        filters: {} };
     case "table":
       return { id, kind, z, x: 60, y: 200, w: 1200, h: 360,
         source: "ke30", dataSource: "ke30",
@@ -696,7 +720,8 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
       return {
         id, kind, z, x: 60, y: 180, w: 700, h: 420,
         dim: "skuDesc", measure: "cm", topN: 10,
-        periodMode: "all", periodValue: null,
+        periodMode: "month", periodValue: null,
+        periodSelectionMode: "relative", relativePeriod: "latest_month_minus_1",
         filters: {}, showShare: true, title: "Top SKUs",
         autoFit: true, showOthers: false, exportNote: false,
         dataSource: "ke30",
@@ -706,6 +731,8 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         id, kind, z,
         x: 60, y: 180, w: 1200, h: 400,
         periodos: null,
+        periodosSelectionMode: "relative",
+        periodosRelativePeriod: "latest_month_minus_1",
         periodMode: "month",
         linhas: null,
         showBudget: false,
@@ -777,6 +804,8 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
       return { id, kind, z, x: 60, y: 160, w: 1200, h: 380,
         showTitle: true, showLegend: false, title: "Decomposição de Preço",
         metric: "cm", base: null, comp: null, periodMode: "month",
+        baseSelectionMode: "relative", baseRelativePeriod: "latest_month_minus_2",
+        compSelectionMode: "relative", compRelativePeriod: "latest_month_minus_1",
         periodos: null, canal: null, canalAjustado: null, categoria: null,
         subcategoria: null, marca: null, formato: null, regional: null, uf: null,
       } as OmniPriceDecompBlock;
@@ -784,6 +813,8 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
       return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
         showTitle: true, showLegend: false, title: "Bridge PVM",
         metric: "cm", base: null, comp: null, periodMode: "month",
+        baseSelectionMode: "relative", baseRelativePeriod: "latest_month_minus_2",
+        compSelectionMode: "relative", compRelativePeriod: "latest_month_minus_1",
         periodos: null, canal: null, canalAjustado: null, categoria: null,
         subcategoria: null, marca: null, formato: null, regional: null, uf: null,
       } as OmniBridgePvmBlock;

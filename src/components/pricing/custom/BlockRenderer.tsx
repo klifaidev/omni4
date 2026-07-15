@@ -56,6 +56,7 @@ import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
+import { resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -574,7 +575,9 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   // When a cross-filter period is active, override the block's own
   // periodMode so computeKpiBlock doesn't double-filter into an empty set.
   const effectiveBlock = useMemo<KpiBlock>(
-    () => (periodFilterValues.length > 0 ? { ...b, periodMode: "all", periodValue: null } : b),
+    () => (periodFilterValues.length > 0
+      ? { ...b, periodMode: "all", periodValue: null, periodSelectionMode: "fixed", relativePeriod: undefined }
+      : b),
     [b, periodFilterValues.length],
   );
 
@@ -582,6 +585,11 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   const measureLabel = b.source === "dynamic"
     ? KPI_MEASURES.find((m) => m.id === b.measure)?.label
     : null;
+  const periodDescriptor = b.periodMode && b.periodMode !== "all"
+    ? b.periodSelectionMode === "relative"
+      ? `Relativo: ${relativePeriodLabel(b.relativePeriod)}`
+      : b.periodValue ?? ""
+    : b.periodMode === "all" ? "Todos os períodos" : "";
 
   const cardBg = b.cardBg ?? "F8FAFC";
   const isTransparent = cardBg === "transparent";
@@ -602,9 +610,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
     const labelText = b.label || measureLabel || "KPI";
     const footerText = b.source === "dynamic"
-      ? `${measureLabel ?? ""}${b.periodMode && b.periodMode !== "all" && b.periodValue
-          ? ` · ${b.periodValue}`
-          : b.periodMode === "all" ? " · Todos os períodos" : ""}`
+      ? `${measureLabel ?? ""}${periodDescriptor ? ` · ${periodDescriptor}` : ""}`
       : "";
     return (
       <svg width="100%" height="100%" viewBox={`0 0 ${b.w} ${b.h}`} preserveAspectRatio="none" style={{ display: "block", overflow: "visible" }}>
@@ -679,9 +685,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       {b.source === "dynamic" && (
         <div style={{ fontSize: 11, color: SLIDE_HEX.slate400, marginTop: 6 }}>
           {measureLabel}
-          {b.periodMode && b.periodMode !== "all" && b.periodValue
-            ? ` · ${b.periodValue}`
-            : b.periodMode === "all" ? " · Todos os períodos" : ""}
+          {periodDescriptor ? ` · ${periodDescriptor}` : ""}
         </div>
       )}
     </div>
@@ -716,26 +720,34 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricing), [pricing]);
+  const filteredRows = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
+  const baseKey = useMemo(
+    () => resolvePeriodValue(filteredRows, b.mode, b.base, b.baseSelectionMode, b.baseRelativePeriod),
+    [filteredRows, b.mode, b.base, b.baseSelectionMode, b.baseRelativePeriod],
+  );
+  const compKey = useMemo(
+    () => resolvePeriodValue(filteredRows, b.mode, b.comp, b.compSelectionMode, b.compRelativePeriod),
+    [filteredRows, b.mode, b.comp, b.compSelectionMode, b.compRelativePeriod],
+  );
 
   const bridgeCacheInput = useMemo<SlideCalcCacheKeyInput>(() => ({
     op: "custom-bridge-pvm",
     slideId: cacheSlideId,
     blockId: b.id,
     dataSource: "ke30",
-    dataSignature: `${pricingSignature}:${JSON.stringify({ filters: b.filters, base: b.base, comp: b.comp, mode: b.mode })}`,
-    params: { metric, base: b.base, comp: b.comp, mode: b.mode, filters: b.filters },
-  }), [cacheSlideId, b.id, b.filters, b.base, b.comp, b.mode, pricingSignature, metric]);
+    dataSignature: `${pricingSignature}:${JSON.stringify({ filters: b.filters, base: baseKey, comp: compKey, mode: b.mode })}`,
+    params: { metric, base: baseKey, comp: compKey, mode: b.mode, filters: b.filters },
+  }), [cacheSlideId, b.id, b.filters, baseKey, compKey, b.mode, pricingSignature, metric]);
   const bridgeCacheKey = useMemo(() => buildSlideCalcCacheKey(bridgeCacheInput), [bridgeCacheInput]);
-  const filteredRows = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const labels = useMemo(() => {
     if (b.mode !== "month") return undefined;
     return {
-      base: (() => { const r = filteredRows.find((x) => x.periodo === b.base); return r ? monthLabel(r.mes, r.ano) : b.base!; })(),
-      comp: (() => { const r = filteredRows.find((x) => x.periodo === b.comp); return r ? monthLabel(r.mes, r.ano) : b.comp!; })(),
+      base: (() => { const r = filteredRows.find((x) => x.periodo === baseKey); return r ? monthLabel(r.mes, r.ano) : baseKey!; })(),
+      comp: (() => { const r = filteredRows.find((x) => x.periodo === compKey); return r ? monthLabel(r.mes, r.ano) : compKey!; })(),
     };
-  }, [b.mode, b.base, b.comp, filteredRows]);
+  }, [b.mode, baseKey, compKey, filteredRows]);
   const bridgeCalc = useAsyncBlockCalc<PVMResult | null>(
-    !!b.base && !!b.comp && b.base !== b.comp,
+    !!baseKey && !!compKey && baseKey !== compKey,
     null,
     bridgeCacheKey,
     () => calcPvmAsync({
@@ -743,18 +755,18 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
       rows: filteredRows,
       filters: {},
       metric,
-      base: b.base!,
-      comp: b.comp!,
+      base: baseKey!,
+      comp: compKey!,
       mode: b.mode,
       labels,
     }),
   );
   const pvmResult = useMemo(() => {
-    if (!b.base || !b.comp || b.base === b.comp) return { kind: "unconfigured" as const };
+    if (!baseKey || !compKey || baseKey === compKey) return { kind: "unconfigured" as const };
     if (bridgeCalc.loading) return { kind: "loading" as const };
     if (!bridgeCalc.value) return { kind: "error" as const };
     return { kind: "ok" as const, data: bridgeCalc.value };
-  }, [b.base, b.comp, bridgeCalc.loading, bridgeCalc.value]);
+  }, [baseKey, compKey, bridgeCalc.loading, bridgeCalc.value]);
 
   if (pvmResult.kind !== "ok") {
     return (
@@ -1181,8 +1193,18 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const rows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
-    () => computeTopRanking(rows, b.filters, b.dim, b.measure, 9999, b.periodMode, b.periodValue),
-    [rows, b.filters, b.dim, b.measure, b.periodMode, b.periodValue],
+    () => computeTopRanking(
+      rows,
+      b.filters,
+      b.dim,
+      b.measure,
+      9999,
+      b.periodMode,
+      b.periodValue,
+      b.periodSelectionMode,
+      b.relativePeriod,
+    ),
+    [rows, b.filters, b.dim, b.measure, b.periodMode, b.periodValue, b.periodSelectionMode, b.relativePeriod],
   );
   const fit = resolveTopSkuFit(b, allItems.length);
   const visible = allItems.slice(0, fit.shown);
@@ -1311,9 +1333,15 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     const allMonths = [...months].sort((a, b) =>
       a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
     );
-    if (!blk.periodos || blk.periodos.length === 0) return allMonths.slice(-6);
-    return allMonths.filter((m) => blk.periodos!.includes(m.periodo));
-  }, [months, blk.periodos]);
+    const selected = resolvePeriodValues(
+      sourceRows,
+      blk.periodos,
+      blk.periodosSelectionMode,
+      blk.periodosRelativePeriod,
+    );
+    if (!selected || selected.length === 0) return allMonths.slice(-6);
+    return allMonths.filter((m) => selected.includes(m.periodo));
+  }, [months, sourceRows, blk.periodos, blk.periodosSelectionMode, blk.periodosRelativePeriod]);
 
   const aggsByCol = useMemo(() => {
     const map = new Map<string, ReturnType<typeof aggregate>>();
@@ -2121,14 +2149,16 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
-    if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
+    const relativeBase = resolvePeriodValue(filtered, b.periodMode, b.base, b.baseSelectionMode, b.baseRelativePeriod);
+    const relativeComp = resolvePeriodValue(filtered, b.periodMode, b.comp, b.compSelectionMode, b.compRelativePeriod);
+    if (relativeBase && relativeComp) return { baseKey: relativeBase, compKey: relativeComp };
     const opts = b.periodMode === "fy"
       ? Array.from(new Set(filtered.map((r) => r.fy))).sort()
       : months.map((m) => m.periodo);
     const compKey = opts[opts.length - 1] ?? "";
     const baseKey = opts[opts.length - 2] ?? "";
     return { baseKey, compKey };
-  }, [filtered, b.base, b.comp, b.periodMode, months]);
+  }, [filtered, b.base, b.comp, b.baseSelectionMode, b.baseRelativePeriod, b.compSelectionMode, b.compRelativePeriod, b.periodMode, months]);
 
   const result = useMemo(
     () => computePriceDecomposition(filtered, baseKey, compKey, b.periodMode),
@@ -2168,12 +2198,14 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
-    if (b.base && b.comp) return { baseKey: b.base, compKey: b.comp };
+    const relativeBase = resolvePeriodValue(filtered, b.periodMode, b.base, b.baseSelectionMode, b.baseRelativePeriod);
+    const relativeComp = resolvePeriodValue(filtered, b.periodMode, b.comp, b.compSelectionMode, b.compRelativePeriod);
+    if (relativeBase && relativeComp) return { baseKey: relativeBase, compKey: relativeComp };
     const opts = b.periodMode === "fy"
       ? Array.from(new Set(filtered.map((r) => r.fy))).sort()
       : months.map((m) => m.periodo);
     return { baseKey: opts[opts.length - 2] ?? "", compKey: opts[opts.length - 1] ?? "" };
-  }, [filtered, b.base, b.comp, b.periodMode, months]);
+  }, [filtered, b.base, b.comp, b.baseSelectionMode, b.baseRelativePeriod, b.compSelectionMode, b.compRelativePeriod, b.periodMode, months]);
 
   const result = useMemo(() => {
     if (!baseKey || !compKey) return null;

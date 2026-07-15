@@ -120,6 +120,14 @@ import {
   setYTextValue,
   yDocToCustomSlideConfig,
 } from "@/lib/customSlideYjs";
+import {
+  DEFAULT_BASE_RELATIVE_MONTH_PRESET,
+  DEFAULT_RELATIVE_MONTH_PRESET,
+  RELATIVE_FY_PRESETS,
+  RELATIVE_MONTH_PRESETS,
+  type PeriodSelectionMode,
+  type RelativePeriodPreset,
+} from "@/lib/relativePeriods";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
@@ -133,6 +141,43 @@ function unavailableHintForSource(ds: BlockDataSource | undefined): string | und
   if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
+}
+
+function defaultRelativePresetForMode(mode: "month" | "fy"): RelativePeriodPreset {
+  return mode === "fy" ? "latest_fy_minus_1" : DEFAULT_RELATIVE_MONTH_PRESET;
+}
+
+function relativeOptionsForMode(mode: "month" | "fy") {
+  return mode === "fy" ? RELATIVE_FY_PRESETS : RELATIVE_MONTH_PRESETS;
+}
+
+function PeriodModeBadge({ mode }: { mode: PeriodSelectionMode }) {
+  return (
+    <Badge variant={mode === "relative" ? "default" : "secondary"} className="h-4 px-1.5 text-[9px]">
+      {mode === "relative" ? "Relativo" : "Fixo"}
+    </Badge>
+  );
+}
+
+function RelativePresetSelect({
+  mode,
+  value,
+  onChange,
+}: {
+  mode: "month" | "fy";
+  value: RelativePeriodPreset | undefined;
+  onChange: (value: RelativePeriodPreset) => void;
+}) {
+  const options = relativeOptionsForMode(mode);
+  const safeValue = value ?? defaultRelativePresetForMode(mode);
+  return (
+    <Select value={safeValue} onValueChange={(v) => onChange(v as RelativePeriodPreset)}>
+      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
 }
 import {
   useEditorBinding, useUndoRedoState,
@@ -3620,6 +3665,7 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
   const months = useMonthsInfo();
   const fyList = useFyList();
   const periodMode = block.periodMode ?? "all";
+  const periodSelectionMode = block.periodSelectionMode ?? "fixed";
   const periodOpts = periodMode === "fy"
     ? fyList.map((f) => ({ value: f, label: f }))
     : periodMode === "month"
@@ -3679,7 +3725,15 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
             <div>
               <Label className="text-[10px] uppercase text-muted-foreground">Período</Label>
               <Select value={periodMode}
-                onValueChange={(v) => onChange({ periodMode: v as never, periodValue: null } as never)}>
+                onValueChange={(v) => {
+                  const nextMode = v as "all" | "month" | "fy";
+                  onChange({
+                    periodMode: nextMode as never,
+                    periodValue: null,
+                    periodSelectionMode: nextMode === "all" ? "fixed" : (block.periodSelectionMode ?? "relative"),
+                    relativePeriod: nextMode === "all" ? undefined : defaultRelativePresetForMode(nextMode),
+                  } as never);
+                }}>
                 <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
@@ -3690,17 +3744,50 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
             </div>
             {periodMode !== "all" && (
               <div>
-                <Label className="text-[10px] uppercase text-muted-foreground">Valor</Label>
-                <Select value={block.periodValue ?? ""}
-                  onValueChange={(v) => onChange({ periodValue: v } as never)}>
-                  <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-                  <SelectContent>
-                    {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="mb-1 flex items-center justify-between">
+                  <Label className="text-[10px] uppercase text-muted-foreground">Valor</Label>
+                  <PeriodModeBadge mode={periodSelectionMode} />
+                </div>
+                {periodSelectionMode === "relative" ? (
+                  <RelativePresetSelect
+                    mode={periodMode}
+                    value={block.relativePeriod}
+                    onChange={(v) => onChange({ relativePeriod: v, periodValue: null } as never)}
+                  />
+                ) : (
+                  <Select value={block.periodValue ?? ""}
+                    onValueChange={(v) => onChange({ periodValue: v } as never)}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
+                    <SelectContent>
+                      {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
           </div>
+          {periodMode !== "all" && (
+            <div className="grid grid-cols-2 gap-1">
+              {(["relative", "fixed"] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  size="sm"
+                  variant={periodSelectionMode === mode ? "default" : "outline"}
+                  className="h-7 text-[11px]"
+                  onClick={() => onChange({
+                    periodSelectionMode: mode,
+                    periodValue: mode === "relative" ? null : block.periodValue,
+                    relativePeriod: mode === "relative"
+                      ? block.relativePeriod ?? defaultRelativePresetForMode(periodMode)
+                      : block.relativePeriod,
+                  } as never)}
+                >
+                  {mode === "relative" ? "Relativo" : "Fixo"}
+                </Button>
+              ))}
+            </div>
+          )}
           <div>
             <Label className="text-[10px] uppercase text-muted-foreground">Formato</Label>
             <Select value={block.format ?? "auto"}
@@ -3743,6 +3830,74 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
 }
 
 // ---------------------------------------------------------------------------
+function ComparePeriodField({
+  label,
+  mode,
+  fixedValue,
+  selectionMode,
+  relativeValue,
+  options,
+  onChange,
+}: {
+  label: string;
+  mode: "month" | "fy";
+  fixedValue: string | null;
+  selectionMode?: PeriodSelectionMode;
+  relativeValue?: RelativePeriodPreset;
+  options: { value: string; label: string }[];
+  onChange: (patch: {
+    value?: string | null;
+    selectionMode?: PeriodSelectionMode;
+    relativePeriod?: RelativePeriodPreset;
+  }) => void;
+}) {
+  const activeMode = selectionMode ?? "fixed";
+  const defaultPreset = label === "Base" && mode === "month"
+    ? DEFAULT_BASE_RELATIVE_MONTH_PRESET
+    : defaultRelativePresetForMode(mode);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
+        <PeriodModeBadge mode={activeMode} />
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        {(["relative", "fixed"] as const).map((m) => (
+          <Button
+            key={m}
+            type="button"
+            size="sm"
+            variant={activeMode === m ? "default" : "outline"}
+            className="h-7 text-[11px]"
+            onClick={() => onChange({
+              selectionMode: m,
+              value: m === "relative" ? null : fixedValue,
+              relativePeriod: m === "relative" ? relativeValue ?? defaultPreset : relativeValue,
+            })}
+          >
+            {m === "relative" ? "Relativo" : "Fixo"}
+          </Button>
+        ))}
+      </div>
+      {activeMode === "relative" ? (
+        <RelativePresetSelect
+          mode={mode}
+          value={relativeValue ?? defaultPreset}
+          onChange={(v) => onChange({ relativePeriod: v, value: null })}
+        />
+      ) : (
+        <Select value={fixedValue ?? ""} onValueChange={(v) => onChange({ value: v })}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
+          <SelectContent>
+            {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 function BridgeBlockEditor({ block, onChange }: {
   block: Extract<CustomBlock, { kind: "bridge" }>;
   onChange: (p: Partial<CustomBlock>) => void;
@@ -3757,7 +3912,18 @@ function BridgeBlockEditor({ block, onChange }: {
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Modo</Label>
         <Select value={block.mode}
-          onValueChange={(v) => onChange({ mode: v as "fy"|"month", base: null, comp: null } as never)}>
+          onValueChange={(v) => {
+            const nextMode = v as "fy" | "month";
+            onChange({
+              mode: nextMode,
+              base: null,
+              comp: null,
+              baseSelectionMode: block.baseSelectionMode ?? "relative",
+              baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2",
+              compSelectionMode: block.compSelectionMode ?? "relative",
+              compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+            } as never);
+          }}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="month">Mês a mês</SelectItem>
@@ -3766,24 +3932,32 @@ function BridgeBlockEditor({ block, onChange }: {
         </Select>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Base</Label>
-          <Select value={block.base ?? ""} onValueChange={(v) => onChange({ base: v } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-            <SelectContent>
-              {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Comparação</Label>
-          <Select value={block.comp ?? ""} onValueChange={(v) => onChange({ comp: v } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-            <SelectContent>
-              {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        <ComparePeriodField
+          label="Base"
+          mode={block.mode}
+          fixedValue={block.base}
+          selectionMode={block.baseSelectionMode}
+          relativeValue={block.baseRelativePeriod}
+          options={opts}
+          onChange={(p) => onChange({
+            base: p.value,
+            baseSelectionMode: p.selectionMode,
+            baseRelativePeriod: p.relativePeriod,
+          } as never)}
+        />
+        <ComparePeriodField
+          label="Comparação"
+          mode={block.mode}
+          fixedValue={block.comp}
+          selectionMode={block.compSelectionMode}
+          relativeValue={block.compRelativePeriod}
+          options={opts}
+          onChange={(p) => onChange({
+            comp: p.value,
+            compSelectionMode: p.selectionMode,
+            compRelativePeriod: p.relativePeriod,
+          } as never)}
+        />
       </div>
     </div>
   );
@@ -4033,6 +4207,7 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
 }) {
   const months = useMonthsInfo();
   const fyList = useFyList();
+  const periodSelectionMode = block.periodSelectionMode ?? "fixed";
   const periodOpts = block.periodMode === "fy"
     ? fyList.map((f) => ({ value: f, label: f }))
     : block.periodMode === "month"
@@ -4088,7 +4263,15 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Período</Label>
         <Select value={block.periodMode}
-          onValueChange={(v) => onChange({ periodMode: v as never, periodValue: null } as never)}>
+          onValueChange={(v) => {
+            const nextMode = v as "all" | "month" | "fy";
+            onChange({
+              periodMode: nextMode as never,
+              periodValue: null,
+              periodSelectionMode: nextMode === "all" ? "fixed" : (block.periodSelectionMode ?? "relative"),
+              relativePeriod: nextMode === "all" ? undefined : defaultRelativePresetForMode(nextMode),
+            } as never);
+          }}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
@@ -4099,14 +4282,47 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
       </div>
       {block.periodMode !== "all" && (
         <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Valor do período</Label>
-          <Select value={block.periodValue ?? ""}
-            onValueChange={(v) => onChange({ periodValue: v } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-            <SelectContent>
-              {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="mb-1 flex items-center justify-between">
+            <Label className="text-[10px] uppercase text-muted-foreground">Valor do período</Label>
+            <PeriodModeBadge mode={periodSelectionMode} />
+          </div>
+          {periodSelectionMode === "relative" ? (
+            <RelativePresetSelect
+              mode={block.periodMode}
+              value={block.relativePeriod}
+              onChange={(v) => onChange({ relativePeriod: v, periodValue: null } as never)}
+            />
+          ) : (
+            <Select value={block.periodValue ?? ""}
+              onValueChange={(v) => onChange({ periodValue: v } as never)}>
+              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
+              <SelectContent>
+                {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      )}
+      {block.periodMode !== "all" && (
+        <div className="grid grid-cols-2 gap-1">
+          {(["relative", "fixed"] as const).map((mode) => (
+            <Button
+              key={mode}
+              type="button"
+              size="sm"
+              variant={periodSelectionMode === mode ? "default" : "outline"}
+              className="h-7 text-[11px]"
+              onClick={() => onChange({
+                periodSelectionMode: mode,
+                periodValue: mode === "relative" ? null : block.periodValue,
+                relativePeriod: mode === "relative"
+                  ? block.relativePeriod ?? defaultRelativePresetForMode(block.periodMode)
+                  : block.relativePeriod,
+              } as never)}
+            >
+              {mode === "relative" ? "Relativo" : "Fixo"}
+            </Button>
+          ))}
         </div>
       )}
       <NumField label="Top N" value={block.topN}
@@ -4369,6 +4585,7 @@ function DreBlockInspector({ block, onChange }: {
   onChange: (patch: Partial<DreBlock>) => void;
 }) {
   const months = useMonthsInfo();
+  const periodosSelectionMode = block.periodosSelectionMode ?? "fixed";
   const allMonths = [...months].sort((a, b) =>
     a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
   );
@@ -4380,17 +4597,45 @@ function DreBlockInspector({ block, onChange }: {
         <Row label="Modo">
           <Segmented
             value={block.periodMode}
-            onChange={(v) => onChange({ periodMode: v as "month" | "fy" })}
+            onChange={(v) => onChange({
+              periodMode: v as "month" | "fy",
+              periodos: null,
+              periodosRelativePeriod: v === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+            })}
             options={[{ value: "month", label: "Mês" }, { value: "fy", label: "Ano" }]}
           />
         </Row>
+        <Row label="Tipo">
+          <div className="flex items-center gap-1">
+            <Segmented
+              value={periodosSelectionMode}
+              onChange={(v) => onChange({
+                periodosSelectionMode: v as PeriodSelectionMode,
+                periodos: v === "relative" ? null : block.periodos,
+                periodosRelativePeriod: v === "relative"
+                  ? block.periodosRelativePeriod ?? defaultRelativePresetForMode(block.periodMode)
+                  : block.periodosRelativePeriod,
+              })}
+              options={[{ value: "relative", label: "Relativo" }, { value: "fixed", label: "Fixo" }]}
+            />
+            <PeriodModeBadge mode={periodosSelectionMode} />
+          </div>
+        </Row>
         <Row label="Períodos">
-          <MultiSelectFilter
-            options={allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
-            selected={block.periodos ?? []}
-            onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
-            placeholder="Últimos 6 meses"
-          />
+          {periodosSelectionMode === "relative" ? (
+            <RelativePresetSelect
+              mode={block.periodMode}
+              value={block.periodosRelativePeriod}
+              onChange={(v) => onChange({ periodosRelativePeriod: v, periodos: null })}
+            />
+          ) : (
+            <MultiSelectFilter
+              options={allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
+              selected={block.periodos ?? []}
+              onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
+              placeholder="Últimos 6 meses"
+            />
+          )}
         </Row>
       </Section>
 
@@ -5658,18 +5903,39 @@ function OmniPriceDecompInspector({ block, onChange }: {
   block: OmniPriceDecompBlock;
   onChange: (p: Partial<OmniPriceDecompBlock>) => void;
 }) {
+  const months = useMonthsInfo();
+  const fyList = useFyList();
+  const opts = block.periodMode === "fy"
+    ? fyList.map((f) => ({ value: f, label: f }))
+    : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Decomposição de Preço" onChange={onChange} />
       <Section label="Períodos">
         <Row label="Modo">
-          <SelectField value={block.periodMode} onChange={(v) => onChange({ periodMode: v as "fy" | "month" })}
-            options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
+          <SelectField value={block.periodMode} onChange={(v) => {
+            const nextMode = v as "fy" | "month";
+            onChange({
+              periodMode: nextMode,
+              base: null,
+              comp: null,
+              baseSelectionMode: block.baseSelectionMode ?? "relative",
+              baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2",
+              compSelectionMode: block.compSelectionMode ?? "relative",
+              compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+            });
+          }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
         </Row>
-        <Row label="Base"><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
-          value={block.base ?? ""} onChange={(e) => onChange({ base: e.target.value || null })} /></Row>
-        <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
-          value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
+        <Row label="Base">
+          <ComparePeriodField label="Base" mode={block.periodMode} fixedValue={block.base}
+            selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts}
+            onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} />
+        </Row>
+        <Row label="Comp.">
+          <ComparePeriodField label="Comparação" mode={block.periodMode} fixedValue={block.comp}
+            selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts}
+            onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} />
+        </Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -5681,18 +5947,39 @@ function OmniBridgePvmInspector({ block, onChange }: {
   block: OmniBridgePvmBlock;
   onChange: (p: Partial<OmniBridgePvmBlock>) => void;
 }) {
+  const months = useMonthsInfo();
+  const fyList = useFyList();
+  const opts = block.periodMode === "fy"
+    ? fyList.map((f) => ({ value: f, label: f }))
+    : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Bridge PVM" onChange={onChange} />
       <Section label="Períodos">
         <Row label="Modo">
-          <SelectField value={block.periodMode} onChange={(v) => onChange({ periodMode: v as "fy" | "month" })}
-            options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
+          <SelectField value={block.periodMode} onChange={(v) => {
+            const nextMode = v as "fy" | "month";
+            onChange({
+              periodMode: nextMode,
+              base: null,
+              comp: null,
+              baseSelectionMode: block.baseSelectionMode ?? "relative",
+              baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2",
+              compSelectionMode: block.compSelectionMode ?? "relative",
+              compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+            });
+          }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
         </Row>
-        <Row label="Base"><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
-          value={block.base ?? ""} onChange={(e) => onChange({ base: e.target.value || null })} /></Row>
-        <Row label="Comp."><input className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs" placeholder="auto"
-          value={block.comp ?? ""} onChange={(e) => onChange({ comp: e.target.value || null })} /></Row>
+        <Row label="Base">
+          <ComparePeriodField label="Base" mode={block.periodMode} fixedValue={block.base}
+            selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts}
+            onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} />
+        </Row>
+        <Row label="Comp.">
+          <ComparePeriodField label="Comparação" mode={block.periodMode} fixedValue={block.comp}
+            selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts}
+            onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} />
+        </Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>

@@ -7,6 +7,7 @@ import { clienteId } from "./farol";
 import type { KpiBlock, KpiMeasureId, KpiPeriodMode, KpiFormat } from "./customSlide";
 import { formatBRL, formatNum, formatPct, monthLabel } from "./format";
 import { POSITIVACAO_DIMS } from "./positivacao";
+import { resolvePeriodValue, type PeriodSelectionMode, type RelativePeriodPreset } from "./relativePeriods";
 
 function periodFilter(rows: PricingRow[], mode: KpiPeriodMode, value?: string | null): PricingRow[] {
   if (mode === "all" || !value) return rows;
@@ -107,10 +108,12 @@ export function formatValue(
 export function computeKpiBlock(rows: PricingRow[], block: KpiBlock): string {
   if (block.source === "manual") return block.manualValue ?? "—";
   const measure = block.measure ?? "rol";
+  const mode = block.periodMode ?? "all";
+  const value = resolvePeriodValue(rows, mode, block.periodValue, block.periodSelectionMode, block.relativePeriod);
   const filtered = periodFilter(
     applyFilters(rows, block.filters ?? {}, null),
-    block.periodMode ?? "all",
-    block.periodValue,
+    mode,
+    value,
   );
   const agg = aggregateKpi(filtered);
   return formatValue(pickMeasure(agg, measure), block.format ?? "auto", measure);
@@ -197,8 +200,11 @@ export function computeTopRanking(
   topN: number,
   periodMode: KpiPeriodMode,
   periodValue?: string | null,
+  periodSelectionMode?: PeriodSelectionMode,
+  relativePeriod?: RelativePeriodPreset,
 ): { name: string; value: number; share: number }[] {
-  const filtered = periodFilter(applyFilters(rows, filters, null), periodMode, periodValue);
+  const resolvedPeriodValue = resolvePeriodValue(rows, periodMode, periodValue, periodSelectionMode, relativePeriod);
+  const filtered = periodFilter(applyFilters(rows, filters, null), periodMode, resolvedPeriodValue);
   const map = new Map<string, KpiAgg>();
   for (const r of filtered) {
     const k = dimValue(r, dim);
