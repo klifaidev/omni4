@@ -10,8 +10,8 @@ import type {
 
 export type SlideBrandStyleTarget = "text" | "kpi" | "shape" | "table" | "dre";
 
-export const SLIDE_DEFAULT_FONT_LABEL = "Inter";
-export const SLIDE_DEFAULT_FONT_FAMILY = "Inter";
+export const SLIDE_DEFAULT_FONT_LABEL = "Calibri";
+export const SLIDE_DEFAULT_FONT_FAMILY = "Calibri, sans-serif";
 
 export interface SlideBrandStyle {
   id: string;
@@ -39,7 +39,7 @@ export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
       italic: false,
       color: "C8102E",
       align: "left",
-      fontFamily: "Inter",
+      fontFamily: SLIDE_DEFAULT_FONT_FAMILY,
       letterSpacing: 0,
       lineHeight: 1.05,
       textShadow: "",
@@ -61,7 +61,7 @@ export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
       italic: false,
       color: "475569",
       align: "left",
-      fontFamily: "Inter",
+      fontFamily: SLIDE_DEFAULT_FONT_FAMILY,
       letterSpacing: 0,
       lineHeight: 1.35,
       textShadow: "",
@@ -84,7 +84,7 @@ export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
       italic: false,
       color: "C8102E",
       align: "left",
-      fontFamily: "Inter",
+      fontFamily: SLIDE_DEFAULT_FONT_FAMILY,
       letterSpacing: 0,
       lineHeight: 1.25,
       textShadow: "",

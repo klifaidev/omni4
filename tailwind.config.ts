@@ -136,6 +136,9 @@ export default {
       backdropBlur: {
         xs: "2px",
       },
+      fontFamily: {
+        sans: ["Calibri", "Carlito", "Arial", "sans-serif"],
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

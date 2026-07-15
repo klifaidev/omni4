@@ -61,7 +61,7 @@ const TEXT = (
 ): TemplateBlock => ({
   kind: "text", z, x, y, w, h,
   text, size, color, align,
-  fontFamily: "Inter",
+  fontFamily: "Calibri, sans-serif",
   letterSpacing: 0,
   lineHeight: 1.28,
   textTransform: "none",

@@ -4347,7 +4347,6 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
 // ---------------------------------------------------------------------------
 const FONT_FAMILIES = [
   { value: SLIDE_DEFAULT_FONT_FAMILY, label: SLIDE_DEFAULT_FONT_LABEL },
-  { value: "Calibri, sans-serif", label: "Calibri" },
   { value: "Arial, sans-serif", label: "Arial" },
   { value: "Georgia, serif", label: "Georgia" },
   { value: "Verdana, sans-serif", label: "Verdana" },
