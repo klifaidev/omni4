@@ -127,13 +127,14 @@ export function buildAutomaticSourceFooterText(
     }
   }
 
-  return SOURCE_ORDER
+  const body = SOURCE_ORDER
     .filter((source) => periodsBySource.has(source))
     .map((source) => {
       const range = formatRange(periodsBySource.get(source) ?? [], rowsBySource[source] ?? []);
       return range ? `${sourceFooterLabel(source)} (${range})` : sourceFooterLabel(source);
     })
     .join(" · ");
+  return body ? `Fonte: ${body}` : "";
 }
 
 export function getSourceFooterText(

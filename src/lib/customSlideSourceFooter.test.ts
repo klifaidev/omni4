@@ -65,7 +65,7 @@ describe("customSlideSourceFooter", () => {
     };
 
     expect(buildAutomaticSourceFooterText(config, rowsBySource()))
-      .toBe("KE30 (Jan/26) · Superbase (Jan/26–Mar/26)");
+      .toBe("Fonte: KE30 (Jan/26) · Superbase (Jan/26–Mar/26)");
   });
 
   it("resolves relative periods against the currently loaded rows", () => {
@@ -96,11 +96,11 @@ describe("customSlideSourceFooter", () => {
       ],
     };
 
-    expect(buildAutomaticSourceFooterText(config, rowsBySource())).toBe("KE30 (Fev/26)");
+    expect(buildAutomaticSourceFooterText(config, rowsBySource())).toBe("Fonte: KE30 (Fev/26)");
     expect(buildAutomaticSourceFooterText(config, rowsBySource([
       ...baseRows,
       { periodo: "004.2026", mes: 4, ano: 2026, fy: "FY 2026", fyNum: 2026 } as PricingRow,
-    ]))).toBe("KE30 (Mar/26)");
+    ]))).toBe("Fonte: KE30 (Mar/26)");
   });
 
   it("uses manual text literally until the slide returns to automatic mode", () => {
