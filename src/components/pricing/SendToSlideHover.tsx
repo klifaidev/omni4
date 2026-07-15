@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { captureSendToSlide, type SendToSlidePayload } from "@/lib/sendToSlide";
+import { isSendToSlideEnabledForPage } from "@/lib/sendToSlideRollout";
 import { cn } from "@/lib/utils";
 
 interface SendToSlideHoverProps {
@@ -11,6 +12,10 @@ interface SendToSlideHoverProps {
 }
 
 export function SendToSlideHover({ payload, children, className }: SendToSlideHoverProps) {
+  if (!isSendToSlideEnabledForPage(payload.source.page)) {
+    return <>{children}</>;
+  }
+
   return (
     <div className={cn("group/send-slide relative", className)}>
       {children}
