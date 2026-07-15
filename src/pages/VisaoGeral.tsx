@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { AbcBar } from "@/components/pricing/AbcBar";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -49,7 +50,7 @@ function formatPeriodo(p: string): string {
   // Aceita "MM.YYYY", "MMM.YYYY" (ex.: 005.2025), "YYYY-MM", "YYYYMM"
   let mes = 0;
   let ano = 0;
-  let m = p.match(/^0*(\d{1,2})[.\/-](\d{4})$/);
+  let m = p.match(/^0*(\d{1,2})[./-](\d{4})$/);
   if (m) { mes = parseInt(m[1], 10); ano = parseInt(m[2], 10); }
   else if ((m = p.match(/^(\d{4})[-/.]?(\d{2})$/))) { ano = parseInt(m[1], 10); mes = parseInt(m[2], 10); }
   if (!mes || !ano) return p;
@@ -231,6 +232,11 @@ export default function VisaoGeral() {
             glow="blue"
             delta={comparison?.deltaPct.rol}
             deltaLabel={comparison?.label}
+            sendToSlide={{
+              source: { page: "Visão Geral", visualization: "KPI - ROL Total" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "ROL Total", measure: "rol", dataSource: "ke30", filters, selectedPeriods: selected },
+            }}
           />
           <KpiCard
             className="animation-delay-100"
@@ -241,6 +247,11 @@ export default function VisaoGeral() {
             glow="green"
             delta={comparison?.deltaPct.margem}
             deltaLabel={comparison?.label}
+            sendToSlide={{
+              source: { page: "Visão Geral", visualization: `KPI - ${metric === "cm" ? "Contrib. Marginal" : "Margem Bruta"}` },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: metric === "cm" ? "Contrib. Marginal" : "Margem Bruta", measure: metric, dataSource: "ke30", filters, selectedPeriods: selected },
+            }}
           />
           <KpiCard
             className="animation-delay-200"
@@ -250,6 +261,11 @@ export default function VisaoGeral() {
             accent="amber"
             delta={comparison?.deltaPct.volumeKg}
             deltaLabel={comparison?.label}
+            sendToSlide={{
+              source: { page: "Visão Geral", visualization: "KPI - Volume" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "Volume", measure: "volume", dataSource: "ke30", filters, selectedPeriods: selected },
+            }}
           />
           <KpiCard
             className="animation-delay-300"
@@ -258,9 +274,21 @@ export default function VisaoGeral() {
             accent="violet"
             delta={comparison?.deltaPct.skus}
             deltaLabel={comparison?.label}
+            sendToSlide={{
+              source: { page: "Visão Geral", visualization: "KPI - SKUs ativos" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "SKUs ativos", measure: "skus", dataSource: "ke30", filters, selectedPeriods: selected },
+            }}
           />
         </div>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Visão Geral", visualization: "Evolução mensal - ROL, Margem % e Volume" },
+            target: { blockKind: "omni_evolucao_mensal", blockLabel: "Evolução Mensal" },
+            config: { metric, breakdown: null, chartType: "line", filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <header className="mb-4">
             <h2 className="text-lg font-medium">Evolução mensal — ROL, Margem % e Volume</h2>
@@ -333,7 +361,15 @@ export default function VisaoGeral() {
             </ResponsiveContainer>
           )}
         </GlassCard>
+        </SendToSlideHover>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Visão Geral", visualization: "Sazonalidade - Margem % por mês x ano fiscal" },
+            target: { blockKind: "omni_heatmap_sazonalidade", blockLabel: "Heatmap Sazonalidade" },
+            config: { metric: heatMetric, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -406,8 +442,16 @@ export default function VisaoGeral() {
             </>
           )}
         </GlassCard>
+        </SendToSlideHover>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <SendToSlideHover
+            payload={{
+              source: { page: "Visão Geral", visualization: "Heróis - Top 5 SKUs por Margem %" },
+              target: { blockKind: "omni_herois_ofensores", blockLabel: "Heróis e Ofensores" },
+              config: { dim: "skuDesc", variant: "hero", sortBy: "margemPct", topN: 5, filters, selectedPeriods: selected },
+            }}
+          >
           <GlassCard glow="green">
             <h3 className="mb-1 text-sm font-medium text-success">🏆 Heróis (Top 5 SKUs por Margem %)</h3>
             <p className="mb-4 text-[11px] text-muted-foreground">
@@ -415,6 +459,14 @@ export default function VisaoGeral() {
             </p>
             <AbcBar rows={bySku} variant="hero" sortBy="margemPct" minRolForPct={minRolForPct} />
           </GlassCard>
+          </SendToSlideHover>
+          <SendToSlideHover
+            payload={{
+              source: { page: "Visão Geral", visualization: "Ofensores - Top 5 SKUs por Margem %" },
+              target: { blockKind: "omni_herois_ofensores", blockLabel: "Heróis e Ofensores" },
+              config: { dim: "skuDesc", variant: "villain", sortBy: "margemPct", topN: 5, filters, selectedPeriods: selected },
+            }}
+          >
           <GlassCard className="border-l-4 border-destructive">
             <h3 className="mb-1 text-sm font-medium text-destructive">⚠️ Ofensores (Top 5 SKUs por Margem %)</h3>
             <p className="mb-4 text-[11px] text-muted-foreground">
@@ -422,8 +474,16 @@ export default function VisaoGeral() {
             </p>
             <AbcBar rows={bySku} variant="villain" sortBy="margemPct" minRolForPct={minRolForPct} />
           </GlassCard>
+          </SendToSlideHover>
         </div>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Visão Geral", visualization: `Performance por ${perfLabel}` },
+            target: { blockKind: "table", blockLabel: "Tabela" },
+            config: { table: "performance", dimension: perfBy, metric, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-medium">Performance por {perfLabel}</h3>
@@ -477,6 +537,7 @@ export default function VisaoGeral() {
             ]}
           />
         </GlassCard>
+        </SendToSlideHover>
       </div>
     </>
   );

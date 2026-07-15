@@ -3,6 +3,7 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { PivotBuilder } from "@/components/pricing/PivotBuilder";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { applyFilters } from "@/lib/analytics";
@@ -180,6 +181,13 @@ export default function Detalhe() {
         actions={excelAction}
       />
       <div className="px-8 py-6">
+        <SendToSlideHover
+          payload={{
+            source: { page: "Tabela Dinâmica", visualization: "Tabela dinâmica" },
+            target: { blockKind: "table", blockLabel: "Tabela" },
+            config: { table: "pivot", filters, selectedPeriods: selected, dataSources: ["ke30", "budget"] },
+          }}
+        >
         <GlassCard>
           <HorizontalScrollWrap>
             <PivotErrorBoundary>
@@ -191,6 +199,7 @@ export default function Detalhe() {
             </PivotErrorBoundary>
           </HorizontalScrollWrap>
         </GlassCard>
+        </SendToSlideHover>
       </div>
     </>
   );

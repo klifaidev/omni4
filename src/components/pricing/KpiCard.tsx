@@ -1,6 +1,8 @@
 import { cn } from "@/lib/utils";
 import { GlassCard } from "./GlassCard";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { SendToSlideHover } from "./SendToSlideHover";
+import type { SendToSlidePayload } from "@/lib/sendToSlide";
 
 interface KpiCardProps {
   label: string;
@@ -11,6 +13,7 @@ interface KpiCardProps {
   glow?: "blue" | "green" | "red" | "none";
   accent?: "blue" | "green" | "red" | "amber" | "violet";
   className?: string;
+  sendToSlide?: SendToSlidePayload;
 }
 
 const accentColor: Record<NonNullable<KpiCardProps["accent"]>, string> = {
@@ -29,11 +32,11 @@ function formatDeltaPct(d: number): string {
   })}%`;
 }
 
-export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className }: KpiCardProps) {
+export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide }: KpiCardProps) {
   const hasDelta = typeof delta === "number" && isFinite(delta);
   const dir = hasDelta ? (delta! > 0 ? "up" : delta! < 0 ? "down" : "flat") : null;
 
-  return (
+  const card = (
     <GlassCard glow={glow} hoverable className={cn("relative overflow-hidden animate-fade-up", className)}>
       <div className="flex flex-col gap-3">
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -66,4 +69,8 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
       </div>
     </GlassCard>
   );
+
+  if (!sendToSlide) return card;
+
+  return <SendToSlideHover payload={sendToSlide}>{card}</SendToSlideHover>;
 }

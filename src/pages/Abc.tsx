@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { PortfolioMatrix, classifyQuadrant, portfolioMedians } from "@/components/pricing/PortfolioMatrix";
 import { AbcPareto, classifyAbc } from "@/components/pricing/AbcPareto";
 import { Badge } from "@/components/ui/badge";
@@ -144,6 +145,13 @@ export default function Abc() {
     <>
       <Topbar title="Portfólio de SKUs" subtitle="Matriz estratégica, curva ABC e alertas automáticos" />
       <div className="space-y-6 px-8 py-6">
+        <SendToSlideHover
+          payload={{
+            source: { page: "Portfólio de SKUs", visualization: "Matriz de portfólio" },
+            target: { blockKind: "omni_portfolio_matrix", blockLabel: "Matriz de Portfólio" },
+            config: { dim: "skuDesc", metric, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard glow="blue" className="animate-fade-up">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -153,7 +161,15 @@ export default function Abc() {
           </div>
           <PortfolioMatrix rows={bySku} metricLabel={metricLabel} />
         </GlassCard>
+        </SendToSlideHover>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Portfólio de SKUs", visualization: "Curva ABC (Pareto)" },
+            target: { blockKind: "omni_abc_curva", blockLabel: "Curva ABC / Pareto" },
+            config: { dim: "skuDesc", metric, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard className="animate-fade-up animation-delay-150">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -194,6 +210,7 @@ export default function Abc() {
           </div>
           <AbcPareto rows={bySku} />
         </GlassCard>
+        </SendToSlideHover>
 
         <GlassCard className="animate-fade-up animation-delay-300">
           <div className="mb-4 flex items-center justify-between">

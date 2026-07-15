@@ -2,6 +2,7 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { DataTable, type DataTableColumn } from "@/components/pricing/DataTable";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { usePricing } from "@/store/pricing";
@@ -357,7 +358,15 @@ export default function Preco() {
         ) : (
           <>
             <DecompositionKpis result={result} />
-            <DecompositionCards result={result} />
+            <SendToSlideHover
+              payload={{
+                source: { page: "Análise de Preço", visualization: "Decomposição de Preço" },
+                target: { blockKind: "omni_price_decomp", blockLabel: "Decomposição de Preço" },
+                config: { base, comp, periodMode, filters, selectedPeriods },
+              }}
+            >
+              <DecompositionCards result={result} />
+            </SendToSlideHover>
             <ReadingCard result={result} />
             <PriceUfMapSection
               rows={filtered}
@@ -370,12 +379,28 @@ export default function Preco() {
               onApplyUfFilter={(values) => setFilter("uf", values)}
               onProductFilterChange={setFilter}
             />
-            <RankingSection
-              result={result}
-              metric={rankingMetric}
-              onMetricChange={setRankingMetric}
-            />
-            <EvolutionSection rows={filtered} dim={evolDim} onDimChange={setEvolDim} />
+            <SendToSlideHover
+              payload={{
+                source: { page: "Análise de Preço", visualization: "Ranking de SKUs por variação de preço" },
+                target: { blockKind: "topSku", blockLabel: "Top Ranking" },
+                config: { dim: "skuDesc", measure: "precoMedio", rankingMetric, filters, selectedPeriods },
+              }}
+            >
+              <RankingSection
+                result={result}
+                metric={rankingMetric}
+                onMetricChange={setRankingMetric}
+              />
+            </SendToSlideHover>
+            <SendToSlideHover
+              payload={{
+                source: { page: "Análise de Preço", visualization: "Evolução do preço médio" },
+                target: { blockKind: "chart", blockLabel: "Gráfico" },
+                config: { chartType: "line", measure: "precoMedio", breakdown: evolDim === "total" ? null : evolDim, filters, selectedPeriods },
+              }}
+            >
+              <EvolutionSection rows={filtered} dim={evolDim} onDimChange={setEvolDim} />
+            </SendToSlideHover>
           </>
         )}
       </div>

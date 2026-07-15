@@ -15,6 +15,7 @@ import {
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { FarolGauge } from "@/components/farol/FarolGauge";
 import { Button } from "@/components/ui/button";
@@ -568,6 +569,13 @@ export default function FarolCadastro() {
             {/* Main positivation card + KPIs */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr]">
               {/* Gauge card */}
+              <SendToSlideHover
+                payload={{
+                  source: { page: "Farol de Cadastro", visualization: "Velocímetro do Farol" },
+                  target: { blockKind: "omni_farol", blockLabel: "Farol de Positivação" },
+                  config: { skuRef, skuComp, periodoMeses, periodoRef: null, periodoComp: null, showGauge: true, showStats: true },
+                }}
+              >
               <GlassCard
                 glow={result.indicePositivacao >= 0.8 ? "green" : result.indicePositivacao >= 0.5 ? "none" : "red"}
                 className="flex flex-col items-center justify-center px-6 py-8 lg:min-w-[260px]"
@@ -579,6 +587,7 @@ export default function FarolCadastro() {
                   <span className="font-medium text-foreground">{result.skuRef.skuDesc}</span>
                 </p>
               </GlassCard>
+              </SendToSlideHover>
 
               {/* KPI grid */}
               <div className="grid grid-cols-2 gap-3">

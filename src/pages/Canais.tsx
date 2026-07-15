@@ -2,6 +2,7 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePricing } from "@/store/pricing";
@@ -386,6 +387,13 @@ export default function Canais() {
         </div>
 
         {/* ---------- Evolution chart ---------- */}
+        <SendToSlideHover
+          payload={{
+            source: { page: "Canais", visualization: "Evolução temporal por canal" },
+            target: { blockKind: "omni_canal_trend", blockLabel: "Tendência Canal" },
+            config: { metric, chartMetric, topN: 8, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard glow="blue">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -463,8 +471,16 @@ export default function Canais() {
             </LineChart>
           </ResponsiveContainer>
         </GlassCard>
+        </SendToSlideHover>
 
         {/* ---------- Ranking table ---------- */}
+        <SendToSlideHover
+          payload={{
+            source: { page: "Canais", visualization: "Ranking de canais" },
+            target: { blockKind: "table", blockLabel: "Tabela" },
+            config: { table: "ranking_canais", metric, dimension: "canalAjustado", filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -567,8 +583,16 @@ export default function Canais() {
             ]}
           />
         </GlassCard>
+        </SendToSlideHover>
 
         {/* ---------- Mix evolution ---------- */}
+        <SendToSlideHover
+          payload={{
+            source: { page: "Canais", visualization: "Análise de mix por canal" },
+            target: { blockKind: "omni_canal_mix", blockLabel: "Mix por Canal" },
+            config: { measure: "rol", dimension: "canalAjustado", topN: 8, filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <div className="mb-3">
             <h3 className="text-sm font-medium">Análise de mix</h3>
@@ -606,6 +630,7 @@ export default function Canais() {
             </BarChart>
           </ResponsiveContainer>
         </GlassCard>
+        </SendToSlideHover>
 
         {/* ---------- Diagnostics ---------- */}
         <GlassCard>

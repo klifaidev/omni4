@@ -3,6 +3,7 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import { applyFilters, calcPVM, type PVMResult, type PVMSkuDetail } from "@/lib/analytics";
@@ -200,6 +201,13 @@ export default function BridgePvm() {
             <EffectKpis result={result} />
 
 
+            <SendToSlideHover
+              payload={{
+                source: { page: "Bridge PVM", visualization: `Bridge ${result.baseLabel} → ${result.currentLabel}` },
+                target: { blockKind: "omni_bridge_pvm", blockLabel: "Bridge PVM" },
+                config: { metric, filters, selectedPeriods, base: pvmBase, comp: pvmComp, periodMode: pvmMode },
+              }}
+            >
             <GlassCard glow="blue">
               <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -243,6 +251,7 @@ export default function BridgePvm() {
               </header>
               <Waterfall data={result} labelAngle={-35} />
             </GlassCard>
+            </SendToSlideHover>
 
             <PvmReadingCard result={result} />
 

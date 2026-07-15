@@ -4,6 +4,7 @@ import { TrendingUp, FileSpreadsheet, Target, Activity, type LucideIcon } from "
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { Badge } from "@/components/ui/badge";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
@@ -146,6 +147,13 @@ export default function Rolling() {
           <MetricCard icon={Target} label="CM R$/Kg" value={formatBRL(totals.cmKg, { digits: 2 })} sub="Rentabilidade por kg" />
         </div>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Rolling", visualization: "Evolutivo Rolling" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: { dataSource: "rolling", chartType: "combo", measures: ["volume", "rol", "cmPct"], filters, selectedPeriods },
+          }}
+        >
         <GlassCard>
           <header className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -175,7 +183,15 @@ export default function Rolling() {
             </ResponsiveContainer>
           </div>
         </GlassCard>
+        </SendToSlideHover>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Rolling", visualization: "DRE Rolling" },
+            target: { blockKind: "dre", blockLabel: "DRE" },
+            config: { dataSource: "rolling", mode: "month", filters, selectedPeriods },
+          }}
+        >
         <GlassCard>
           <header className="mb-4">
             <h3 className="text-sm font-semibold">DRE Rolling</h3>
@@ -212,6 +228,7 @@ export default function Rolling() {
             </table>
           </div>
         </GlassCard>
+        </SendToSlideHover>
       </div>
     </>
   );

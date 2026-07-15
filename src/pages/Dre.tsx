@@ -8,6 +8,7 @@ import {
 } from "@/components/pricing/DreTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { GlassCard } from "@/components/pricing/GlassCard";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { Topbar } from "@/components/pricing/Topbar";
 import { applyFilters, uniqueValues } from "@/lib/analytics";
@@ -136,6 +137,13 @@ export default function Dre() {
     <>
       <Topbar title="DRE" subtitle="Consolidado por período com filtros ativos" />
       <div className="space-y-6 px-8 py-6">
+        <SendToSlideHover
+          payload={{
+            source: { page: "DRE", visualization: "DRE por Período" },
+            target: { blockKind: "dre", blockLabel: "DRE" },
+            config: { mode, filters, selectedPeriods, showDelta: exportDelta, showBudget: exportBudget },
+          }}
+        >
         <GlassCard>
           <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -232,6 +240,7 @@ export default function Dre() {
             allRows={filtered}
           />
         </GlassCard>
+        </SendToSlideHover>
       </div>
     </>
   );
@@ -253,7 +262,7 @@ function omitFilter(filters: Filters, key: FilterKey): Filters {
 
 function safeSheetName(raw: string, fallback: string): string {
   const clean = (raw || fallback)
-    .replace(/[\\/?*\[\]:]/g, " ")
+    .replace(/[\\/?*[\]:]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 31);

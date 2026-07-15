@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -105,6 +106,13 @@ export default function Positivacao() {
           />
         </div>
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Positivação", visualization: "Evolutivo de positivação" },
+            target: { blockKind: "chart", blockLabel: "Gráfico" },
+            config: { chartType: "line", measure: "positivacao", breakdown: chartDim, dataSource: "ke30" },
+          }}
+        >
         <GlassCard glow="blue">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -169,10 +177,20 @@ export default function Positivacao() {
             </LineChart>
           </ResponsiveContainer>
         </GlassCard>
+        </SendToSlideHover>
 
         <div className="space-y-6">
           {POSITIVACAO_DIMS.map((dim) => (
-            <PositivacaoTable key={dim.key} title={dim.label} series={allSeries[dim.key]} />
+            <SendToSlideHover
+              key={dim.key}
+              payload={{
+                source: { page: "Positivação", visualization: `Tabela de positivação - ${dim.label}` },
+                target: { blockKind: "table", blockLabel: "Tabela" },
+                config: { table: "positivacao", dimension: dim.key, dataSource: "ke30" },
+              }}
+            >
+              <PositivacaoTable title={dim.label} series={allSeries[dim.key]} />
+            </SendToSlideHover>
           ))}
         </div>
       </div>

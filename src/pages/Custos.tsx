@@ -6,6 +6,7 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { applyFilters, computeCostEvolution } from "@/lib/analytics";
 import { formatBRL, formatPct, formatTon } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
@@ -136,6 +137,13 @@ export default function Custos() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <SendToSlideHover
+            payload={{
+              source: { page: "Custos", visualization: "Eficiência por Kg" },
+              target: { blockKind: "omni_custo_evolucao", blockLabel: "Evolução de Custos" },
+              config: { viewMode: "kg", filters, selectedPeriods: selected },
+            }}
+          >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Eficiência por Kg</h2>
@@ -154,7 +162,15 @@ export default function Custos() {
               </ComposedChart>
             </ChartContainer>
           </GlassCard>
+          </SendToSlideHover>
 
+          <SendToSlideHover
+            payload={{
+              source: { page: "Custos", visualization: "Pressão de custo sobre a receita" },
+              target: { blockKind: "omni_custo_pressao", blockLabel: "Pressão de Custo sobre Receita" },
+              config: { showCustoVariavel: true, showCustoFixo: true, filters, selectedPeriods: selected },
+            }}
+          >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Pressão de custo sobre a receita</h2>
@@ -173,9 +189,17 @@ export default function Custos() {
               </ComposedChart>
             </ChartContainer>
           </GlassCard>
+          </SendToSlideHover>
         </div>
 
         {showComposition && (
+          <SendToSlideHover
+            payload={{
+              source: { page: "Custos", visualization: "Composição do custo variável" },
+              target: { blockKind: "omni_custo_composicao", blockLabel: "Composição de Custos" },
+              config: { viewMode: "abs", filters, selectedPeriods: selected },
+            }}
+          >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Composição do custo variável</h2>
@@ -214,8 +238,16 @@ export default function Custos() {
               />
             </div>
           </GlassCard>
+          </SendToSlideHover>
         )}
 
+        <SendToSlideHover
+          payload={{
+            source: { page: "Custos", visualization: "Detalhe mensal de custos" },
+            target: { blockKind: "table", blockLabel: "Tabela" },
+            config: { table: "detalhe_mensal_custos", filters, selectedPeriods: selected },
+          }}
+        >
         <GlassCard>
           <header className="mb-4">
             <h2 className="text-lg font-medium">Detalhe mensal de custos</h2>
@@ -234,6 +266,7 @@ export default function Custos() {
             ]}
           />
         </GlassCard>
+        </SendToSlideHover>
       </div>
     </>
   );

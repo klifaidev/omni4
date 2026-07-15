@@ -4,6 +4,7 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
+import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
@@ -109,10 +110,25 @@ function ChartHeader({
   );
 }
 
-function ChartTooltip({ active, payload, label, fmt }: any) {
+type BudgetTooltipPayload = {
+  dataKey?: string | number;
+  value?: unknown;
+};
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  fmt,
+}: {
+  active?: boolean;
+  payload?: BudgetTooltipPayload[];
+  label?: string;
+  fmt: (value: number) => string;
+}) {
   if (!active || !payload?.length) return null;
-  const real = payload.find((p: any) => p.dataKey?.toString().startsWith("real"));
-  const bud = payload.find((p: any) => p.dataKey?.toString().startsWith("bud"));
+  const real = payload.find((p) => p.dataKey?.toString().startsWith("real"));
+  const bud = payload.find((p) => p.dataKey?.toString().startsWith("bud"));
   const rv = real?.value, bv = bud?.value;
   let delta: string | null = null;
   if (typeof rv === "number" && typeof bv === "number" && bv !== 0) {
@@ -341,14 +357,14 @@ export default function Budget() {
       return x;
     };
     for (const r of realFiltered) {
-      const k = (r as any)[dim] ?? "—";
+      const k = r[dim] ?? "—";
       const x = get(String(k));
       x.realRol += r.receita;
       x.realCm += r.cm;
       x.realVol += r.volumeKg;
     }
     for (const r of budgetFiltered) {
-      const k = (r as any)[dim] ?? "—";
+      const k = r[dim] ?? "—";
       const x = get(String(k));
       x.budRol += r.receita;
       x.budCm += r.cm;
@@ -512,6 +528,11 @@ export default function Budget() {
             subValue={`Budget ${fmtCurrencyBR(totals.budRol)}`}
             delta={isFinite(rolVar) ? rolVar : undefined}
             accent="blue"
+            sendToSlide={{
+              source: { page: "Budget", visualization: "KPI - Receita Real vs Budget" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "Receita - Real vs Budget", measure: "rol", dataSource: "budget", filters, selectedPeriods },
+            }}
           />
           <KpiCard
             label="Contrib. Marginal"
@@ -519,6 +540,11 @@ export default function Budget() {
             subValue={`Budget ${fmtCurrencyBR(totals.budCm)}`}
             delta={isFinite(cmVar) ? cmVar : undefined}
             accent="violet"
+            sendToSlide={{
+              source: { page: "Budget", visualization: "KPI - Contrib. Marginal" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "Contrib. Marginal", measure: "cm", dataSource: "budget", filters, selectedPeriods },
+            }}
           />
           <KpiCard
             label="Volume (Tons)"
@@ -526,6 +552,11 @@ export default function Budget() {
             subValue={`Budget ${fmtTonsBR(totals.budVol)}`}
             delta={isFinite(volVar) ? volVar : undefined}
             accent="green"
+            sendToSlide={{
+              source: { page: "Budget", visualization: "KPI - Volume" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "Volume", measure: "volume", dataSource: "budget", filters, selectedPeriods },
+            }}
           />
           <KpiCard
             label="% CM — Real vs Budget"
@@ -533,6 +564,11 @@ export default function Budget() {
             subValue={`Budget ${formatPct(budCmPct)}`}
             delta={realCmPct - budCmPct}
             accent="amber"
+            sendToSlide={{
+              source: { page: "Budget", visualization: "KPI - CM % Real vs Budget" },
+              target: { blockKind: "kpi", blockLabel: "KPI" },
+              config: { label: "CM % - Real vs Budget", measure: "cmPct", dataSource: "budget", filters, selectedPeriods },
+            }}
           />
         </div>
 
@@ -541,6 +577,13 @@ export default function Budget() {
 
         {/* Waterfall Budget YTD → decomposição → Real YTD */}
         {projection && waterfallData.length > 0 && (
+          <SendToSlideHover
+            payload={{
+              source: { page: "Budget", visualization: `Waterfall Budget vs. Real YTD (${projection.currentFy})` },
+              target: { blockKind: "bridge", blockLabel: "Bridge" },
+              config: { dataSource: "budget", chartType: "waterfall", dimension: dim, filters, selectedPeriods },
+            }}
+          >
           <GlassCard>
             <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -597,10 +640,18 @@ export default function Budget() {
               </ResponsiveContainer>
             </div>
           </GlassCard>
+          </SendToSlideHover>
         )}
 
         {/* Tabela de desvios por dimensão (YTD) */}
         {projection && deviationRows.length > 0 && (
+          <SendToSlideHover
+            payload={{
+              source: { page: "Budget", visualization: `Desvios por ${dim}` },
+              target: { blockKind: "table", blockLabel: "Tabela" },
+              config: { table: "budget_desvios", dimension: dim, filters, selectedPeriods },
+            }}
+          >
           <GlassCard>
             <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -654,9 +705,17 @@ export default function Budget() {
               </Table>
             </div>
           </GlassCard>
+          </SendToSlideHover>
         )}
 
         {/* Overview CM/VOL — 4 evolutivos Real vs Budget */}
+        <SendToSlideHover
+          payload={{
+            source: { page: "Budget", visualization: "Overview CM/VOL - Real vs Budget" },
+            target: { blockKind: "slide:budget_evo", blockLabel: "Overview CM/VOL" },
+            config: { dataSource: "budget", filters, selectedPeriods, start: evoStart, end: evoEnd },
+          }}
+        >
         <GlassCard>
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -744,8 +803,16 @@ export default function Budget() {
             </div>
           )}
         </GlassCard>
+        </SendToSlideHover>
 
         {/* Comparativo por dimensão */}
+        <SendToSlideHover
+          payload={{
+            source: { page: "Budget", visualization: "Atingimento por dimensão" },
+            target: { blockKind: "table", blockLabel: "Tabela" },
+            config: { table: "budget_atingimento", dimension: dim, filters, selectedPeriods },
+          }}
+        >
         <GlassCard>
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -813,6 +880,7 @@ export default function Budget() {
             </Table>
           </div>
         </GlassCard>
+        </SendToSlideHover>
 
         {/* Heróis & ofensores vs Budget */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
