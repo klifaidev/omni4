@@ -7,7 +7,7 @@ interface AbcBarProps {
   variant: "hero" | "villain";
   limit?: number;
   sortBy?: "margem" | "volume" | "margemPct";
-  /** Mínimo de ROL para entrar no ranking de margem % (filtra ruído de SKUs marginais) */
+  /** Minimo de ROL para entrar no ranking de margem % (filtra ruido de SKUs marginais) */
   minRolForPct?: number;
 }
 
@@ -76,14 +76,14 @@ export function AbcBar({ rows, variant, limit = 5, sortBy = "margem", minRolForP
             >
               {sortBy === "margemPct" ? (
                 <>
-                  <span className="truncate" title={formatBRL(r.margem)}>
-                    {formatBRL(r.margem, { compact: true })}
+                  <span className="truncate" title={formatTon(r.volumeKg)}>
+                    Vol: {formatTon(r.volumeKg)}
                   </span>
-                  <span className="truncate text-center" title={formatBRL(r.rol)}>
-                    ROL: {formatBRL(r.rol, { compact: true })}
-                  </span>
-                  <span className="truncate text-right tabular-nums" title={`Importância em volume: ${formatPct(volumeShare)}`}>
+                  <span className="truncate text-center tabular-nums" title={`Importancia em volume: ${formatPct(volumeShare)}`}>
                     Imp. vol: {formatPct(volumeShare)}
+                  </span>
+                  <span className="truncate text-right" title={formatBRL(r.margem)}>
+                    Mg: {formatBRL(r.margem, { compact: true })}
                   </span>
                 </>
               ) : (
