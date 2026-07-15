@@ -330,7 +330,7 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
 
   const blocks: CustomBlock[] = [
     // 1. Título principal
-    mkTitle({ x: 40, y: 20, w: 900, h: 55, text: "Overview CM/VOL", size: 48, bold: true, color: "#1C2430", align: "left" }),
+    mkTitle({ x: 40, y: 20, w: 900, h: 55, text: "Overview CM/VOL", size: 32, bold: true, color: "#1C2430", align: "left" }),
     // 2. Barra vermelha abaixo do título
     // 3. Legenda REAL – retângulo vermelho
     mkShape({ x: 1120, y: 694, w: 28, h: 14, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 1 }),
@@ -342,7 +342,7 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
     mkText({ x: 1245, y: 690, w: 80, h: 22, text: "BUDGET", size: 13, color: "#1C2430", align: "left" }),
 
     // --- LINHA 1: CM ABS (y=85, h=148) ---
-    mkLineChart("cm", "budget_real", 95, 85, 1195, 148, "#C8102E", "solid",  "currency", 0, false, false, { enabled: true, measure: "cm" }),
+    mkLineChart("cm", "budget_real", 95, 85, 1195, 148, "#C8102E", "solid",  "currency", 0, false, false),
     mkLineChart("cm", "budget",      95, 85, 1195, 148, "#1C2430", "dashed", "currency", 0, false, true),
     mkTitle({ x: 30, y: 120, w: 80, h: 80, text: "CM ABS", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 
@@ -360,17 +360,14 @@ function buildBudgetEvoConfig(): CustomSlideConfig {
 
     // Separador 3
     // --- LINHA 4: VOLUME (y=498, h=175) — barras agrupadas Real vs Budget ---
-    mkColChart("budget_real", 95, 498, 1195, 175, "#C8102E", false, { enabled: true, measure: "volume" }),
+    mkColChart("budget_real", 95, 498, 1195, 175, "#C8102E", false),
     mkColChart("budget",      95, 498, 1195, 175, "#1C2430", true),
     mkTitle({ x: 20, y: 548, w: 80, h: 80, text: "VOLUME", size: 14, bold: true, color: "#C8102E", align: "center", rotation: -90 }),
 
     // --- Rodapé ---
-    mkShape({ x: 0, y: 722, w: 1333, h: 28, shape: "rect", fill: "#C8102E", strokeWidth: 0, radius: 0 }),
-    mkText({ x: 20, y: 728, w: 800, h: 18, text: "FONTE: KE30 – OMNI4 Pricing Analytics", size: 10, italic: true, color: "#FFFFFF", align: "left" }),
-    mkText({ x: 1200, y: 726, w: 120, h: 22, text: "Harald", size: 16, color: "#FFFFFF", align: "right" }),
   ];
 
-  return { background: "FFFFFF", showHaraldFooter: false, blocks };
+  return { background: "FFFFFF", showHaraldFooter: true, blocks };
 }
 
 const Multi = (parts: React.ReactNode[]) => (

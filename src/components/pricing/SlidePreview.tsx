@@ -201,20 +201,9 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
       <svg viewBox={`0 0 ${SLIDE_W} ${SLIDE_H}`} className="h-full w-full">
         <rect width={SLIDE_W} height={SLIDE_H} fill={C.white} />
         {/* Título + barra vermelha decorativa */}
-        <text x={40} y={58} fontFamily="Calibri" fontSize="52" fontWeight={700} fill={C.ink}>
+        <text x={40} y={58} fontFamily="Calibri" fontSize="32" fontWeight={700} fill={C.ink}>
           Overview CM/VOL
         </text>
-        <rect x={40} y={68} width={340} height={3} fill={C.haraldRed} rx={1} />
-
-        {/* Legenda REAL / BUDGET — canto superior direito */}
-        <g transform="translate(1050 30)">
-          <rect width={22} height={10} fill={C.haraldRed} rx={2} />
-          <text x={30} y={10} fontFamily="Calibri" fontSize="14" fontWeight={700} fill={C.haraldRed}>REAL</text>
-          <rect x={100} width={22} height={4} fill={C.black} rx={1} />
-          <rect x={110} y={3} width={0} height={4} fill={C.black} />
-          <line x1={100} y1={5} x2={122} y2={5} stroke={C.black} strokeWidth={5} strokeDasharray="6,4" />
-          <text x={130} y={10} fontFamily="Calibri" fontSize="14" fontWeight={700} fill={C.black}>BUDGET</text>
-        </g>
 
         {/* 4 linhas com separadores */}
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
@@ -278,7 +267,7 @@ function LineRow({
   data.forEach((r, i) => {
     const a = r[realKey], b = r[budKey];
     if (a != null && isFinite(a)) realPts.push({ x: xOf(i), y: yOf(a) });
-    if (b != null && isFinite(b)) budPts.push({ x: xOf(i), y: yOf(b) });
+    if (b != null && isFinite(b) && b !== 0) budPts.push({ x: xOf(i), y: yOf(b) });
   });
 
   // Separador vertical Real / Budget
@@ -288,6 +277,7 @@ function LineRow({
   });
   const hasSep = sepColIdx > 0;
   const sepX = hasSep ? plotX + (sepColIdx - 0.5) * colW : 0;
+  const showSplitGuide = false;
   let deltaLabel = "";
   let deltaColor = C.haraldRed;
   if (hasSep && deltaFmt) {
@@ -321,11 +311,13 @@ function LineRow({
       {/* Curves */}
       <path d={smoothPathD(realPts)} stroke={C.haraldRed} strokeWidth={7} fill="none"
         strokeLinecap="round" strokeLinejoin="round" />
-      <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={5} fill="none"
-        strokeLinecap="round" strokeLinejoin="round" strokeDasharray="14,8" />
+      {budPts.length > 0 && (
+        <path d={smoothPathD(budPts)} stroke={C.black} strokeWidth={5} fill="none"
+          strokeLinecap="round" strokeLinejoin="round" strokeDasharray="14,8" />
+      )}
 
       {/* Separador vertical Real / Budget + nota de variação */}
-      {hasSep && (
+      {showSplitGuide && hasSep && (
         <>
           <line x1={sepX} y1={plotY + 5} x2={sepX} y2={plotY + plotH - 5}
             stroke={C.haraldRed} strokeWidth={1.5} />
@@ -397,6 +389,7 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
   const sepColIdxV = data.findIndex((r) => r.realVol === 0 && typeof r.budVol === "number" && r.budVol > 0);
   const hasSepV = sepColIdxV > 0;
   const sepXV = hasSepV ? plotX + (sepColIdxV - 0.5) * colW : 0;
+  const showSplitGuide = false;
   const volDeltaLabel = (accumGapTons >= 0 ? "+" : "-") + fmtIntBR(Math.abs(accumGapTons)) + " Tons";
   const volDeltaColor = accumGapTons >= 0 ? "#16A34A" : C.haraldRed;
 
@@ -449,8 +442,8 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
             )}
             {/* Mês inclinado -35° */}
             <text
-              transform={`rotate(-35, ${cx}, ${y + h - 8})`}
-              x={cx} y={y + h - 8}
+              transform={`rotate(-35, ${cx}, ${y + h + 8})`}
+              x={cx} y={y + h + 8}
               fontFamily="Calibri" fontSize="11" fontWeight={700}
               fill={C.muted} textAnchor="end">
               {r.label}
@@ -460,7 +453,7 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
       })}
 
       {/* Separador vertical Real / Budget + nota de variação */}
-      {hasSepV && (
+      {showSplitGuide && hasSepV && (
         <>
           <line x1={sepXV} y1={plotY + 5} x2={sepXV} y2={plotY + plotH - 5}
             stroke={C.haraldRed} strokeWidth={1.5} />

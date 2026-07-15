@@ -1020,14 +1020,14 @@ async function plotLineRow(
     const b = budGet(r);
     const px = (xOf(i) - plotX) * SCALE;
     if (a != null && isFinite(a)) realPts.push({ x: px, y: (yOf(a) - plotY) * SCALE });
-    if (b != null && isFinite(b)) budPts.push({ x: px, y: (yOf(b) - plotY) * SCALE });
+    if (b != null && isFinite(b) && b !== 0) budPts.push({ x: px, y: (yOf(b) - plotY) * SCALE });
   });
 
   const svgW = plotW * SCALE;
   const svgH = plotH * SCALE;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" preserveAspectRatio="none">`
     + `<path d="${smoothPathD(realPts)}" stroke="#${PPT_COLORS.haraldRed}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
-    + `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14,8"/>`
+    + (budPts.length > 0 ? `<path d="${smoothPathD(budPts)}" stroke="#000000" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14,8"/>` : "")
     + `</svg>`;
   const chartData = await svgToPngDataUrl(svg, svgW, svgH, 4);
   slide.addImage({ data: chartData, x: plotX, y: plotY, w: plotW, h: plotH });
@@ -1038,7 +1038,8 @@ async function plotLineRow(
     const bv = budGet(m);
     return (rv == null || rv === 0) && bv != null && (bv as number) !== 0;
   });
-  if (sepColIdx > 0) {
+  const showSplitGuide = false;
+  if (showSplitGuide && sepColIdx > 0) {
     const sepX = plotX + (sepColIdx - 0.5) * colW;
     slide.addShape("line", {
       x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
@@ -1164,7 +1165,7 @@ function plotVolBars(
       });
     }
     slide.addText(r.label, {
-      x: plotX + colW * i, y: y + h - 0.12, w: colW, h: 0.22,
+      x: plotX + colW * i, y: y + h + 0.04, w: colW, h: 0.22,
       fontFace: "Calibri", fontSize: 8, bold: true, color: PPT_COLORS.muted,
       align: "center", valign: "top", margin: 0,
       rotate: 315,
@@ -1173,7 +1174,8 @@ function plotVolBars(
 
   // Separador vertical Real / Budget + nota de variação em volume
   const sepColIdxV = data.findIndex((r) => r.realVol === 0 && r.budVol > 0);
-  if (sepColIdxV > 0) {
+  const showSplitGuide = false;
+  if (showSplitGuide && sepColIdxV > 0) {
     const sepX = plotX + (sepColIdxV - 0.5) * colW;
     slide.addShape("line", {
       x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
@@ -1209,16 +1211,9 @@ export async function addBudgetEvoSlide(
 
   slide.addText("Overview CM/VOL", {
     x: 0.4, y: 0.15, w: 9, h: 0.5,
-    fontFace: "Calibri", fontSize: 28, bold: true,
+    fontFace: "Calibri", fontSize: 32, bold: true,
     color: PPT_COLORS.ink, margin: 0,
   });
-  // Barra decorativa vermelha abaixo do título
-  slide.addShape("rect", {
-    x: 0.4, y: 0.68, w: 2.6, h: 0.04,
-    fill: { color: PPT_COLORS.haraldRed },
-    line: { color: PPT_COLORS.haraldRed, width: 0 },
-  });
-
   const rowH = 1.35;
   const rowX = 0.35;
   const rowW = 12.6;
