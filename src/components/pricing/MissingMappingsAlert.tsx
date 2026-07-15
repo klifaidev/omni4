@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePricing } from "@/store/pricing";
 import { toast } from "sonner";
 import { exportMissingSkusXlsx } from "@/lib/exportMissingSkusXlsx";
 import { formatNum, formatPct } from "@/lib/format";
 import {
   DEPARA_FIELDS,
+  getDeParaFieldOptions,
   upsertDeParaEntries,
   type DeParaEntry,
 } from "@/lib/depara";
@@ -257,6 +259,8 @@ const FIELD_LABELS: Record<keyof DeParaEntry, string> = {
   skuDesc: "Descrição SKU",
 };
 
+const CUSTOM_VALUE = "__custom__";
+
 function draftFromItem(item: MissingSkuItem): DeParaEntry {
   return {
     categoria: item.entry?.categoria ?? "",
@@ -269,6 +273,62 @@ function draftFromItem(item: MissingSkuItem): DeParaEntry {
     sabor: item.entry?.sabor ?? "",
     skuDesc: item.entry?.skuDesc ?? item.descricao ?? "",
   };
+}
+
+function DeParaSmartField({
+  field,
+  value,
+  missing,
+  onChange,
+}: {
+  field: keyof DeParaEntry;
+  value: string;
+  missing: boolean;
+  onChange: (value: string) => void;
+}) {
+  const options = useMemo(() => getDeParaFieldOptions(field), [field]);
+  const normalizedValue = value.trim();
+  const valueExists = options.some((option) => option === normalizedValue);
+  const selectValue = normalizedValue && valueExists ? normalizedValue : normalizedValue ? CUSTOM_VALUE : "";
+  const showCustom = selectValue === CUSTOM_VALUE;
+
+  return (
+    <div>
+      <Label className="text-[10px] uppercase text-muted-foreground">
+        {FIELD_LABELS[field]}
+      </Label>
+      <Select
+        value={selectValue}
+        onValueChange={(next) => {
+          if (next === CUSTOM_VALUE) {
+            if (valueExists) onChange("");
+            return;
+          }
+          onChange(next);
+        }}
+      >
+        <SelectTrigger className="mt-1 h-8 text-xs">
+          <SelectValue placeholder={missing ? "Selecionar ou criar" : "Selecionar"} />
+        </SelectTrigger>
+        <SelectContent className="max-h-72">
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+          <SelectItem value={CUSTOM_VALUE}>Personalizado...</SelectItem>
+        </SelectContent>
+      </Select>
+      {showCustom && (
+        <Input
+          className="mt-1 h-8 text-xs"
+          value={value}
+          placeholder="Digite um novo valor"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </div>
+  );
 }
 
 function SkuDeParaEditorDialog({
@@ -394,14 +454,11 @@ function SkuDeParaEditorDialog({
                 <div className="grid grid-cols-2 gap-3">
                   {DEPARA_FIELDS.map((field) => (
                     <div key={field} className={field === "skuDesc" ? "col-span-2" : undefined}>
-                      <Label className="text-[10px] uppercase text-muted-foreground">
-                        {FIELD_LABELS[field]}
-                      </Label>
-                      <Input
-                        className="mt-1 h-8 text-xs"
+                      <DeParaSmartField
+                        field={field}
                         value={activeDraft[field] ?? ""}
-                        placeholder={activeItem.missingFields.includes(field) ? "Preencher" : ""}
-                        onChange={(e) => setField(activeItem.sku, field, e.target.value)}
+                        missing={activeItem.missingFields.includes(field)}
+                        onChange={(value) => setField(activeItem.sku, field, value)}
                       />
                     </div>
                   ))}

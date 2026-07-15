@@ -88,3 +88,12 @@ export function upsertDeParaEntries(entries: Record<string, DeParaEntry>) {
 export function getDeParaOverrides(): Record<string, DeParaEntry> {
   return { ...runtimeOverrides };
 }
+
+export function getDeParaFieldOptions(field: keyof DeParaEntry): string[] {
+  const values = new Set<string>();
+  for (const entry of [...Object.values(RAW), ...Object.values(runtimeOverrides)]) {
+    const value = entry[field]?.trim();
+    if (!isBlank(value)) values.add(value);
+  }
+  return Array.from(values).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+}
