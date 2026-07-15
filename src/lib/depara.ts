@@ -14,17 +14,31 @@ export interface DeParaEntry {
   skuDesc: string;
 }
 
+export type DeParaOverrideEntry = Partial<DeParaEntry>;
+
 const RAW = deparaJson as Record<string, DeParaEntry>;
 const OVERRIDES_STORAGE_KEY = "omni4.depara.skuOverrides.v1";
 
-let runtimeOverrides: Record<string, DeParaEntry> = loadStoredOverrides();
+const EMPTY_ENTRY: DeParaEntry = {
+  categoria: "",
+  subcategoria: "",
+  marca: "",
+  tecnologia: "",
+  formato: "",
+  mercado: "",
+  faixaPeso: "",
+  sabor: "",
+  skuDesc: "",
+};
 
-function loadStoredOverrides(): Record<string, DeParaEntry> {
+let runtimeOverrides: Record<string, DeParaOverrideEntry> = loadStoredOverrides();
+
+function loadStoredOverrides(): Record<string, DeParaOverrideEntry> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(OVERRIDES_STORAGE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, DeParaEntry>;
+    const parsed = JSON.parse(raw) as Record<string, DeParaOverrideEntry>;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -45,7 +59,10 @@ export function getDeParaBySku(sku: string | undefined | null): DeParaEntry | nu
   if (!sku) return null;
   const key = String(sku).trim();
   if (!key) return null;
-  return runtimeOverrides[key] ?? RAW[key] ?? null;
+  const base = RAW[key];
+  const override = runtimeOverrides[key];
+  if (!base && !override) return null;
+  return { ...EMPTY_ENTRY, ...(base ?? {}), ...(override ?? {}) };
 }
 
 export const DEPARA_SIZE = Object.keys(RAW).length;
@@ -80,12 +97,15 @@ export function getMissingDeParaFields(sku: string | undefined | null): (keyof D
   return DEPARA_FIELDS.filter((f) => isBlank(entry[f]));
 }
 
-export function upsertDeParaEntries(entries: Record<string, DeParaEntry>) {
-  runtimeOverrides = { ...runtimeOverrides, ...entries };
+export function upsertDeParaEntries(entries: Record<string, DeParaOverrideEntry>) {
+  runtimeOverrides = { ...runtimeOverrides };
+  for (const [sku, entry] of Object.entries(entries)) {
+    runtimeOverrides[sku] = { ...(runtimeOverrides[sku] ?? {}), ...entry };
+  }
   persistOverrides();
 }
 
-export function getDeParaOverrides(): Record<string, DeParaEntry> {
+export function getDeParaOverrides(): Record<string, DeParaOverrideEntry> {
   return { ...runtimeOverrides };
 }
 

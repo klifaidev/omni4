@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Filters, LoadedFile, Metric, PricingRow } from "@/lib/types";
 import type { MissingMappings } from "@/lib/csv";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
-import { getDeParaBySku, getMissingDeParaFields, type DeParaEntry } from "@/lib/depara";
+import { getDeParaBySku, getMissingDeParaFields, type DeParaOverrideEntry } from "@/lib/depara";
 
 interface PricingState {
   rows: PricingRow[];
@@ -38,7 +38,7 @@ interface PricingState {
   clearAll: () => void;
   dismissMissing: () => void;
   reclassifyInovacao: () => void;
-  applySkuDeParaEntries: (entries: Record<string, DeParaEntry>) => void;
+  applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
 
   setPvm: (base: string | null, comp: string | null) => void;
   setPvmMode: (mode: "fy" | "month") => void;

@@ -14,6 +14,7 @@ import {
   getDeParaFieldOptions,
   upsertDeParaEntries,
   type DeParaEntry,
+  type DeParaOverrideEntry,
 } from "@/lib/depara";
 import type { MissingSkuItem } from "@/lib/csv";
 
@@ -287,10 +288,11 @@ function DeParaSmartField({
   onChange: (value: string) => void;
 }) {
   const options = useMemo(() => getDeParaFieldOptions(field), [field]);
+  const [customMode, setCustomMode] = useState(false);
   const normalizedValue = value.trim();
   const valueExists = options.some((option) => option === normalizedValue);
-  const selectValue = normalizedValue && valueExists ? normalizedValue : normalizedValue ? CUSTOM_VALUE : "";
-  const showCustom = selectValue === CUSTOM_VALUE;
+  const showCustom = customMode || (normalizedValue !== "" && !valueExists);
+  const selectValue = showCustom ? CUSTOM_VALUE : normalizedValue && valueExists ? normalizedValue : "";
 
   return (
     <div>
@@ -301,9 +303,11 @@ function DeParaSmartField({
         value={selectValue}
         onValueChange={(next) => {
           if (next === CUSTOM_VALUE) {
+            setCustomMode(true);
             if (valueExists) onChange("");
             return;
           }
+          setCustomMode(false);
           onChange(next);
         }}
       >
@@ -340,7 +344,7 @@ function SkuDeParaEditorDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: MissingSkuItem[];
-  onSave: (entries: Record<string, DeParaEntry>) => void;
+  onSave: (entries: Record<string, DeParaOverrideEntry>) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, DeParaEntry>>({});
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
@@ -352,6 +356,11 @@ function SkuDeParaEditorDialog({
   const completeCount = visibleItems.filter((item) => {
     const draft = drafts[item.sku] ?? draftFromItem(item);
     return DEPARA_FIELDS.every((field) => !isEmpty(draft[field]));
+  }).length;
+  const savableCount = visibleItems.filter((item) => {
+    const draft = drafts[item.sku];
+    if (!draft) return false;
+    return DEPARA_FIELDS.some((field) => !isEmpty(draft[field]));
   }).length;
 
   const setField = (sku: string, field: keyof DeParaEntry, value: string) => {
@@ -365,17 +374,19 @@ function SkuDeParaEditorDialog({
   };
 
   const saveCompleted = () => {
-    const entries: Record<string, DeParaEntry> = {};
+    const entries: Record<string, DeParaOverrideEntry> = {};
     for (const item of visibleItems) {
-      const draft = drafts[item.sku] ?? draftFromItem(item);
-      if (DEPARA_FIELDS.every((field) => !isEmpty(draft[field]))) {
-        entries[item.sku] = Object.fromEntries(
-          DEPARA_FIELDS.map((field) => [field, draft[field].trim()]),
-        ) as unknown as DeParaEntry;
+      const draft = drafts[item.sku];
+      if (!draft) continue;
+      const filledFields = DEPARA_FIELDS
+        .map((field) => [field, draft[field].trim()] as const)
+        .filter(([, value]) => !isEmpty(value));
+      if (filledFields.length > 0) {
+        entries[item.sku] = Object.fromEntries(filledFields) as DeParaOverrideEntry;
       }
     }
     if (Object.keys(entries).length === 0) {
-      toast.info("Preencha todos os campos de ao menos um SKU para salvar.");
+      toast.info("Preencha ao menos um campo de um SKU para salvar.");
       return;
     }
     onSave(entries);
@@ -393,7 +404,7 @@ function SkuDeParaEditorDialog({
               <div>
                 <div className="text-xs font-semibold">Pendências</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {completeCount} de {visibleItems.length} prontos
+                  {savableCount} com dados · {completeCount} completos
                 </div>
               </div>
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
@@ -447,8 +458,8 @@ function SkuDeParaEditorDialog({
                       Complete os campos abaixo. Ao salvar, o app reaplica o De/Para na base Real já carregada.
                     </p>
                   </div>
-                  <Button size="sm" onClick={saveCompleted}>
-                    Salvar prontos ({completeCount})
+                  <Button size="sm" onClick={saveCompleted} disabled={savableCount === 0}>
+                    Salvar preenchidos ({savableCount})
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
