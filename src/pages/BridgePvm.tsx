@@ -20,9 +20,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { QuickActivityDialog, type QuickActivityPrefill } from "@/components/atividades/QuickActivityDialog";
 import { toast } from "sonner";
 import { usePageTitle } from "@/hooks/use-page-title";
+import type { PricingRow } from "@/lib/types";
 
 const EFFECTS: Array<{
-  key: keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
+  key: PvmEffectKey;
   label: string;
   subtitle: string;
 }> = [
@@ -42,6 +43,17 @@ const EFFECTS: Array<{
     subtitle: "Ganhos e pressões vindos do custo variável unitário.",
   },
 ];
+
+type PvmEffectKey = keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
+
+type PvmRankingItem = {
+  id: string;
+  name: string;
+  subLabel?: string;
+  volumeEffect: number;
+  priceEffect: number;
+  costEffect: number;
+};
 
 export default function BridgePvm() {
   usePageTitle("Bridge PVM");
@@ -92,6 +104,23 @@ export default function BridgePvm() {
         : undefined;
     return calcPVM(filtered, metric, pvmBase, pvmComp, pvmMode, labels);
   }, [filtered, metric, pvmBase, pvmComp, pvmMode, months]);
+
+  const skuRankingDetails = useMemo<PvmRankingItem[]>(
+    () => result?.skuDetails.map((item) => ({
+      id: item.sku,
+      name: item.skuDesc?.trim() || item.sku,
+      subLabel: item.skuDesc?.trim() ? item.sku : undefined,
+      volumeEffect: item.volumeEffect,
+      priceEffect: item.priceEffect,
+      costEffect: item.costEffect,
+    })) ?? [],
+    [result],
+  );
+
+  const categoryRankingDetails = useMemo<PvmRankingItem[]>(
+    () => result ? buildCategoryRankingDetails(result.skuDetails, filtered, pvmBase, pvmComp, pvmMode) : [],
+    [result, filtered, pvmBase, pvmComp, pvmMode],
+  );
 
   if (rows.length === 0) {
     return (
@@ -255,17 +284,45 @@ export default function BridgePvm() {
 
             <PvmReadingCard result={result} />
 
-            <div className="grid gap-4 xl:grid-cols-3">
+            <section className="space-y-3">
+              <div>
+                <h2 className="text-sm font-medium text-foreground">Categorias por efeito</h2>
+                <p className="text-xs text-muted-foreground">
+                  Categorias que mais ajudam ou pressionam Volume, Preço e Custo Variável.
+                </p>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-3">
+                {EFFECTS.map((effect) => (
+                  <EffectRankingCard
+                    key={`categoria-${effect.key}`}
+                    title={effect.label}
+                    subtitle={effect.subtitle}
+                    details={categoryRankingDetails}
+                    effectKey={effect.key}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div>
+                <h2 className="text-sm font-medium text-foreground">SKUs por efeito</h2>
+                <p className="text-xs text-muted-foreground">
+                  SKUs que explicam os principais ganhos e ofensores dentro de cada efeito.
+                </p>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-3">
               {EFFECTS.map((effect) => (
                 <EffectRankingCard
-                  key={effect.key}
+                  key={`sku-${effect.key}`}
                   title={effect.label}
                   subtitle={effect.subtitle}
-                  details={result.skuDetails}
+                  details={skuRankingDetails}
                   effectKey={effect.key}
                 />
               ))}
-            </div>
+              </div>
+            </section>
           </>
         )}
       </div>
@@ -320,8 +377,8 @@ function EffectRankingCard({
 }: {
   title: string;
   subtitle: string;
-  details: PVMSkuDetail[];
-  effectKey: keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
+  details: PvmRankingItem[];
+  effectKey: PvmEffectKey;
 }) {
   const heroes = [...details]
     .filter((item) => item[effectKey] > 0)
@@ -372,8 +429,8 @@ function EffectList({
 }: {
   title: string;
   icon: typeof TrendingUp;
-  items: PVMSkuDetail[];
-  effectKey: keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
+  items: PvmRankingItem[];
+  effectKey: PvmEffectKey;
   emptyLabel: string;
   tone: "positive" | "negative";
 }) {
@@ -391,19 +448,18 @@ function EffectList({
       ) : (
         <div className="space-y-2">
           {items.map((item, index) => {
-            const displayName = item.skuDesc?.trim() || item.sku;
             return (
             <div
-              key={`${title}-${effectKey}-${item.sku}`}
+              key={`${title}-${effectKey}-${item.id}`}
               className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-secondary/20 px-3 py-2"
             >
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   #{index + 1}
                 </div>
-                <div className="truncate text-sm font-medium text-foreground" title={displayName}>{displayName}</div>
-                {item.skuDesc && item.skuDesc.trim() && (
-                  <div className="truncate text-[10px] text-muted-foreground">{item.sku}</div>
+                <div className="truncate text-sm font-medium text-foreground" title={item.name}>{item.name}</div>
+                {item.subLabel && (
+                  <div className="truncate text-[10px] text-muted-foreground">{item.subLabel}</div>
                 )}
               </div>
               <div className={tone === "positive" ? "text-sm font-semibold text-primary" : "text-sm font-semibold text-destructive"}>
@@ -416,6 +472,46 @@ function EffectList({
       )}
     </section>
   );
+}
+
+function buildCategoryRankingDetails(
+  details: PVMSkuDetail[],
+  rows: PricingRow[],
+  pvmBase: string | null,
+  pvmComp: string | null,
+  pvmMode: "fy" | "month",
+): PvmRankingItem[] {
+  const categoryBySku = new Map<string, string>();
+  const isComp = (row: PricingRow) => (pvmMode === "fy" ? row.fy : row.periodo) === pvmComp;
+  const isBase = (row: PricingRow) => (pvmMode === "fy" ? row.fy : row.periodo) === pvmBase;
+  const remember = (row: PricingRow) => {
+    const sku = row.sku || row.skuDesc;
+    if (!sku) return;
+    const category = row.categoria?.trim() || "Sem categoria";
+    if (!categoryBySku.has(sku)) categoryBySku.set(sku, category);
+  };
+
+  rows.filter(isComp).forEach(remember);
+  rows.filter(isBase).forEach(remember);
+  rows.forEach(remember);
+
+  const grouped = new Map<string, PvmRankingItem>();
+  details.forEach((item) => {
+    const category = categoryBySku.get(item.sku) ?? "Sem categoria";
+    const current = grouped.get(category) ?? {
+      id: category,
+      name: category,
+      volumeEffect: 0,
+      priceEffect: 0,
+      costEffect: 0,
+    };
+    current.volumeEffect += item.volumeEffect;
+    current.priceEffect += item.priceEffect;
+    current.costEffect += item.costEffect;
+    grouped.set(category, current);
+  });
+
+  return Array.from(grouped.values());
 }
 
 // ---------- Leitura do resultado ----------
