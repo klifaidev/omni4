@@ -189,8 +189,8 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
     return <Frame label="Overview CM/VOL"><Empty message="Sem dados Budget para o range escolhido." /></Frame>;
   }
 
-  const accum = data
-    .filter((m) => m.realCm !== 0 || m.realVol !== 0)
+  const comparableMonths = data.filter((m) => m.realVol > 0);
+  const accum = comparableMonths
     .reduce(
       (a, m) => ({ cm: a.cm + (m.realCm - m.budCm), vol: a.vol + (m.realVol - m.budVol) }),
       { cm: 0, vol: 0 },
@@ -415,8 +415,8 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
 
       {/* Header tons acumulado — destaque vermelho */}
       <text x={x + w * 0.78} y={y - 2} fontFamily="Calibri" fontSize="16" fontWeight={700}
-        fill={C.haraldRed} textAnchor="middle">
-        {`${accumGapTons.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} Tons`}
+        fill={volDeltaColor} textAnchor="middle">
+        {`${fmtIntBR(Math.abs(accumGapTons))} Tons`}
       </text>
 
       {data.map((r, i) => {

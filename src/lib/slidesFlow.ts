@@ -199,8 +199,8 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
           if (monthly.length === 0) {
             throw new Error(`Budget Evolutivo "${item.label}": sem dados para o range selecionado.`);
           }
-          const accum = monthly
-            .filter((m) => m.realCm !== 0 || m.realVol !== 0)
+          const comparableMonths = monthly.filter((m) => m.realVol > 0);
+          const accum = comparableMonths
             .reduce(
               (acc, m) => ({
                 cmGap: acc.cmGap + (m.realCm - m.budCm),

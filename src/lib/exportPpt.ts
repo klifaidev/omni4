@@ -1113,10 +1113,10 @@ function plotVolBars(
     align: "center", valign: "middle", margin: 0,
     rotate: 270, wrap: false,
   });
-  slide.addText(`${accumGapTons.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} Tons`, {
+  slide.addText(`${fmtTonAbs(Math.abs(accumGapTons))} Tons`, {
     x: x + w * 0.55, y: y - 0.05, w: w * 0.45, h: 0.25,
     fontFace: "Calibri", fontSize: 12, bold: true,
-    color: PPT_COLORS.haraldRed, align: "center", valign: "top", margin: 0,
+    color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed, align: "center", valign: "top", margin: 0,
   });
 
   const plotX = x + 0.7;
