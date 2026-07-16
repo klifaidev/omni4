@@ -858,6 +858,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   const showOthers = !!b.showOthers && hiddenHeaders.length > 0;
   const cols = result.colHeaders;
   const showCols = cols.length > 0 && cols[0].values.length > 0;
+  const showLastColumnVariation = !!b.showLastColumnVariation && showCols && cols.length >= 2;
+  const previousCol = showLastColumnVariation ? cols[cols.length - 2] : null;
+  const lastCol = showLastColumnVariation ? cols[cols.length - 1] : null;
 
   // Agrega "Outros" cell-by-cell
   const othersRow: Record<string, Record<string, number>> | null = showOthers ? (() => {
@@ -902,6 +905,36 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       return result.cells.get(rhKey)?.get(colKey)?.[mId] ?? 0;
     }
     return result.rowTotals.get(rhKey)?.[mId] ?? 0;
+  };
+
+  const variationPct = (current: number, previous: number): number | null => {
+    if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
+    return (current - previous) / Math.abs(previous);
+  };
+  const fmtVariation = (value: number | null): string => {
+    if (value === null) return "—";
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${(value * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  };
+  const variationStyle = (value: number | null): React.CSSProperties => {
+    if (value === null) return { color: SLIDE_HEX.slate400 };
+    if (value > 0) return { color: SLIDE_HEX.successDark, fontWeight: 700 };
+    if (value < 0) return { color: SLIDE_HEX.dangerDark, fontWeight: 700 };
+    return { color: SLIDE_HEX.slate500, fontWeight: 700 };
+  };
+  const variationHeaderLabel = (measureLabel: string) =>
+    measures.length === 1 ? "Var. % vs mês ant." : `Var. % ${measureLabel}`;
+  const getRowVariation = (rhKey: string, mId: string): number | null => {
+    if (!previousCol || !lastCol) return null;
+    const previous = result.cells.get(rhKey)?.get(previousCol.key)?.[mId] ?? 0;
+    const current = result.cells.get(rhKey)?.get(lastCol.key)?.[mId] ?? 0;
+    return variationPct(current, previous);
+  };
+  const getOthersVariation = (mId: string): number | null => {
+    if (!previousCol || !lastCol || !othersRow) return null;
+    const previous = othersRow[previousCol.key]?.[mId] ?? 0;
+    const current = othersRow[lastCol.key]?.[mId] ?? 0;
+    return variationPct(current, previous);
   };
 
   // Pré-computa pools de valores por (medida, escopo-key) p/ heatmap/avg/data_bar
@@ -998,7 +1031,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   };
 
   if (readOnly) {
-    const valueCols = showCols ? cols.length * measures.length : measures.length;
+    const variationCols = showLastColumnVariation ? measures.length : 0;
+    const valueCols = showCols ? cols.length * measures.length + variationCols : measures.length;
     const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
     const rowH = 100 / rowCount;
     const firstColW = 100 * 1.7 / (1.7 + valueCols);
@@ -1010,19 +1044,36 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
         {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
-        ? cols.flatMap((c, ci) => measures.map((m, mi) => (
-            <ExportPositionedCell
-              key={`${c.key}-${m.id}`}
-              style={cellHead}
-              left={leftForValue(ci * measures.length + mi)}
-              top={0}
-              width={valueColW}
-              height={rowH}
-              padX={8}
-            >
-              {tableHeaderLabel(c.values.join(" / "), m.label)}
-            </ExportPositionedCell>
-          )))
+        ? [
+            ...cols.flatMap((c, ci) => measures.map((m, mi) => (
+              <ExportPositionedCell
+                key={`${c.key}-${m.id}`}
+                style={cellHead}
+                left={leftForValue(ci * measures.length + mi)}
+                top={0}
+                width={valueColW}
+                height={rowH}
+                padX={8}
+              >
+                {tableHeaderLabel(c.values.join(" / "), m.label)}
+              </ExportPositionedCell>
+            ))),
+            ...(showLastColumnVariation
+              ? measures.map((m, mi) => (
+                  <ExportPositionedCell
+                    key={`var-${m.id}`}
+                    style={cellHead}
+                    left={leftForValue(cols.length * measures.length + mi)}
+                    top={0}
+                    width={valueColW}
+                    height={rowH}
+                    padX={8}
+                  >
+                    {variationHeaderLabel(m.label)}
+                  </ExportPositionedCell>
+                ))
+              : []),
+          ]
         : measures.map((m, mi) => (
             <ExportPositionedCell key={m.id} style={cellHead} left={leftForValue(mi)} top={0} width={valueColW} height={rowH} padX={8}>
               {m.label}
@@ -1035,22 +1086,42 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
         {rh.values.join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
-        ? cols.flatMap((c, ci) => measures.map((m, mi) => {
-            const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
-            return (
-              <ExportPositionedCell
-                key={`${rh.key}-${c.key}-${m.id}`}
-                style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}
-                left={leftForValue(ci * measures.length + mi)}
-                top={(ri + 1) * rowH}
-                width={valueColW}
-                height={rowH}
-                padX={8}
-              >
-                {fmtMeasure(m, v)}
-              </ExportPositionedCell>
-            );
-          }))
+        ? [
+            ...cols.flatMap((c, ci) => measures.map((m, mi) => {
+              const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
+              return (
+                <ExportPositionedCell
+                  key={`${rh.key}-${c.key}-${m.id}`}
+                  style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}
+                  left={leftForValue(ci * measures.length + mi)}
+                  top={(ri + 1) * rowH}
+                  width={valueColW}
+                  height={rowH}
+                  padX={8}
+                >
+                  {fmtMeasure(m, v)}
+                </ExportPositionedCell>
+              );
+            })),
+            ...(showLastColumnVariation
+              ? measures.map((m, mi) => {
+                  const v = getRowVariation(rh.key, m.id);
+                  return (
+                    <ExportPositionedCell
+                      key={`${rh.key}-var-${m.id}`}
+                      style={{ ...cellValDyn, ...variationStyle(v) }}
+                      left={leftForValue(cols.length * measures.length + mi)}
+                      top={(ri + 1) * rowH}
+                      width={valueColW}
+                      height={rowH}
+                      padX={8}
+                    >
+                      {fmtVariation(v)}
+                    </ExportPositionedCell>
+                  );
+                })
+              : []),
+          ]
         : measures.map((m, mi) => {
             const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
             return (
@@ -1083,19 +1154,39 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             Outros ({hiddenHeaders.length})
           </ExportPositionedCell>,
           ...(showCols
-            ? cols.flatMap((c, ci) => measures.map((m, mi) => (
-                <ExportPositionedCell
-                  key={`oth-${c.key}-${m.id}`}
-                  style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
-                  left={leftForValue(ci * measures.length + mi)}
-                  top={(rowCount - 1) * rowH}
-                  width={valueColW}
-                  height={rowH}
-                  padX={8}
-                >
-                  {fmtMeasure(m, othersRow[c.key]?.[m.id])}
-                </ExportPositionedCell>
-              )))
+            ? [
+                ...cols.flatMap((c, ci) => measures.map((m, mi) => (
+                  <ExportPositionedCell
+                    key={`oth-${c.key}-${m.id}`}
+                    style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
+                    left={leftForValue(ci * measures.length + mi)}
+                    top={(rowCount - 1) * rowH}
+                    width={valueColW}
+                    height={rowH}
+                    padX={8}
+                  >
+                    {fmtMeasure(m, othersRow[c.key]?.[m.id])}
+                  </ExportPositionedCell>
+                ))),
+                ...(showLastColumnVariation
+                  ? measures.map((m, mi) => {
+                      const v = getOthersVariation(m.id);
+                      return (
+                        <ExportPositionedCell
+                          key={`oth-var-${m.id}`}
+                          style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft, ...variationStyle(v) }}
+                          left={leftForValue(cols.length * measures.length + mi)}
+                          top={(rowCount - 1) * rowH}
+                          width={valueColW}
+                          height={rowH}
+                          padX={8}
+                        >
+                          {fmtVariation(v)}
+                        </ExportPositionedCell>
+                      );
+                    })
+                  : []),
+              ]
             : measures.map((m, mi) => (
                 <ExportPositionedCell
                   key={`oth-${m.id}`}
@@ -1134,9 +1225,16 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
           <tr>
             {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", cellHead)}
             {showCols
-              ? cols.flatMap((c) => measures.map((m) => (
-                  <th key={`${c.key}-${m.id}`} style={cellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
-                )))
+              ? (
+                  <>
+                    {cols.flatMap((c) => measures.map((m) => (
+                      <th key={`${c.key}-${m.id}`} style={cellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
+                    )))}
+                    {showLastColumnVariation && measures.map((m) => (
+                      <th key={`var-${m.id}`} style={cellHead}>{variationHeaderLabel(m.label)}</th>
+                    ))}
+                  </>
+                )
               : measures.map((m) => <th key={m.id} style={cellHead}>{m.label}</th>)}
           </tr>
         </thead>
@@ -1145,10 +1243,18 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             <tr key={rh.key}>
               {tableCell("td", rh.values.join(" / ") || "Total", cellLabel)}
               {showCols
-                ? cols.flatMap((c) => measures.map((m) => {
-                    const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
-                    return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }, `${c.key}-${m.id}`);
-                  }))
+                ? (
+                    <>
+                      {cols.flatMap((c) => measures.map((m) => {
+                        const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
+                        return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }, `${c.key}-${m.id}`);
+                      }))}
+                      {showLastColumnVariation && measures.map((m) => {
+                        const v = getRowVariation(rh.key, m.id);
+                        return tableCell("td", fmtVariation(v), { ...cellValDyn, ...variationStyle(v) }, `var-${m.id}`);
+                      })}
+                    </>
+                  )
                 : measures.map((m) => {
                     const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
                     return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }, m.id);
@@ -1159,9 +1265,17 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             <tr style={{ background: SLIDE_HEX.gridSoft }}>
               {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
               {showCols
-                ? cols.flatMap((c) => measures.map((m) => (
-                    tableCell("td", fmtMeasure(m, othersRow[c.key]?.[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
-                  )))
+                ? (
+                    <>
+                      {cols.flatMap((c) => measures.map((m) => (
+                        tableCell("td", fmtMeasure(m, othersRow[c.key]?.[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
+                      )))}
+                      {showLastColumnVariation && measures.map((m) => {
+                        const v = getOthersVariation(m.id);
+                        return tableCell("td", fmtVariation(v), { ...cellValDyn, fontStyle: "italic", ...variationStyle(v) }, `oth-var-${m.id}`);
+                      })}
+                    </>
+                  )
                 : measures.map((m) => (
                     tableCell("td", fmtMeasure(m, othersRow.__row__[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${m.id}`)
                   ))}

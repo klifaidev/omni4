@@ -992,6 +992,7 @@ function pickStylePatch(block: CustomBlock): { group: StyleGroup; patch: Partial
         maxRows: b.maxRows,
         showOthers: b.showOthers,
         exportNote: b.exportNote,
+        showLastColumnVariation: b.showLastColumnVariation,
         valueAlign: b.valueAlign,
         conditionalFormats: cloneValue(b.conditionalFormats),
       } as Partial<CustomBlock>,

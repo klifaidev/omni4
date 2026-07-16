@@ -4199,6 +4199,17 @@ function TableBlockEditor({ block, onChange }: {
         </Select>
       </div>
 
+      <div className="rounded-md border border-border/40 bg-muted/20 p-2">
+        <ToggleRow
+          label="Última coluna: variação % vs anterior"
+          value={!!block.showLastColumnVariation}
+          onChange={(v) => onChange({ showLastColumnVariation: v } as never)}
+        />
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+          Adiciona no fim da tabela a variação percentual da última coluna contra a penúltima.
+        </p>
+      </div>
+
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Medidas</Label>
         <div className="space-y-1">

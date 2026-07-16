@@ -314,6 +314,8 @@ export interface TableBlock extends BaseBlock {
   showOthers?: boolean;
   /** Imprime nota "Mostrando X de Y" no PPT exportado. Default: false */
   exportNote?: boolean;
+  /** Adiciona uma coluna final com variação % da última coluna vs. penúltima. Default: false */
+  showLastColumnVariation?: boolean;
   /** Medida usada para ordenar/ranquear linhas. Default: primeira de measures. */
   sortMeasure?: string;
   /** Alinhamento das células de valor. Default "right". */
@@ -724,7 +726,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         source: "ke30", dataSource: "ke30",
         measures: ["rol_real", "cm_real"],
         rowDims: ["marca"], colDim: "periodo", filters: {},
-        autoFit: true, showOthers: false, exportNote: false };
+        autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false };
     case "chart":
       return {
         id, kind, z, x: 60, y: 180, w: 1200, h: 380,
