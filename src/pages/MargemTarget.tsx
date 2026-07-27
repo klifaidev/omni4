@@ -6,7 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { applyFilters, measureOf } from "@/lib/analytics";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { applyFilters } from "@/lib/analytics";
 import { formatBRL, formatPct } from "@/lib/format";
 import type { PricingRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -14,11 +21,9 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
 import {
   ArrowDownRight,
-  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
-  Crosshair,
   Gauge,
   Layers3,
   SlidersHorizontal,
@@ -42,11 +47,21 @@ type DrillLevel = "category" | "sku" | "channel" | "regional";
 interface CategorySetting {
   mode: TargetMode;
   manualTargetPct?: number;
+  benchmarkWeight?: number;
+  preservation?: number;
+  historyStart?: string;
+  historyEnd?: string;
+  recentStart?: string;
+  recentEnd?: string;
 }
 
 interface TargetSettings {
   benchmarkWeight: number;
   preservation: number;
+  historyStart?: string;
+  historyEnd?: string;
+  recentStart?: string;
+  recentEnd?: string;
   categories: Record<string, CategorySetting>;
 }
 
@@ -74,6 +89,21 @@ interface Aggregate {
   margemPct: number;
 }
 
+interface PeriodOption {
+  periodo: string;
+  label: string;
+  rank: number;
+}
+
+interface EffectivePremise {
+  benchmarkWeight: number;
+  preservation: number;
+  historyStart?: string;
+  historyEnd?: string;
+  recentStart?: string;
+  recentEnd?: string;
+}
+
 const STORAGE_KEY = "omni:margem-target:v1";
 const DEFAULT_SETTINGS: TargetSettings = {
   benchmarkWeight: 0.6,
@@ -92,22 +122,84 @@ function formatPp(value: number): string {
   })}pp`;
 }
 
-function formatTonFromKg(value: number): string {
-  return `${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} t`;
-}
-
 function periodRank(row: PricingRow): number {
   return row.ano * 12 + row.mes;
 }
 
-function lastPeriods(rows: PricingRow[], count: number): Set<string> {
-  const periods = Array.from(
-    new Map(rows.map((row) => [row.periodo, { periodo: row.periodo, rank: periodRank(row) }])).values(),
-  )
-    .sort((a, b) => b.rank - a.rank)
-    .slice(0, count)
-    .map((period) => period.periodo);
-  return new Set(periods);
+function periodLabel(row: PricingRow): string {
+  const labels = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  return `${labels[row.mes - 1] ?? String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}`;
+}
+
+function getPeriodOptions(rows: PricingRow[]): PeriodOption[] {
+  return Array.from(
+    new Map(
+      rows.map((row) => [
+        row.periodo,
+        { periodo: row.periodo, label: periodLabel(row), rank: periodRank(row) },
+      ]),
+    ).values(),
+  ).sort((a, b) => a.rank - b.rank);
+}
+
+function periodRangeSet(options: PeriodOption[], start?: string, end?: string): Set<string> {
+  const startRank = options.find((option) => option.periodo === start)?.rank ?? -Infinity;
+  const endRank = options.find((option) => option.periodo === end)?.rank ?? Infinity;
+  return new Set(
+    options
+      .filter((option) => option.rank >= startRank && option.rank <= endRank)
+      .map((option) => option.periodo),
+  );
+}
+
+function defaultPremise(options: PeriodOption[]): EffectivePremise {
+  const last = options[options.length - 1];
+  const recentStart = options[Math.max(0, options.length - 3)]?.periodo;
+  const recentEnd = last?.periodo;
+  const historyStart = options[Math.max(0, options.length - 24)]?.periodo;
+  const historyEnd = recentEnd;
+  return {
+    benchmarkWeight: DEFAULT_SETTINGS.benchmarkWeight,
+    preservation: DEFAULT_SETTINGS.preservation,
+    historyStart,
+    historyEnd,
+    recentStart,
+    recentEnd,
+  };
+}
+
+function resolvePremise(settings: TargetSettings, category: string | undefined, options: PeriodOption[]): EffectivePremise {
+  const defaults = defaultPremise(options);
+  const categorySetting = category ? settings.categories[category] : undefined;
+  return {
+    benchmarkWeight: categorySetting?.benchmarkWeight ?? settings.benchmarkWeight ?? defaults.benchmarkWeight,
+    preservation: categorySetting?.preservation ?? settings.preservation ?? defaults.preservation,
+    historyStart: categorySetting?.historyStart ?? settings.historyStart ?? defaults.historyStart,
+    historyEnd: categorySetting?.historyEnd ?? settings.historyEnd ?? defaults.historyEnd,
+    recentStart: categorySetting?.recentStart ?? settings.recentStart ?? defaults.recentStart,
+    recentEnd: categorySetting?.recentEnd ?? settings.recentEnd ?? defaults.recentEnd,
+  };
+}
+
+function filterRowsByPeriodRange(rows: PricingRow[], options: PeriodOption[], start?: string, end?: string): PricingRow[] {
+  const range = periodRangeSet(options, start, end);
+  if (range.size === 0) return rows;
+  return rows.filter((row) => range.has(row.periodo));
+}
+
+function normalizePremiseRange(
+  premise: Partial<EffectivePremise>,
+  options: PeriodOption[],
+): Partial<EffectivePremise> {
+  const byPeriod = new Map(options.map((option) => [option.periodo, option.rank]));
+  const out: Partial<EffectivePremise> = { ...premise };
+  if (out.historyStart && out.historyEnd && (byPeriod.get(out.historyStart) ?? 0) > (byPeriod.get(out.historyEnd) ?? 0)) {
+    out.historyEnd = out.historyStart;
+  }
+  if (out.recentStart && out.recentEnd && (byPeriod.get(out.recentStart) ?? 0) > (byPeriod.get(out.recentEnd) ?? 0)) {
+    out.recentEnd = out.recentStart;
+  }
+  return out;
 }
 
 function aggregateRows(rows: PricingRow[]): Omit<Aggregate, "key" | "label"> {
@@ -145,6 +237,10 @@ function loadSettings(): TargetSettings {
     return {
       benchmarkWeight: typeof parsed.benchmarkWeight === "number" ? parsed.benchmarkWeight : DEFAULT_SETTINGS.benchmarkWeight,
       preservation: typeof parsed.preservation === "number" ? parsed.preservation : DEFAULT_SETTINGS.preservation,
+      historyStart: typeof parsed.historyStart === "string" ? parsed.historyStart : undefined,
+      historyEnd: typeof parsed.historyEnd === "string" ? parsed.historyEnd : undefined,
+      recentStart: typeof parsed.recentStart === "string" ? parsed.recentStart : undefined,
+      recentEnd: typeof parsed.recentEnd === "string" ? parsed.recentEnd : undefined,
       categories: parsed.categories && typeof parsed.categories === "object" ? parsed.categories : {},
     };
   } catch {
@@ -156,23 +252,24 @@ function buildCategoryTargets(
   currentRows: PricingRow[],
   historyRows: PricingRow[],
   settings: TargetSettings,
+  periodOptions: PeriodOption[],
 ): TargetRow[] {
   const categories = aggregateByDimension(currentRows, (row) => row.categoria || "Sem categoria");
   const totalRol = categories.reduce((sum, row) => sum + row.rol, 0) || 1;
-  const last3 = lastPeriods(historyRows, 3);
-  const historyByCategory = aggregateByDimension(historyRows, (row) => row.categoria || "Sem categoria");
-  const recentByCategory = aggregateByDimension(
-    historyRows.filter((row) => last3.has(row.periodo)),
-    (row) => row.categoria || "Sem categoria",
-  );
-  const historyMap = new Map(historyByCategory.map((row) => [row.key, row]));
-  const recentMap = new Map(recentByCategory.map((row) => [row.key, row]));
 
   return categories.map((category) => {
     const setting = settings.categories[category.key];
-    const historical = historyMap.get(category.key)?.margemPct ?? category.margemPct;
-    const recent = recentMap.get(category.key)?.margemPct ?? category.margemPct;
-    const autoTarget = historical * settings.benchmarkWeight + recent * (1 - settings.benchmarkWeight);
+    const premise = resolvePremise(settings, category.key, periodOptions);
+    const categoryHistoryRows = historyRows.filter((row) => (row.categoria || "Sem categoria") === category.key);
+    const historicalAgg = aggregateRows(
+      filterRowsByPeriodRange(categoryHistoryRows, periodOptions, premise.historyStart, premise.historyEnd),
+    );
+    const recentAgg = aggregateRows(
+      filterRowsByPeriodRange(categoryHistoryRows, periodOptions, premise.recentStart, premise.recentEnd),
+    );
+    const historical = historicalAgg.rol > 0 ? historicalAgg.margemPct : category.margemPct;
+    const recent = recentAgg.rol > 0 ? recentAgg.margemPct : category.margemPct;
+    const autoTarget = historical * premise.benchmarkWeight + recent * (1 - premise.benchmarkWeight);
     const targetPct = setting?.mode === "manual" && typeof setting.manualTargetPct === "number"
       ? setting.manualTargetPct
       : autoTarget;
@@ -242,13 +339,15 @@ export default function MargemTarget() {
 
   const currentRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [rows, filters, selectedPeriods]);
   const historyRows = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
+  const periodOptions = useMemo(() => getPeriodOptions(historyRows), [historyRows]);
 
   const categoryTargets = useMemo(
-    () => buildCategoryTargets(currentRows, historyRows, settings),
-    [currentRows, historyRows, settings],
+    () => buildCategoryTargets(currentRows, historyRows, settings, periodOptions),
+    [currentRows, historyRows, settings, periodOptions],
   );
 
   const selectedCategoryTarget = categoryTargets.find((row) => row.key === selectedCategory);
+  const activePremise = resolvePremise(settings, selectedCategory, periodOptions);
   const categoryRows = useMemo(
     () => rowsForPath(currentRows, selectedCategory),
     [currentRows, selectedCategory],
@@ -256,8 +355,8 @@ export default function MargemTarget() {
   const skuTargets = useMemo(() => {
     if (!selectedCategoryTarget) return [];
     const skus = aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
-    return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, settings.preservation);
-  }, [categoryRows, selectedCategoryTarget, settings.preservation]);
+    return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, activePremise.preservation);
+  }, [categoryRows, selectedCategoryTarget, activePremise.preservation]);
 
   const selectedSkuTarget = skuTargets.find((row) => row.key === selectedSku);
   const skuRows = useMemo(
@@ -267,8 +366,8 @@ export default function MargemTarget() {
   const channelTargets = useMemo(() => {
     if (!selectedSkuTarget) return [];
     const channels = aggregateByDimension(skuRows, (row) => row.canalAjustado || "Sem canal");
-    return buildChildrenTargets(channels, selectedSkuTarget.targetPct, settings.preservation);
-  }, [skuRows, selectedSkuTarget, settings.preservation]);
+    return buildChildrenTargets(channels, selectedSkuTarget.targetPct, activePremise.preservation);
+  }, [skuRows, selectedSkuTarget, activePremise.preservation]);
 
   const selectedChannelTarget = channelTargets.find((row) => row.key === selectedChannel);
   const channelRows = useMemo(
@@ -278,8 +377,8 @@ export default function MargemTarget() {
   const regionalTargets = useMemo(() => {
     if (!selectedChannelTarget) return [];
     const regionals = aggregateByDimension(channelRows, (row) => row.regional || row.regiao || row.uf || "Sem regional");
-    return buildChildrenTargets(regionals, selectedChannelTarget.targetPct, settings.preservation);
-  }, [channelRows, selectedChannelTarget, settings.preservation]);
+    return buildChildrenTargets(regionals, selectedChannelTarget.targetPct, activePremise.preservation);
+  }, [channelRows, selectedChannelTarget, activePremise.preservation]);
 
   const level: DrillLevel = selectedChannel ? "regional" : selectedSku ? "channel" : selectedCategory ? "sku" : "category";
   const visibleRows = level === "category"
@@ -379,6 +478,24 @@ export default function MargemTarget() {
     }));
   };
 
+  const updateActivePremise = (patch: Partial<EffectivePremise>) => {
+    const normalizedPremise = normalizePremiseRange({ ...activePremise, ...patch }, periodOptions);
+    const normalizedPatch: Partial<EffectivePremise> = { ...patch };
+    if ("historyStart" in patch || "historyEnd" in patch) {
+      normalizedPatch.historyStart = normalizedPremise.historyStart;
+      normalizedPatch.historyEnd = normalizedPremise.historyEnd;
+    }
+    if ("recentStart" in patch || "recentEnd" in patch) {
+      normalizedPatch.recentStart = normalizedPremise.recentStart;
+      normalizedPatch.recentEnd = normalizedPremise.recentEnd;
+    }
+    if (selectedCategory) {
+      updateCategorySetting(selectedCategory, normalizedPatch);
+      return;
+    }
+    setSettings((current) => ({ ...current, ...normalizedPatch }));
+  };
+
   const resetDrill = (target: "root" | "category" | "sku") => {
     if (target === "root") {
       setSelectedCategory(undefined);
@@ -463,13 +580,13 @@ export default function MargemTarget() {
           </GlassCard>
 
           <AssumptionPanel
-            settings={settings}
+            activePremise={activePremise}
+            periodOptions={periodOptions}
             selectedCategory={selectedCategory}
             selectedSetting={selectedSetting}
             selectedManualValue={selectedManualValue}
             selectedCategoryTarget={selectedCategoryTarget}
-            onBenchmarkChange={(value) => setSettings((current) => ({ ...current, benchmarkWeight: value }))}
-            onPreservationChange={(value) => setSettings((current) => ({ ...current, preservation: value }))}
+            onPremiseChange={updateActivePremise}
             onCategoryChange={updateCategorySetting}
           />
         </div>
@@ -678,23 +795,100 @@ function SummaryTile({
   );
 }
 
+function PeriodSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value?: string;
+  options: PeriodOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">{label}</label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-8 bg-background/60 text-xs">
+          <SelectValue placeholder="Selecione" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.periodo} value={option.periodo}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function parsePercentInput(value: string): number | null {
+  const normalized = value.trim().replace("%", "").replace(",", ".");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed / 100 : null;
+}
+
+function ManualTargetInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(() => (value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (focused) return;
+    setDraft((value * 100).toLocaleString("pt-BR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }));
+  }, [focused, value]);
+
+  return (
+    <Input
+      id="manual-target"
+      inputMode="decimal"
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        const parsed = parsePercentInput(next);
+        if (parsed !== null) onChange(parsed);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parsePercentInput(draft);
+        setDraft(((parsed ?? value) * 100).toLocaleString("pt-BR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }));
+      }}
+      className="h-9"
+    />
+  );
+}
+
 function AssumptionPanel({
-  settings,
+  activePremise,
+  periodOptions,
   selectedCategory,
   selectedSetting,
   selectedManualValue,
   selectedCategoryTarget,
-  onBenchmarkChange,
-  onPreservationChange,
+  onPremiseChange,
   onCategoryChange,
 }: {
-  settings: TargetSettings;
+  activePremise: EffectivePremise;
+  periodOptions: PeriodOption[];
   selectedCategory?: string;
   selectedSetting: CategorySetting | null;
   selectedManualValue: number;
   selectedCategoryTarget?: TargetRow;
-  onBenchmarkChange: (value: number) => void;
-  onPreservationChange: (value: number) => void;
+  onPremiseChange: (patch: Partial<EffectivePremise>) => void;
   onCategoryChange: (category: string, patch: Partial<CategorySetting>) => void;
 }) {
   return (
@@ -706,6 +900,9 @@ function AssumptionPanel({
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Premissas</p>
           <h2 className="text-lg font-semibold">Motor de margem target</h2>
+          <p className="mt-0.5 max-w-[260px] truncate text-xs text-muted-foreground" title={selectedCategory ?? "Premissa global"}>
+            {selectedCategory ? `Premissa exclusiva: ${selectedCategory}` : "Premissa global padrão"}
+          </p>
         </div>
       </div>
 
@@ -713,14 +910,14 @@ function AssumptionPanel({
         <div>
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-medium">Benchmark histórico</span>
-            <span className="text-muted-foreground">{Math.round(settings.benchmarkWeight * 100)}%</span>
+            <span className="text-muted-foreground">{Math.round(activePremise.benchmarkWeight * 100)}%</span>
           </div>
           <Slider
-            value={[Math.round(settings.benchmarkWeight * 100)]}
+            value={[Math.round(activePremise.benchmarkWeight * 100)]}
             min={0}
             max={100}
             step={5}
-            onValueChange={([value]) => onBenchmarkChange(value / 100)}
+            onValueChange={([value]) => onPremiseChange({ benchmarkWeight: value / 100 })}
             aria-label="Peso do benchmark histórico"
           />
           <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
@@ -732,17 +929,50 @@ function AssumptionPanel({
           </p>
         </div>
 
+        <div className="rounded-2xl border border-border/40 bg-background/35 p-4">
+          <p className="text-sm font-semibold">Janelas fixas da meta</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            O filtro de mês da página mede a performance atual; estes períodos congelam a régua da meta.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <PeriodSelect
+              label="Histórico início"
+              value={activePremise.historyStart}
+              options={periodOptions}
+              onChange={(value) => onPremiseChange({ historyStart: value })}
+            />
+            <PeriodSelect
+              label="Histórico fim"
+              value={activePremise.historyEnd}
+              options={periodOptions}
+              onChange={(value) => onPremiseChange({ historyEnd: value })}
+            />
+            <PeriodSelect
+              label="Recente início"
+              value={activePremise.recentStart}
+              options={periodOptions}
+              onChange={(value) => onPremiseChange({ recentStart: value })}
+            />
+            <PeriodSelect
+              label="Recente fim"
+              value={activePremise.recentEnd}
+              options={periodOptions}
+              onChange={(value) => onPremiseChange({ recentEnd: value })}
+            />
+          </div>
+        </div>
+
         <div>
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-medium">Preservar cenário atual</span>
-            <span className="text-muted-foreground">{Math.round(settings.preservation * 100)}%</span>
+            <span className="text-muted-foreground">{Math.round(activePremise.preservation * 100)}%</span>
           </div>
           <Slider
-            value={[Math.round(settings.preservation * 100)]}
+            value={[Math.round(activePremise.preservation * 100)]}
             min={0}
             max={100}
             step={5}
-            onValueChange={([value]) => onPreservationChange(value / 100)}
+            onValueChange={([value]) => onPremiseChange({ preservation: value / 100 })}
             aria-label="Preservação das diferenças atuais"
           />
           <p className="mt-2 text-xs text-muted-foreground">
@@ -784,20 +1014,9 @@ function AssumptionPanel({
                   Margem target manual
                 </label>
                 <div className="mt-2 flex items-center gap-2">
-                  <Input
-                    id="manual-target"
-                    type="number"
-                    min={-100}
-                    max={100}
-                    step={0.1}
-                    value={(selectedManualValue * 100).toFixed(1)}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isFinite(value)) {
-                        onCategoryChange(selectedCategory, { mode: "manual", manualTargetPct: value / 100 });
-                      }
-                    }}
-                    className="h-9"
+                  <ManualTargetInput
+                    value={selectedManualValue}
+                    onChange={(value) => onCategoryChange(selectedCategory, { mode: "manual", manualTargetPct: value })}
                   />
                   <span className="text-sm text-muted-foreground">%</span>
                 </div>
