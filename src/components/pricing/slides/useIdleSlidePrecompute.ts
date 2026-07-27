@@ -15,6 +15,8 @@ type WindowWithIdleCallback = Window & {
   cancelIdleCallback?: (handle: number) => void;
 };
 
+const IDLE_PRECOMPUTE_WINDOW = 5;
+
 function scheduleIdle(callback: (deadline: IdleDeadlineLike) => void): IdleCallbackHandle {
   if (typeof window === "undefined") return setTimeout(() => callback({ didTimeout: true, timeRemaining: () => 0 }), 1);
   const win = window as WindowWithIdleCallback;
@@ -37,14 +39,15 @@ function cancelIdle(handle: IdleCallbackHandle): void {
 function nearbyItemsByDistance(items: SlideItem[], selectedId: string | null): SlideItem[] {
   const selectedIndex = selectedId ? items.findIndex((item) => item.id === selectedId) : 0;
   const origin = selectedIndex >= 0 ? selectedIndex : 0;
+  const indexById = new Map(items.map((item, index) => [item.id, index]));
   return [...items].sort((a, b) => {
-    const ia = items.indexOf(a);
-    const ib = items.indexOf(b);
+    const ia = indexById.get(a.id) ?? 0;
+    const ib = indexById.get(b.id) ?? 0;
     const da = Math.abs(ia - origin);
     const db = Math.abs(ib - origin);
     if (da !== db) return da - db;
     return ia - ib;
-  });
+  }).slice(0, IDLE_PRECOMPUTE_WINDOW);
 }
 
 function recordIdleMetric(name: string, id?: string): void {

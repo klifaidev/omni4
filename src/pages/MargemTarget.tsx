@@ -256,19 +256,24 @@ function buildCategoryTargets(
 ): TargetRow[] {
   const categories = aggregateByDimension(currentRows, (row) => row.categoria || "Sem categoria");
   const totalRol = categories.reduce((sum, row) => sum + row.rol, 0) || 1;
+  const rangeAggregates = new Map<string, Map<string, Aggregate>>();
+  const aggregatesForRange = (start?: string, end?: string) => {
+    const key = `${start ?? ""}|${end ?? ""}`;
+    const cached = rangeAggregates.get(key);
+    if (cached) return cached;
+    const rowsForRange = filterRowsByPeriodRange(historyRows, periodOptions, start, end);
+    const map = new Map(aggregateByDimension(rowsForRange, (row) => row.categoria || "Sem categoria").map((row) => [row.key, row]));
+    rangeAggregates.set(key, map);
+    return map;
+  };
 
   return categories.map((category) => {
     const setting = settings.categories[category.key];
     const premise = resolvePremise(settings, category.key, periodOptions);
-    const categoryHistoryRows = historyRows.filter((row) => (row.categoria || "Sem categoria") === category.key);
-    const historicalAgg = aggregateRows(
-      filterRowsByPeriodRange(categoryHistoryRows, periodOptions, premise.historyStart, premise.historyEnd),
-    );
-    const recentAgg = aggregateRows(
-      filterRowsByPeriodRange(categoryHistoryRows, periodOptions, premise.recentStart, premise.recentEnd),
-    );
-    const historical = historicalAgg.rol > 0 ? historicalAgg.margemPct : category.margemPct;
-    const recent = recentAgg.rol > 0 ? recentAgg.margemPct : category.margemPct;
+    const historicalAgg = aggregatesForRange(premise.historyStart, premise.historyEnd).get(category.key);
+    const recentAgg = aggregatesForRange(premise.recentStart, premise.recentEnd).get(category.key);
+    const historical = historicalAgg && historicalAgg.rol > 0 ? historicalAgg.margemPct : category.margemPct;
+    const recent = recentAgg && recentAgg.rol > 0 ? recentAgg.margemPct : category.margemPct;
     const autoTarget = historical * premise.benchmarkWeight + recent * (1 - premise.benchmarkWeight);
     const targetPct = setting?.mode === "manual" && typeof setting.manualTargetPct === "number"
       ? setting.manualTargetPct

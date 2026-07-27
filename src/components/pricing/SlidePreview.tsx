@@ -64,6 +64,24 @@ const SLIDE_W = 1333;
 const SLIDE_H = 750;
 type PreviewDataRow = Record<string, number | string | null | undefined>;
 
+type ThumbnailKeySignature = {
+  pricingMetric: string;
+  pricingSignature: string;
+  budgetSignature: string;
+  forecastSignature: string;
+  rollingSignature: string;
+};
+
+const slideThumbnailKeyByItem = new WeakMap<SlideItem, { signature: ThumbnailKeySignature; key: string }>();
+
+function sameThumbnailKeySignature(a: ThumbnailKeySignature, b: ThumbnailKeySignature): boolean {
+  return a.pricingMetric === b.pricingMetric
+    && a.pricingSignature === b.pricingSignature
+    && a.budgetSignature === b.budgetSignature
+    && a.forecastSignature === b.forecastSignature
+    && a.rollingSignature === b.rollingSignature;
+}
+
 // ---------------------------------------------------------------------------
 // Format helpers (idênticos ao slide)
 // ---------------------------------------------------------------------------
@@ -1285,7 +1303,16 @@ function buildSlideThumbnailKeyFromSignatures({
   forecastSignature: string;
   rollingSignature: string;
 }): string {
-  return buildSlideThumbnailKey({
+  const signature = {
+    pricingMetric,
+    pricingSignature,
+    budgetSignature,
+    forecastSignature,
+    rollingSignature,
+  };
+  const cached = slideThumbnailKeyByItem.get(item);
+  if (cached && sameThumbnailKeySignature(cached.signature, signature)) return cached.key;
+  const key = buildSlideThumbnailKey({
     item,
     pricingMetric,
     pricingSignature,
@@ -1294,6 +1321,8 @@ function buildSlideThumbnailKeyFromSignatures({
     rollingSignature,
     renderWidth: STATIC_THUMBNAIL_W,
   });
+  slideThumbnailKeyByItem.set(item, { signature, key });
+  return key;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

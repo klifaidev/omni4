@@ -204,9 +204,10 @@ function stableBlock(prev: CustomBlock | undefined, next: CustomBlock): CustomBl
 
 function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, overscan = SLIDE_PREVIEW_OVERSCAN) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<number | null>(null);
   const [range, setRange] = useState({ start: 0, end: Math.min(count, overscan + 1) });
 
-  const recompute = useCallback(() => {
+  const computeRange = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
       setRange({ start: 0, end: Math.min(count, overscan + 1) });
@@ -218,6 +219,18 @@ function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, ove
     const end = Math.min(count, Math.ceil((scrollTop + visibleHeight) / estimatedItemHeight) + overscan);
     setRange((current) => (current.start === start && current.end === end ? current : { start, end }));
   }, [count, estimatedItemHeight, overscan]);
+
+  const recompute = useCallback(() => {
+    if (typeof window === "undefined") {
+      computeRange();
+      return;
+    }
+    if (frameRef.current !== null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      computeRange();
+    });
+  }, [computeRange]);
 
   useEffect(() => {
     recompute();
@@ -231,6 +244,12 @@ function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, ove
   useEffect(() => {
     recompute();
   }, [count, recompute]);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null && typeof window !== "undefined") {
+      window.cancelAnimationFrame(frameRef.current);
+    }
+  }, []);
 
   const isPreviewVisible = useCallback((index: number) => (
     index >= range.start && index < range.end
