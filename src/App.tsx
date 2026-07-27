@@ -12,6 +12,7 @@ import Dre from "./pages/Dre.tsx";
 import Canais from "./pages/Canais.tsx";
 import Custos from "./pages/Custos.tsx";
 import Inovacao from "./pages/Inovacao.tsx";
+import MargemTarget from "./pages/MargemTarget.tsx";
 import Budget from "./pages/Budget.tsx";
 import Rolling from "./pages/Rolling.tsx";
 import SlidesBeta from "./pages/SlidesBeta.tsx";
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/canais" element={<Canais />} />
             <Route path="/custos" element={<Custos />} />
             <Route path="/inovacao" element={<Inovacao />} />
+            <Route path="/margem-target" element={<MargemTarget />} />
             <Route path="/budget" element={<Budget />} />
             <Route path="/rolling" element={<Rolling />} />
             <Route path="/abc" element={<Abc />} />

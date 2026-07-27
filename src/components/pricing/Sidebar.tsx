@@ -59,6 +59,7 @@ const dashItems = [
   { to: "/canais", label: "Canais", icon: Network },
   { to: "/custos", label: "Custos", icon: Coins },
   { to: "/inovacao", label: "Inovação", icon: Sparkles },
+  { to: "/margem-target", label: "Margem Target", icon: Target },
   { to: "/abc", label: "Portfólio de SKUs", icon: LineChart },
   { to: "/budget", label: "Budget", icon: Target },
   { to: "/rolling", label: "Rolling", icon: TrendingUp },
