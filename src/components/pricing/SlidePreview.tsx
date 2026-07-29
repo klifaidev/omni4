@@ -681,7 +681,7 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
     ? [
       steps[0],
       steps[1],
-      { label: `Efeito ${pvm.othersLabel ?? "outros"}`, value: pvm.others, type: "delta" as const },
+      { label: `Efeito ${pvm.othersLabel ?? "Mix e Resíduo Comercial"}`, value: pvm.others, type: "delta" as const },
       steps[5],
       steps[6],
       steps[7],

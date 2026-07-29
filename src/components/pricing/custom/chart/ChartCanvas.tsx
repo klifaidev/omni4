@@ -2255,7 +2255,7 @@ function WaterfallChart({
         );
       }
       items.push(
-        { label: r.othersLabel ?? "Outros", value: r.others, type: t(r.others) },
+        { label: r.othersLabel ?? "Mix e Resíduo Comercial", value: r.others, type: t(r.others) },
         { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
       );
       return items;

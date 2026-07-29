@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { BudgetRow } from "./budget";
-import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, validateBridgeAgainstDre } from "./bridgeYtdBudget";
+import type { PricingRow } from "./types";
 
 function row(
   kind: BudgetRow["kind"],
@@ -22,6 +23,7 @@ function row(
     fyNum: 2026,
     kind,
     categoria,
+    sku: categoria,
     volumeKg,
     receita,
     cm,
@@ -46,7 +48,7 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(result?.result.current).toBe(135);
     expect(result?.result.freight).toBe(0);
     expect(result?.result.commission).toBe(0);
-    expect(result?.result.othersLabel).toBe("Outros Custos");
+    expect(result?.result.othersLabel).toBe("Mix e Resíduo Comercial");
     expect(result?.result.commercialCostsCollapsed).toBe(true);
     expect(result?.result.currentLabel).toContain("Real YTD");
   });
@@ -90,5 +92,46 @@ describe("computeBridgeYtdRealVsBudget", () => {
       + (result?.result.cost ?? 0)
       + (result?.result.others ?? 0),
     );
+  });
+
+  it("routes low-volume SKUs to mix/residual instead of unstable unit effects", () => {
+    const result = computeBridgeYtdRealVsBudget([
+      row("budget", "004.2025", 4000, "Base", -6000, 1000, 10000),
+      row("real", "004.2025", 4200, "Base", -6300, 1000, 10500),
+      row("budget", "004.2025", 4, "Tiny", -1, 0.5, 5),
+      row("real", "004.2025", 6, "Tiny", -1000, 500, 5000),
+    ], {}, "cm");
+
+    const tiny = result?.result.skuDetails.find((detail) => detail.sku === "Tiny");
+    expect(tiny?.residualCause).toBe("low_volume");
+    expect(tiny?.priceEffect).toBe(0);
+    expect(tiny?.costEffect).toBe(0);
+    expect(tiny?.lowVolumeResidualEffect).toBeCloseTo(2);
+  });
+
+  it("validates bridge current against an independent DRE CM total", () => {
+    const result = computeBridgeYtdRealVsBudget([
+      row("budget", "004.2025", 40, "Chocolates", -60, 10, 100),
+      row("real", "004.2025", 42, "Chocolates", -84, 12, 132),
+    ], {}, "cm");
+    const validation = validateBridgeAgainstDre(result!.result, [{
+      periodo: "004.2025",
+      mes: 4,
+      ano: 2025,
+      fy: "FY26",
+      fyNum: 2026,
+      volumeKg: 12,
+      rol: 132,
+      cogs: 84,
+      custoVariavel: 84,
+      custoFixo: 0,
+      margemBruta: 48,
+      contribMarginal: 42,
+      frete: 0,
+      comissao: 0,
+    } satisfies PricingRow]);
+
+    expect(validation.ok).toBe(true);
+    expect(validation.difference).toBeCloseTo(0);
   });
 });

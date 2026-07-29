@@ -12,6 +12,9 @@ export interface BridgeYtdBudgetResult {
   latestPeriodLabel: string;
 }
 
+const MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS = 0.01;
+const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
+
 function periodSortValue(row: Pick<PricingRow, "ano" | "mes">): number {
   return row.ano * 100 + row.mes;
 }
@@ -102,6 +105,11 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
 
   const base = aggSku(baseRows);
   const comp = aggSku(compRows);
+  const totalVolume = [...base.values(), ...comp.values()].reduce((sum, row) => sum + Math.max(0, row.vol), 0);
+  const minMaterialVolume = Math.max(
+    MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS,
+    totalVolume * MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS,
+  );
   const descMap = new Map<string, string>();
   for (const row of [...baseRows, ...compRows]) {
     const key = row.sku || row.skuDesc || "-";
@@ -143,10 +151,23 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
       freightEffect: 0,
       commissionEffect: 0,
       othersEffect: 0,
+      mixResidualEffect: 0,
+      skuOnlyEffect: 0,
+      lowVolumeResidualEffect: 0,
     };
 
     if (!a || !b || a.vol === 0 || b.vol === 0) {
       detail.othersEffect = (b?.margem ?? 0) - (a?.margem ?? 0);
+      detail.skuOnlyEffect = detail.othersEffect;
+      detail.residualCause = "sku_only";
+      skuDetails.push(detail);
+      continue;
+    }
+
+    if (a.vol < minMaterialVolume || b.vol < minMaterialVolume) {
+      detail.othersEffect = b.margem - a.margem;
+      detail.lowVolumeResidualEffect = detail.othersEffect;
+      detail.residualCause = "low_volume";
       skuDetails.push(detail);
       continue;
     }
@@ -160,6 +181,8 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
     detail.priceEffect = priceEffect;
     detail.costEffect = costEffect;
     detail.othersEffect = othersEffect;
+    detail.mixResidualEffect = othersEffect;
+    detail.residualCause = "mix";
     skuDetails.push(detail);
 
     volume += volumeEffect;
@@ -176,12 +199,29 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
     freight: 0,
     commission: 0,
     others,
-    othersLabel: "Outros Custos",
+    othersLabel: "Mix e Resíduo Comercial",
     commercialCostsCollapsed: true,
     current: currentTotal,
     baseLabel: labels.base,
     currentLabel: labels.comp,
     skuDetails,
+  };
+}
+
+export function validateBridgeAgainstDre(
+  result: PVMResult,
+  dreRows: PricingRow[],
+  toleranceRatio = 0.0001,
+): { expectedRealCm: number; bridgeCurrent: number; difference: number; ok: boolean } {
+  const expectedRealCm = dreRows.reduce((sum, row) => sum + (row.contribMarginal ?? 0), 0);
+  const bridgeCurrent = result.current;
+  const difference = bridgeCurrent - expectedRealCm;
+  const tolerance = Math.max(1, Math.abs(expectedRealCm) * toleranceRatio);
+  return {
+    expectedRealCm,
+    bridgeCurrent,
+    difference,
+    ok: Math.abs(difference) <= tolerance,
   };
 }
 

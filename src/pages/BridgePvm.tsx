@@ -42,9 +42,14 @@ const EFFECTS: Array<{
     label: "Efeito Custo Variável",
     subtitle: "Ganhos e pressões vindos do custo variável unitário.",
   },
+  {
+    key: "othersEffect",
+    label: "Mix e Resíduo Comercial",
+    subtitle: "SKUs não comparáveis, baixo volume e resíduo de mix/comercial.",
+  },
 ];
 
-type PvmEffectKey = keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
+type PvmEffectKey = keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect" | "othersEffect">;
 
 type PvmRankingItem = {
   id: string;
@@ -53,6 +58,7 @@ type PvmRankingItem = {
   volumeEffect: number;
   priceEffect: number;
   costEffect: number;
+  othersEffect: number;
 };
 
 export default function BridgePvm() {
@@ -113,6 +119,7 @@ export default function BridgePvm() {
       volumeEffect: item.volumeEffect,
       priceEffect: item.priceEffect,
       costEffect: item.costEffect,
+      othersEffect: item.othersEffect,
     })) ?? [],
     [result],
   );
@@ -291,7 +298,7 @@ export default function BridgePvm() {
                   Categorias que mais ajudam ou pressionam Volume, Preço e Custo Variável.
                 </p>
               </div>
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="grid gap-4 xl:grid-cols-4">
                 {EFFECTS.map((effect) => (
                   <EffectRankingCard
                     key={`categoria-${effect.key}`}
@@ -311,7 +318,7 @@ export default function BridgePvm() {
                   SKUs que explicam os principais ganhos e ofensores dentro de cada efeito.
                 </p>
               </div>
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="grid gap-4 xl:grid-cols-4">
               {EFFECTS.map((effect) => (
                 <EffectRankingCard
                   key={`sku-${effect.key}`}
@@ -504,10 +511,12 @@ function buildCategoryRankingDetails(
       volumeEffect: 0,
       priceEffect: 0,
       costEffect: 0,
+      othersEffect: 0,
     };
     current.volumeEffect += item.volumeEffect;
     current.priceEffect += item.priceEffect;
     current.costEffect += item.costEffect;
+    current.othersEffect += item.othersEffect;
     grouped.set(category, current);
   });
 
@@ -524,7 +533,7 @@ const EFFECT_LABELS: Record<keyof Pick<PVMResult, "volume" | "price" | "cost" | 
   cost: "Custo Variável",
   freight: "Frete",
   commission: "Comissão",
-  others: "Mix/Outros",
+  others: "Mix e Resíduo Comercial",
 };
 
 type EffectKey = keyof typeof EFFECT_LABELS;

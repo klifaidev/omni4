@@ -302,6 +302,10 @@ export interface PVMSkuDetail {
   freightEffect: number;
   commissionEffect: number;
   othersEffect: number; // for orphan SKUs, full margin impact
+  mixResidualEffect?: number;
+  skuOnlyEffect?: number;
+  lowVolumeResidualEffect?: number;
+  residualCause?: "sku_only" | "low_volume" | "mix";
 }
 
 export interface PVMResult {

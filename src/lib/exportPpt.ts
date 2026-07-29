@@ -447,7 +447,7 @@ function addOverviewDreBridgeSlide(
     );
   }
   steps.push(
-    { label: `Efeito ${result.othersLabel ?? "outros"}`, value: result.others, type: "delta" },
+    { label: `Efeito ${result.othersLabel ?? "Mix e Resíduo Comercial"}`, value: result.others, type: "delta" },
     { label: "Efeito preço", value: result.price, type: "delta" },
     { label: "Efeito custo variável", value: result.cost, type: "delta" },
     { label: `Contrib. Marginal ${result.currentLabel}`, value: result.current, type: "total" },
@@ -606,7 +606,7 @@ function addBridgeTableSlide(pptx: PptxGenJS, result: PVMResult) {
       [{ text: "Efeito Frete" }, { text: brl(result.freight), options: { align: "right" } }],
       [{ text: "Efeito Comissão" }, { text: brl(result.commission), options: { align: "right" } }],
     ] as PptxGenJS.TableRow[]),
-    [{ text: `Efeito ${result.othersLabel ?? "Outros"}` }, { text: brl(result.others), options: { align: "right" } }],
+    [{ text: `Efeito ${result.othersLabel ?? "Mix e Resíduo Comercial"}` }, { text: brl(result.others), options: { align: "right" } }],
     [
       { text: `Margem atual (${result.currentLabel})`, options: { bold: true, fill: { color: PPT_COLORS.surfaceAlt } } },
       { text: brl(result.current), options: { bold: true, align: "right", fill: { color: PPT_COLORS.surfaceAlt } } },

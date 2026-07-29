@@ -67,7 +67,7 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
   lines.push(["Efeito Custo Variavel", fmt(result.cost)].join(sep));
   lines.push(["Efeito Frete", fmt(result.freight)].join(sep));
   lines.push(["Efeito Comissao", fmt(result.commission)].join(sep));
-  lines.push(["Efeito Outros (Mix + Residuo)", fmt(result.others)].join(sep));
+  lines.push([`Efeito ${result.othersLabel ?? "Mix e Residuo Comercial"}`, fmt(result.others)].join(sep));
   lines.push(["Margem Atual (B)", fmt(result.current)].join(sep));
   lines.push(["Variacao Total", fmt(result.current - result.base)].join(sep));
   lines.push("");
@@ -101,7 +101,11 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
     "Efeito Custo",
     "Efeito Frete",
     "Efeito Comissao",
-    "Efeito Outros",
+    result.othersLabel ?? "Mix e Residuo Comercial",
+    "Causa Residuo",
+    "Residuo SKU Exclusivo",
+    "Residuo Baixo Volume",
+    "Residuo Mix",
   ];
   lines.push(header.map(esc).join(sep));
 
@@ -158,6 +162,10 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
         fmt(d.freightEffect),
         fmt(d.commissionEffect),
         fmt(d.othersEffect),
+        esc(d.residualCause ?? ""),
+        fmt(d.skuOnlyEffect ?? 0),
+        fmt(d.lowVolumeResidualEffect ?? 0),
+        fmt(d.mixResidualEffect ?? 0),
       ].join(sep),
     );
   }
