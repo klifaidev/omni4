@@ -53,6 +53,7 @@ type TargetWeightKey = "historyWeight" | "recentWeight" | "budgetWeight";
 interface CategorySetting {
   mode: TargetMode;
   manualTargetPct?: number;
+  skuOverrides?: Record<string, number>;
   benchmarkWeight?: number;
   historyWeight?: number;
   recentWeight?: number;
@@ -83,10 +84,12 @@ interface TargetRow extends Record<string, unknown> {
   parent?: string;
   skuCode?: string;
   recentMarginPct?: number;
+  manualOverride?: boolean;
   rol: number;
   margem: number;
   margemPct: number;
   volumeKg: number;
+  baseTargetPct?: number;
   targetPct: number;
   gapPp: number;
   impact: number;
@@ -400,9 +403,26 @@ function buildCategoryTargets(
     const targetPct = setting?.mode === "manual" && typeof setting.manualTargetPct === "number"
       ? setting.manualTargetPct
       : autoTarget;
-    return buildTargetRow(category, targetPct, totalRol, {
+    const skuOverrideCount = setting?.skuOverrides ? Object.keys(setting.skuOverrides).length : 0;
+    const adjustedTargetPct = skuOverrideCount > 0
+      ? weightedTargetFromRows(
+          buildSkuTargetsForCategory({
+            categoryRows: rowsForPath(currentRows, category.key),
+            categoryTargetPct: targetPct,
+            preservation: premise.preservation,
+            periodOptions,
+            recentStart: premise.recentStart,
+            recentEnd: premise.recentEnd,
+            overrides: setting?.skuOverrides,
+          }),
+          targetPct,
+        )
+      : targetPct;
+    return buildTargetRow(category, adjustedTargetPct, totalRol, {
       budgetAvailable,
       appliedBudgetWeight: appliedWeights.budgetWeight,
+      manualOverride: skuOverrideCount > 0,
+      baseTargetPct: targetPct,
     });
   });
 }
@@ -416,11 +436,55 @@ function buildChildrenTargets(children: Aggregate[], parentTargetPct: number, pr
   });
 }
 
+function buildSkuTargetsForCategory(args: {
+  categoryRows: PricingRow[];
+  categoryTargetPct: number;
+  preservation: number;
+  periodOptions: PeriodOption[];
+  recentStart?: string;
+  recentEnd?: string;
+  overrides?: Record<string, number>;
+}): TargetRow[] {
+  const skuCodeByLabel = new Map<string, string>();
+  for (const row of args.categoryRows) {
+    const label = row.skuDesc || row.sku || "Sem SKU";
+    if (!skuCodeByLabel.has(label)) skuCodeByLabel.set(label, row.sku || "");
+  }
+  const recentSkuAgg = new Map(
+    aggregateByDimension(
+      filterRowsByPeriodRange(args.categoryRows, args.periodOptions, args.recentStart, args.recentEnd),
+      (row) => row.skuDesc || row.sku || "Sem SKU",
+    ).map((row) => [row.key, row]),
+  );
+  const skus = aggregateByDimension(args.categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
+  return buildChildrenTargets(skus, args.categoryTargetPct, args.preservation)
+    .map((row) => {
+      const manualTarget = args.overrides?.[row.key];
+      const targetPct = typeof manualTarget === "number" ? manualTarget : row.targetPct;
+      return {
+        ...row,
+        targetPct,
+        gapPp: targetPct - row.margemPct,
+        impact: (targetPct - row.margemPct) * row.rol,
+        risk: Math.abs(targetPct - row.margemPct) >= 0.05 ? "critical" : Math.abs(targetPct - row.margemPct) >= 0.02 ? "attention" : "ok",
+        skuCode: skuCodeByLabel.get(row.key) ?? "",
+        recentMarginPct: recentSkuAgg.get(row.key)?.margemPct,
+        manualOverride: typeof manualTarget === "number",
+      };
+    });
+}
+
+function weightedTargetFromRows(rows: TargetRow[], fallback: number): number {
+  const totalRol = rows.reduce((sum, row) => sum + row.rol, 0);
+  if (totalRol <= 0) return fallback;
+  return rows.reduce((sum, row) => sum + row.targetPct * row.rol, 0) / totalRol;
+}
+
 function buildTargetRow(
   row: Aggregate,
   targetPct: number,
   totalRol: number,
-  extra?: Pick<TargetRow, "budgetAvailable" | "appliedBudgetWeight">,
+  extra?: Pick<TargetRow, "budgetAvailable" | "appliedBudgetWeight" | "manualOverride" | "baseTargetPct">,
 ): TargetRow {
   const gapPp = targetPct - row.margemPct;
   const impact = gapPp * row.rol;
@@ -466,11 +530,15 @@ function buildTargetExportRows(
     out.push(targetRowToExport(category, "category", category.label, "", "", ""));
     const premise = resolvePremise(settings, category.key, periodOptions);
     const categoryRows = rowsForPath(currentRows, category.key);
-    const skuTargets = buildChildrenTargets(
-      aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU"),
-      category.targetPct,
-      premise.preservation,
-    );
+    const skuTargets = buildSkuTargetsForCategory({
+      categoryRows,
+      categoryTargetPct: category.baseTargetPct ?? category.targetPct,
+      preservation: premise.preservation,
+      periodOptions,
+      recentStart: premise.recentStart,
+      recentEnd: premise.recentEnd,
+      overrides: settings.categories[category.key]?.skuOverrides,
+    });
     for (const sku of skuTargets) {
       out.push(targetRowToExport(sku, "sku", category.label, sku.label, "", ""));
       const skuRows = rowsForPath(currentRows, category.key, sku.key);
@@ -703,25 +771,16 @@ export default function MargemTarget() {
   );
   const skuTargets = useMemo(() => {
     if (!selectedCategoryTarget) return [];
-    const skuCodeByLabel = new Map<string, string>();
-    for (const row of categoryRows) {
-      const label = row.skuDesc || row.sku || "Sem SKU";
-      if (!skuCodeByLabel.has(label)) skuCodeByLabel.set(label, row.sku || "");
-    }
-    const recentSkuAgg = new Map(
-      aggregateByDimension(
-        filterRowsByPeriodRange(categoryRows, periodOptions, activePremise.recentStart, activePremise.recentEnd),
-        (row) => row.skuDesc || row.sku || "Sem SKU",
-      ).map((row) => [row.key, row]),
-    );
-    const skus = aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
-    return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, activePremise.preservation)
-      .map((row) => ({
-        ...row,
-        skuCode: skuCodeByLabel.get(row.key) ?? "",
-        recentMarginPct: recentSkuAgg.get(row.key)?.margemPct,
-      }));
-  }, [categoryRows, periodOptions, selectedCategoryTarget, activePremise.preservation, activePremise.recentStart, activePremise.recentEnd]);
+    return buildSkuTargetsForCategory({
+      categoryRows,
+      categoryTargetPct: selectedCategoryTarget.baseTargetPct ?? selectedCategoryTarget.targetPct,
+      preservation: activePremise.preservation,
+      periodOptions,
+      recentStart: activePremise.recentStart,
+      recentEnd: activePremise.recentEnd,
+      overrides: selectedCategory ? settings.categories[selectedCategory]?.skuOverrides : undefined,
+    });
+  }, [categoryRows, periodOptions, selectedCategoryTarget, activePremise.preservation, activePremise.recentStart, activePremise.recentEnd, selectedCategory, settings.categories]);
 
   const selectedSkuTarget = skuTargets.find((row) => row.key === selectedSku);
   const skuRows = useMemo(
@@ -764,6 +823,27 @@ export default function MargemTarget() {
     target: row.targetPct * 100,
     gap: row.gapPp,
   }));
+
+  const updateSkuOverride = (skuKey: string, value: number | null) => {
+    if (!selectedCategory) return;
+    setSettings((current) => {
+      const currentCategory = current.categories[selectedCategory];
+      const nextOverrides = { ...(currentCategory?.skuOverrides ?? {}) };
+      if (value === null) delete nextOverrides[skuKey];
+      else nextOverrides[skuKey] = value;
+      return {
+        ...current,
+        categories: {
+          ...current.categories,
+          [selectedCategory]: {
+            mode: currentCategory?.mode ?? "auto",
+            ...currentCategory,
+            skuOverrides: nextOverrides,
+          },
+        },
+      };
+    });
+  };
 
   const columns: DataTableColumn<TargetRow>[] = [
     ...(level === "sku"
@@ -821,7 +901,36 @@ export default function MargemTarget() {
           ),
         } satisfies DataTableColumn<TargetRow>]
       : []),
-    { key: "targetPct", label: "Target", align: "right", format: (value) => formatPct(Number(value)) },
+    {
+      key: "targetPct",
+      label: "Target",
+      align: "right",
+      format: (value, row) => (
+        level === "sku" ? (
+          <div className="flex items-center justify-end gap-2">
+            {row.manualOverride ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updateSkuOverride(row.key, null);
+                }}
+              >
+                Auto
+              </Button>
+            ) : null}
+            <InlinePercentInput
+              value={Number(value)}
+              manual={Boolean(row.manualOverride)}
+              onCommit={(next) => updateSkuOverride(row.key, next)}
+            />
+          </div>
+        ) : formatPct(Number(value))
+      ),
+    },
     {
       key: "gapPp",
       label: "Gap",
@@ -1278,6 +1387,71 @@ function ManualTargetInput({ value, onChange }: { value: number; onChange: (valu
       }}
       className="h-9"
     />
+  );
+}
+
+function InlinePercentInput({
+  value,
+  manual,
+  onCommit,
+}: {
+  value: number;
+  manual: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => (value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (focused) return;
+    setDraft((value * 100).toLocaleString("pt-BR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }));
+  }, [focused, value]);
+
+  const commit = () => {
+    const parsed = parsePercentInput(draft);
+    const next = parsed ?? value;
+    setDraft((next * 100).toLocaleString("pt-BR", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }));
+    onCommit(next);
+  };
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      {manual ? (
+        <Badge className="border-primary/30 bg-primary/10 px-1.5 py-0 text-[10px] text-primary hover:bg-primary/10">
+          Manual
+        </Badge>
+      ) : null}
+      <Input
+        value={draft}
+        inputMode="decimal"
+        className={cn(
+          "h-8 w-20 border-border/50 bg-background/60 px-2 text-right text-xs font-semibold tabular-nums",
+          manual && "border-primary/35 bg-primary/5 text-primary",
+        )}
+        aria-label="Margem target manual do SKU"
+        onFocus={() => setFocused(true)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          setFocused(false);
+          commit();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <span className="text-xs text-muted-foreground">%</span>
+    </div>
   );
 }
 
