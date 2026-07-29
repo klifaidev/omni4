@@ -14,7 +14,6 @@ import type { BudgetRow } from "./budget";
 import { applyFilters, calcPVM } from "./analytics";
 import { applyBudgetFilters } from "./budget";
 import { useBudget } from "@/store/budget";
-import { usePricing } from "@/store/pricing";
 import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
 import { monthLabel } from "./format";
 import {
@@ -178,7 +177,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       return {
         build: async (pptx) => {
           if (cfg.mode === "ytd_budget") {
-            const ytd = computeBridgeYtdRealVsBudget(ctx.budgetRows, ctx.pricingRows, cfg.filters, ctx.metric);
+            const ytd = computeBridgeYtdRealVsBudget(ctx.budgetRows, cfg.filters, ctx.metric);
             if (!ytd) {
               throw new Error(`Bridge PVM "${item.label}": sem dados Real/Budget suficientes para YTD.`);
             }
@@ -322,8 +321,7 @@ export function isItemReady(item: SlideItem): { ok: boolean; reason?: string } {
   switch (item.kind) {
     case "bridge_pvm":
       if (item.config.mode === "ytd_budget") {
-        if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue dados de Budget antes de usar YTD Real vs Budget." };
-        if (usePricing.getState().rows.length === 0) return { ok: false, reason: "Carregue dados Real antes de usar YTD Real vs Budget." };
+        if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue a Superbase com Budget e Real antes de usar YTD Real vs Budget." };
         return { ok: true };
       }
       if (!item.config.base || !item.config.comp) return { ok: false, reason: "Defina período base e comparação." };

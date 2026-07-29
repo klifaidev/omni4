@@ -533,11 +533,11 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
       slideId: item.id,
       blockId: "bridge-pvm",
       dataSource: item.config.mode === "ytd_budget" ? "budget" : "ke30",
-      dataSignature: item.config.mode === "ytd_budget" ? `${budgetSignature}|${pricingSignature}` : pricingSignature,
+      dataSignature: item.config.mode === "ytd_budget" ? budgetSignature : pricingSignature,
       params: { metric, config: item.config },
     }, () => {
       if (item.config.mode === "ytd_budget") {
-        return computeBridgeYtdRealVsBudget(budgetRows, pricingRows, item.config.filters, metric)?.result ?? null;
+        return computeBridgeYtdRealVsBudget(budgetRows, item.config.filters, metric)?.result ?? null;
       }
       const filtered = applyFilters(pricingRows, item.config.filters, null);
       const labels = item.config.mode === "month"

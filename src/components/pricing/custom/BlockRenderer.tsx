@@ -2545,11 +2545,11 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
 
   const result = useMemo(() => {
     if (b.periodMode === "ytd_budget") {
-      return computeBridgeYtdRealVsBudget(budget, pricing, b.filters, metric)?.result ?? null;
+      return computeBridgeYtdRealVsBudget(budget, b.filters, metric)?.result ?? null;
     }
     if (!baseKey || !compKey) return null;
     return calcPVM(filtered, metric, baseKey, compKey, b.periodMode);
-  }, [budget, pricing, b.filters, b.periodMode, filtered, baseKey, compKey, metric]);
+  }, [budget, b.filters, b.periodMode, filtered, baseKey, compKey, metric]);
 
   if (!result) return omniEmpty("Selecione dois períodos para comparar.");
 
