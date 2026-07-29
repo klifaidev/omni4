@@ -81,6 +81,7 @@ interface TargetRow extends Record<string, unknown> {
   key: string;
   label: string;
   parent?: string;
+  skuCode?: string;
   rol: number;
   margem: number;
   margemPct: number;
@@ -701,8 +702,14 @@ export default function MargemTarget() {
   );
   const skuTargets = useMemo(() => {
     if (!selectedCategoryTarget) return [];
+    const skuCodeByLabel = new Map<string, string>();
+    for (const row of categoryRows) {
+      const label = row.skuDesc || row.sku || "Sem SKU";
+      if (!skuCodeByLabel.has(label)) skuCodeByLabel.set(label, row.sku || "");
+    }
     const skus = aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
-    return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, activePremise.preservation);
+    return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, activePremise.preservation)
+      .map((row) => ({ ...row, skuCode: skuCodeByLabel.get(row.key) ?? "" }));
   }, [categoryRows, selectedCategoryTarget, activePremise.preservation]);
 
   const selectedSkuTarget = skuTargets.find((row) => row.key === selectedSku);
@@ -748,9 +755,21 @@ export default function MargemTarget() {
   }));
 
   const columns: DataTableColumn<TargetRow>[] = [
+    ...(level === "sku"
+      ? [{
+          key: "skuCode",
+          label: "Cód. SKU",
+          className: "w-[120px]",
+          format: (value) => (
+            <span className="font-mono text-[11px] font-semibold text-muted-foreground">
+              {String(value || "—")}
+            </span>
+          ),
+        } satisfies DataTableColumn<TargetRow>]
+      : []),
     {
       key: "label",
-      label: getDimensionLabel(level),
+      label: level === "sku" ? "Descrição" : getDimensionLabel(level),
       format: (value, row) => (
         <button
           type="button"
@@ -930,7 +949,7 @@ export default function MargemTarget() {
                   rows={visibleRows}
                   columns={columns}
                   searchable
-                  searchKeys={["label"]}
+                  searchKeys={level === "sku" ? ["label", "skuCode"] : ["label"]}
                   pageSize={12}
                   emptyMessage="Sem dados para este recorte."
                 />
