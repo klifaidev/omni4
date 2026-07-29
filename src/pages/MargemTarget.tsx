@@ -82,6 +82,7 @@ interface TargetRow extends Record<string, unknown> {
   label: string;
   parent?: string;
   skuCode?: string;
+  recentMarginPct?: number;
   rol: number;
   margem: number;
   margemPct: number;
@@ -707,10 +708,20 @@ export default function MargemTarget() {
       const label = row.skuDesc || row.sku || "Sem SKU";
       if (!skuCodeByLabel.has(label)) skuCodeByLabel.set(label, row.sku || "");
     }
+    const recentSkuAgg = new Map(
+      aggregateByDimension(
+        filterRowsByPeriodRange(categoryRows, periodOptions, activePremise.recentStart, activePremise.recentEnd),
+        (row) => row.skuDesc || row.sku || "Sem SKU",
+      ).map((row) => [row.key, row]),
+    );
     const skus = aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
     return buildChildrenTargets(skus, selectedCategoryTarget.targetPct, activePremise.preservation)
-      .map((row) => ({ ...row, skuCode: skuCodeByLabel.get(row.key) ?? "" }));
-  }, [categoryRows, selectedCategoryTarget, activePremise.preservation]);
+      .map((row) => ({
+        ...row,
+        skuCode: skuCodeByLabel.get(row.key) ?? "",
+        recentMarginPct: recentSkuAgg.get(row.key)?.margemPct,
+      }));
+  }, [categoryRows, periodOptions, selectedCategoryTarget, activePremise.preservation, activePremise.recentStart, activePremise.recentEnd]);
 
   const selectedSkuTarget = skuTargets.find((row) => row.key === selectedSku);
   const skuRows = useMemo(
@@ -798,6 +809,18 @@ export default function MargemTarget() {
     },
     { key: "weight", label: "Peso ROL", align: "right", format: (value) => formatPct(Number(value)) },
     { key: "margemPct", label: "Atual", align: "right", format: (value) => formatPct(Number(value)) },
+    ...(level === "sku"
+      ? [{
+          key: "recentMarginPct",
+          label: "MC% 3M",
+          align: "right",
+          format: (value) => (
+            typeof value === "number"
+              ? <span className="font-semibold text-foreground">{formatPct(value)}</span>
+              : <span className="text-muted-foreground">—</span>
+          ),
+        } satisfies DataTableColumn<TargetRow>]
+      : []),
     { key: "targetPct", label: "Target", align: "right", format: (value) => formatPct(Number(value)) },
     {
       key: "gapPp",
