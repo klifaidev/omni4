@@ -7,7 +7,7 @@
 //  3. Pode salvar a esteira como Pré-definição (localStorage)
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
-import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import {
@@ -2621,8 +2621,9 @@ export default function SlidesBeta() {
     initialDeckPreparationCheckedRef.current = true;
     startDeckPreparation(items, "Preparando deck");
   }, [items, startDeckPreparation]);
-  const readyAll = items.every((i) => isItemReady(i).ok);
-  const preflight = useMemo(() => buildSlidesPreflight(items), [items]);
+  const deferredItemsForPreflight = useDeferredValue(items);
+  const readyAll = deferredItemsForPreflight.every((i) => isItemReady(i).ok);
+  const preflight = useMemo(() => buildSlidesPreflight(deferredItemsForPreflight), [deferredItemsForPreflight]);
   const preflightIssuesBySlide = useMemo(() => {
     const map = new Map<string, SlidePreflightIssue[]>();
     for (const issue of preflight.issues) {

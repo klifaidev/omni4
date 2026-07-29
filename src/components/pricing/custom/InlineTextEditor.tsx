@@ -2,7 +2,7 @@
 // Canva/PowerPoint: double-click no canvas → textarea posicionado sobre o
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
@@ -17,6 +17,8 @@ const SWATCHES = [
   "1C2430", "FFFFFF", "C8102E", "0F62FE",
   "0E9F6E", "F59E0B", "94A3B8", "7C3AED",
 ];
+const LOCAL_TEXT_COMMIT_DELAY_MS = 400;
+const Y_TEXT_COMMIT_DELAY_MS = 120;
 
 interface EditorProps {
   block: TextLikeBlock;
@@ -44,7 +46,51 @@ function useYTextValue(yText: Y.Text | null | undefined, fallback: string): stri
 export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelections = [] }: EditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const isTitle = block.kind === "title";
-  const value = useYTextValue(yText, block.text);
+  const externalValue = useYTextValue(yText, block.text);
+  const [draftValue, setDraftValue] = useState(externalValue);
+  const pendingValueRef = useRef(externalValue);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localDirtyRef = useRef(false);
+  const onPatchRef = useRef(onPatch);
+
+  useEffect(() => {
+    onPatchRef.current = onPatch;
+  }, [onPatch]);
+
+  const clearCommitTimer = useCallback(() => {
+    if (!commitTimerRef.current) return;
+    clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = null;
+  }, []);
+
+  const commitTextValue = useCallback((value: string) => {
+    clearCommitTimer();
+    localDirtyRef.current = false;
+    pendingValueRef.current = value;
+    if (yText) {
+      if (yText.toString() !== value) setYTextValue(yText, value);
+      return;
+    }
+    if (block.text !== value) {
+      onPatchRef.current({ text: value } as Partial<CustomBlock>);
+    }
+  }, [block.text, clearCommitTimer, yText]);
+
+  const scheduleTextCommit = useCallback((value: string) => {
+    pendingValueRef.current = value;
+    localDirtyRef.current = true;
+    clearCommitTimer();
+    commitTimerRef.current = setTimeout(() => {
+      commitTextValue(pendingValueRef.current);
+    }, yText ? Y_TEXT_COMMIT_DELAY_MS : LOCAL_TEXT_COMMIT_DELAY_MS);
+  }, [clearCommitTimer, commitTextValue, yText]);
+
+  useEffect(() => {
+    if (localDirtyRef.current) return;
+    pendingValueRef.current = externalValue;
+    setDraftValue(externalValue);
+  }, [externalValue]);
+
   useEffect(() => {
     const ta = ref.current;
     if (!ta) return;
@@ -54,19 +100,25 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
     ta.setSelectionRange(len, len);
   }, []);
 
+  useEffect(() => () => {
+    if (localDirtyRef.current) commitTextValue(pendingValueRef.current);
+    clearCommitTimer();
+  }, [clearCommitTimer, commitTextValue]);
+
   return (
     <>
     <textarea
       ref={ref}
-      value={value}
+      value={draftValue}
       onChange={(e) => {
-        if (yText) {
-          setYTextValue(yText, e.target.value);
-        } else {
-          onPatch({ text: e.target.value } as Partial<CustomBlock>);
-        }
+        const nextValue = e.target.value;
+        setDraftValue(nextValue);
+        scheduleTextCommit(nextValue);
       }}
-      onBlur={onExit}
+      onBlur={() => {
+        if (localDirtyRef.current) commitTextValue(pendingValueRef.current);
+        onExit();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.preventDefault();
