@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { BudgetRow } from "./budget";
 import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
 
-function row(kind: BudgetRow["kind"], periodo: string, cm: number, categoria = "Chocolates", cpv = 70): BudgetRow {
+function row(
+  kind: BudgetRow["kind"],
+  periodo: string,
+  cm: number,
+  categoria = "Chocolates",
+  cpv = 70,
+  volumeKg = 10,
+  receita = 100,
+): BudgetRow {
   const mes = Number(periodo.slice(0, 3));
   const ano = Number(periodo.slice(4));
   return {
@@ -14,8 +22,8 @@ function row(kind: BudgetRow["kind"], periodo: string, cm: number, categoria = "
     fyNum: 2026,
     kind,
     categoria,
-    volumeKg: 10,
-    receita: 100,
+    volumeKg,
+    receita,
     cm,
     cpv,
   };
@@ -63,5 +71,24 @@ describe("computeBridgeYtdRealVsBudget", () => {
 
     expect(result?.baseRows[0]?.cogs).toBe(70);
     expect(result?.compRows[0]?.cogs).toBe(65);
+  });
+
+  it("uses the simplified Superbase bridge formula: volume, price, CPV cost and residual others", () => {
+    const result = computeBridgeYtdRealVsBudget([
+      row("budget", "004.2025", 40, "Chocolates", 60, 10, 100),
+      row("real", "004.2025", 42, "Chocolates", 84, 12, 132),
+    ], {}, "cm");
+
+    expect(result?.result.volume).toBeCloseTo(8);
+    expect(result?.result.price).toBeCloseTo(12);
+    expect(result?.result.cost).toBeCloseTo(-12);
+    expect(result?.result.others).toBeCloseTo(-6);
+    expect(result?.result.current).toBeCloseTo(
+      (result?.result.base ?? 0)
+      + (result?.result.volume ?? 0)
+      + (result?.result.price ?? 0)
+      + (result?.result.cost ?? 0)
+      + (result?.result.others ?? 0),
+    );
   });
 });

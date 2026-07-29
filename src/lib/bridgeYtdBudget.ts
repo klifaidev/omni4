@@ -1,7 +1,6 @@
 import type { BudgetRow } from "./budget";
 import type { Filters, Metric, PricingRow } from "./types";
-import { applyFilters, calcPVMFromRows, type PVMResult } from "./analytics";
-import { budgetRowsAsPricingFiltered } from "./budgetAdapter";
+import { applyFilters, type PVMSkuDetail, type PVMResult } from "./analytics";
 import { monthLabel } from "./format";
 
 export interface BridgeYtdBudgetResult {
@@ -15,6 +14,45 @@ export interface BridgeYtdBudgetResult {
 
 function periodSortValue(row: Pick<PricingRow, "ano" | "mes">): number {
   return row.ano * 100 + row.mes;
+}
+
+function budgetToBridgeRow(row: BudgetRow): PricingRow {
+  const cogs = Math.abs(row.cpv ?? 0);
+  return {
+    periodo: row.periodo,
+    mes: row.mes,
+    ano: row.ano,
+    fy: row.fy,
+    fyNum: row.fyNum,
+    marca: row.marca,
+    canal: row.canal,
+    canalAjustado: row.canalAjustado,
+    categoria: row.categoria,
+    subcategoria: row.subcategoria,
+    formato: row.formato,
+    sku: row.sku,
+    skuDesc: row.skuDesc,
+    mercado: row.mercado,
+    mercadoAjustado: undefined,
+    sabor: row.sabor,
+    tecnologia: row.tecnologia,
+    faixaPeso: row.faixaPeso,
+    inovacao: row.inovacao,
+    legado: row.legado,
+    regiao: undefined,
+    uf: undefined,
+    regional: undefined,
+    cliente: undefined,
+    rol: row.receita,
+    volumeKg: row.volumeKg,
+    cogs,
+    custoVariavel: cogs,
+    custoFixo: 0,
+    margemBruta: 0,
+    contribMarginal: row.cm,
+    frete: 0,
+    comissao: 0,
+  };
 }
 
 function latestRealYtdPeriods(realRows: PricingRow[]): { fy: string; periods: string[]; latestLabel: string } | null {
@@ -40,14 +78,121 @@ function latestRealYtdPeriods(realRows: PricingRow[]): { fy: string; periods: st
   };
 }
 
+function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[], labels: { base: string; comp: string }): PVMResult {
+  interface Agg {
+    vol: number;
+    rol: number;
+    cogs: number;
+    margem: number;
+  }
+
+  const aggSku = (rows: PricingRow[]) => {
+    const map = new Map<string, Agg>();
+    for (const row of rows) {
+      const key = row.sku || row.skuDesc || "-";
+      const cur = map.get(key) ?? { vol: 0, rol: 0, cogs: 0, margem: 0 };
+      cur.vol += row.volumeKg ?? 0;
+      cur.rol += row.rol ?? 0;
+      cur.cogs += Math.abs(row.cogs ?? 0);
+      cur.margem += row.contribMarginal ?? 0;
+      map.set(key, cur);
+    }
+    return map;
+  };
+
+  const base = aggSku(baseRows);
+  const comp = aggSku(compRows);
+  const descMap = new Map<string, string>();
+  for (const row of [...baseRows, ...compRows]) {
+    const key = row.sku || row.skuDesc || "-";
+    if (!descMap.has(key) && row.skuDesc) descMap.set(key, row.skuDesc);
+  }
+
+  let baseTotal = 0;
+  let currentTotal = 0;
+  for (const row of base.values()) baseTotal += row.margem;
+  for (const row of comp.values()) currentTotal += row.margem;
+
+  let volume = 0;
+  let price = 0;
+  let cost = 0;
+  const skuDetails: PVMSkuDetail[] = [];
+
+  for (const sku of new Set([...base.keys(), ...comp.keys()])) {
+    const a = base.get(sku);
+    const b = comp.get(sku);
+    const detail: PVMSkuDetail = {
+      sku,
+      skuDesc: descMap.get(sku),
+      status: a && b ? "both" : a ? "only_base" : "only_comp",
+      volA: a?.vol ?? 0,
+      volB: b?.vol ?? 0,
+      rolA: a?.rol ?? 0,
+      rolB: b?.rol ?? 0,
+      cogsA: a?.cogs ?? 0,
+      cogsB: b?.cogs ?? 0,
+      freteA: 0,
+      freteB: 0,
+      comissaoA: 0,
+      comissaoB: 0,
+      margemA: a?.margem ?? 0,
+      margemB: b?.margem ?? 0,
+      volumeEffect: 0,
+      priceEffect: 0,
+      costEffect: 0,
+      freightEffect: 0,
+      commissionEffect: 0,
+      othersEffect: 0,
+    };
+
+    if (!a || !b || a.vol === 0 || b.vol === 0) {
+      detail.othersEffect = (b?.margem ?? 0) - (a?.margem ?? 0);
+      skuDetails.push(detail);
+      continue;
+    }
+
+    const volumeEffect = (b.vol - a.vol) * (a.margem / a.vol);
+    const priceEffect = ((b.rol / b.vol) - (a.rol / a.vol)) * b.vol;
+    const costEffect = -((b.cogs / b.vol) - (a.cogs / a.vol)) * b.vol;
+    const othersEffect = (b.margem - a.margem) - volumeEffect - priceEffect - costEffect;
+
+    detail.volumeEffect = volumeEffect;
+    detail.priceEffect = priceEffect;
+    detail.costEffect = costEffect;
+    detail.othersEffect = othersEffect;
+    skuDetails.push(detail);
+
+    volume += volumeEffect;
+    price += priceEffect;
+    cost += costEffect;
+  }
+
+  const others = currentTotal - baseTotal - volume - price - cost;
+  return {
+    base: baseTotal,
+    volume,
+    price,
+    cost,
+    freight: 0,
+    commission: 0,
+    others,
+    othersLabel: "Outros Custos",
+    commercialCostsCollapsed: true,
+    current: currentTotal,
+    baseLabel: labels.base,
+    currentLabel: labels.comp,
+    skuDetails,
+  };
+}
+
 export function computeBridgeYtdRealVsBudget(
   budgetRows: BudgetRow[],
   filters: Filters,
   metric: Metric,
 ): BridgeYtdBudgetResult | null {
-  const effectiveMetric: Metric = metric === "mb" ? "cm" : metric;
-  const realRows = budgetRowsAsPricingFiltered(budgetRows, "real");
-  const budgetPlanRows = budgetRowsAsPricingFiltered(budgetRows, "budget");
+  void metric;
+  const realRows = budgetRows.filter((row) => row.kind === "real").map(budgetToBridgeRow);
+  const budgetPlanRows = budgetRows.filter((row) => row.kind === "budget").map(budgetToBridgeRow);
   const ytd = latestRealYtdPeriods(realRows);
   if (!ytd || ytd.periods.length === 0) return null;
 
@@ -64,18 +209,10 @@ export function computeBridgeYtdRealVsBudget(
   );
   if (baseRows.length === 0 || compRows.length === 0) return null;
 
-  const rawResult = calcPVMFromRows(baseRows, compRows, effectiveMetric, {
-      base: `Budget YTD ${ytd.fy}`,
-      comp: `Real YTD ate ${ytd.latestLabel}`,
-    });
-  const result: PVMResult = {
-    ...rawResult,
-    freight: 0,
-    commission: 0,
-    others: rawResult.freight + rawResult.commission + rawResult.others,
-    othersLabel: "Outros Custos",
-    commercialCostsCollapsed: true,
-  };
+  const result = computeBudgetStyleBridge(baseRows, compRows, {
+    base: `Budget YTD ${ytd.fy}`,
+    comp: `Real YTD ate ${ytd.latestLabel}`,
+  });
 
   return {
     result,
