@@ -118,6 +118,12 @@ interface TargetExportRow {
   pesoRol: number;
 }
 
+interface PremiseBaseValues {
+  history: number | null;
+  recent: number | null;
+  budget: number | null;
+}
+
 interface PeriodOption {
   periodo: string;
   label: string;
@@ -428,6 +434,25 @@ function buildTargetRow(
   };
 }
 
+function calculatePremiseBaseValues(args: {
+  historyRows: PricingRow[];
+  budgetRows: PricingRow[];
+  periodOptions: PeriodOption[];
+  premise: EffectivePremise;
+  category?: string;
+}): PremiseBaseValues {
+  const scopedHistoryRows = args.category ? rowsForPath(args.historyRows, args.category) : args.historyRows;
+  const scopedBudgetRows = args.category ? rowsForPath(args.budgetRows, args.category) : args.budgetRows;
+  const historyAgg = aggregateRows(filterRowsByPeriodRange(scopedHistoryRows, args.periodOptions, args.premise.historyStart, args.premise.historyEnd));
+  const recentAgg = aggregateRows(filterRowsByPeriodRange(scopedHistoryRows, args.periodOptions, args.premise.recentStart, args.premise.recentEnd));
+  const budgetAgg = aggregateRows(scopedBudgetRows);
+  return {
+    history: historyAgg.rol > 0 ? historyAgg.margemPct : null,
+    recent: recentAgg.rol > 0 ? recentAgg.margemPct : null,
+    budget: budgetAgg.rol > 0 ? budgetAgg.margemPct : null,
+  };
+}
+
 function buildTargetExportRows(
   currentRows: PricingRow[],
   categoryTargets: TargetRow[],
@@ -656,7 +681,20 @@ export default function MargemTarget() {
 
   const selectedCategoryTarget = categoryTargets.find((row) => row.key === selectedCategory);
   const missingBudgetCount = categoryTargets.filter((row) => row.budgetAvailable === false).length;
-  const activePremise = resolvePremise(settings, selectedCategory, periodOptions);
+  const activePremise = useMemo(
+    () => resolvePremise(settings, selectedCategory, periodOptions),
+    [settings, selectedCategory, periodOptions],
+  );
+  const premiseBaseValues = useMemo(
+    () => calculatePremiseBaseValues({
+      historyRows,
+      budgetRows: budgetFiscalRows,
+      periodOptions,
+      premise: activePremise,
+      category: selectedCategory,
+    }),
+    [historyRows, budgetFiscalRows, periodOptions, activePremise, selectedCategory],
+  );
   const categoryRows = useMemo(
     () => rowsForPath(currentRows, selectedCategory),
     [currentRows, selectedCategory],
@@ -907,6 +945,7 @@ export default function MargemTarget() {
             selectedSetting={selectedSetting}
             selectedManualValue={selectedManualValue}
             selectedCategoryTarget={selectedCategoryTarget}
+            premiseBaseValues={premiseBaseValues}
             budgetFyLabel={budgetFyLabel}
             missingBudgetCount={missingBudgetCount}
             onPremiseChange={updateActivePremise}
@@ -1204,12 +1243,14 @@ function WeightSlider({
   label,
   helper,
   value,
+  baseValue,
   colorClass,
   onChange,
 }: {
   label: string;
   helper: string;
   value: number;
+  baseValue?: number | null;
   colorClass: string;
   onChange: (value: number) => void;
 }) {
@@ -1226,7 +1267,12 @@ function WeightSlider({
           <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", colorClass)} />
           <span className="truncate">{label}</span>
         </span>
-        <span className="text-muted-foreground">{Math.round(draft * 100)}%</span>
+        <span className="flex shrink-0 items-center gap-2">
+          <Badge variant="outline" className="border-border/50 bg-background/50 px-2 py-0 text-[10px] font-medium text-muted-foreground">
+            {typeof baseValue === "number" ? `Base ${formatPct(baseValue)}` : "Sem dados"}
+          </Badge>
+          <span className="text-muted-foreground">{Math.round(draft * 100)}%</span>
+        </span>
       </div>
       <Slider
         value={[Math.round(draft * 100)]}
@@ -1249,6 +1295,7 @@ function AssumptionPanel({
   selectedSetting,
   selectedManualValue,
   selectedCategoryTarget,
+  premiseBaseValues,
   budgetFyLabel,
   missingBudgetCount,
   onPremiseChange,
@@ -1260,6 +1307,7 @@ function AssumptionPanel({
   selectedSetting: CategorySetting | null;
   selectedManualValue: number;
   selectedCategoryTarget?: TargetRow;
+  premiseBaseValues: PremiseBaseValues;
   budgetFyLabel: string;
   missingBudgetCount: number;
   onPremiseChange: (patch: Partial<EffectivePremise>) => void;
@@ -1312,6 +1360,7 @@ function AssumptionPanel({
               label="Histórico"
               helper="Benchmark dos últimos 2 anos definidos abaixo."
               value={activePremise.historyWeight}
+              baseValue={premiseBaseValues.history}
               colorClass="bg-primary"
               onChange={(value) => onPremiseChange({ historyWeight: value })}
             />
@@ -1319,6 +1368,7 @@ function AssumptionPanel({
               label="Meses recentes"
               helper="Por padrão, os 3 últimos meses fechados."
               value={activePremise.recentWeight}
+              baseValue={premiseBaseValues.recent}
               colorClass="bg-success"
               onChange={(value) => onPremiseChange({ recentWeight: value })}
             />
@@ -1326,6 +1376,7 @@ function AssumptionPanel({
               label="Budget"
               helper={`Ano fiscal inteiro (${budgetFyLabel}), sem filtros da página.`}
               value={activePremise.budgetWeight}
+              baseValue={premiseBaseValues.budget}
               colorClass="bg-warning"
               onChange={(value) => onPremiseChange({ budgetWeight: value })}
             />
