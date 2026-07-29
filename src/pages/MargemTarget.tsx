@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 import { applyFilters } from "@/lib/analytics";
 import { formatBRL, formatPct } from "@/lib/format";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -26,6 +28,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Download,
   Gauge,
   Layers3,
   SlidersHorizontal,
@@ -98,6 +101,21 @@ interface Aggregate {
   margem: number;
   volumeKg: number;
   margemPct: number;
+}
+
+interface TargetExportRow {
+  level: DrillLevel;
+  category: string;
+  sku: string;
+  channel: string;
+  regional: string;
+  label: string;
+  rol: number;
+  margemAtualPct: number;
+  margemTargetPct: number;
+  gapPp: number;
+  impacto: number;
+  pesoRol: number;
 }
 
 interface PeriodOption {
@@ -215,28 +233,21 @@ function weightsFromSetting(
   const recentWeight = categorySetting?.recentWeight
     ?? settings.recentWeight
     ?? Math.max(0, 1 - historyWeight - budgetWeight);
-  return normalizeWeights({ historyWeight, recentWeight, budgetWeight });
+  return {
+    historyWeight: Math.max(0, historyWeight),
+    recentWeight: Math.max(0, recentWeight),
+    budgetWeight: Math.max(0, budgetWeight),
+  };
 }
 
-function rebalanceWeights(
+function balanceWeights(
   current: Pick<EffectivePremise, TargetWeightKey>,
-  key: TargetWeightKey,
-  nextValue: number,
 ): Record<TargetWeightKey, number> {
-  const next = Math.min(1, Math.max(0, nextValue));
-  const otherKeys = (["historyWeight", "recentWeight", "budgetWeight"] as TargetWeightKey[]).filter((item) => item !== key);
-  const remaining = 1 - next;
-  const otherTotal = otherKeys.reduce((sum, item) => sum + Math.max(0, current[item]), 0);
-  const result: Record<TargetWeightKey, number> = {
+  return normalizeWeights({
     historyWeight: current.historyWeight,
     recentWeight: current.recentWeight,
     budgetWeight: current.budgetWeight,
-  };
-  result[key] = next;
-  for (const item of otherKeys) {
-    result[item] = otherTotal > 0 ? (Math.max(0, current[item]) / otherTotal) * remaining : remaining / otherKeys.length;
-  }
-  return normalizeWeights(result);
+  });
 }
 
 function applyBudgetFallbackWeights(
@@ -326,9 +337,10 @@ function loadSettings(): TargetSettings {
     const recentWeight = typeof parsed.recentWeight === "number"
       ? parsed.recentWeight
       : Math.max(0, 1 - historyWeight - budgetWeight);
-    const weights = normalizeWeights({ historyWeight, recentWeight, budgetWeight });
     return {
-      ...weights,
+      historyWeight: Math.max(0, historyWeight),
+      recentWeight: Math.max(0, recentWeight),
+      budgetWeight: Math.max(0, budgetWeight),
       preservation: typeof parsed.preservation === "number" ? parsed.preservation : DEFAULT_SETTINGS.preservation,
       historyStart: typeof parsed.historyStart === "string" ? parsed.historyStart : undefined,
       historyEnd: typeof parsed.historyEnd === "string" ? parsed.historyEnd : undefined,
@@ -414,6 +426,176 @@ function buildTargetRow(
     risk: absGap >= 0.05 ? "critical" : absGap >= 0.02 ? "attention" : "ok",
     ...extra,
   };
+}
+
+function buildTargetExportRows(
+  currentRows: PricingRow[],
+  categoryTargets: TargetRow[],
+  settings: TargetSettings,
+  periodOptions: PeriodOption[],
+): TargetExportRow[] {
+  const out: TargetExportRow[] = [];
+  for (const category of categoryTargets) {
+    out.push(targetRowToExport(category, "category", category.label, "", "", ""));
+    const premise = resolvePremise(settings, category.key, periodOptions);
+    const categoryRows = rowsForPath(currentRows, category.key);
+    const skuTargets = buildChildrenTargets(
+      aggregateByDimension(categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU"),
+      category.targetPct,
+      premise.preservation,
+    );
+    for (const sku of skuTargets) {
+      out.push(targetRowToExport(sku, "sku", category.label, sku.label, "", ""));
+      const skuRows = rowsForPath(currentRows, category.key, sku.key);
+      const channelTargets = buildChildrenTargets(
+        aggregateByDimension(skuRows, (row) => row.canalAjustado || "Sem canal"),
+        sku.targetPct,
+        premise.preservation,
+      );
+      for (const channel of channelTargets) {
+        out.push(targetRowToExport(channel, "channel", category.label, sku.label, channel.label, ""));
+        const channelRows = rowsForPath(currentRows, category.key, sku.key, channel.key);
+        const regionalTargets = buildChildrenTargets(
+          aggregateByDimension(channelRows, (row) => row.regional || row.regiao || row.uf || "Sem regional"),
+          channel.targetPct,
+          premise.preservation,
+        );
+        for (const regional of regionalTargets) {
+          out.push(targetRowToExport(regional, "regional", category.label, sku.label, channel.label, regional.label));
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function targetRowToExport(
+  row: TargetRow,
+  level: DrillLevel,
+  category: string,
+  sku: string,
+  channel: string,
+  regional: string,
+): TargetExportRow {
+  return {
+    level,
+    category,
+    sku,
+    channel,
+    regional,
+    label: row.label,
+    rol: row.rol,
+    margemAtualPct: row.margemPct,
+    margemTargetPct: row.targetPct,
+    gapPp: row.gapPp,
+    impacto: row.impact,
+    pesoRol: row.weight,
+  };
+}
+
+function exportMargemTargetXlsx(args: {
+  rows: TargetExportRow[];
+  activePremise: EffectivePremise;
+  budgetFyLabel: string;
+}) {
+  if (args.rows.length === 0) {
+    toast.info("Não há dados para exportar.");
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  const header = [
+    "Nível",
+    "Categoria",
+    "SKU",
+    "Canal",
+    "Regional",
+    "ROL",
+    "Margem Atual %",
+    "Margem Target %",
+    "Gap (p.p.)",
+    "Impacto Estimado",
+    "Peso ROL",
+  ];
+  const flatRows = args.rows.map((row) => ({
+    "Nível": getDimensionLabel(row.level),
+    Categoria: row.category,
+    SKU: row.sku,
+    Canal: row.channel,
+    Regional: row.regional,
+    ROL: row.rol,
+    "Margem Atual %": row.margemAtualPct,
+    "Margem Target %": row.margemTargetPct,
+    "Gap (p.p.)": row.gapPp * 100,
+    "Impacto Estimado": row.impacto,
+    "Peso ROL": row.pesoRol,
+  }));
+  const flatWs = XLSX.utils.json_to_sheet(flatRows, { header });
+  flatWs["!cols"] = [
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 38 },
+    { wch: 24 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 18 },
+    { wch: 12 },
+  ];
+  const flatRange = XLSX.utils.decode_range(flatWs["!ref"] ?? "A1");
+  for (let r = 1; r <= flatRange.e.r; r++) {
+    for (const c of [6, 7, 10]) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (flatWs[addr]) flatWs[addr].z = "0.0%";
+    }
+    const gapAddr = XLSX.utils.encode_cell({ r, c: 8 });
+    if (flatWs[gapAddr]) flatWs[gapAddr].z = '+0.0;-0.0;0.0';
+    const rolAddr = XLSX.utils.encode_cell({ r, c: 5 });
+    if (flatWs[rolAddr]) flatWs[rolAddr].z = '"R$" #,##0;[Red]-"R$" #,##0';
+    const impactAddr = XLSX.utils.encode_cell({ r, c: 9 });
+    if (flatWs[impactAddr]) flatWs[impactAddr].z = '"R$" #,##0;[Red]-"R$" #,##0';
+  }
+  XLSX.utils.book_append_sheet(wb, flatWs, "Base para Dinâmica");
+
+  const hierarchyRows = [
+    ["Margem Target", "", "", "", "", ""],
+    ["Histórico", args.activePremise.historyWeight, "Recentes", args.activePremise.recentWeight, "Budget", args.activePremise.budgetWeight],
+    ["Budget usado", args.budgetFyLabel, "", "", "", ""],
+    [],
+    ["Hierarquia", "ROL", "Atual", "Target", "Gap p.p.", "Impacto"],
+    ...args.rows.map((row) => {
+      const indent = row.level === "category" ? "" : row.level === "sku" ? "  " : row.level === "channel" ? "    " : "      ";
+      return [
+        `${indent}${row.label}`,
+        row.rol,
+        row.margemAtualPct,
+        row.margemTargetPct,
+        row.gapPp * 100,
+        row.impacto,
+      ];
+    }),
+  ];
+  const hierarchyWs = XLSX.utils.aoa_to_sheet(hierarchyRows);
+  hierarchyWs["!cols"] = [{ wch: 52 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }];
+  const hierarchyRange = XLSX.utils.decode_range(hierarchyWs["!ref"] ?? "A1");
+  for (let r = 1; r <= hierarchyRange.e.r; r++) {
+    for (const c of [1, 2, 3, 4, 5]) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = hierarchyWs[addr];
+      if (!cell) continue;
+      if (r === 1 && [1, 3, 5].includes(c)) cell.z = "0%";
+      if (r >= 5 && [2, 3].includes(c)) cell.z = "0.0%";
+      if (r >= 5 && c === 4) cell.z = '+0.0;-0.0;0.0';
+      if (r >= 5 && [1, 5].includes(c)) cell.z = '"R$" #,##0;[Red]-"R$" #,##0';
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, hierarchyWs, "Visão Hierárquica");
+  wb.SheetNames = ["Visão Hierárquica", "Base para Dinâmica"];
+
+  const date = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `margem_target_dinamica_${date}.xlsx`);
+  toast.success("Excel da Margem Target exportado.");
 }
 
 function rowsForPath(rows: PricingRow[], category?: string, sku?: string, channel?: string): PricingRow[] {
@@ -515,6 +697,10 @@ export default function MargemTarget() {
       : level === "channel"
         ? channelTargets
         : regionalTargets;
+  const exportRows = useMemo(
+    () => buildTargetExportRows(currentRows, categoryTargets, settings, periodOptions),
+    [currentRows, categoryTargets, settings, periodOptions],
+  );
 
   const selectedSetting = selectedCategory ? settings.categories[selectedCategory] ?? { mode: "auto" as TargetMode } : null;
   const selectedManualValue = selectedSetting?.manualTargetPct ?? selectedCategoryTarget?.targetPct ?? 0;
@@ -674,6 +860,15 @@ export default function MargemTarget() {
                   onCategory={() => resetDrill("category")}
                   onSku={() => resetDrill("sku")}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => exportMargemTargetXlsx({ rows: exportRows, activePremise, budgetFyLabel })}
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar Excel
+                </Button>
               </div>
             </div>
 
@@ -1070,6 +1265,8 @@ function AssumptionPanel({
     : !selectedCategory && missingBudgetCount > 0
       ? `${missingBudgetCount} categoria(s) sem Budget. O peso do Budget é redistribuído automaticamente nesses casos.`
       : null;
+  const weightsTotal = activePremise.historyWeight + activePremise.recentWeight + activePremise.budgetWeight;
+  const weightsAboveLimit = weightsTotal > 1.0001;
 
   return (
     <GlassCard className="h-fit p-5">
@@ -1096,7 +1293,7 @@ function AssumptionPanel({
               </p>
             </div>
             <Badge variant="outline" className="shrink-0 border-primary/25 bg-primary/5 text-primary">
-              {budgetFyLabel}
+              Total {Math.round(weightsTotal * 100)}%
             </Badge>
           </div>
           <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-muted">
@@ -1110,23 +1307,41 @@ function AssumptionPanel({
               helper="Benchmark dos últimos 2 anos definidos abaixo."
               value={activePremise.historyWeight}
               colorClass="bg-primary"
-              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "historyWeight", value))}
+              onChange={(value) => onPremiseChange({ historyWeight: value })}
             />
             <WeightSlider
               label="Meses recentes"
               helper="Por padrão, os 3 últimos meses fechados."
               value={activePremise.recentWeight}
               colorClass="bg-success"
-              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "recentWeight", value))}
+              onChange={(value) => onPremiseChange({ recentWeight: value })}
             />
             <WeightSlider
               label="Budget"
-              helper="Ano fiscal inteiro, sem filtros da página."
+              helper={`Ano fiscal inteiro (${budgetFyLabel}), sem filtros da página.`}
               value={activePremise.budgetWeight}
               colorClass="bg-warning"
-              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "budgetWeight", value))}
+              onChange={(value) => onPremiseChange({ budgetWeight: value })}
             />
           </div>
+          {weightsAboveLimit ? (
+            <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-xs text-destructive">
+              <div className="flex items-start justify-between gap-3">
+                <p>
+                  Os pesos somam {Math.round(weightsTotal * 100)}%. Para manter a premissa fechada, reduza os pesos ou use o equilíbrio automático.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0 border-destructive/30 bg-background/60 text-destructive hover:bg-destructive/10"
+                  onClick={() => onPremiseChange(balanceWeights(activePremise))}
+                >
+                  Equilibrar
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {budgetWarning ? (
             <div className="mt-4 rounded-xl border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
               {budgetWarning}
