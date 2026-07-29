@@ -547,7 +547,7 @@ export interface OmniCustoPressaoBlock extends OmniBaseBlock {
 
 export interface OmniPositivacaoBlock extends OmniBaseBlock {
   kind: "omni_positivacao";
-  dim: "categoria" | "marca" | "canalAjustado" | "gestorResp";
+  dim: "categoria" | "marca" | "canalAjustado" | "gestorResp" | "sku" | "skuDesc";
   chartType: "line" | "bar" | "area";
   topN: number;
 }
@@ -578,7 +578,7 @@ export interface OmniBridgePvmBlock extends OmniBaseBlock {
   baseRelativePeriod?: RelativePeriodPreset;
   compSelectionMode?: PeriodSelectionMode;
   compRelativePeriod?: RelativePeriodPreset;
-  periodMode: "fy" | "month";
+  periodMode: "fy" | "month" | "ytd_budget";
 }
 
 export interface OmniFarolBlock extends OmniBaseBlock {

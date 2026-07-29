@@ -59,6 +59,7 @@ import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, 
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 import { resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
 import { buildPositivacaoSeries } from "@/lib/positivacao";
+import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import brMapRaw from "@/assets/br.svg?raw";
 
@@ -2526,10 +2527,13 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
 // ---- omni_bridge_pvm ----
 function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   const pricing = usePricing((s) => s.rows);
+  const budget = useBudget((s) => s.rows);
+  const metric = usePricing((s) => s.metric);
   const months  = useMonthsInfo();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
+    if (b.periodMode === "ytd_budget") return { baseKey: "", compKey: "" };
     const relativeBase = resolvePeriodValue(filtered, b.periodMode, b.base, b.baseSelectionMode, b.baseRelativePeriod);
     const relativeComp = resolvePeriodValue(filtered, b.periodMode, b.comp, b.compSelectionMode, b.compRelativePeriod);
     if (relativeBase && relativeComp) return { baseKey: relativeBase, compKey: relativeComp };
@@ -2540,9 +2544,12 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   }, [filtered, b.base, b.comp, b.baseSelectionMode, b.baseRelativePeriod, b.compSelectionMode, b.compRelativePeriod, b.periodMode, months]);
 
   const result = useMemo(() => {
+    if (b.periodMode === "ytd_budget") {
+      return computeBridgeYtdRealVsBudget(budget, b.filters, metric)?.result ?? null;
+    }
     if (!baseKey || !compKey) return null;
-    return calcPVM(filtered, baseKey, compKey, b.periodMode);
-  }, [filtered, baseKey, compKey, b.periodMode]);
+    return calcPVM(filtered, metric, baseKey, compKey, b.periodMode);
+  }, [budget, b.filters, b.periodMode, filtered, baseKey, compKey, metric]);
 
   if (!result) return omniEmpty("Selecione dois períodos para comparar.");
 

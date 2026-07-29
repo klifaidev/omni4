@@ -523,16 +523,22 @@ function BridgePvmConfigPanel({
         <Select
           disabled={readOnly}
           value={cfg.mode}
-          onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month", base: null, comp: null } })}
+          onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month" | "ytd_budget", base: null, comp: null } })}
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="month">Mês a mês</SelectItem>
             <SelectItem value="fy">Ano fiscal</SelectItem>
+            <SelectItem value="ytd_budget">YTD Real vs Budget</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
+      {cfg.mode === "ytd_budget" ? (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          Compara o Real acumulado do ano fiscal atual contra o Budget dos mesmos meses realizados.
+        </div>
+      ) : (
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
         <div className="space-y-1.5">
           <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Base</Label>
@@ -570,6 +576,7 @@ function BridgePvmConfigPanel({
           </Select>
         </div>
       </div>
+      )}
     </div>
   );
 }

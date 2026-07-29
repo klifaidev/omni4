@@ -14,6 +14,7 @@ import type { BudgetRow } from "./budget";
 import { applyFilters, calcPVM } from "./analytics";
 import { applyBudgetFilters } from "./budget";
 import { useBudget } from "@/store/budget";
+import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
 import { monthLabel } from "./format";
 import {
   addBridgePvmSlides,
@@ -39,7 +40,7 @@ export interface BaseSlideItem {
 }
 
 export interface BridgePvmSlideConfig {
-  mode: "fy" | "month";
+  mode: "fy" | "month" | "ytd_budget";
   base: string | null;
   comp: string | null;
   /** Filtros específicos deste slide (não afetam outros slides) */
@@ -175,6 +176,14 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       const cfg = item.config;
       return {
         build: async (pptx) => {
+          if (cfg.mode === "ytd_budget") {
+            const ytd = computeBridgeYtdRealVsBudget(ctx.budgetRows, cfg.filters, ctx.metric);
+            if (!ytd) {
+              throw new Error(`Bridge PVM "${item.label}": sem dados Real/Budget suficientes para YTD.`);
+            }
+            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
+            return;
+          }
           if (!cfg.base || !cfg.comp || cfg.base === cfg.comp) {
             throw new Error(`Bridge PVM "${item.label}": selecione períodos base e comparação distintos.`);
           }
@@ -311,6 +320,10 @@ export function computeBudgetEvoMonthly(
 export function isItemReady(item: SlideItem): { ok: boolean; reason?: string } {
   switch (item.kind) {
     case "bridge_pvm":
+      if (item.config.mode === "ytd_budget") {
+        if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue dados de Budget antes de usar YTD Real vs Budget." };
+        return { ok: true };
+      }
       if (!item.config.base || !item.config.comp) return { ok: false, reason: "Defina período base e comparação." };
       if (item.config.base === item.config.comp) return { ok: false, reason: "Base e comparação devem ser diferentes." };
       return { ok: true };

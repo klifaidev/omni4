@@ -6075,6 +6075,8 @@ function OmniPositivacaoInspector({ block, onChange }: {
               { value: "marca", label: "Marca" },
               { value: "canalAjustado", label: "Canal" },
               { value: "gestorResp", label: "Gestor Resp." },
+              { value: "sku", label: "SKU" },
+              { value: "skuDesc", label: "SKU Desc." },
             ]}
           />
         </Row>
@@ -6186,7 +6188,7 @@ function OmniBridgePvmInspector({ block, onChange }: {
       <Section label="Períodos">
         <Row label="Modo">
           <SelectField value={block.periodMode} onChange={(v) => {
-            const nextMode = v as "fy" | "month";
+            const nextMode = v as "fy" | "month" | "ytd_budget";
             onChange({
               periodMode: nextMode,
               base: null,
@@ -6196,8 +6198,14 @@ function OmniBridgePvmInspector({ block, onChange }: {
               compSelectionMode: block.compSelectionMode ?? "relative",
               compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
             });
-          }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} />
+          }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }, { value: "ytd_budget", label: "YTD Real vs Budget" }]} />
         </Row>
+        {block.periodMode === "ytd_budget" ? (
+          <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
+            Real acumulado do FY atual contra o Budget dos mesmos meses realizados.
+          </div>
+        ) : (
+          <>
         <Row label="Base">
           <ComparePeriodField label="Base" mode={block.periodMode} fixedValue={block.base}
             selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts}
@@ -6208,6 +6216,8 @@ function OmniBridgePvmInspector({ block, onChange }: {
             selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts}
             onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} />
         </Row>
+          </>
+        )}
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>

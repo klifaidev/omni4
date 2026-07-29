@@ -15,6 +15,7 @@ import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import { KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
+import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 
@@ -483,6 +484,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     });
   }, [rawDsRows, incoming]);
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
+  const budgetSignature = useMemo(() => getCachedRowsSignature(budget), [budget]);
   const rowsForDataSource = useMemo(() => {
     const sourceRows = (dataSource: ChartBlock["dataSource"]) => {
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
@@ -2117,7 +2119,7 @@ function WaterfallChart({
       slideId: cacheSlideId,
       blockId: block.id,
       dataSource: block.dataSource,
-      dataSignature: dsRowsSignature,
+      dataSignature: comparisonMode === "ytd-budget" ? budgetSignature : dsRowsSignature,
       params: {
         filters: block.filters,
         metric,
@@ -2128,11 +2130,14 @@ function WaterfallChart({
         comparisonMode,
       },
     }, () => {
-    const filtered = applyFilters(dsRows, block.filters, null);
+    const ytdBudget = comparisonMode === "ytd-budget"
+      ? computeBridgeYtdRealVsBudget(budget, block.filters, metric)
+      : null;
+    const filtered = ytdBudget ? [...ytdBudget.baseRows, ...ytdBudget.compRows] : applyFilters(dsRows, block.filters, null);
     if (filtered.length === 0) return [];
 
-    let baseKey = pvmCfg.base;
-    let compKey = pvmCfg.comp;
+    let baseKey = ytdBudget ? "__budget_ytd__" : pvmCfg.base;
+    let compKey = ytdBudget ? "__real_ytd__" : pvmCfg.comp;
 
     // FIX 2 â€” PerÃ­odo de comparaÃ§Ã£o automÃ¡tico
     if (comparisonMode !== "manual" && pvmCfg.periodMode === "month") {
@@ -2183,18 +2188,25 @@ function WaterfallChart({
       }
     }
 
-    const labels = pvmCfg.periodMode === "month" ? {
+    const pvmPeriodMode = pvmCfg.periodMode === "ytd_budget" ? "month" : pvmCfg.periodMode;
+    const labels = pvmPeriodMode === "month" ? {
       base: (() => { const r = filtered.find((x) => x.periodo === baseKey); return r ? monthLabel(r.mes, r.ano) : baseKey!; })(),
       comp: (() => { const r = filtered.find((x) => x.periodo === compKey); return r ? monthLabel(r.mes, r.ano) : compKey!; })(),
     } : undefined;
 
     try {
-      const r = calcPVM(filtered, metric, baseKey!, compKey!, pvmCfg.periodMode, labels);
+      const r = ytdBudget?.result ?? calcPVM(filtered, metric, baseKey!, compKey!, pvmPeriodMode, labels);
       const t = (v: number): "positive" | "negative" => v >= 0 ? "positive" : "negative";
 
       // ---- DecomposiÃ§Ã£o por dimensÃ£o (Marca, Categoria, etc.) ----
       if (decomposition && decomposition !== "effects") {
-        const keyOf = (row: PricingRow) => (pvmCfg.periodMode === "fy" ? row.fy : row.periodo);
+        const baseRowSet = ytdBudget ? new Set(ytdBudget.baseRows) : null;
+        const compRowSet = ytdBudget ? new Set(ytdBudget.compRows) : null;
+        const keyOf = (row: PricingRow) => {
+          if (baseRowSet?.has(row)) return baseKey;
+          if (compRowSet?.has(row)) return compKey;
+          return pvmPeriodMode === "fy" ? row.fy : row.periodo;
+        };
         const margemOf = (row: PricingRow) =>
           metric === "cm" ? row.contribMarginal : row.margemBruta;
         const baseAgg = new Map<string, number>();
@@ -2241,7 +2253,7 @@ function WaterfallChart({
       ];
     } catch { return []; }
     });
-  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
+  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, budget, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
 
   // Smart column / fallback (modo manual)
   const cols = style.waterfall.columns;

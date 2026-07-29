@@ -30,6 +30,7 @@ import type { PricingRow } from "@/lib/types";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { computeChartSeries, computeKpiBlock } from "@/lib/customKpi";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -518,20 +519,26 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
 // ---------------------------------------------------------------------------
 function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_pvm" }> }) {
   const pricingRows = usePricing((s) => s.rows);
+  const budgetRows = useBudget((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const ready = isItemReady(item);
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);
+  const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
 
   const pvm = useMemo(() => {
-    if (!ready.ok || !item.config.base || !item.config.comp) return null;
+    if (!ready.ok) return null;
+    if (item.config.mode !== "ytd_budget" && (!item.config.base || !item.config.comp)) return null;
     return getOrComputeSlideCalc({
       op: "preview-bridge-pvm",
       slideId: item.id,
       blockId: "bridge-pvm",
-      dataSource: "ke30",
-      dataSignature: pricingSignature,
+      dataSource: item.config.mode === "ytd_budget" ? "budget" : "ke30",
+      dataSignature: item.config.mode === "ytd_budget" ? budgetSignature : pricingSignature,
       params: { metric, config: item.config },
     }, () => {
+      if (item.config.mode === "ytd_budget") {
+        return computeBridgeYtdRealVsBudget(budgetRows, item.config.filters, metric)?.result ?? null;
+      }
       const filtered = applyFilters(pricingRows, item.config.filters, null);
       const labels = item.config.mode === "month"
         ? {
@@ -548,7 +555,7 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
       try { return calcPVM(filtered, metric, item.config.base, item.config.comp, item.config.mode, labels); }
       catch { return null; }
     });
-  }, [pricingRows, pricingSignature, metric, item.id, item.config, ready.ok]);
+  }, [budgetRows, budgetSignature, pricingRows, pricingSignature, metric, item.id, item.config, ready.ok]);
 
   if (!ready.ok) return <Frame label="Bridge PVM"><Empty message={ready.reason ?? "Configure o slide."} /></Frame>;
   if (!pvm) return <Frame label="Bridge PVM"><Empty message="Sem dados para os períodos selecionados." /></Frame>;

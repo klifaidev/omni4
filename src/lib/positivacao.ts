@@ -2,13 +2,15 @@ import type { PricingRow } from "./types";
 import { monthLabel } from "./format";
 import { clienteId } from "./farol";
 
-export type PositivacaoDim = "categoria" | "marca" | "canalAjustado" | "gestorResp";
+export type PositivacaoDim = "categoria" | "marca" | "canalAjustado" | "gestorResp" | "sku" | "skuDesc";
 
 export const POSITIVACAO_DIMS: { key: PositivacaoDim; label: string; emptyLabel: string }[] = [
   { key: "categoria", label: "Categoria", emptyLabel: "Sem categoria" },
   { key: "marca", label: "Marca", emptyLabel: "Sem marca" },
   { key: "canalAjustado", label: "Canal Ajustado", emptyLabel: "Sem canal" },
   { key: "gestorResp", label: "Gestor Resp.", emptyLabel: "Sem gestor" },
+  { key: "sku", label: "SKU", emptyLabel: "Sem SKU" },
+  { key: "skuDesc", label: "SKU Desc.", emptyLabel: "Sem descricao" },
 ];
 
 export interface PositivacaoMonth {

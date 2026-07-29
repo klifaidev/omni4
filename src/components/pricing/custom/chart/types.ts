@@ -156,13 +156,13 @@ export interface WaterfallStyleCfg {
   pvm?: {
     base: string | null;
     comp: string | null;
-    periodMode: "fy" | "month";
+    periodMode: "fy" | "month" | "ytd_budget";
     /** "effects" = Volume/Preço/Custo/...; ou nome de uma dimensão (marca, categoria, etc.) */
     decomposition?: string;
     /** Top N itens quando decomposition é uma dimensão (resto vira "Outros"). */
     topN?: number;
     /** Período de comparação automático. "manual" usa base/comp manualmente. Default "prev-month". */
-    comparisonMode?: "prev-month" | "prev-year-month" | "bench" | "manual";
+    comparisonMode?: "prev-month" | "prev-year-month" | "bench" | "ytd-budget" | "manual";
   };
 }
 

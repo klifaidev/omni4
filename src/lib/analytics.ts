@@ -328,18 +328,12 @@ export interface PVMResult {
  *
  * `mode`: "fy" compares by `r.fy`, "month" compares by `r.periodo`.
  */
-export function calcPVM(
-  rows: PricingRow[],
+export function calcPVMFromRows(
+  baseRows: PricingRow[],
+  compRows: PricingRow[],
   metric: Metric,
-  base: string,
-  comp: string,
-  mode: "fy" | "month" = "fy",
   labels?: { base?: string; comp?: string },
 ): PVMResult {
-  const keyOf = (r: PricingRow) => (mode === "fy" ? r.fy : r.periodo);
-  const baseRows = rows.filter((r) => keyOf(r) === base);
-  const compRows = rows.filter((r) => keyOf(r) === comp);
-
   interface Agg {
     vol: number;
     rol: number;
@@ -471,10 +465,27 @@ export function calcPVM(
     commission: commissionEffect,
     others,
     current: currentTotal,
-    baseLabel: labels?.base ?? base,
-    currentLabel: labels?.comp ?? comp,
+    baseLabel: labels?.base ?? "Base",
+    currentLabel: labels?.comp ?? "Comparacao",
     skuDetails,
   };
+}
+
+export function calcPVM(
+  rows: PricingRow[],
+  metric: Metric,
+  base: string,
+  comp: string,
+  mode: "fy" | "month" = "fy",
+  labels?: { base?: string; comp?: string },
+): PVMResult {
+  const keyOf = (r: PricingRow) => (mode === "fy" ? r.fy : r.periodo);
+  return calcPVMFromRows(
+    rows.filter((r) => keyOf(r) === base),
+    rows.filter((r) => keyOf(r) === comp),
+    metric,
+    { base: labels?.base ?? base, comp: labels?.comp ?? comp },
+  );
 }
 
 export function uniqueValues<K extends keyof PricingRow>(rows: PricingRow[], key: K): string[] {

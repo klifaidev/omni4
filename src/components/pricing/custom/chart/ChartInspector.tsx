@@ -48,6 +48,8 @@ const POSITIVACAO_BREAKDOWN_OPTIONS = [
   { value: "marca", label: "Marca" },
   { value: "canalAjustado", label: "Canal" },
   { value: "gestorResp", label: "Gestor Resp." },
+  { value: "sku", label: "SKU" },
+  { value: "skuDesc", label: "SKU Desc." },
 ];
 
 function rid(): string {
@@ -1907,15 +1909,25 @@ function PvmBridgePicker({
           <Row label="Comparação">
             <Segmented value={comparisonMode}
               onChange={(v) => updPath("waterfall", {
-                pvm: { ...pvm, comparisonMode: v as never, periodMode: v === "manual" ? pvm.periodMode : "month" },
+                pvm: {
+                  ...pvm,
+                  comparisonMode: v as never,
+                  periodMode: v === "manual" ? (pvm.periodMode === "ytd_budget" ? "month" : pvm.periodMode) : v === "ytd-budget" ? "ytd_budget" : "month",
+                },
               })}
               options={[
                 { value: "prev-month", label: "Mês ant." },
                 { value: "prev-year-month", label: "Mês AA" },
                 { value: "bench", label: "Bench" },
+                { value: "ytd-budget", label: "YTD Budget" },
                 { value: "manual", label: "Manual" },
               ]} />
           </Row>
+          {comparisonMode === "ytd-budget" && (
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
+              Real acumulado do FY atual contra o Budget dos mesmos meses realizados.
+            </div>
+          )}
           {comparisonMode === "bench" && (
             <div className="rounded-md border border-border/40 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
               {benchInfo
