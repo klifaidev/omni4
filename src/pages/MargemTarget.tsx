@@ -697,11 +697,6 @@ export default function MargemTarget() {
       : level === "channel"
         ? channelTargets
         : regionalTargets;
-  const exportRows = useMemo(
-    () => buildTargetExportRows(currentRows, categoryTargets, settings, periodOptions),
-    [currentRows, categoryTargets, settings, periodOptions],
-  );
-
   const selectedSetting = selectedCategory ? settings.categories[selectedCategory] ?? { mode: "auto" as TargetMode } : null;
   const selectedManualValue = selectedSetting?.manualTargetPct ?? selectedCategoryTarget?.targetPct ?? 0;
   const totalImpact = visibleRows.reduce((sum, row) => sum + row.impact, 0);
@@ -864,7 +859,11 @@ export default function MargemTarget() {
                   type="button"
                   variant="outline"
                   className="gap-2"
-                  onClick={() => exportMargemTargetXlsx({ rows: exportRows, activePremise, budgetFyLabel })}
+                  onClick={() => exportMargemTargetXlsx({
+                    rows: buildTargetExportRows(currentRows, categoryTargets, settings, periodOptions),
+                    activePremise,
+                    budgetFyLabel,
+                  })}
                 >
                   <Download className="h-4 w-4" />
                   Exportar Excel
@@ -1214,6 +1213,12 @@ function WeightSlider({
   colorClass: string;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3 text-xs">
@@ -1221,14 +1226,15 @@ function WeightSlider({
           <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", colorClass)} />
           <span className="truncate">{label}</span>
         </span>
-        <span className="text-muted-foreground">{Math.round(value * 100)}%</span>
+        <span className="text-muted-foreground">{Math.round(draft * 100)}%</span>
       </div>
       <Slider
-        value={[Math.round(value * 100)]}
+        value={[Math.round(draft * 100)]}
         min={0}
         max={100}
         step={5}
-        onValueChange={([next]) => onChange(next / 100)}
+        onValueChange={([next]) => setDraft(next / 100)}
+        onValueCommit={([next]) => onChange(next / 100)}
         aria-label={`Peso de ${label}`}
       />
       <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{helper}</p>
