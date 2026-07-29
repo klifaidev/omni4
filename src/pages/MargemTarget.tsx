@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/select";
 import { applyFilters } from "@/lib/analytics";
 import { formatBRL, formatPct } from "@/lib/format";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import type { PricingRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { useBudget } from "@/store/budget";
 import { usePricing } from "@/store/pricing";
 import {
   ArrowDownRight,
@@ -43,11 +45,15 @@ import {
 
 type TargetMode = "auto" | "manual";
 type DrillLevel = "category" | "sku" | "channel" | "regional";
+type TargetWeightKey = "historyWeight" | "recentWeight" | "budgetWeight";
 
 interface CategorySetting {
   mode: TargetMode;
   manualTargetPct?: number;
   benchmarkWeight?: number;
+  historyWeight?: number;
+  recentWeight?: number;
+  budgetWeight?: number;
   preservation?: number;
   historyStart?: string;
   historyEnd?: string;
@@ -56,7 +62,10 @@ interface CategorySetting {
 }
 
 interface TargetSettings {
-  benchmarkWeight: number;
+  benchmarkWeight?: number;
+  historyWeight: number;
+  recentWeight: number;
+  budgetWeight: number;
   preservation: number;
   historyStart?: string;
   historyEnd?: string;
@@ -78,6 +87,8 @@ interface TargetRow extends Record<string, unknown> {
   impact: number;
   weight: number;
   risk: "ok" | "attention" | "critical";
+  budgetAvailable?: boolean;
+  appliedBudgetWeight?: number;
 }
 
 interface Aggregate {
@@ -96,7 +107,9 @@ interface PeriodOption {
 }
 
 interface EffectivePremise {
-  benchmarkWeight: number;
+  historyWeight: number;
+  recentWeight: number;
+  budgetWeight: number;
   preservation: number;
   historyStart?: string;
   historyEnd?: string;
@@ -106,7 +119,9 @@ interface EffectivePremise {
 
 const STORAGE_KEY = "omni:margem-target:v1";
 const DEFAULT_SETTINGS: TargetSettings = {
-  benchmarkWeight: 0.6,
+  historyWeight: 0.4,
+  recentWeight: 0.3,
+  budgetWeight: 0.3,
   preservation: 0.65,
   categories: {},
 };
@@ -159,7 +174,9 @@ function defaultPremise(options: PeriodOption[]): EffectivePremise {
   const historyStart = options[Math.max(0, options.length - 24)]?.periodo;
   const historyEnd = recentEnd;
   return {
-    benchmarkWeight: DEFAULT_SETTINGS.benchmarkWeight,
+    historyWeight: DEFAULT_SETTINGS.historyWeight,
+    recentWeight: DEFAULT_SETTINGS.recentWeight,
+    budgetWeight: DEFAULT_SETTINGS.budgetWeight,
     preservation: DEFAULT_SETTINGS.preservation,
     historyStart,
     historyEnd,
@@ -168,11 +185,78 @@ function defaultPremise(options: PeriodOption[]): EffectivePremise {
   };
 }
 
+function normalizeWeights(weights: Record<TargetWeightKey, number>): Record<TargetWeightKey, number> {
+  const historyWeight = Math.max(0, weights.historyWeight);
+  const recentWeight = Math.max(0, weights.recentWeight);
+  const budgetWeight = Math.max(0, weights.budgetWeight);
+  const total = historyWeight + recentWeight + budgetWeight;
+  if (total <= 0) {
+    return {
+      historyWeight: DEFAULT_SETTINGS.historyWeight,
+      recentWeight: DEFAULT_SETTINGS.recentWeight,
+      budgetWeight: DEFAULT_SETTINGS.budgetWeight,
+    };
+  }
+  return {
+    historyWeight: historyWeight / total,
+    recentWeight: recentWeight / total,
+    budgetWeight: budgetWeight / total,
+  };
+}
+
+function weightsFromSetting(
+  categorySetting: CategorySetting | undefined,
+  settings: TargetSettings,
+  defaults: EffectivePremise,
+): Record<TargetWeightKey, number> {
+  const legacyBenchmark = categorySetting?.benchmarkWeight ?? settings.benchmarkWeight;
+  const historyWeight = categorySetting?.historyWeight ?? settings.historyWeight ?? legacyBenchmark ?? defaults.historyWeight;
+  const budgetWeight = categorySetting?.budgetWeight ?? settings.budgetWeight ?? defaults.budgetWeight;
+  const recentWeight = categorySetting?.recentWeight
+    ?? settings.recentWeight
+    ?? Math.max(0, 1 - historyWeight - budgetWeight);
+  return normalizeWeights({ historyWeight, recentWeight, budgetWeight });
+}
+
+function rebalanceWeights(
+  current: Pick<EffectivePremise, TargetWeightKey>,
+  key: TargetWeightKey,
+  nextValue: number,
+): Record<TargetWeightKey, number> {
+  const next = Math.min(1, Math.max(0, nextValue));
+  const otherKeys = (["historyWeight", "recentWeight", "budgetWeight"] as TargetWeightKey[]).filter((item) => item !== key);
+  const remaining = 1 - next;
+  const otherTotal = otherKeys.reduce((sum, item) => sum + Math.max(0, current[item]), 0);
+  const result: Record<TargetWeightKey, number> = {
+    historyWeight: current.historyWeight,
+    recentWeight: current.recentWeight,
+    budgetWeight: current.budgetWeight,
+  };
+  result[key] = next;
+  for (const item of otherKeys) {
+    result[item] = otherTotal > 0 ? (Math.max(0, current[item]) / otherTotal) * remaining : remaining / otherKeys.length;
+  }
+  return normalizeWeights(result);
+}
+
+function applyBudgetFallbackWeights(
+  premise: Pick<EffectivePremise, TargetWeightKey>,
+  hasBudget: boolean,
+): Record<TargetWeightKey, number> {
+  if (hasBudget) return normalizeWeights(premise);
+  return normalizeWeights({
+    historyWeight: premise.historyWeight,
+    recentWeight: premise.recentWeight,
+    budgetWeight: 0,
+  });
+}
+
 function resolvePremise(settings: TargetSettings, category: string | undefined, options: PeriodOption[]): EffectivePremise {
   const defaults = defaultPremise(options);
   const categorySetting = category ? settings.categories[category] : undefined;
+  const weights = weightsFromSetting(categorySetting, settings, defaults);
   return {
-    benchmarkWeight: categorySetting?.benchmarkWeight ?? settings.benchmarkWeight ?? defaults.benchmarkWeight,
+    ...weights,
     preservation: categorySetting?.preservation ?? settings.preservation ?? defaults.preservation,
     historyStart: categorySetting?.historyStart ?? settings.historyStart ?? defaults.historyStart,
     historyEnd: categorySetting?.historyEnd ?? settings.historyEnd ?? defaults.historyEnd,
@@ -234,8 +318,17 @@ function loadSettings(): TargetSettings {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<TargetSettings>;
+    const legacyBenchmark = typeof parsed.benchmarkWeight === "number" ? parsed.benchmarkWeight : undefined;
+    const historyWeight = typeof parsed.historyWeight === "number"
+      ? parsed.historyWeight
+      : legacyBenchmark ?? DEFAULT_SETTINGS.historyWeight;
+    const budgetWeight = typeof parsed.budgetWeight === "number" ? parsed.budgetWeight : DEFAULT_SETTINGS.budgetWeight;
+    const recentWeight = typeof parsed.recentWeight === "number"
+      ? parsed.recentWeight
+      : Math.max(0, 1 - historyWeight - budgetWeight);
+    const weights = normalizeWeights({ historyWeight, recentWeight, budgetWeight });
     return {
-      benchmarkWeight: typeof parsed.benchmarkWeight === "number" ? parsed.benchmarkWeight : DEFAULT_SETTINGS.benchmarkWeight,
+      ...weights,
       preservation: typeof parsed.preservation === "number" ? parsed.preservation : DEFAULT_SETTINGS.preservation,
       historyStart: typeof parsed.historyStart === "string" ? parsed.historyStart : undefined,
       historyEnd: typeof parsed.historyEnd === "string" ? parsed.historyEnd : undefined,
@@ -251,11 +344,13 @@ function loadSettings(): TargetSettings {
 function buildCategoryTargets(
   currentRows: PricingRow[],
   historyRows: PricingRow[],
+  budgetRows: PricingRow[],
   settings: TargetSettings,
   periodOptions: PeriodOption[],
 ): TargetRow[] {
   const categories = aggregateByDimension(currentRows, (row) => row.categoria || "Sem categoria");
   const totalRol = categories.reduce((sum, row) => sum + row.rol, 0) || 1;
+  const budgetByCategory = new Map(aggregateByDimension(budgetRows, (row) => row.categoria || "Sem categoria").map((row) => [row.key, row]));
   const rangeAggregates = new Map<string, Map<string, Aggregate>>();
   const aggregatesForRange = (start?: string, end?: string) => {
     const key = `${start ?? ""}|${end ?? ""}`;
@@ -272,13 +367,23 @@ function buildCategoryTargets(
     const premise = resolvePremise(settings, category.key, periodOptions);
     const historicalAgg = aggregatesForRange(premise.historyStart, premise.historyEnd).get(category.key);
     const recentAgg = aggregatesForRange(premise.recentStart, premise.recentEnd).get(category.key);
+    const budgetAgg = budgetByCategory.get(category.key);
     const historical = historicalAgg && historicalAgg.rol > 0 ? historicalAgg.margemPct : category.margemPct;
     const recent = recentAgg && recentAgg.rol > 0 ? recentAgg.margemPct : category.margemPct;
-    const autoTarget = historical * premise.benchmarkWeight + recent * (1 - premise.benchmarkWeight);
+    const budgetAvailable = Boolean(budgetAgg && budgetAgg.rol > 0);
+    const appliedWeights = applyBudgetFallbackWeights(premise, budgetAvailable);
+    const budget = budgetAvailable && budgetAgg ? budgetAgg.margemPct : 0;
+    const autoTarget =
+      historical * appliedWeights.historyWeight +
+      recent * appliedWeights.recentWeight +
+      budget * appliedWeights.budgetWeight;
     const targetPct = setting?.mode === "manual" && typeof setting.manualTargetPct === "number"
       ? setting.manualTargetPct
       : autoTarget;
-    return buildTargetRow(category, targetPct, totalRol);
+    return buildTargetRow(category, targetPct, totalRol, {
+      budgetAvailable,
+      appliedBudgetWeight: appliedWeights.budgetWeight,
+    });
   });
 }
 
@@ -291,7 +396,12 @@ function buildChildrenTargets(children: Aggregate[], parentTargetPct: number, pr
   });
 }
 
-function buildTargetRow(row: Aggregate, targetPct: number, totalRol: number): TargetRow {
+function buildTargetRow(
+  row: Aggregate,
+  targetPct: number,
+  totalRol: number,
+  extra?: Pick<TargetRow, "budgetAvailable" | "appliedBudgetWeight">,
+): TargetRow {
   const gapPp = targetPct - row.margemPct;
   const impact = gapPp * row.rol;
   const absGap = Math.abs(gapPp);
@@ -302,6 +412,7 @@ function buildTargetRow(row: Aggregate, targetPct: number, totalRol: number): Ta
     impact,
     weight: row.rol / totalRol,
     risk: absGap >= 0.05 ? "critical" : absGap >= 0.02 ? "attention" : "ok",
+    ...extra,
   };
 }
 
@@ -333,6 +444,7 @@ export default function MargemTarget() {
   const rows = usePricing((state) => state.rows);
   const filters = usePricing((state) => state.filters);
   const selectedPeriods = usePricing((state) => state.selectedPeriods);
+  const budgetRowsRaw = useBudget((state) => state.rows);
   const [settings, setSettings] = useState<TargetSettings>(() => loadSettings());
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [selectedSku, setSelectedSku] = useState<string | undefined>();
@@ -345,13 +457,23 @@ export default function MargemTarget() {
   const currentRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [rows, filters, selectedPeriods]);
   const historyRows = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
   const periodOptions = useMemo(() => getPeriodOptions(historyRows), [historyRows]);
+  const budgetRows = useMemo(() => budgetRowsAsPricingFiltered(budgetRowsRaw, "budget"), [budgetRowsRaw]);
+  const latestBudgetFyNum = useMemo(() => {
+    return budgetRows.reduce((latest, row) => Math.max(latest, row.fyNum || 0), 0);
+  }, [budgetRows]);
+  const budgetFiscalRows = useMemo(() => {
+    if (!latestBudgetFyNum) return [];
+    return budgetRows.filter((row) => row.fyNum === latestBudgetFyNum);
+  }, [budgetRows, latestBudgetFyNum]);
+  const budgetFyLabel = budgetFiscalRows[0]?.fy ?? "ano fiscal do Budget";
 
   const categoryTargets = useMemo(
-    () => buildCategoryTargets(currentRows, historyRows, settings, periodOptions),
-    [currentRows, historyRows, settings, periodOptions],
+    () => buildCategoryTargets(currentRows, historyRows, budgetFiscalRows, settings, periodOptions),
+    [currentRows, historyRows, budgetFiscalRows, settings, periodOptions],
   );
 
   const selectedCategoryTarget = categoryTargets.find((row) => row.key === selectedCategory);
+  const missingBudgetCount = categoryTargets.filter((row) => row.budgetAvailable === false).length;
   const activePremise = resolvePremise(settings, selectedCategory, periodOptions);
   const categoryRows = useMemo(
     () => rowsForPath(currentRows, selectedCategory),
@@ -591,6 +713,8 @@ export default function MargemTarget() {
             selectedSetting={selectedSetting}
             selectedManualValue={selectedManualValue}
             selectedCategoryTarget={selectedCategoryTarget}
+            budgetFyLabel={budgetFyLabel}
+            missingBudgetCount={missingBudgetCount}
             onPremiseChange={updateActivePremise}
             onCategoryChange={updateCategorySetting}
           />
@@ -755,6 +879,11 @@ function CategoryTargetCard({
           {formatBRL(row.impact, { compact: true })}
         </span>
       </div>
+      {row.budgetAvailable === false ? (
+        <div className="mt-3 rounded-xl border border-warning/25 bg-warning/10 px-3 py-2 text-[11px] font-medium text-warning">
+          Sem Budget: peso redistribuído
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -877,6 +1006,41 @@ function ManualTargetInput({ value, onChange }: { value: number; onChange: (valu
   );
 }
 
+function WeightSlider({
+  label,
+  helper,
+  value,
+  colorClass,
+  onChange,
+}: {
+  label: string;
+  helper: string;
+  value: number;
+  colorClass: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+        <span className="flex min-w-0 items-center gap-2 font-medium">
+          <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", colorClass)} />
+          <span className="truncate">{label}</span>
+        </span>
+        <span className="text-muted-foreground">{Math.round(value * 100)}%</span>
+      </div>
+      <Slider
+        value={[Math.round(value * 100)]}
+        min={0}
+        max={100}
+        step={5}
+        onValueChange={([next]) => onChange(next / 100)}
+        aria-label={`Peso de ${label}`}
+      />
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">{helper}</p>
+    </div>
+  );
+}
+
 function AssumptionPanel({
   activePremise,
   periodOptions,
@@ -884,6 +1048,8 @@ function AssumptionPanel({
   selectedSetting,
   selectedManualValue,
   selectedCategoryTarget,
+  budgetFyLabel,
+  missingBudgetCount,
   onPremiseChange,
   onCategoryChange,
 }: {
@@ -893,9 +1059,18 @@ function AssumptionPanel({
   selectedSetting: CategorySetting | null;
   selectedManualValue: number;
   selectedCategoryTarget?: TargetRow;
+  budgetFyLabel: string;
+  missingBudgetCount: number;
   onPremiseChange: (patch: Partial<EffectivePremise>) => void;
   onCategoryChange: (category: string, patch: Partial<CategorySetting>) => void;
 }) {
+  const budgetMissingForSelection = Boolean(selectedCategory && selectedCategoryTarget && selectedCategoryTarget.budgetAvailable === false);
+  const budgetWarning = budgetMissingForSelection
+    ? "Esta categoria não tem Budget no ano fiscal selecionado. O peso do Budget foi redistribuído entre Histórico e Recente."
+    : !selectedCategory && missingBudgetCount > 0
+      ? `${missingBudgetCount} categoria(s) sem Budget. O peso do Budget é redistribuído automaticamente nesses casos.`
+      : null;
+
   return (
     <GlassCard className="h-fit p-5">
       <div className="flex items-center gap-3">
@@ -912,26 +1087,51 @@ function AssumptionPanel({
       </div>
 
       <div className="mt-6 space-y-6">
-        <div>
-          <div className="mb-2 flex items-center justify-between text-xs">
-            <span className="font-medium">Benchmark histórico</span>
-            <span className="text-muted-foreground">{Math.round(activePremise.benchmarkWeight * 100)}%</span>
+        <div className="rounded-2xl border border-border/40 bg-background/35 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Peso dos pilares</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Histórico, meses recentes e Budget fecham 100% da meta automática.
+              </p>
+            </div>
+            <Badge variant="outline" className="shrink-0 border-primary/25 bg-primary/5 text-primary">
+              {budgetFyLabel}
+            </Badge>
           </div>
-          <Slider
-            value={[Math.round(activePremise.benchmarkWeight * 100)]}
-            min={0}
-            max={100}
-            step={5}
-            onValueChange={([value]) => onPremiseChange({ benchmarkWeight: value / 100 })}
-            aria-label="Peso do benchmark histórico"
-          />
-          <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
-            <span>Mais recente</span>
-            <span>Histórico</span>
+          <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-muted">
+            <div className="bg-primary" style={{ width: `${activePremise.historyWeight * 100}%` }} />
+            <div className="bg-success" style={{ width: `${activePremise.recentWeight * 100}%` }} />
+            <div className="bg-warning" style={{ width: `${activePremise.budgetWeight * 100}%` }} />
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            O restante do peso usa a média dos últimos 3 meses disponíveis.
-          </p>
+          <div className="mt-4 space-y-4">
+            <WeightSlider
+              label="Histórico"
+              helper="Benchmark dos últimos 2 anos definidos abaixo."
+              value={activePremise.historyWeight}
+              colorClass="bg-primary"
+              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "historyWeight", value))}
+            />
+            <WeightSlider
+              label="Meses recentes"
+              helper="Por padrão, os 3 últimos meses fechados."
+              value={activePremise.recentWeight}
+              colorClass="bg-success"
+              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "recentWeight", value))}
+            />
+            <WeightSlider
+              label="Budget"
+              helper="Ano fiscal inteiro, sem filtros da página."
+              value={activePremise.budgetWeight}
+              colorClass="bg-warning"
+              onChange={(value) => onPremiseChange(rebalanceWeights(activePremise, "budgetWeight", value))}
+            />
+          </div>
+          {budgetWarning ? (
+            <div className="mt-4 rounded-xl border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
+              {budgetWarning}
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-border/40 bg-background/35 p-4">
