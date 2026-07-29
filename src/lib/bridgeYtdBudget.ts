@@ -20,7 +20,11 @@ function periodSortValue(row: Pick<PricingRow, "ano" | "mes">): number {
 }
 
 function budgetToBridgeRow(row: BudgetRow): PricingRow {
-  const cogs = -(row.cpv ?? 0);
+  // Budget rows in Superbase do not open CPV reliably. For this bridge only,
+  // use the implicit cost needed to reconcile Receita to CM on both sides.
+  const receita = Number.isFinite(row.receita) ? row.receita : 0;
+  const cm = Number.isFinite(row.cm) ? row.cm : 0;
+  const cogs = receita - cm;
   return {
     periodo: row.periodo,
     mes: row.mes,
@@ -46,13 +50,13 @@ function budgetToBridgeRow(row: BudgetRow): PricingRow {
     uf: undefined,
     regional: undefined,
     cliente: undefined,
-    rol: row.receita,
+    rol: receita,
     volumeKg: row.volumeKg,
     cogs,
     custoVariavel: cogs,
     custoFixo: 0,
     margemBruta: 0,
-    contribMarginal: row.cm,
+    contribMarginal: cm,
     frete: 0,
     comissao: 0,
   };

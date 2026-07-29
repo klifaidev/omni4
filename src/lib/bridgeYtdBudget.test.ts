@@ -65,17 +65,17 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(result?.result.current).toBe(75);
   });
 
-  it("normalizes signed Superbase CPV using accounting direction before calculating cost effects", () => {
+  it("derives implicit cost from receita minus CM when Budget CPV is missing", () => {
     const result = computeBridgeYtdRealVsBudget([
-      row("budget", "004.2025", 40, "Chocolates", -70),
-      row("real", "004.2025", 35, "Chocolates", 5),
+      row("budget", "004.2025", 40, "Chocolates", Number.NaN, 10, 100),
+      row("real", "004.2025", 35, "Chocolates", -999, 10, 95),
     ], {}, "cm");
 
-    expect(result?.baseRows[0]?.cogs).toBe(70);
-    expect(result?.compRows[0]?.cogs).toBe(-5);
+    expect(result?.baseRows[0]?.cogs).toBe(60);
+    expect(result?.compRows[0]?.cogs).toBe(60);
   });
 
-  it("uses the simplified Superbase bridge formula: volume, price, CPV cost and residual others", () => {
+  it("uses the simplified Superbase bridge formula: volume, price, implicit cost and residual others", () => {
     const result = computeBridgeYtdRealVsBudget([
       row("budget", "004.2025", 40, "Chocolates", -60, 10, 100),
       row("real", "004.2025", 42, "Chocolates", -84, 12, 132),
@@ -83,8 +83,8 @@ describe("computeBridgeYtdRealVsBudget", () => {
 
     expect(result?.result.volume).toBeCloseTo(8);
     expect(result?.result.price).toBeCloseTo(12);
-    expect(result?.result.cost).toBeCloseTo(-12);
-    expect(result?.result.others).toBeCloseTo(-6);
+    expect(result?.result.cost).toBeCloseTo(-18);
+    expect(result?.result.others).toBeCloseTo(0);
     expect(result?.result.current).toBeCloseTo(
       (result?.result.base ?? 0)
       + (result?.result.volume ?? 0)
@@ -92,6 +92,19 @@ describe("computeBridgeYtdRealVsBudget", () => {
       + (result?.result.cost ?? 0)
       + (result?.result.others ?? 0),
     );
+  });
+
+  it("does not inflate cost/residual when Budget CPV is absent but receita and CM are available", () => {
+    const result = computeBridgeYtdRealVsBudget([
+      row("budget", "004.2025", 40, "Chocolates", Number.NaN, 10, 100),
+      row("real", "004.2025", 50, "Chocolates", -999, 12, 132),
+    ], {}, "cm");
+    const gap = Math.abs((result?.result.current ?? 0) - (result?.result.base ?? 0));
+    const noise = Math.abs(result?.result.cost ?? 0) + Math.abs(result?.result.others ?? 0);
+
+    expect(result?.baseRows[0]?.cogs).toBe(60);
+    expect(result?.compRows[0]?.cogs).toBe(82);
+    expect(noise).toBeLessThanOrEqual(gap * 5);
   });
 
   it("routes low-volume SKUs to mix/residual instead of unstable unit effects", () => {
