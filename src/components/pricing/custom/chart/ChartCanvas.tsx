@@ -2095,6 +2095,8 @@ function WaterfallChart({
       : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
       : pricing);
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
+  const pricingSignature = useMemo(() => getCachedRowsSignature(pricing), [pricing]);
+  const budgetSignature = useMemo(() => getCachedRowsSignature(budget), [budget]);
 
   const wfMode = style.waterfall.mode ?? "pvm";
   const pvmCfg = useMemo(
@@ -2119,7 +2121,7 @@ function WaterfallChart({
       slideId: cacheSlideId,
       blockId: block.id,
       dataSource: block.dataSource,
-      dataSignature: comparisonMode === "ytd-budget" ? budgetSignature : dsRowsSignature,
+      dataSignature: comparisonMode === "ytd-budget" ? `${budgetSignature}|${pricingSignature}` : dsRowsSignature,
       params: {
         filters: block.filters,
         metric,
@@ -2131,7 +2133,7 @@ function WaterfallChart({
       },
     }, () => {
     const ytdBudget = comparisonMode === "ytd-budget"
-      ? computeBridgeYtdRealVsBudget(budget, block.filters, metric)
+      ? computeBridgeYtdRealVsBudget(budget, pricing, block.filters, metric)
       : null;
     const filtered = ytdBudget ? [...ytdBudget.baseRows, ...ytdBudget.compRows] : applyFilters(dsRows, block.filters, null);
     if (filtered.length === 0) return [];
@@ -2253,7 +2255,7 @@ function WaterfallChart({
       ];
     } catch { return []; }
     });
-  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, budget, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
+  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, budget, budgetSignature, pricing, pricingSignature, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
 
   // Smart column / fallback (modo manual)
   const cols = style.waterfall.columns;

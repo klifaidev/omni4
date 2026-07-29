@@ -42,13 +42,13 @@ function latestRealYtdPeriods(realRows: PricingRow[]): { fy: string; periods: st
 
 export function computeBridgeYtdRealVsBudget(
   budgetRows: BudgetRow[],
+  realPricingRows: PricingRow[],
   filters: Filters,
   metric: Metric,
 ): BridgeYtdBudgetResult | null {
   const effectiveMetric: Metric = metric === "mb" ? "cm" : metric;
-  const realRows = budgetRowsAsPricingFiltered(budgetRows, "real");
   const budgetPlanRows = budgetRowsAsPricingFiltered(budgetRows, "budget");
-  const ytd = latestRealYtdPeriods(realRows);
+  const ytd = latestRealYtdPeriods(realPricingRows);
   if (!ytd || ytd.periods.length === 0) return null;
 
   const periodSet = new Set(ytd.periods);
@@ -58,7 +58,7 @@ export function computeBridgeYtdRealVsBudget(
     null,
   );
   const compRows = applyFilters(
-    realRows.filter((row) => row.fy === ytd.fy && periodSet.has(row.periodo)),
+    realPricingRows.filter((row) => row.fy === ytd.fy && periodSet.has(row.periodo)),
     filters,
     null,
   );
