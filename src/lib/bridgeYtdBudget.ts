@@ -17,7 +17,7 @@ function periodSortValue(row: Pick<PricingRow, "ano" | "mes">): number {
 }
 
 function budgetToBridgeRow(row: BudgetRow): PricingRow {
-  const cogs = Math.abs(row.cpv ?? 0);
+  const cogs = -(row.cpv ?? 0);
   return {
     periodo: row.periodo,
     mes: row.mes,
@@ -93,7 +93,7 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
       const cur = map.get(key) ?? { vol: 0, rol: 0, cogs: 0, margem: 0 };
       cur.vol += row.volumeKg ?? 0;
       cur.rol += row.rol ?? 0;
-      cur.cogs += Math.abs(row.cogs ?? 0);
+      cur.cogs += row.cogs ?? 0;
       cur.margem += row.contribMarginal ?? 0;
       map.set(key, cur);
     }

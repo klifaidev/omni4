@@ -63,20 +63,20 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(result?.result.current).toBe(75);
   });
 
-  it("normalizes negative Superbase CPV before calculating cost effects", () => {
+  it("normalizes signed Superbase CPV using accounting direction before calculating cost effects", () => {
     const result = computeBridgeYtdRealVsBudget([
       row("budget", "004.2025", 40, "Chocolates", -70),
-      row("real", "004.2025", 35, "Chocolates", -65),
+      row("real", "004.2025", 35, "Chocolates", 5),
     ], {}, "cm");
 
     expect(result?.baseRows[0]?.cogs).toBe(70);
-    expect(result?.compRows[0]?.cogs).toBe(65);
+    expect(result?.compRows[0]?.cogs).toBe(-5);
   });
 
   it("uses the simplified Superbase bridge formula: volume, price, CPV cost and residual others", () => {
     const result = computeBridgeYtdRealVsBudget([
-      row("budget", "004.2025", 40, "Chocolates", 60, 10, 100),
-      row("real", "004.2025", 42, "Chocolates", 84, 12, 132),
+      row("budget", "004.2025", 40, "Chocolates", -60, 10, 100),
+      row("real", "004.2025", 42, "Chocolates", -84, 12, 132),
     ], {}, "cm");
 
     expect(result?.result.volume).toBeCloseTo(8);
