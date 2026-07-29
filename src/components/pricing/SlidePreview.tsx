@@ -677,10 +677,20 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
     { label: "Efeito custo", value: pvm.cost, type: "delta" as const },
     { label: `CM ${pvm.currentLabel}`, value: pvm.current, type: "total" as const },
   ];
+  const displaySteps = pvm.commercialCostsCollapsed
+    ? [
+      steps[0],
+      steps[1],
+      { label: `Efeito ${pvm.othersLabel ?? "outros"}`, value: pvm.others, type: "delta" as const },
+      steps[5],
+      steps[6],
+      steps[7],
+    ]
+    : steps;
 
   const geom: { start: number; end: number; value: number; type: "total" | "delta" }[] = [];
   let running = 0;
-  steps.forEach((s) => {
+  displaySteps.forEach((s) => {
     if (s.type === "total") { geom.push({ start: 0, end: s.value, value: s.value, type: "total" }); running = s.value; }
     else { const end = running + s.value; geom.push({ start: running, end, value: s.value, type: "delta" }); running = end; }
   });
@@ -691,14 +701,14 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
   const yMin = minV - range * 0.08;
   const yMax = maxV + range * 0.18;
 
-  const colSlot = w / steps.length;
+  const colSlot = w / displaySteps.length;
   const barW = colSlot * 0.42;
   const yOf = (v: number) => y + (1 - (v - yMin) / (yMax - yMin)) * h;
 
   return (
     <g>
       {geom.map((g, i) => {
-        const s = steps[i];
+    const s = displaySteps[i];
         const cx = x + colSlot * i + colSlot / 2;
         const xBar = cx - barW / 2;
         const isTotal = s.type === "total";

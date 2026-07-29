@@ -64,11 +64,21 @@ export function computeBridgeYtdRealVsBudget(
   );
   if (baseRows.length === 0 || compRows.length === 0) return null;
 
-  return {
-    result: calcPVMFromRows(baseRows, compRows, effectiveMetric, {
+  const rawResult = calcPVMFromRows(baseRows, compRows, effectiveMetric, {
       base: `Budget YTD ${ytd.fy}`,
       comp: `Real YTD ate ${ytd.latestLabel}`,
-    }),
+    });
+  const result: PVMResult = {
+    ...rawResult,
+    freight: 0,
+    commission: 0,
+    others: rawResult.freight + rawResult.commission + rawResult.others,
+    othersLabel: "Outros Custos",
+    commercialCostsCollapsed: true,
+  };
+
+  return {
+    result,
     baseRows,
     compRows,
     fy: ytd.fy,

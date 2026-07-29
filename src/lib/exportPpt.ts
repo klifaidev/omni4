@@ -439,13 +439,19 @@ function addOverviewDreBridgeSlide(
   const steps: Step[] = [
     { label: `Contrib. Marginal ${result.baseLabel}`, value: result.base, type: "total" },
     { label: "Efeito volume", value: result.volume, type: "delta" },
-    { label: "Efeito frete", value: result.freight, type: "delta" },
-    { label: "Efeito comissão", value: result.commission, type: "delta" },
-    { label: "Efeito outros", value: result.others, type: "delta" },
+  ];
+  if (!result.commercialCostsCollapsed) {
+    steps.push(
+      { label: "Efeito frete", value: result.freight, type: "delta" },
+      { label: "Efeito comissão", value: result.commission, type: "delta" },
+    );
+  }
+  steps.push(
+    { label: `Efeito ${result.othersLabel ?? "outros"}`, value: result.others, type: "delta" },
     { label: "Efeito preço", value: result.price, type: "delta" },
     { label: "Efeito custo variável", value: result.cost, type: "delta" },
     { label: `Contrib. Marginal ${result.currentLabel}`, value: result.current, type: "total" },
-  ];
+  );
 
   // Geometria start/end (mesmo princípio do componente Waterfall)
   const geom: { start: number; end: number; value: number; type: "total" | "delta" }[] = [];
@@ -596,9 +602,11 @@ function addBridgeTableSlide(pptx: PptxGenJS, result: PVMResult) {
     [{ text: "Efeito Volume" }, { text: brl(result.volume), options: { align: "right" } }],
     [{ text: "Efeito Preço" }, { text: brl(result.price), options: { align: "right" } }],
     [{ text: "Efeito Custo Variável" }, { text: brl(result.cost), options: { align: "right" } }],
-    [{ text: "Efeito Frete" }, { text: brl(result.freight), options: { align: "right" } }],
-    [{ text: "Efeito Comissão" }, { text: brl(result.commission), options: { align: "right" } }],
-    [{ text: "Efeito Outros" }, { text: brl(result.others), options: { align: "right" } }],
+    ...(result.commercialCostsCollapsed ? [] : [
+      [{ text: "Efeito Frete" }, { text: brl(result.freight), options: { align: "right" } }],
+      [{ text: "Efeito Comissão" }, { text: brl(result.commission), options: { align: "right" } }],
+    ] as PptxGenJS.TableRow[]),
+    [{ text: `Efeito ${result.othersLabel ?? "Outros"}` }, { text: brl(result.others), options: { align: "right" } }],
     [
       { text: `Margem atual (${result.currentLabel})`, options: { bold: true, fill: { color: PPT_COLORS.surfaceAlt } } },
       { text: brl(result.current), options: { bold: true, align: "right", fill: { color: PPT_COLORS.surfaceAlt } } },

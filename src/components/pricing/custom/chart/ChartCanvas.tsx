@@ -2243,16 +2243,23 @@ function WaterfallChart({
       }
 
       // ---- DecomposiÃ§Ã£o padrÃ£o por efeitos PVM ----
-      return [
+      const items = [
         { label: repairMojibakeLabel(r.baseLabel), value: r.base,       type: "start" as const },
         { label: "Volume",       value: r.volume,     type: t(r.volume) },
         { label: "Preço",        value: r.price,      type: t(r.price) },
         { label: "Custo",        value: r.cost,       type: t(r.cost) },
-        { label: "Frete",        value: r.freight,    type: t(r.freight) },
-        { label: "Comissão",     value: r.commission, type: t(r.commission) },
-        { label: "Outros",       value: r.others,     type: t(r.others) },
-        { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
       ];
+      if (!r.commercialCostsCollapsed) {
+        items.push(
+          { label: "Frete", value: r.freight, type: t(r.freight) },
+          { label: "Comissão", value: r.commission, type: t(r.commission) },
+        );
+      }
+      items.push(
+        { label: r.othersLabel ?? "Outros", value: r.others, type: t(r.others) },
+        { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
+      );
+      return items;
     } catch { return []; }
     });
   }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, budget, budgetSignature, pricing, pricingSignature, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);

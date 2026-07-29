@@ -60,6 +60,10 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(result?.periods).toEqual(["004.2025", "005.2025", "006.2025"]);
     expect(result?.result.base).toBe(150);
     expect(result?.result.current).toBe(135);
+    expect(result?.result.freight).toBe(0);
+    expect(result?.result.commission).toBe(0);
+    expect(result?.result.othersLabel).toBe("Outros Custos");
+    expect(result?.result.commercialCostsCollapsed).toBe(true);
     expect(result?.result.currentLabel).toContain("Real YTD");
   });
 

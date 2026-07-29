@@ -312,6 +312,8 @@ export interface PVMResult {
   freight: number;    // Frete sobre vendas
   commission: number; // Comissão
   others: number;     // Mix + outros (resíduo)
+  othersLabel?: string;
+  commercialCostsCollapsed?: boolean;
   current: number;
   baseLabel: string;
   currentLabel: string;
