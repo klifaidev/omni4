@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { BudgetRow } from "./budget";
 import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
 
-function row(kind: BudgetRow["kind"], periodo: string, cm: number, categoria = "Chocolates"): BudgetRow {
+function row(kind: BudgetRow["kind"], periodo: string, cm: number, categoria = "Chocolates", cpv = 70): BudgetRow {
   const mes = Number(periodo.slice(0, 3));
   const ano = Number(periodo.slice(4));
   return {
@@ -17,7 +17,7 @@ function row(kind: BudgetRow["kind"], periodo: string, cm: number, categoria = "
     volumeKg: 10,
     receita: 100,
     cm,
-    cpv: 70,
+    cpv,
   };
 }
 
@@ -53,5 +53,15 @@ describe("computeBridgeYtdRealVsBudget", () => {
 
     expect(result?.result.base).toBe(80);
     expect(result?.result.current).toBe(75);
+  });
+
+  it("normalizes negative Superbase CPV before calculating cost effects", () => {
+    const result = computeBridgeYtdRealVsBudget([
+      row("budget", "004.2025", 40, "Chocolates", -70),
+      row("real", "004.2025", 35, "Chocolates", -65),
+    ], {}, "cm");
+
+    expect(result?.baseRows[0]?.cogs).toBe(70);
+    expect(result?.compRows[0]?.cogs).toBe(65);
   });
 });

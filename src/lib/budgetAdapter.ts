@@ -7,7 +7,7 @@
 //   rol           ← receita
 //   volume        ← volumeKg
 //   cm            ← cm
-//   cv            ← cpv          (CPV total como custo variável proxy)
+//   cv            ← abs(cpv)     (CPV total como custo variável proxy)
 //   cmPct         ← cm / receita
 //   precoMedio    ← receita / volumeKg
 //
@@ -51,8 +51,8 @@ export function budgetRowsAsPricing(rows: BudgetRow[]): PricingRow[] {
     cliente: undefined,
     rol: b.receita,
     volumeKg: b.volumeKg,
-    cogs: b.cpv,
-    custoVariavel: b.cpv,
+    cogs: Math.abs(b.cpv),
+    custoVariavel: Math.abs(b.cpv),
     custoFixo: 0,
     margemBruta: 0,
     contribMarginal: b.cm,
@@ -99,8 +99,8 @@ export function budgetRowsAsPricingFiltered(
     cliente: undefined,
     rol: b.receita,
     volumeKg: b.volumeKg,
-    cogs: b.cpv,
-    custoVariavel: b.cpv,
+    cogs: Math.abs(b.cpv),
+    custoVariavel: Math.abs(b.cpv),
     custoFixo: 0,
     margemBruta: 0,
     contribMarginal: b.cm,
