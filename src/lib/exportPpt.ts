@@ -904,6 +904,8 @@ function triggerDownload(blob: Blob, fileName: string) {
 export interface BudgetEvoRow {
   label: string;
   periodo: string;
+  mes: number;
+  ano: number;
   realCm: number; budCm: number;
   realCmPct: number | null; budCmPct: number | null;
   realCmKg: number | null; budCmKg: number | null;

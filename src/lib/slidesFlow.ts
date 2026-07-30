@@ -307,6 +307,8 @@ export function computeBudgetEvoMonthly(
   return monthly.map((x) => ({
     label: x.label,
     periodo: x.periodo,
+    mes: x.mes,
+    ano: x.ano,
     realCm: x.realCm, budCm: x.budCm,
     realCmPct: x.realRol ? x.realCm / x.realRol : null,
     budCmPct: x.budRol ? x.budCm / x.budRol : null,
