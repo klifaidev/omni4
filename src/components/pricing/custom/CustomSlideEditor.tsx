@@ -217,7 +217,7 @@ function SlideSourceFooterEditor({
             left: 40,
             bottom: config.showHaraldFooter ? 13 : 18,
             maxWidth: 720,
-            zIndex: 100000,
+            zIndex: SLIDE_SOURCE_FOOTER_Z_INDEX,
             border: 0,
             background: "transparent",
             padding: 0,
@@ -320,6 +320,7 @@ let crossSlideClipboard: CustomBlock | null = null;
 type Icon = React.ComponentType<{ className?: string }>;
 const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
 const PALETTE_FAVORITES_KEY = "omni4.customSlide.paletteFavorites";
+const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
 type PaletteCategory = "favorites" | "models" | "charts" | "elements" | "story" | "omni" | "assets";
 type PalettePanelSide = "right" | "left";
 
@@ -2887,8 +2888,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 ))}
 
               {/* Faixa Harald (não editável, sempre por cima) */}
-              <SlideSourceFooterEditor config={config} rowsBySource={sourceFooterRows} readOnly={readOnly} />
-
               {config.showHaraldFooter && (
                 <img
                   src={haraldFooterPng}
@@ -2900,6 +2899,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   }}
                 />
               )}
+              <SlideSourceFooterEditor config={config} rowsBySource={sourceFooterRows} readOnly={readOnly} />
             </div>
             </div>
           </div>

@@ -33,6 +33,8 @@ import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
 
+const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
+
 interface Props {
   /** Editor's current slide id — used as initial slide. */
   currentSlideId?: string;
@@ -547,7 +549,7 @@ function SlideSourceFooterReadOnly({ config }: { config: CustomSlideConfig }) {
         left: 40,
         bottom: config.showHaraldFooter ? 13 : 18,
         maxWidth: 720,
-        zIndex: 100000,
+        zIndex: SLIDE_SOURCE_FOOTER_Z_INDEX,
         pointerEvents: "none",
         color: config.showHaraldFooter ? SLIDE_HEX.white : SLIDE_HEX.slate500,
         fontFamily: "Calibri, sans-serif",
@@ -606,8 +608,6 @@ export function CustomCanvasReadOnly({
           </div>
         );
       })}
-      <SlideSourceFooterReadOnly config={config} />
-
       {config.showHaraldFooter && (
         <img
           src={haraldFooterPng}
@@ -619,6 +619,7 @@ export function CustomCanvasReadOnly({
           }}
         />
       )}
+      <SlideSourceFooterReadOnly config={config} />
     </div>
   );
 }
