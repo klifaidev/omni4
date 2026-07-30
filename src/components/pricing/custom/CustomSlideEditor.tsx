@@ -4490,13 +4490,30 @@ function TableBlockEditor({ block, onChange }: {
 
       <Separator />
       <div className="space-y-1.5">
-        <ToggleRow label="Auto-ajustar ao tamanho"
-          value={block.autoFit !== false}
-          onChange={(v) => onChange({ autoFit: v } as never)} />
-        {block.autoFit === false && (
-          <NumField label="Máx. linhas" value={block.maxRows ?? fit.shown}
-            onChange={(v) => onChange({ maxRows: v } as never)} />
-        )}
+        <Row label="Linhas">
+          <Segmented
+            value={block.autoFit === false ? "manual" : "auto"}
+            onChange={(v) => {
+              if (v === "manual") {
+                onChange({ autoFit: false, maxRows: block.maxRows ?? fit.shown } as never);
+              } else {
+                onChange({ autoFit: true } as never);
+              }
+            }}
+            options={[
+              { value: "auto", label: "Auto" },
+              { value: "manual", label: "Manual" },
+            ]}
+          />
+        </Row>
+        <NumField
+          label={block.autoFit === false ? "Linhas visíveis" : "Fixar linhas visíveis"}
+          value={block.maxRows ?? fit.shown}
+          onChange={(v) => onChange({ autoFit: false, maxRows: Math.max(1, v) } as never)}
+        />
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Em Manual, redimensionar a tabela muda só a altura das linhas, sem alterar a quantidade exibida.
+        </p>
         <ToggleRow label="Linha ?Outros?" value={!!block.showOthers}
           onChange={handleShowOthers} />
         <ToggleRow label="Nota no slide exportado" value={!!block.exportNote}

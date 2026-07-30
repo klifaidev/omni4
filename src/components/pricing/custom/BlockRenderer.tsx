@@ -945,6 +945,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     const current = othersRow[lastCol.key]?.[mId] ?? 0;
     return variationPct(current, previous);
   };
+  const renderedRowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
+  const htmlRowStyle: React.CSSProperties =
+    b.autoFit === false ? { height: `${100 / Math.max(1, renderedRowCount)}%` } : {};
 
   // Pré-computa pools de valores por (medida, escopo-key) p/ heatmap/avg/data_bar
   const cfPoolCache = new Map<string, number[]>();
@@ -1232,9 +1235,14 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
       {tableTitleEl}
       <div style={{ height: `calc(100% - ${tableTitleGap}px)`, overflow: "hidden" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <table style={{
+        width: "100%",
+        height: b.autoFit === false ? "100%" : undefined,
+        borderCollapse: "collapse",
+        tableLayout: "fixed",
+      }}>
         <thead>
-          <tr>
+          <tr style={htmlRowStyle}>
             {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", cellHead)}
             {showCols
               ? (
@@ -1252,7 +1260,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
         </thead>
         <tbody>
           {visibleHeaders.map((rh) => (
-            <tr key={rh.key}>
+            <tr key={rh.key} style={htmlRowStyle}>
               {tableCell("td", rh.values.join(" / ") || "Total", cellLabel)}
               {showCols
                 ? (
@@ -1274,7 +1282,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             </tr>
           ))}
           {othersRow && (
-            <tr style={{ background: SLIDE_HEX.gridSoft }}>
+            <tr style={{ ...htmlRowStyle, background: SLIDE_HEX.gridSoft }}>
               {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
               {showCols
                 ? (
