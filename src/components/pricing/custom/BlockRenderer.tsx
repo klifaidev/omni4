@@ -888,9 +888,25 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     return acc;
   })() : null;
 
+  const renderedRowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
+  const manualRowHeightPx = b.autoFit === false
+    ? Math.max(1, (b.h - tableTitleGap) / Math.max(1, renderedRowCount))
+    : 0;
+  const compactTableCell: React.CSSProperties = b.autoFit === false
+    ? {
+        padding: manualRowHeightPx < 18 ? "0 4px" : manualRowHeightPx < 24 ? "1px 6px" : undefined,
+        fontSize: manualRowHeightPx < 14 ? 8 : manualRowHeightPx < 20 ? 9 : undefined,
+        lineHeight: manualRowHeightPx < 20 ? 1 : undefined,
+        height: "100%",
+      }
+    : {};
+  const renderCellHead: React.CSSProperties = { ...cellHead, ...compactTableCell };
+  const renderCellLabel: React.CSSProperties = { ...cellLabel, ...compactTableCell };
+  const renderCellVal: React.CSSProperties = { ...cellVal, ...compactTableCell };
+
   // ---------- Formatação condicional ----------
   const valueAlign = b.valueAlign ?? "right";
-  const cellValDyn: React.CSSProperties = { ...cellVal, textAlign: valueAlign };
+  const cellValDyn: React.CSSProperties = { ...renderCellVal, textAlign: valueAlign };
   const tableCell = (
     tag: "th" | "td",
     content: React.ReactNode,
@@ -945,9 +961,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     const current = othersRow[lastCol.key]?.[mId] ?? 0;
     return variationPct(current, previous);
   };
-  const renderedRowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
   const htmlRowStyle: React.CSSProperties =
-    b.autoFit === false ? { height: `${100 / Math.max(1, renderedRowCount)}%` } : {};
+    b.autoFit === false ? { height: `${100 / Math.max(1, renderedRowCount)}%`, minHeight: 0 } : {};
 
   // Pré-computa pools de valores por (medida, escopo-key) p/ heatmap/avg/data_bar
   const cfPoolCache = new Map<string, number[]>();
@@ -1052,7 +1067,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     const leftForValue = (idx: number) => firstColW + idx * valueColW;
 
     const headerCells = [
-      <ExportPositionedCell key="row-head" style={cellHead} left={0} top={0} width={firstColW} height={rowH} padX={8}>
+      <ExportPositionedCell key="row-head" style={renderCellHead} left={0} top={0} width={firstColW} height={rowH} padX={8}>
         {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
@@ -1060,7 +1075,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
             ...cols.flatMap((c, ci) => measures.map((m, mi) => (
               <ExportPositionedCell
                 key={`${c.key}-${m.id}`}
-                style={cellHead}
+                style={renderCellHead}
                 left={leftForValue(ci * measures.length + mi)}
                 top={0}
                 width={valueColW}
@@ -1074,7 +1089,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               ? measures.map((m, mi) => (
                   <ExportPositionedCell
                     key={`var-${m.id}`}
-                    style={cellHead}
+                    style={renderCellHead}
                     left={leftForValue(cols.length * measures.length + mi)}
                     top={0}
                     width={valueColW}
@@ -1087,14 +1102,14 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               : []),
           ]
         : measures.map((m, mi) => (
-            <ExportPositionedCell key={m.id} style={cellHead} left={leftForValue(mi)} top={0} width={valueColW} height={rowH} padX={8}>
+            <ExportPositionedCell key={m.id} style={renderCellHead} left={leftForValue(mi)} top={0} width={valueColW} height={rowH} padX={8}>
               {m.label}
             </ExportPositionedCell>
           ))),
     ];
 
     const bodyCells = visibleHeaders.flatMap((rh, ri) => [
-      <ExportPositionedCell key={`${rh.key}-label`} style={cellLabel} left={0} top={(ri + 1) * rowH} width={firstColW} height={rowH} padX={8}>
+      <ExportPositionedCell key={`${rh.key}-label`} style={renderCellLabel} left={0} top={(ri + 1) * rowH} width={firstColW} height={rowH} padX={8}>
         {rh.values.join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
@@ -1156,7 +1171,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       ? [
           <ExportPositionedCell
             key="others-label"
-            style={{ ...cellLabel, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
+            style={{ ...renderCellLabel, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
             left={0}
             top={(rowCount - 1) * rowH}
             width={firstColW}
@@ -1243,25 +1258,25 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       }}>
         <thead>
           <tr style={htmlRowStyle}>
-            {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", cellHead)}
+            {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", renderCellHead)}
             {showCols
               ? (
                   <>
                     {cols.flatMap((c) => measures.map((m) => (
-                      <th key={`${c.key}-${m.id}`} style={cellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
+                      <th key={`${c.key}-${m.id}`} style={renderCellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
                     )))}
                     {showLastColumnVariation && measures.map((m) => (
-                      <th key={`var-${m.id}`} style={cellHead}>{variationHeaderLabel(m.label)}</th>
+                      <th key={`var-${m.id}`} style={renderCellHead}>{variationHeaderLabel(m.label)}</th>
                     ))}
                   </>
                 )
-              : measures.map((m) => <th key={m.id} style={cellHead}>{m.label}</th>)}
+              : measures.map((m) => <th key={m.id} style={renderCellHead}>{m.label}</th>)}
           </tr>
         </thead>
         <tbody>
           {visibleHeaders.map((rh) => (
             <tr key={rh.key} style={htmlRowStyle}>
-              {tableCell("td", rh.values.join(" / ") || "Total", cellLabel)}
+              {tableCell("td", rh.values.join(" / ") || "Total", renderCellLabel)}
               {showCols
                 ? (
                     <>
@@ -1283,7 +1298,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
           ))}
           {othersRow && (
             <tr style={{ ...htmlRowStyle, background: SLIDE_HEX.gridSoft }}>
-              {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...cellLabel, fontStyle: "italic" })}
+              {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...renderCellLabel, fontStyle: "italic" })}
               {showCols
                 ? (
                     <>
