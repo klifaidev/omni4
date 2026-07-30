@@ -2,6 +2,7 @@ import PptxGenJS from "pptxgenjs";
 import JSZip from "jszip";
 import type { PVMResult, PVMSkuDetail } from "./analytics";
 import type { PricingRow } from "./types";
+import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
 import haraldFooterPng from "@/assets/harald-footer.png";
 import haraldFooterBarPng from "@/assets/harald-footer-bar.png";
@@ -996,9 +997,10 @@ async function plotLineRow(
     fmt: (v: number) => string;
     deltaFmt?: (delta: number) => string;
     showRealPoint?: (r: BudgetEvoRow) => boolean;
+    headerNotePoint?: (r: BudgetEvoRow) => boolean;
   },
 ) {
-  const { x, y, w, h, title, headerNote, headerNoteValue, data, realGet, budGet, fmt, deltaFmt, showRealPoint } = opts;
+  const { x, y, w, h, title, headerNote, headerNoteValue, data, realGet, budGet, fmt, deltaFmt, showRealPoint, headerNotePoint } = opts;
 
   // Title rotated 90° to the left (vertical, reading bottom to top)
   slide.addText(title, {
@@ -1037,7 +1039,7 @@ async function plotLineRow(
       xOf,
       (row) => {
         const v = realGet(row);
-        return v != null && isFinite(v) && (showRealPoint?.(row) ?? true);
+        return v != null && isFinite(v) && (headerNotePoint?.(row) ?? showRealPoint?.(row) ?? true);
       },
       plotX + plotW * 0.5,
     );
@@ -1170,7 +1172,13 @@ function plotVolBars(
   const xOf = (i: number) => plotX + colW * (i + 0.5);
   const volDeltaLabel = `${fmtSignedAbs(accumGapTons)} Tons`;
   const headerW = 2.1;
-  const headerX = centerOfRealRange(data, xOf, (row) => row.realVol > 0, plotX + plotW * 0.5);
+  const currentFiscalYearStart = latestFiscalYearStartYear(data);
+  const headerX = centerOfRealRange(
+    data,
+    xOf,
+    (row) => row.realVol > 0 && isCurrentFiscalYearMonth(row, currentFiscalYearStart),
+    plotX + plotW * 0.5,
+  );
   slide.addText(volDeltaLabel, {
     x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
     fontFace: "Calibri", fontSize: 15, bold: true,
@@ -1269,6 +1277,7 @@ export async function addBudgetEvoSlide(
   const rowH = 1.35;
   const rowX = 0.35;
   const rowW = 12.6;
+  const currentFiscalYearStart = latestFiscalYearStartYear(monthly);
   let curY = 0.95;
 
   await plotLineRow(slide, {
@@ -1281,6 +1290,7 @@ export async function addBudgetEvoSlide(
     budGet: (r) => r.budCm || null,
     fmt: (v) => fmtMoneyAbs(v),
     showRealPoint: (r) => r.realVol > 0,
+    headerNotePoint: (r) => r.realVol > 0 && isCurrentFiscalYearMonth(r, currentFiscalYearStart),
     deltaFmt: (delta) => (delta >= 0 ? "+" : "") + fmtMoneyAbs(delta / 1000) + " Mi",
   });
   curY += rowH;

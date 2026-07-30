@@ -15,6 +15,7 @@ import { applyFilters, calcPVM } from "./analytics";
 import { applyBudgetFilters } from "./budget";
 import { useBudget } from "@/store/budget";
 import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
+import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
 import {
   addBridgePvmSlides,
@@ -208,7 +209,8 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
           if (monthly.length === 0) {
             throw new Error(`Budget Evolutivo "${item.label}": sem dados para o range selecionado.`);
           }
-          const comparableMonths = monthly.filter((m) => m.realVol > 0);
+          const currentFiscalYearStart = latestFiscalYearStartYear(monthly);
+          const comparableMonths = monthly.filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart));
           const accum = comparableMonths
             .reduce(
               (acc, m) => ({

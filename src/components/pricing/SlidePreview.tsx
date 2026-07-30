@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import { computeBudgetEvoMonthly, isItemReady, type SlideItem } from "@/lib/slidesFlow";
+import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fiscalYear";
 import { monthLabel } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
@@ -226,7 +227,8 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
     return <Frame label="Overview CM/VOL"><Empty message="Sem dados Budget para o range escolhido." /></Frame>;
   }
 
-  const comparableMonths = data.filter((m) => m.realVol > 0);
+  const currentFiscalYearStart = latestFiscalYearStartYear(data);
+  const comparableMonths = data.filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart));
   const accum = comparableMonths
     .reduce(
       (a, m) => ({ cm: a.cm + (m.realCm - m.budCm), vol: a.vol + (m.realVol - m.budVol) }),
@@ -246,12 +248,13 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
         <LineRow y={95} title="CM ABS" headerNote={fmtSignedGapIntBR(accum.cm)} headerNoteValue={accum.cm}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
           showRealPoint={(row) => row.realVol > 0}
+          headerNotePoint={(row) => row.realVol > 0 && isCurrentFiscalYearMonth(row, currentFiscalYearStart)}
           deltaFmt={(v) => (v >= 0 ? "+" : "") + fmtIntBR(v / 1000) + " Mi"} />
         <LineRow y={95 + 135} title="CM/%" data={data}
           realKey="realCmPct" budKey="budCmPct" fmt={(v) => fmtPctBR(v, 1)} />
         <LineRow y={95 + 135 * 2} title="CM/Kg" data={data}
           realKey="realCmKg" budKey="budCmKg" fmt={(v) => fmtDecimalBR(v, 2)} />
-        <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.vol} />
+        <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.vol} currentFiscalYearStart={currentFiscalYearStart} />
 
         <HaraldFooterStripe />
       </svg>
@@ -260,7 +263,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
 }
 
 function LineRow({
-  y, title, headerNote, headerNoteValue, data, realKey, budKey, fmt, deltaFmt, showRealPoint,
+  y, title, headerNote, headerNoteValue, data, realKey, budKey, fmt, deltaFmt, showRealPoint, headerNotePoint,
 }: {
   y: number;
   title: string;
@@ -272,6 +275,7 @@ function LineRow({
   fmt: (v: number) => string;
   deltaFmt?: (delta: number) => string;
   showRealPoint?: (row: PreviewDataRow) => boolean;
+  headerNotePoint?: (row: PreviewDataRow) => boolean;
 }) {
   const x = 35;
   const w = 1260;
@@ -303,7 +307,7 @@ function LineRow({
     xOf,
     (r) => {
       const v = r[realKey];
-      return v != null && isFinite(v) && (showRealPoint?.(r) ?? true);
+      return v != null && isFinite(v) && (headerNotePoint?.(r) ?? showRealPoint?.(r) ?? true);
     },
     plotX + plotW * 0.5,
   );
@@ -422,7 +426,17 @@ function LineRow({
   );
 }
 
-function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow[]; accumGapTons: number }) {
+function VolBarsRow({
+  y,
+  data,
+  accumGapTons,
+  currentFiscalYearStart,
+}: {
+  y: number;
+  data: PreviewDataRow[];
+  accumGapTons: number;
+  currentFiscalYearStart: number | null;
+}) {
   const x = 35;
   const w = 1260;
   const h = 125;
@@ -443,7 +457,12 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
   const colW = plotW / Math.max(1, data.length);
   const barW = colW * 0.36;
   const xOf = (i: number) => plotX + colW * (i + 0.5);
-  const headerNoteX = centerOfVisibleRealRange(data, xOf, (r) => r.realVol > 0, plotX + plotW * 0.5);
+  const headerNoteX = centerOfVisibleRealRange(
+    data,
+    xOf,
+    (r) => r.realVol > 0 && isCurrentFiscalYearMonth(r, currentFiscalYearStart),
+    plotX + plotW * 0.5,
+  );
 
   // Separador vertical Real / Budget + nota de variação em volume
   const sepColIdxV = data.findIndex((r) => r.realVol === 0 && typeof r.budVol === "number" && r.budVol > 0);

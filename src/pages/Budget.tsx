@@ -13,6 +13,7 @@ import { applyBudgetFilters } from "@/lib/budget";
 import { exportBudgetEvoPpt } from "@/lib/exportPpt";
 import { toast } from "sonner";
 
+import { fiscalYearStartYear, isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fiscalYear";
 import { formatBRL, formatPct, monthLabel } from "@/lib/format";
 import { AlertTriangle, CheckCircle2, Download, Target, TrendingDown, TrendingUp, XCircle } from "lucide-react";
 import {
@@ -318,7 +319,7 @@ export default function Budget() {
   useEffect(() => {
     if (monthly.length === 0) return;
     const last = monthly[monthly.length - 1];
-    const fyStart = last.mes >= 4 ? last.ano : last.ano - 1;
+    const fyStart = fiscalYearStartYear(last.mes, last.ano);
     const prevFyStart = fyStart - 1;
     const defaultStartPeriod = `${String(4).padStart(3, "0")}.${prevFyStart}`;
     const hasDefault = monthly.some((m) => m.periodo === defaultStartPeriod);
@@ -339,7 +340,8 @@ export default function Budget() {
 
   // Acumulados Real vs Budget apenas onde há REAL (futuro só tem budget)
   const accumGap = useMemo(() => {
-    const realMonths = monthlyRange.filter((m) => m.realVol > 0);
+    const currentFiscalYearStart = latestFiscalYearStartYear(monthlyRange);
+    const realMonths = monthlyRange.filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart));
     const cmGap = realMonths.reduce((s, m) => s + (m.realCm - m.budCm), 0);
     const volGap = realMonths.reduce((s, m) => s + (m.realVol - m.budVol), 0);
     return { cmGap, volGap };
