@@ -4490,7 +4490,7 @@ function TableBlockEditor({ block, onChange }: {
 
       <Separator />
       <div className="space-y-1.5">
-        <Row label="Linhas">
+        <Row label="Altura das linhas">
           <Segmented
             value={block.autoFit === false ? "manual" : "auto"}
             onChange={(v) => {
@@ -4502,7 +4502,7 @@ function TableBlockEditor({ block, onChange }: {
             }}
             options={[
               { value: "auto", label: "Auto" },
-              { value: "manual", label: "Manual" },
+              { value: "manual", label: "Fixas" },
             ]}
           />
         </Row>
