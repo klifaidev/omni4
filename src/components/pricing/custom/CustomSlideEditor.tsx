@@ -649,6 +649,16 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const multiSelected = selectedIds.length > 1
     ? config.blocks.filter((b) => selectedIds.includes(b.id))
     : [];
+  const selectedIsSinglePersistedGroup = (() => {
+    if (multiSelected.length < 2) return false;
+    const groupIds = Array.from(new Set(multiSelected.map((b) => b.groupId).filter(Boolean)));
+    if (groupIds.length !== 1) return false;
+    const group = (config.groups ?? []).find((g) => g.id === groupIds[0]);
+    if (!group || group.memberIds.length !== selectedIds.length) return false;
+    const selectedSet = new Set(selectedIds);
+    return group.memberIds.every((id) => selectedSet.has(id));
+  })();
+  const multiSelectionBounds = multiSelected.length >= 2 ? groupBounds(multiSelected) : null;
   const notifyReadOnly = useCallback(() => {
     toast.info("Modo somente leitura");
   }, []);
@@ -2377,6 +2387,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   shapeResize = false;
                   shapeDisableDrag = true;
                 }
+                if (selectedIds.length > 1 && isSelected) {
+                  shapeResize = false;
+                }
                 return (
                 <ContextMenu key={blk.id}>
                   <ContextMenuTrigger asChild>
@@ -2389,6 +2402,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         isSelected={isSelected}
                         isLocked={!!blk.locked || readOnly}
                         isEditing={isEditing}
+                        showResizeHandles={selectedIds.length <= 1}
                         onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
                         onResize={(nx, ny, nw, nh) =>
                           updateBlock(blk.id, { x: nx, y: ny, w: nw, h: nh })
@@ -2793,6 +2807,17 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   />
                 );
               })}
+
+              {multiSelectionBounds && !selectedIsSinglePersistedGroup && !readOnly && !groupEditMemberId && (
+                <GroupOverlay
+                  key={`multi-${selectedIds.join("-")}`}
+                  bounds={multiSelectionBounds}
+                  active
+                  showHandles
+                  memberIds={multiSelected.map((m) => m.id)}
+                  scaleRef={scaleRef}
+                />
+              )}
 
               {/* Smart guides overlay (B8.3). */}
               <svg

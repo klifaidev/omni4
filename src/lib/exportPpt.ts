@@ -1034,24 +1034,27 @@ async function plotLineRow(
   const colW = plotW / Math.max(1, data.length);
   const yOf = (v: number) => plotY + (1 - (v - yMin) / (yMax - yMin)) * plotH;
   const xOf = (i: number) => plotX + colW * (i + 0.5);
-  if (headerNote) {
-    const headerW = 2.1;
-    const headerX = centerOfRealRange(
-      data,
-      xOf,
-      (row) => {
-        const v = realGet(row);
-        return v != null && isFinite(v) && (headerNotePoint?.(row) ?? showRealPoint?.(row) ?? true);
-      },
-      plotX + plotW * 0.5,
-    );
+  const headerW = 2.1;
+  const headerX = headerNote
+    ? centerOfRealRange(
+        data,
+        xOf,
+        (row) => {
+          const v = realGet(row);
+          return v != null && isFinite(v) && (headerNotePoint?.(row) ?? showRealPoint?.(row) ?? true);
+        },
+        plotX + plotW * 0.5,
+      )
+    : plotX + plotW * 0.5;
+  const addHeaderNote = () => {
+    if (!headerNote) return;
     slide.addText(headerNote, {
       x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
       fontFace: "Calibri", fontSize: 13, bold: true,
       color: (headerNoteValue ?? 0) >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
       align: "center", valign: "top", margin: 0,
     });
-  }
+  };
 
   // Build smooth curves rendered as inline SVG image (rounded, no markers, no month labels)
   const SCALE = 100;
@@ -1141,6 +1144,7 @@ async function plotLineRow(
       });
     });
   });
+  addHeaderNote();
 }
 
 function plotVolBars(
@@ -1181,12 +1185,14 @@ function plotVolBars(
     (row) => row.realVol > 0 && isCurrentFiscalYearMonth(row, currentFiscalYearStart),
     plotX + plotW * 0.5,
   );
-  slide.addText(volDeltaLabel, {
-    x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
-    fontFace: "Calibri", fontSize: 15, bold: true,
-    color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
-    align: "center", valign: "top", margin: 0,
-  });
+  const addVolumeHeader = () => {
+    slide.addText(volDeltaLabel, {
+      x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
+      fontFace: "Calibri", fontSize: 15, bold: true,
+      color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
+      align: "center", valign: "top", margin: 0,
+    });
+  };
 
   // For rotated text, w is the unrotated width (= visual height after rotation),
   // h is the unrotated height (= visual width). Keep w tight so text sits near the bar.
@@ -1260,6 +1266,7 @@ function plotVolBars(
   slide.addText("REAL", { x: legX + 0.23, y: legY, w: 0.4, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: PPT_COLORS.haraldRed, margin: 0 });
   slide.addShape("rect", { x: legX + 0.75, y: legY + 0.05, w: 0.2, h: 0.1, fill: { color: "000000" }, line: { color: "000000", width: 0 } });
   slide.addText("BUDGET", { x: legX + 0.98, y: legY, w: 0.52, h: 0.2, fontFace: "Calibri", fontSize: 9, bold: true, color: "000000", margin: 0 });
+  addVolumeHeader();
 }
 
 export async function addBudgetEvoSlide(

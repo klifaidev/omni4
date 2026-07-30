@@ -24,6 +24,7 @@ interface RotatableBlockProps extends React.HTMLAttributes<HTMLDivElement> {
   isSelected: boolean;
   isLocked: boolean;
   isEditing?: boolean;
+  showResizeHandles?: boolean;
   onMove: (x: number, y: number) => void;
   onResize: (x: number, y: number, w: number, h: number) => void;
   onSelect: (additive?: boolean) => void;
@@ -33,7 +34,7 @@ interface RotatableBlockProps extends React.HTMLAttributes<HTMLDivElement> {
 export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockProps>(
   function RotatableBlock(
     {
-      x, y, w, h, rotation, scale, isSelected, isLocked, isEditing,
+      x, y, w, h, rotation, scale, isSelected, isLocked, isEditing, showResizeHandles = true,
       onMove, onResize, onSelect, onDoubleClick,
       className, style, children, ...rest
     },
@@ -155,7 +156,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       >
         {children}
 
-        {isSelected && !isLocked && HANDLES.map((handle) => {
+        {isSelected && !isLocked && showResizeHandles && HANDLES.map((handle) => {
           const { dir, cursor, ...pos } = handle;
           return (
             <div

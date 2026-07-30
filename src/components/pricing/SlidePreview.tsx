@@ -358,14 +358,6 @@ function LineRow({
         {title}
       </text>
 
-      {/* Header note (right) */}
-      {headerNote && (
-        <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="18" fontWeight={700}
-          fill={headerNoteColor} textAnchor="middle">
-          {headerNote}
-        </text>
-      )}
-
       {/* Curves */}
       {realSegments.map((segment, idx) => (
         segment.length > 1 ? (
@@ -422,6 +414,13 @@ function LineRow({
           </g>
         );
       })}
+
+      {headerNote && (
+        <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="18" fontWeight={700}
+          fill={headerNoteColor} textAnchor="middle">
+          {headerNote}
+        </text>
+      )}
     </g>
   );
 }
@@ -469,7 +468,7 @@ function VolBarsRow({
   const hasSepV = sepColIdxV > 0;
   const sepXV = hasSepV ? plotX + (sepColIdxV - 0.5) * colW : 0;
   const showSplitGuide = false;
-  const volDeltaLabel = (accumGapTons >= 0 ? "+" : "-") + fmtIntBR(Math.abs(accumGapTons)) + " Tons";
+  const volDeltaLabel = `${fmtSignedGapIntBR(accumGapTons)} Tons`;
   const volDeltaColor = accumGapTons >= 0 ? "#16A34A" : C.haraldRed;
 
   return (
@@ -483,11 +482,6 @@ function VolBarsRow({
       </text>
 
       {/* Header tons acumulado — destaque vermelho */}
-      <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="20" fontWeight={700}
-        fill={volDeltaColor} textAnchor="middle">
-        {volDeltaLabel}
-      </text>
-
       {data.map((r, i) => {
         const cx = xOf(i);
         const realX = cx - barW - 1;
@@ -550,6 +544,11 @@ function VolBarsRow({
         <rect x={80} width={18} height={10} fill={C.black} />
         <text x={106} y={9} fontFamily="Calibri" fontSize="11" fontWeight={700} fill={C.ink}>BUDGET</text>
       </g>
+
+      <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="20" fontWeight={700}
+        fill={volDeltaColor} textAnchor="middle">
+        {volDeltaLabel}
+      </text>
     </g>
   );
 }
