@@ -792,17 +792,30 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
 
-    // Ordena rowHeaders pela sortMeasure (ou primeira measure) desc
+    const rowLabel = (header: { values: string[] }) => header.values.join(" / ") || "Total";
     const sortKey = b.sortMeasure && measures.find((m) => m.id === b.sortMeasure)
       ? b.sortMeasure
       : measures[0].id;
+    const manualRank = new Map((b.manualRowOrder ?? []).map((key, index) => [key, index]));
     const sortedHeaders = [...result.rowHeaders].sort((a, z) => {
+      if (b.sortMode === "manual") {
+        const ar = manualRank.get(a.key);
+        const zr = manualRank.get(z.key);
+        if (ar != null && zr != null) return ar - zr;
+        if (ar != null) return -1;
+        if (zr != null) return 1;
+        return rowLabel(a).localeCompare(rowLabel(z), "pt-BR", { sensitivity: "base", numeric: true });
+      }
+      if (b.sortMode === "az" || b.sortMode === "za") {
+        const cmp = rowLabel(a).localeCompare(rowLabel(z), "pt-BR", { sensitivity: "base", numeric: true });
+        return b.sortMode === "az" ? cmp : -cmp;
+      }
       const va = result.rowTotals.get(a.key)?.[sortKey] ?? 0;
       const vz = result.rowTotals.get(z.key)?.[sortKey] ?? 0;
-      return vz - va;
+      return (b.sortDirection ?? "desc") === "asc" ? va - vz : vz - va;
     });
     return { result, measures, sortedHeaders };
-  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure]);
+  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure, b.sortMode, b.sortDirection, b.manualRowOrder]);
 
   if (missingData) return <MissingLocalData label={missingData} />;
   if (!data || data.sortedHeaders.length === 0) {

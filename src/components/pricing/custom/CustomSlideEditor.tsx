@@ -4164,17 +4164,25 @@ function TableBlockEditor({ block, onChange }: {
   const dims = CUSTOM_TABLE_DIMS;
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const totalRows = useMemo(() => {
+  const tablePreview = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
-    if (!measures.length) return 0;
+    if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
     const unified = buildUnifiedRows(pricing, budget, "real");
     const cfg: PivotConfig = {
       rows: block.rowDims, cols: block.colDim ? [block.colDim] : [],
       values: measures,
       filters: Object.fromEntries(Object.entries(block.filters).map(([k, v]) => [k, v ?? []])),
     };
-    return computePivot(unified as unknown as Record<string, unknown>[], cfg).rowHeaders.length;
+    const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
+    return {
+      totalRows: result.rowHeaders.length,
+      rowHeaders: result.rowHeaders.map((row) => ({
+        key: row.key,
+        label: row.values.join(" / ") || "Total",
+      })),
+    };
   }, [pricing, budget, block.rowDims, block.colDim, block.measures, block.filters]);
+  const totalRows = tablePreview.totalRows;
   const fit = resolveTableFit(block, totalRows);
   const toggleMeasure = (id: string) => {
     const next = block.measures.includes(id)
@@ -4201,6 +4209,25 @@ function TableBlockEditor({ block, onChange }: {
       patch.h = Math.min(maxH, needed);
     }
     onChange(patch as never);
+  };
+  const manualRowOrder = useMemo(() => {
+    const current = block.manualRowOrder ?? [];
+    const available = new Set(tablePreview.rowHeaders.map((row) => row.key));
+    const kept = current.filter((key) => available.has(key));
+    const missing = tablePreview.rowHeaders.map((row) => row.key).filter((key) => !kept.includes(key));
+    return [...kept, ...missing];
+  }, [block.manualRowOrder, tablePreview.rowHeaders]);
+  const rowLabelByKey = useMemo(
+    () => new Map(tablePreview.rowHeaders.map((row) => [row.key, row.label])),
+    [tablePreview.rowHeaders],
+  );
+  const handleManualRowDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = manualRowOrder.indexOf(String(active.id));
+    const newIndex = manualRowOrder.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    onChange({ manualRowOrder: arrayMove(manualRowOrder, oldIndex, newIndex) } as never);
   };
 
   return (
@@ -4313,17 +4340,66 @@ function TableBlockEditor({ block, onChange }: {
       </div>
 
       {block.measures.length > 0 && (
-        <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Ordenar por</Label>
-          <Select value={block.sortMeasure ?? block.measures[0]}
-            onValueChange={(v) => onChange({ sortMeasure: v } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id))
-                .map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        <Section title="Ordenacao das linhas" defaultOpen>
+          <Row label="Modo">
+            <Segmented
+              value={block.sortMode ?? "kpi"}
+              onChange={(v) => onChange({ sortMode: v as TableBlock["sortMode"] } as never)}
+              options={[
+                { value: "kpi", label: "KPI" },
+                { value: "az", label: "A-Z" },
+                { value: "za", label: "Z-A" },
+                { value: "manual", label: "Manual" },
+              ]}
+            />
+          </Row>
+
+          {(block.sortMode ?? "kpi") === "kpi" && (
+            <>
+              <Row label="KPI">
+                <Select value={block.sortMeasure ?? block.measures[0]}
+                  onValueChange={(v) => onChange({ sortMeasure: v } as never)}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id))
+                      .map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Row>
+              <Row label="Direcao">
+                <Segmented
+                  value={block.sortDirection ?? "desc"}
+                  onChange={(v) => onChange({ sortDirection: v as TableBlock["sortDirection"] } as never)}
+                  options={[
+                    { value: "desc", label: "Maior" },
+                    { value: "asc", label: "Menor" },
+                  ]}
+                />
+              </Row>
+            </>
+          )}
+
+          {(block.sortMode ?? "kpi") === "manual" && (
+            <div className="space-y-2">
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Arraste as linhas para definir a ordem de exibicao. Linhas novas entram no final.
+              </p>
+              <DndContext collisionDetection={closestCenter} onDragEnd={handleManualRowDragEnd}>
+                <SortableContext items={manualRowOrder} strategy={verticalListSortingStrategy}>
+                  <div className="max-h-48 space-y-1 overflow-auto rounded-md border border-border/50 bg-background/40 p-1">
+                    {manualRowOrder.length === 0 ? (
+                      <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                        Configure dimensoes e medidas para ordenar manualmente.
+                      </div>
+                    ) : manualRowOrder.map((key) => (
+                      <SortableManualTableRow key={key} id={key} label={rowLabelByKey.get(key) ?? key} />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+          )}
+        </Section>
       )}
 
       <div>
@@ -4419,6 +4495,31 @@ function TableBlockEditor({ block, onChange }: {
           Mostrando {fit.shown} de {fit.total}
         </p>
       </div>
+    </div>
+  );
+}
+
+function SortableManualTableRow({ id, label }: { id: string; label: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "flex items-center gap-2 rounded border border-border/40 bg-card px-2 py-1.5 text-xs shadow-sm",
+        isDragging && "z-10 opacity-80 shadow-md",
+      )}
+    >
+      <button
+        type="button"
+        className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-secondary active:cursor-grabbing"
+        aria-label={`Reordenar ${label}`}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
     </div>
   );
 }

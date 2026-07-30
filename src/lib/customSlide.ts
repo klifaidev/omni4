@@ -322,8 +322,14 @@ export interface TableBlock extends BaseBlock {
   exportNote?: boolean;
   /** Adiciona uma coluna final com variação % da última coluna vs. penúltima. Default: false */
   showLastColumnVariation?: boolean;
-  /** Medida usada para ordenar/ranquear linhas. Default: primeira de measures. */
+  /** Row sorting mode. Default "kpi". */
+  sortMode?: "kpi" | "az" | "za" | "manual";
+  /** Measure used when sortMode="kpi". Default: first selected measure. */
   sortMeasure?: string;
+  /** Direction used when sortMode="kpi". Default "desc". */
+  sortDirection?: "asc" | "desc";
+  /** Manual row order by pivot row key when sortMode="manual". */
+  manualRowOrder?: string[];
   /** Alinhamento das células de valor. Default "right". */
   valueAlign?: "left" | "center" | "right";
   /** Formatação condicional por medida. Chave = id da medida. */
@@ -733,7 +739,8 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         title: "", titleSize: 18, titleColor: "1C2430",
         measures: ["rol_real", "cm_real"],
         rowDims: ["marca"], colDim: "periodo", filters: {},
-        autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false };
+        autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false,
+        sortMode: "kpi", sortDirection: "desc", manualRowOrder: [] };
     case "chart":
       return {
         id, kind, z, x: 60, y: 180, w: 1200, h: 380,
