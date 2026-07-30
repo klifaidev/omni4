@@ -1057,7 +1057,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     return {};
   };
 
-  if (readOnly) {
+  if (readOnly || b.autoFit === false) {
     const variationCols = showLastColumnVariation ? measures.length : 0;
     const valueCols = showCols ? cols.length * measures.length + variationCols : measures.length;
     const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
