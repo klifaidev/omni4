@@ -1374,8 +1374,81 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
     : visible;
   const fmt = (v: number) => formatValue(v, inferFormat(b.measure), b.measure);
   const max = Math.max(...items.map((i) => i.value), 1);
+  const topTitleH = b.title ? 28 : 0;
+  const topRowCount = 1 + items.length;
+  const topManualRowPx = b.autoFit === false
+    ? Math.max(1, (b.h - topTitleH) / Math.max(1, topRowCount))
+    : 0;
+  const topManualFontSize = topManualRowPx < 14 ? 8 : topManualRowPx < 20 ? 9 : 12;
+  const topManualPadX = topManualRowPx < 18 ? 4 : 6;
 
   if (missingData) return <MissingLocalData label={missingData} />;
+  if (b.autoFit === false) {
+    const shareColW = b.showShare ? 12 : 0;
+    const rankColW = 8;
+    const valueColW = 22;
+    const itemColW = 100 - rankColW - valueColW - shareColW;
+    const rowH = 100 / Math.max(1, topRowCount);
+    const headerStyle: React.CSSProperties = {
+      ...topHead,
+      background: SLIDE_HEX.chart1,
+      color: SLIDE_HEX.white,
+      fontSize: Math.min(11, topManualFontSize),
+      padding: 0,
+      lineHeight: 1,
+    };
+    const bodyBase: React.CSSProperties = {
+      color: SLIDE_HEX.chart2,
+      background: SLIDE_HEX.white,
+      borderBottom: `1px solid ${SLIDE_HEX.grid}`,
+      fontSize: topManualFontSize,
+      padding: 0,
+      lineHeight: 1,
+      fontFamily: "Calibri",
+    };
+    const headerCells = [
+      <ExportPositionedCell key="rank-head" style={headerStyle} left={0} top={0} width={rankColW} height={rowH} padX={topManualPadX}>#</ExportPositionedCell>,
+      <ExportPositionedCell key="item-head" style={{ ...headerStyle, textAlign: "left" }} left={rankColW} top={0} width={itemColW} height={rowH} padX={topManualPadX}>Item</ExportPositionedCell>,
+      <ExportPositionedCell key="value-head" style={{ ...headerStyle, textAlign: "right" }} left={rankColW + itemColW} top={0} width={valueColW} height={rowH} padX={topManualPadX}>Valor</ExportPositionedCell>,
+      ...(b.showShare
+        ? [<ExportPositionedCell key="share-head" style={{ ...headerStyle, textAlign: "right" }} left={rankColW + itemColW + valueColW} top={0} width={shareColW} height={rowH} padX={topManualPadX}>%</ExportPositionedCell>]
+        : []),
+    ];
+    const bodyCells = items.flatMap((it, i) => {
+      const isOthers = b.showOthers && i === items.length - 1 && hidden.length > 0;
+      const top = (i + 1) * rowH;
+      const rowBg = isOthers ? SLIDE_HEX.gridSoft : SLIDE_HEX.white;
+      return [
+        <ExportPositionedCell key={`${it.name}-rank`} style={{ ...bodyBase, color: SLIDE_HEX.slate500, fontWeight: 600, background: rowBg, textAlign: "center" }} left={0} top={top} width={rankColW} height={rowH} padX={topManualPadX}>
+          {isOthers ? "—" : i + 1}
+        </ExportPositionedCell>,
+        <ExportPositionedCell key={`${it.name}-name`} style={{ ...bodyBase, background: rowBg, fontStyle: isOthers ? "italic" : undefined, textAlign: "left" }} left={rankColW} top={top} width={itemColW} height={rowH} padX={topManualPadX}>
+          {it.name}
+        </ExportPositionedCell>,
+        <ExportPositionedCell key={`${it.name}-value`} style={{ ...bodyBase, background: rowBg, fontWeight: 600, fontStyle: isOthers ? "italic" : undefined, textAlign: "right" }} left={rankColW + itemColW} top={top} width={valueColW} height={rowH} padX={topManualPadX}>
+          {fmt(it.value)}
+        </ExportPositionedCell>,
+        ...(b.showShare
+          ? [<ExportPositionedCell key={`${it.name}-share`} style={{ ...bodyBase, background: rowBg, color: SLIDE_HEX.slate500, textAlign: "right" }} left={rankColW + itemColW + valueColW} top={top} width={shareColW} height={rowH} padX={topManualPadX}>
+              {(it.share * 100).toFixed(1)}%
+            </ExportPositionedCell>]
+          : []),
+      ];
+    });
+    return (
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri", overflow: "hidden" }}>
+        {b.title && (
+          <div style={{ height: topTitleH, fontSize: 16, fontWeight: 700, color: SLIDE_HEX.chart1, padding: "4px 8px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+            {b.title}
+          </div>
+        )}
+        <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
+          {headerCells}
+          {bodyCells}
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri" }}>
       {b.title && (
