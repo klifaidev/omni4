@@ -34,13 +34,17 @@ function chartBlock(): ChartBlock {
 }
 
 function slideWithChart(block = chartBlock()): SlideItem {
+  return slideWithCharts([block]);
+}
+
+function slideWithCharts(blocks: ChartBlock[]): SlideItem {
   return {
     id: "slide-1",
     kind: "custom",
     label: "Slide com grafico",
     config: {
       background: "FFFFFF",
-      blocks: [block],
+      blocks,
     },
   };
 }
@@ -131,5 +135,45 @@ describe("slideDeckPreparation", () => {
     const counts = window.__OMNI_SLIDES_PERF__?.counts ?? {};
     expect(counts["SlideCalcCache:chart-series:hit"]).toBe(1);
     expect(counts["SlideCalcCache:chart-inspector-series:hit"]).toBe(1);
+  });
+
+  it("can limit how many chart blocks are warmed in one preparation pass", async () => {
+    usePricing.setState({ rows, metric: "cm" });
+    const first = chartBlock();
+    const second = { ...chartBlock(), id: "chart-2" };
+
+    const warmed = await warmSlideChartData(slideWithCharts([first, second]), { maxBlocks: 1 });
+
+    expect(warmed).toBeGreaterThan(0);
+
+    const dataSignature = getCachedRowsSignature(rows);
+    let firstCalls = 0;
+    getOrComputeSlideCalc({
+      op: "chart-series",
+      slideId: "slide-1",
+      blockId: first.id,
+      dataSource: first.dataSource,
+      dataSignature,
+      params: { filters: first.filters, measure: "cm", seriesDim: "marca", xDim: null },
+    }, () => {
+      firstCalls += 1;
+      return computeChartSeries(rows, first.filters, "cm", "marca", null);
+    });
+
+    let secondCalls = 0;
+    getOrComputeSlideCalc({
+      op: "chart-series",
+      slideId: "slide-1",
+      blockId: second.id,
+      dataSource: second.dataSource,
+      dataSignature,
+      params: { filters: second.filters, measure: "cm", seriesDim: "marca", xDim: null },
+    }, () => {
+      secondCalls += 1;
+      return computeChartSeries(rows, second.filters, "cm", "marca", null);
+    });
+
+    expect(firstCalls).toBe(0);
+    expect(secondCalls).toBe(1);
   });
 });

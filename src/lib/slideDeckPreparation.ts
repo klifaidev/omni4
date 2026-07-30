@@ -60,9 +60,16 @@ async function warmChartRankingCache(input: SlideCalcCacheKeyInput, rows: Pricin
   });
 }
 
-export async function warmSlideChartData(item: SlideItem, options?: { onBlock?: () => Promise<void> | void }): Promise<number> {
+export async function warmSlideChartData(item: SlideItem, options?: {
+  onBlock?: () => Promise<void> | void;
+  maxBlocks?: number;
+}): Promise<number> {
   if (item.kind !== "custom") return 0;
-  const chartBlocks = item.config.blocks.filter((block): block is ChartBlock => block.kind === "chart" && !block.hidden);
+  const maxBlocks = options?.maxBlocks ?? Infinity;
+  if (maxBlocks <= 0) return 0;
+  const chartBlocks = item.config.blocks
+    .filter((block): block is ChartBlock => block.kind === "chart" && !block.hidden)
+    .slice(0, maxBlocks);
   let warmed = 0;
 
   for (const block of chartBlocks) {

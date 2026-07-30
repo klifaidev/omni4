@@ -151,6 +151,8 @@ const APP_VERSION = (() => {
 const COLLAB_PROTOCOL_VERSION = 1;
 const DOWNLOAD_URL = "https://github.com/klifaidev/omni4/releases/latest";
 const DECK_PREP_THRESHOLD = 8;
+const DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE = 2;
+const DECK_PREP_MAX_CHART_BLOCKS_TOTAL = 40;
 
 type DeckPreparationState = {
   visible: boolean;
@@ -1974,6 +1976,7 @@ export default function SlidesBeta() {
     const queuedItems = [...deckItems];
     const total = queuedItems.length;
     const startedAt = Date.now();
+    let warmedChartBlocks = 0;
 
     setDeckPreparation({
       visible: true,
@@ -2002,7 +2005,13 @@ export default function SlidesBeta() {
 
         try {
           await warmSlideThumbnail(item);
-          await warmSlideChartData(item, { onBlock: yieldDeckPreparationFrame });
+          const remainingChartBudget = Math.max(0, DECK_PREP_MAX_CHART_BLOCKS_TOTAL - warmedChartBlocks);
+          if (remainingChartBudget > 0) {
+            warmedChartBlocks += await warmSlideChartData(item, {
+              maxBlocks: Math.min(DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE, remainingChartBudget),
+              onBlock: yieldDeckPreparationFrame,
+            });
+          }
         } catch {
           // Uma miniatura ou calculo com erro nao deve impedir o restante do deck de aquecer.
         }
@@ -2795,7 +2804,7 @@ export default function SlidesBeta() {
               <div className="min-w-0 space-y-1">
                 <div className="slides-type-section text-sm">{deckPreparation.title}</div>
                 <p className="slides-type-helper leading-snug">
-                  Estamos preparando miniaturas e dados do deck inteiro para deixar a navegacao fluida depois.
+                  Estamos preparando miniaturas e os dados iniciais do deck para deixar a navegacao mais fluida.
                 </p>
               </div>
             </div>
