@@ -913,6 +913,24 @@ export interface BudgetEvoRow {
 // inteiros com separador de milhar (ponto). Ex.: 4.341.
 const fmtMoneyAbs = (v: number) => Math.round(v).toLocaleString("pt-BR");
 const fmtTonAbs = (v: number) => Math.round(v).toLocaleString("pt-BR");
+const fmtSignedAbs = (v: number) => {
+  const rounded = Math.round(v);
+  if (!isFinite(rounded) || rounded === 0) return "0";
+  return `${rounded > 0 ? "+" : "-"}${Math.abs(rounded).toLocaleString("pt-BR")}`;
+};
+
+function centerOfRealRange<T>(
+  rows: T[],
+  xOf: (index: number) => number,
+  hasReal: (row: T) => boolean,
+  fallbackX: number,
+) {
+  const indexes = rows
+    .map((row, index) => (hasReal(row) ? index : -1))
+    .filter((index) => index >= 0);
+  if (indexes.length === 0) return fallbackX;
+  return (xOf(indexes[0]) + xOf(indexes[indexes.length - 1])) / 2;
+}
 
 function smoothPathD(points: { x: number; y: number }[]): string {
   if (points.length < 2) return "";
@@ -971,6 +989,7 @@ async function plotLineRow(
     x: number; y: number; w: number; h: number;
     title: string;
     headerNote?: string;
+    headerNoteValue?: number;
     data: BudgetEvoRow[];
     realGet: (r: BudgetEvoRow) => number | null;
     budGet: (r: BudgetEvoRow) => number | null;
@@ -979,7 +998,7 @@ async function plotLineRow(
     showRealPoint?: (r: BudgetEvoRow) => boolean;
   },
 ) {
-  const { x, y, w, h, title, headerNote, data, realGet, budGet, fmt, deltaFmt, showRealPoint } = opts;
+  const { x, y, w, h, title, headerNote, headerNoteValue, data, realGet, budGet, fmt, deltaFmt, showRealPoint } = opts;
 
   // Title rotated 90° to the left (vertical, reading bottom to top)
   slide.addText(title, {
@@ -989,14 +1008,6 @@ async function plotLineRow(
     align: "center", valign: "middle", margin: 0,
     rotate: 270,
   });
-
-  if (headerNote) {
-    slide.addText(headerNote, {
-      x: x + w * 0.55, y: y - 0.05, w: w * 0.45, h: 0.25,
-      fontFace: "Calibri", fontSize: 10, bold: true,
-      color: PPT_COLORS.haraldRed, align: "center", valign: "top", margin: 0,
-    });
-  }
 
   const plotX = x + 0.7;
   const plotY = y + 0.05;
@@ -1019,6 +1030,24 @@ async function plotLineRow(
   const colW = plotW / Math.max(1, data.length);
   const yOf = (v: number) => plotY + (1 - (v - yMin) / (yMax - yMin)) * plotH;
   const xOf = (i: number) => plotX + colW * (i + 0.5);
+  if (headerNote) {
+    const headerW = 2.1;
+    const headerX = centerOfRealRange(
+      data,
+      xOf,
+      (row) => {
+        const v = realGet(row);
+        return v != null && isFinite(v) && (showRealPoint?.(row) ?? true);
+      },
+      plotX + plotW * 0.5,
+    );
+    slide.addText(headerNote, {
+      x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
+      fontFace: "Calibri", fontSize: 13, bold: true,
+      color: (headerNoteValue ?? 0) >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
+      align: "center", valign: "top", margin: 0,
+    });
+  }
 
   // Build smooth curves rendered as inline SVG image (rounded, no markers, no month labels)
   const SCALE = 100;
@@ -1121,11 +1150,6 @@ function plotVolBars(
     align: "center", valign: "middle", margin: 0,
     rotate: 270, wrap: false,
   });
-  slide.addText(`${fmtTonAbs(Math.abs(accumGapTons))} Tons`, {
-    x: x + w * 0.55, y: y - 0.05, w: w * 0.45, h: 0.25,
-    fontFace: "Calibri", fontSize: 12, bold: true,
-    color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed, align: "center", valign: "top", margin: 0,
-  });
 
   const plotX = x + 0.7;
   const plotY = y + 0.05;
@@ -1143,6 +1167,16 @@ function plotVolBars(
 
   const colW = plotW / Math.max(1, data.length);
   const barW = colW * 0.36;
+  const xOf = (i: number) => plotX + colW * (i + 0.5);
+  const volDeltaLabel = `${fmtSignedAbs(accumGapTons)} Tons`;
+  const headerW = 2.1;
+  const headerX = centerOfRealRange(data, xOf, (row) => row.realVol > 0, plotX + plotW * 0.5);
+  slide.addText(volDeltaLabel, {
+    x: headerX - headerW / 2, y: y - 0.08, w: headerW, h: 0.3,
+    fontFace: "Calibri", fontSize: 15, bold: true,
+    color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
+    align: "center", valign: "top", margin: 0,
+  });
 
   // For rotated text, w is the unrotated width (= visual height after rotation),
   // h is the unrotated height (= visual width). Keep w tight so text sits near the bar.
@@ -1151,7 +1185,7 @@ function plotVolBars(
   const labelGap = 0.04;
 
   data.forEach((r, i) => {
-    const cx = plotX + colW * (i + 0.5);
+    const cx = xOf(i);
     if (r.realVol > 0) {
       const yT = yOf(r.realVol);
       slide.addShape("rect", {
@@ -1201,12 +1235,10 @@ function plotVolBars(
       x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
       line: { color: "C8102E", width: 1.5, dashType: "solid" },
     });
-    const volDelta = accumGapTons;
-    const volDeltaLabel = (volDelta >= 0 ? "+" : "-") + fmtTonAbs(Math.abs(volDelta)) + " Tons";
     slide.addText(volDeltaLabel, {
       x: sepX - 0.8, y: plotY - 0.3, w: 1.6, h: 0.25,
       fontFace: "Calibri", fontSize: 11, bold: true,
-      color: volDelta >= 0 ? PPT_COLORS.positive : "C8102E",
+      color: accumGapTons >= 0 ? PPT_COLORS.positive : "C8102E",
       align: "center", valign: "middle", margin: 0,
     });
   }
@@ -1242,7 +1274,8 @@ export async function addBudgetEvoSlide(
   await plotLineRow(slide, {
     x: rowX, y: curY, w: rowW, h: rowH,
     title: "CM ABS",
-    headerNote: fmtMoneyAbs(accumGap.cmGap),
+    headerNote: fmtSignedAbs(accumGap.cmGap),
+    headerNoteValue: accumGap.cmGap,
     data: monthly,
     realGet: (r) => r.realCm || null,
     budGet: (r) => r.budCm || null,

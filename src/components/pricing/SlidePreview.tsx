@@ -92,10 +92,28 @@ const fmtSignedIntBR = (v: number) => {
   const r = Math.round(v);
   return r < 0 ? `-${Math.abs(r).toLocaleString("pt-BR")}` : r.toLocaleString("pt-BR");
 };
+const fmtSignedGapIntBR = (v: number) => {
+  if (!isFinite(v) || Math.round(v) === 0) return "0";
+  const r = Math.round(v);
+  return `${r > 0 ? "+" : "-"}${Math.abs(r).toLocaleString("pt-BR")}`;
+};
 const fmtDecimalBR = (v: number, d = 2) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtPctBR = (v: number, d = 1) =>
   `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}%`;
+
+function centerOfVisibleRealRange<T>(
+  rows: T[],
+  xOf: (index: number) => number,
+  hasReal: (row: T) => boolean,
+  fallbackX: number,
+) {
+  const realIndexes = rows
+    .map((row, index) => (hasReal(row) ? index : -1))
+    .filter((index) => index >= 0);
+  if (realIndexes.length === 0) return fallbackX;
+  return (xOf(realIndexes[0]) + xOf(realIndexes[realIndexes.length - 1])) / 2;
+}
 
 // Curva suave Catmull-Rom → Bezier (espelha smoothPathD do export)
 function smoothPathD(points: { x: number; y: number }[]): string {
@@ -225,7 +243,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
         </text>
 
         {/* 4 linhas de gráficos */}
-        <LineRow y={95} title="CM ABS" headerNote={fmtSignedIntBR(accum.cm)}
+        <LineRow y={95} title="CM ABS" headerNote={fmtSignedGapIntBR(accum.cm)} headerNoteValue={accum.cm}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
           showRealPoint={(row) => row.realVol > 0}
           deltaFmt={(v) => (v >= 0 ? "+" : "") + fmtIntBR(v / 1000) + " Mi"} />
@@ -242,11 +260,12 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
 }
 
 function LineRow({
-  y, title, headerNote, data, realKey, budKey, fmt, deltaFmt, showRealPoint,
+  y, title, headerNote, headerNoteValue, data, realKey, budKey, fmt, deltaFmt, showRealPoint,
 }: {
   y: number;
   title: string;
   headerNote?: string;
+  headerNoteValue?: number;
   data: PreviewDataRow[];
   realKey: string;
   budKey: string;
@@ -279,6 +298,16 @@ function LineRow({
   const colW = plotW / Math.max(1, data.length);
   const yOf = (v: number) => plotY + (1 - (v - yMin) / (yMax - yMin)) * plotH;
   const xOf = (i: number) => plotX + colW * (i + 0.5);
+  const headerNoteX = centerOfVisibleRealRange(
+    data,
+    xOf,
+    (r) => {
+      const v = r[realKey];
+      return v != null && isFinite(v) && (showRealPoint?.(r) ?? true);
+    },
+    plotX + plotW * 0.5,
+  );
+  const headerNoteColor = (headerNoteValue ?? 0) >= 0 ? "#16A34A" : C.haraldRed;
 
   const realSegments: { x: number; y: number }[][] = [];
   let currentRealSegment: { x: number; y: number }[] = [];
@@ -327,8 +356,8 @@ function LineRow({
 
       {/* Header note (right) */}
       {headerNote && (
-        <text x={x + w * 0.78} y={y - 2} fontFamily="Calibri" fontSize="14" fontWeight={700}
-          fill={C.haraldRed} textAnchor="middle">
+        <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="18" fontWeight={700}
+          fill={headerNoteColor} textAnchor="middle">
           {headerNote}
         </text>
       )}
@@ -413,6 +442,8 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
   const yOf = (v: number) => plotY + (1 - v / maxV) * plotH;
   const colW = plotW / Math.max(1, data.length);
   const barW = colW * 0.36;
+  const xOf = (i: number) => plotX + colW * (i + 0.5);
+  const headerNoteX = centerOfVisibleRealRange(data, xOf, (r) => r.realVol > 0, plotX + plotW * 0.5);
 
   // Separador vertical Real / Budget + nota de variação em volume
   const sepColIdxV = data.findIndex((r) => r.realVol === 0 && typeof r.budVol === "number" && r.budVol > 0);
@@ -433,13 +464,13 @@ function VolBarsRow({ y, data, accumGapTons }: { y: number; data: PreviewDataRow
       </text>
 
       {/* Header tons acumulado — destaque vermelho */}
-      <text x={x + w * 0.78} y={y - 2} fontFamily="Calibri" fontSize="16" fontWeight={700}
+      <text x={headerNoteX} y={y - 2} fontFamily="Calibri" fontSize="20" fontWeight={700}
         fill={volDeltaColor} textAnchor="middle">
-        {`${fmtIntBR(Math.abs(accumGapTons))} Tons`}
+        {volDeltaLabel}
       </text>
 
       {data.map((r, i) => {
-        const cx = plotX + colW * (i + 0.5);
+        const cx = xOf(i);
         const realX = cx - barW - 1;
         const budX = cx + 1;
         return (

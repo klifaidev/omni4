@@ -339,7 +339,7 @@ export default function Budget() {
 
   // Acumulados Real vs Budget apenas onde há REAL (futuro só tem budget)
   const accumGap = useMemo(() => {
-    const realMonths = monthlyRange.filter((m) => m.realCm !== 0 || m.realVol !== 0);
+    const realMonths = monthlyRange.filter((m) => m.realVol > 0);
     const cmGap = realMonths.reduce((s, m) => s + (m.realCm - m.budCm), 0);
     const volGap = realMonths.reduce((s, m) => s + (m.realVol - m.budVol), 0);
     return { cmGap, volGap };
