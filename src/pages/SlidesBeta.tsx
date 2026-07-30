@@ -2004,7 +2004,7 @@ export default function SlidesBeta() {
           : previous);
 
         try {
-          await warmSlideThumbnail(item);
+          await warmSlideThumbnail(item, { useData: false });
           const remainingChartBudget = Math.max(0, DECK_PREP_MAX_CHART_BLOCKS_TOTAL - warmedChartBlocks);
           if (remainingChartBudget > 0) {
             warmedChartBlocks += await warmSlideChartData(item, {

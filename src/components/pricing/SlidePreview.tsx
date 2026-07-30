@@ -72,6 +72,7 @@ type ThumbnailKeySignature = {
   budgetSignature: string;
   forecastSignature: string;
   rollingSignature: string;
+  useData: boolean;
 };
 
 const slideThumbnailKeyByItem = new WeakMap<SlideItem, { signature: ThumbnailKeySignature; key: string }>();
@@ -81,7 +82,8 @@ function sameThumbnailKeySignature(a: ThumbnailKeySignature, b: ThumbnailKeySign
     && a.pricingSignature === b.pricingSignature
     && a.budgetSignature === b.budgetSignature
     && a.forecastSignature === b.forecastSignature
-    && a.rollingSignature === b.rollingSignature;
+    && a.rollingSignature === b.rollingSignature
+    && a.useData === b.useData;
 }
 
 // ---------------------------------------------------------------------------
@@ -1033,9 +1035,9 @@ function drawTextThumbnailBlock(
   });
 }
 
-function drawKpiThumbnailBlock(ctx: CanvasRenderingContext2D, block: KpiBlock, rect: ThumbnailRect) {
+function drawKpiThumbnailBlock(ctx: CanvasRenderingContext2D, block: KpiBlock, rect: ThumbnailRect, useData = true) {
   drawRoundedRect(ctx, rect, 8, normalizeCanvasColor(block.cardBg, THUMB_COLORS.panelAlt), THUMB_COLORS.softBorder);
-  const value = getThumbnailKpiValue(block);
+  const value = useData ? getThumbnailKpiValue(block) : block.manualValue?.trim() || "-";
   const valuePx = Math.max(13, Math.min(32, rect.h * 0.34));
   ctx.save();
   ctx.fillStyle = THUMB_COLORS.muted;
@@ -1154,7 +1156,7 @@ function drawPieThumbnail(ctx: CanvasRenderingContext2D, rect: ThumbnailRect, va
   }
 }
 
-function drawChartThumbnailBlock(ctx: CanvasRenderingContext2D, slideId: string, block: ChartBlock, rect: ThumbnailRect) {
+function drawChartThumbnailBlock(ctx: CanvasRenderingContext2D, slideId: string, block: ChartBlock, rect: ThumbnailRect, useData = true) {
   drawRoundedRect(ctx, rect, 8, "#f8fbff", "#d7e3f8");
   ctx.save();
   ctx.fillStyle = THUMB_COLORS.ink;
@@ -1163,7 +1165,7 @@ function drawChartThumbnailBlock(ctx: CanvasRenderingContext2D, slideId: string,
   const title = block.title?.trim() || "Grafico";
   ctx.fillText(ellipsizeCanvasText(ctx, title, Math.max(20, rect.w - 16)), rect.x + 8, rect.y + 7);
 
-  const data = getThumbnailChartSeries(slideId, block);
+  const data = useData ? getThumbnailChartSeries(slideId, block) : null;
   if (!data || data.series.length === 0 || flattenChartValues(data).length === 0) {
     drawFallbackChartSkeleton(ctx, rect, block.chartType);
     ctx.restore();
@@ -1278,11 +1280,12 @@ function drawCustomThumbnailBlock(
   block: CustomBlock,
   rect: ThumbnailRect,
   sx: number,
+  useData = true,
 ) {
   if (rect.w < 3 || rect.h < 3) return;
   if (block.kind === "title" || block.kind === "text") drawTextThumbnailBlock(ctx, block, rect, sx);
-  else if (block.kind === "kpi") drawKpiThumbnailBlock(ctx, block, rect);
-  else if (block.kind === "chart") drawChartThumbnailBlock(ctx, slideId, block, rect);
+  else if (block.kind === "kpi") drawKpiThumbnailBlock(ctx, block, rect, useData);
+  else if (block.kind === "chart") drawChartThumbnailBlock(ctx, slideId, block, rect, useData);
   else if (block.kind === "shape") drawShapeThumbnailBlock(ctx, block, rect, sx);
   else if (block.kind === "image") drawImageThumbnailBlock(ctx, rect);
   else if (block.kind === "table" || block.kind === "dre") drawTableThumbnailBlock(ctx, rect);
@@ -1295,7 +1298,7 @@ function drawCustomThumbnailBlock(
   } else drawGenericAnalyticsBlock(ctx, block, rect);
 }
 
-function renderFallbackThumbnail(item: SlideItem): string {
+function renderFallbackThumbnail(item: SlideItem, options?: { useData?: boolean }): string {
   const startedAt = isSlidePerfEnabled() && typeof performance !== "undefined" ? performance.now() : 0;
   const canvas = document.createElement("canvas");
   canvas.width = STATIC_THUMBNAIL_W;
@@ -1329,7 +1332,7 @@ function renderFallbackThumbnail(item: SlideItem): string {
     const blocks = [...item.config.blocks].sort((a, b) => a.z - b.z);
     blocks.forEach((block) => {
       if (block.hidden) return;
-      drawCustomThumbnailBlock(ctx, item.id, block, blockRect(block, sx, sy, canvas), sx);
+      drawCustomThumbnailBlock(ctx, item.id, block, blockRect(block, sx, sy, canvas), sx, options?.useData !== false);
     });
   } else {
     ctx.fillStyle = "#C8102E";
@@ -1361,6 +1364,7 @@ function buildSlideThumbnailKeyFromSignatures({
   budgetSignature,
   forecastSignature,
   rollingSignature,
+  useData = true,
 }: {
   item: SlideItem;
   pricingMetric: string;
@@ -1368,6 +1372,7 @@ function buildSlideThumbnailKeyFromSignatures({
   budgetSignature: string;
   forecastSignature: string;
   rollingSignature: string;
+  useData?: boolean;
 }): string {
   const signature = {
     pricingMetric,
@@ -1375,6 +1380,7 @@ function buildSlideThumbnailKeyFromSignatures({
     budgetSignature,
     forecastSignature,
     rollingSignature,
+    useData,
   };
   const cached = slideThumbnailKeyByItem.get(item);
   if (cached && sameThumbnailKeySignature(cached.signature, signature)) return cached.key;
@@ -1385,6 +1391,7 @@ function buildSlideThumbnailKeyFromSignatures({
     budgetSignature,
     forecastSignature,
     rollingSignature,
+    thumbnailMode: useData ? "rich" : "light",
     renderWidth: STATIC_THUMBNAIL_W,
   });
   slideThumbnailKeyByItem.set(item, { signature, key });
@@ -1392,7 +1399,7 @@ function buildSlideThumbnailKeyFromSignatures({
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function getSlideThumbnailKeyForItem(item: SlideItem): string {
+export function getSlideThumbnailKeyForItem(item: SlideItem, options?: { useData?: boolean }): string {
   const pricingState = usePricing.getState();
   return buildSlideThumbnailKeyFromSignatures({
     item,
@@ -1401,12 +1408,16 @@ export function getSlideThumbnailKeyForItem(item: SlideItem): string {
     budgetSignature: getCachedRowsSignature(useBudget.getState().rows),
     forecastSignature: getCachedRowsSignature(useForecast.getState().rows),
     rollingSignature: getCachedRowsSignature(useRolling.getState().rows),
+    useData: options?.useData !== false,
   });
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export async function warmSlideThumbnail(item: SlideItem): Promise<"hit" | "generated" | "fallback" | "error"> {
-  const key = getSlideThumbnailKeyForItem(item);
+export async function warmSlideThumbnail(
+  item: SlideItem,
+  options?: { useData?: boolean },
+): Promise<"hit" | "generated" | "fallback" | "error"> {
+  const key = getSlideThumbnailKeyForItem(item, options);
   const current = getSlideThumbnail(key);
   if (current?.status === "ready") {
     recordThumbnailMetric("SlideThumbnail:hit", item.id);
@@ -1417,12 +1428,12 @@ export async function warmSlideThumbnail(item: SlideItem): Promise<"hit" | "gene
   markSlideThumbnailRendering(key);
   recordThumbnailMetric("SlideThumbnail:render", item.id);
   try {
-    const dataUrl = renderFallbackThumbnail(item);
+    const dataUrl = renderFallbackThumbnail(item, options);
     setSlideThumbnail(key, dataUrl);
     recordThumbnailMetric("SlideThumbnail:ready", item.id);
     return "generated";
   } catch {
-    const fallback = renderFallbackThumbnail(item);
+    const fallback = renderFallbackThumbnail(item, { useData: false });
     if (fallback) {
       setSlideThumbnail(key, fallback);
       recordThumbnailMetric("SlideThumbnail:fallback", item.id);
