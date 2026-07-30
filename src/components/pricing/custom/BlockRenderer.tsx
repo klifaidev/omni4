@@ -347,27 +347,6 @@ function SvgExportCell({
   );
 }
 
-function fitFontSize(opts: {
-  desired: number;
-  width: number;
-  height: number;
-  text: string;
-  lineHeight: number;
-  padding?: number;
-  min?: number;
-}) {
-  const pad = opts.padding ?? 0;
-  const min = opts.min ?? 8;
-  const availableW = Math.max(1, opts.width - pad * 2);
-  const availableH = Math.max(1, opts.height - pad * 2);
-  const lines = String(opts.text || "").split(/\r?\n/);
-  const longest = Math.max(1, ...lines.map((line) => line.length));
-  const lineCount = Math.max(1, lines.length);
-  const byHeight = availableH / (lineCount * opts.lineHeight);
-  const byWidth = availableW / (longest * 0.58);
-  return Math.max(min, Math.floor(Math.min(opts.desired, byHeight, byWidth)));
-}
-
 class BlockErrorBoundary extends React.Component<
   { block: CustomBlock; children: React.ReactNode },
   { hasError: boolean }
@@ -600,17 +579,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
 
   const cardBg = b.cardBg ?? "F8FAFC";
   const isTransparent = cardBg === "transparent";
-  const valueSize = readOnly
-    ? fitFontSize({
-        desired: b.valueSize,
-        width: b.w,
-        height: Math.max(1, b.h - 44),
-        text: value,
-        lineHeight: 1.18,
-        padding: 24,
-        min: 12,
-      })
-    : b.valueSize;
+  const valueSize = b.valueSize;
   if (missingData) return <MissingLocalData label={missingData} />;
   if (readOnly) {
     const fill = isTransparent ? "transparent" : `#${cardBg}`;

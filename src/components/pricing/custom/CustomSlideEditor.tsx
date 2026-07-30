@@ -532,6 +532,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
   }, [inlineEditId, config.blocks]);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasShellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const paletteRailRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
@@ -600,9 +601,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     function compute() {
       const el = wrapperRef.current;
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const availW = Math.max(rect.width - 24, 100);
-      const availH = Math.max(rect.height - 24, 100);
+      const styles = getComputedStyle(el);
+      const paddingX = parseFloat(styles.paddingLeft || "0") + parseFloat(styles.paddingRight || "0");
+      const paddingY = parseFloat(styles.paddingTop || "0") + parseFloat(styles.paddingBottom || "0");
+      const shellStyles = canvasShellRef.current ? getComputedStyle(canvasShellRef.current) : null;
+      const shellMarginY = shellStyles
+        ? parseFloat(shellStyles.marginTop || "0") + parseFloat(shellStyles.marginBottom || "0")
+        : 24;
+      const availW = Math.max(el.clientWidth - paddingX, 100);
+      const availH = Math.max(el.clientHeight - paddingY - shellMarginY, 100);
       const s = Math.min(availW / CANVAS_W, availH / CANVAS_H);
       setFitScale(s > 0 ? s : 0.1);
     }
@@ -633,7 +640,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, []);
 
   const scale = fitScale * prefs.zoom;
-  const fitScaleKey = Math.round(fitScale * 1000);
+  const scaleKey = Math.round(scale * 1000);
   scaleRef.current = scale;
 
   const selected = selectedIds.length === 1
@@ -2202,6 +2209,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           }}
         >
           <div
+            ref={canvasShellRef}
             className="relative"
             data-canvas-bg="true"
             style={{
@@ -2464,7 +2472,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     ) : (
                       /* ---- bloco sem rotação: Rnd normal ---- */
                       <Rnd
-                        key={`${blk.id}-${fitScaleKey}`}
+                        key={`${blk.id}-${scaleKey}`}
                         size={{ width: blk.w, height: blk.h }}
                         position={{ x: blk.x, y: blk.y }}
                         bounds="parent"
