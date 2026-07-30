@@ -4164,10 +4164,20 @@ function TableBlockEditor({ block, onChange }: {
   const dims = CUSTOM_TABLE_DIMS;
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
+  const forecast = useForecast((s) => s.rows);
+  const rolling = useRolling((s) => s.rows);
+  const sourceRows = useMemo(() => {
+    const ds = block.dataSource ?? "ke30";
+    if (ds === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
+    if (ds === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
+    if (ds === "forecast") return forecastRowsAsPricingLatest(forecast);
+    if (ds === "rolling") return rollingRowsAsPricing(rolling);
+    return pricing;
+  }, [block.dataSource, pricing, budget, forecast, rolling]);
   const tablePreview = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
     if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
-    const unified = buildUnifiedRows(pricing, budget, "real");
+    const unified = buildUnifiedRows(sourceRows, [], "real");
     const cfg: PivotConfig = {
       rows: block.rowDims, cols: block.colDim ? [block.colDim] : [],
       values: measures,
@@ -4181,7 +4191,7 @@ function TableBlockEditor({ block, onChange }: {
         label: row.values.join(" / ") || "Total",
       })),
     };
-  }, [pricing, budget, block.rowDims, block.colDim, block.measures, block.filters]);
+  }, [sourceRows, block.rowDims, block.colDim, block.measures, block.filters]);
   const totalRows = tablePreview.totalRows;
   const fit = resolveTableFit(block, totalRows);
   const toggleMeasure = (id: string) => {
