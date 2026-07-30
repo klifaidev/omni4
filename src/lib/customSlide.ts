@@ -302,6 +302,12 @@ export interface TableBlock extends BaseBlock {
   source: "ke30";
   /** Fonte de dados — default "ke30". */
   dataSource?: BlockDataSource;
+  /** Optional title rendered above the table. */
+  title?: string;
+  /** Title font size in canvas pixels. Default 18. */
+  titleSize?: number;
+  /** Title color as hex without #. Default 1C2430. */
+  titleColor?: string;
   measures: string[];
   rowDims: string[];
   colDim: string | null;
@@ -724,6 +730,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
     case "table":
       return { id, kind, z, x: 60, y: 200, w: 1200, h: 360,
         source: "ke30", dataSource: "ke30",
+        title: "", titleSize: 18, titleColor: "1C2430",
         measures: ["rol_real", "cm_real"],
         rowDims: ["marca"], colDim: "periodo", filters: {},
         autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false };

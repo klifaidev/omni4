@@ -850,6 +850,32 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   }
 
   const { result, measures, sortedHeaders } = data;
+  const tableTitle = (b.title ?? "").trim();
+  const tableTitleSize = Math.max(12, b.titleSize ?? 18);
+  const tableTitleColor = b.titleColor
+    ? (b.titleColor.startsWith("#") ? b.titleColor : `#${b.titleColor}`)
+    : SLIDE_HEX.ink;
+  const tableTitleGap = tableTitle ? tableTitleSize + 12 : 0;
+  const tableTitleEl = tableTitle ? (
+    <div
+      style={{
+        height: tableTitleGap,
+        display: "flex",
+        alignItems: "flex-start",
+        color: tableTitleColor,
+        fontFamily: "Calibri",
+        fontSize: tableTitleSize,
+        fontWeight: 700,
+        lineHeight: 1.1,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
+      }}
+      title={tableTitle}
+    >
+      {tableTitle}
+    </div>
+  ) : null;
   const hasSingleMeasure = measures.length === 1;
   const tableHeaderLabel = (colLabel: string, measureLabel: string) =>
     hasSingleMeasure ? colLabel : `${colLabel} - ${measureLabel}`;
@@ -1206,9 +1232,10 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
 
     return (
       <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
+        {tableTitleEl}
         <div style={{
           width: "100%",
-          height: "100%",
+          height: `calc(100% - ${tableTitleGap}px)`,
           position: "relative",
         }}>
           {headerCells}
@@ -1221,6 +1248,8 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
 
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
+      {tableTitleEl}
+      <div style={{ height: `calc(100% - ${tableTitleGap}px)`, overflow: "hidden" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
@@ -1284,6 +1313,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

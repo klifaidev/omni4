@@ -113,7 +113,7 @@ function placeChart(z: number, title: string, chartType: ChartBlock["chartType"]
 
 function placeTable(z: number, title: string, rowDims: TableBlock["rowDims"], measures: TableBlock["measures"]): TableBlock {
   const b = newBlock("table", z) as TableBlock;
-  return { ...b, x: 40, y: 130, w: 1240, h: 540, rowDims, measures, colDim: "periodo" };
+  return { ...b, x: 40, y: 130, w: 1240, h: 540, title, rowDims, measures, colDim: "periodo" };
 }
 
 // ---------------------------------------------------------------------------

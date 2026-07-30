@@ -988,6 +988,9 @@ function pickStylePatch(block: CustomBlock): { group: StyleGroup; patch: Partial
       group: "table",
       patch: {
         ...common,
+        title: b.title,
+        titleSize: b.titleSize,
+        titleColor: b.titleColor,
         autoFit: b.autoFit,
         maxRows: b.maxRows,
         showOthers: b.showOthers,

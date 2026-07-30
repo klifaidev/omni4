@@ -596,7 +596,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, []);
 
   // Calcula a escala para caber no contêiner mantendo a proporção 16:9
-  useEffect(() => {
+  useLayoutEffect(() => {
     function compute() {
       const el = wrapperRef.current;
       if (!el) return;
@@ -633,6 +633,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, []);
 
   const scale = fitScale * prefs.zoom;
+  const fitScaleKey = Math.round(fitScale * 1000);
   scaleRef.current = scale;
 
   const selected = selectedIds.length === 1
@@ -2463,6 +2464,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     ) : (
                       /* ---- bloco sem rotação: Rnd normal ---- */
                       <Rnd
+                        key={`${blk.id}-${fitScaleKey}`}
                         size={{ width: blk.w, height: blk.h }}
                         position={{ x: blk.x, y: blk.y }}
                         bounds="parent"
@@ -2541,6 +2543,41 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             y = snapToGrid(y, prefs.gridSize);
                             w = Math.max(prefs.gridSize, snapToGrid(w, prefs.gridSize));
                             h = Math.max(prefs.gridSize, snapToGrid(h, prefs.gridSize));
+                          }
+                          if (blk.groupId && groupEditMemberId !== blk.id) {
+                            const group = (config.groups ?? []).find((g) => g.id === blk.groupId);
+                            const memberIds = group?.memberIds ?? [];
+                            const members = memberIds
+                              .map((id) => config.blocks.find((b) => b.id === id))
+                              .filter((b): b is CustomBlock => !!b);
+                            const origin = groupBounds(members);
+                            if (origin && blk.w > 0 && blk.h > 0) {
+                              const scaleX = w / blk.w;
+                              const scaleY = h / blk.h;
+                              const next = {
+                                x: Math.round(x - (blk.x - origin.x) * scaleX),
+                                y: Math.round(y - (blk.y - origin.y) * scaleY),
+                                w: Math.round(origin.w * scaleX),
+                                h: Math.round(origin.h * scaleY),
+                              };
+                              if (collabYDoc) {
+                                members
+                                  .filter((b) => !b.locked)
+                                  .forEach((b) => {
+                                    const dx = b.x - origin.x;
+                                    const dy = b.y - origin.y;
+                                    updateBlock(b.id, {
+                                      x: Math.round(next.x + dx * scaleX),
+                                      y: Math.round(next.y + dy * scaleY),
+                                      w: Math.round(Math.max(40, b.w * scaleX)),
+                                      h: Math.round(Math.max(40, b.h * scaleY)),
+                                    } as Partial<CustomBlock>);
+                                  });
+                              } else {
+                                resizeGroupAction(memberIds, origin, next);
+                              }
+                              return;
+                            }
                           }
                           updateBlock(blk.id, { w, h, x, y });
                         }}
@@ -4161,6 +4198,32 @@ function TableBlockEditor({ block, onChange }: {
   return (
     <div className="space-y-3">
       <TruncationAlert blockId={block.id} fit={fit} unitPlural="linhas" />
+
+      <Section title="Titulo da tabela" defaultOpen>
+        <Row label="Texto">
+          <Input
+            value={block.title ?? ""}
+            onChange={(e) => onChange({ title: e.target.value } as never)}
+            placeholder="Ex.: Tabela executiva"
+            className="h-7 text-xs"
+          />
+        </Row>
+        <Row label="Tamanho">
+          <NumberStepper
+            value={block.titleSize ?? 18}
+            min={10}
+            max={48}
+            onChange={(v) => onChange({ titleSize: v } as never)}
+            suffix="px"
+          />
+        </Row>
+        <Row label="Cor">
+          <ColorField
+            value={`#${block.titleColor ?? "1C2430"}`}
+            onChange={(c) => onChange({ titleColor: c.replace("#", "") } as never)}
+          />
+        </Row>
+      </Section>
 
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Linhas (dimensões)</Label>

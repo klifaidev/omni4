@@ -35,7 +35,9 @@ import type { TableBlock, ChartBlock, TopSkuBlock } from "./customSlide";
 export interface FitInfo { shown: number; total: number; truncated: boolean }
 
 export function resolveTableFit(block: TableBlock, totalRows: number): FitInfo {
-  const cap = tableCapacity(block.h);
+  const titleSize = block.title ? Math.max(14, block.titleSize ?? 18) : 0;
+  const titleGap = block.title ? titleSize + 12 : 0;
+  const cap = tableCapacity(Math.max(TABLE_HEADER_H + TABLE_ROW_H + 4, block.h - titleGap));
   const limit = block.autoFit !== false
     ? cap
     : Math.max(1, block.maxRows ?? cap);
