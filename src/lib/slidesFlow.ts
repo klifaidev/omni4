@@ -209,16 +209,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
           if (monthly.length === 0) {
             throw new Error(`Budget Evolutivo "${item.label}": sem dados para o range selecionado.`);
           }
-          const currentFiscalYearStart = latestFiscalYearStartYear(monthly);
-          const comparableMonths = monthly.filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart));
-          const accum = comparableMonths
-            .reduce(
-              (acc, m) => ({
-                cmGap: acc.cmGap + (m.realCm - m.budCm),
-                volGap: acc.volGap + (m.realVol - m.budVol),
-              }),
-              { cmGap: 0, volGap: 0 },
-            );
+          const accum = computeBudgetEvoAccumGap(monthly);
           await addBudgetEvoSlide(pptx, monthly, accum);
         },
       };
@@ -316,6 +307,27 @@ export function computeBudgetEvoMonthly(
     budCmKg: x.budVol ? x.budCm / x.budVol : null,
     realVol: x.realVol, budVol: x.budVol,
   }));
+}
+
+export function computeBudgetEvoAccumGap(
+  monthly: Array<Pick<BudgetEvoRow, "mes" | "ano" | "realCm" | "budCm" | "realVol" | "budVol">>,
+): { cmGap: number; volGap: number } {
+  const currentFiscalYearStart = latestFiscalYearStartYear(monthly);
+  return monthly
+    .filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart))
+    .reduce(
+      (acc, m) => ({
+        cmGap: acc.cmGap + (m.realCm - m.budCm),
+        volGap: acc.volGap + (m.realVol - m.budVol),
+      }),
+      { cmGap: 0, volGap: 0 },
+    );
+}
+
+export function formatBudgetEvoGapLabel(value: number): string {
+  const rounded = Math.round(value);
+  if (!isFinite(rounded) || rounded === 0) return "0";
+  return `${rounded > 0 ? "+" : "-"}${Math.abs(rounded).toLocaleString("pt-BR")}`;
 }
 
 // ---------------------------------------------------------------------------

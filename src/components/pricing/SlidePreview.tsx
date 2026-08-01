@@ -6,7 +6,13 @@
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
-import { computeBudgetEvoMonthly, isItemReady, type SlideItem } from "@/lib/slidesFlow";
+import {
+  computeBudgetEvoAccumGap,
+  computeBudgetEvoMonthly,
+  formatBudgetEvoGapLabel,
+  isItemReady,
+  type SlideItem,
+} from "@/lib/slidesFlow";
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fiscalYear";
 import { monthLabel } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
@@ -85,11 +91,7 @@ const fmtSignedIntBR = (v: number) => {
   const r = Math.round(v);
   return r < 0 ? `-${Math.abs(r).toLocaleString("pt-BR")}` : r.toLocaleString("pt-BR");
 };
-const fmtSignedGapIntBR = (v: number) => {
-  if (!isFinite(v) || Math.round(v) === 0) return "0";
-  const r = Math.round(v);
-  return `${r > 0 ? "+" : "-"}${Math.abs(r).toLocaleString("pt-BR")}`;
-};
+const fmtSignedGapIntBR = formatBudgetEvoGapLabel;
 const fmtDecimalBR = (v: number, d = 2) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtPctBR = (v: number, d = 1) =>
@@ -220,12 +222,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
   }
 
   const currentFiscalYearStart = latestFiscalYearStartYear(data);
-  const comparableMonths = data.filter((m) => m.realVol > 0 && isCurrentFiscalYearMonth(m, currentFiscalYearStart));
-  const accum = comparableMonths
-    .reduce(
-      (a, m) => ({ cm: a.cm + (m.realCm - m.budCm), vol: a.vol + (m.realVol - m.budVol) }),
-      { cm: 0, vol: 0 },
-    );
+  const accum = computeBudgetEvoAccumGap(data);
 
   return (
     <Frame label="Overview CM/VOL">
@@ -237,7 +234,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
         </text>
 
         {/* 4 linhas de gráficos */}
-        <LineRow y={95} title="CM ABS" headerNote={fmtSignedGapIntBR(accum.cm)} headerNoteValue={accum.cm}
+        <LineRow y={95} title="CM ABS" headerNote={fmtSignedGapIntBR(accum.cmGap)} headerNoteValue={accum.cmGap}
           data={data} realKey="realCm" budKey="budCm" fmt={(v) => fmtIntBR(v)}
           showRealPoint={(row) => row.realVol > 0}
           headerNotePoint={(row) => row.realVol > 0 && isCurrentFiscalYearMonth(row, currentFiscalYearStart)}
@@ -246,7 +243,7 @@ function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_e
           realKey="realCmPct" budKey="budCmPct" fmt={(v) => fmtPctBR(v, 1)} />
         <LineRow y={95 + 135 * 2} title="CM/Kg" data={data}
           realKey="realCmKg" budKey="budCmKg" fmt={(v) => fmtDecimalBR(v, 2)} />
-        <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.vol} currentFiscalYearStart={currentFiscalYearStart} />
+        <VolBarsRow y={95 + 135 * 3} data={data} accumGapTons={accum.volGap} currentFiscalYearStart={currentFiscalYearStart} />
 
         <HaraldFooterStripe />
       </svg>

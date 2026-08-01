@@ -53,7 +53,7 @@ export function effectiveTableRowHeight(block: TableBlock, shownRows: number): n
   if (block.autoFit !== false) return TABLE_ROW_H;
   const rows = Math.max(1, shownRows);
   const usable = block.h - tableTitleGap(block) - TABLE_HEADER_H - 4;
-  return Math.max(1, usable / rows);
+  return Math.min(TABLE_ROW_H, Math.max(1, usable / rows));
 }
 
 export function tableHeightWithExtraRows(block: TableBlock, shownRows: number, extraRows: number): number {
