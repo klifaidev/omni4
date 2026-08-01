@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 import { incrementSlidePerfCounter, isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
+import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
 import {
   buildSlideThumbnailKey,
   getSlideThumbnail,
@@ -48,18 +49,7 @@ import {
   subscribeSlideThumbnail,
 } from "@/lib/slideThumbnailCache";
 
-// ---------------------------------------------------------------------------
-// Tokens (espelhando PPT_COLORS de exportPpt.ts)
-// ---------------------------------------------------------------------------
-const C = {
-  haraldRed: "#C8102E",
-  ink: "#1C2430",
-  muted: "#667085",
-  black: "#000000",
-  white: "#FFFFFF",
-  heatGreen: "#A6D89A",
-  heatYellow: "#F8E78D",
-};
+const C = SLIDE_PREVIEW_COLORS;
 
 // Sistema de coordenadas: inches × 100  → viewBox 1333 × 750
 const SLIDE_W = 1333;
@@ -313,7 +303,7 @@ function LineRow({
     },
     plotX + plotW * 0.5,
   );
-  const headerNoteColor = (headerNoteValue ?? 0) >= 0 ? "#16A34A" : C.haraldRed;
+  const headerNoteColor = (headerNoteValue ?? 0) >= 0 ? SLIDE_HEX.success : C.haraldRed;
 
   const realSegments: { x: number; y: number }[][] = [];
   let currentRealSegment: { x: number; y: number }[] = [];
@@ -345,7 +335,7 @@ function LineRow({
     const totalBud  = data.reduce((s, r) => { const v = r[budKey];  return typeof v === "number" && v > 0 ? s + v : s; }, 0);
     const delta = totalReal - totalBud;
     deltaLabel = deltaFmt(delta);
-    deltaColor = delta >= 0 ? "#16A34A" : C.haraldRed;
+    deltaColor = delta >= 0 ? SLIDE_HEX.success : C.haraldRed;
   }
 
   return (
@@ -471,7 +461,7 @@ function VolBarsRow({
   const sepXV = hasSepV ? plotX + (sepColIdxV - 0.5) * colW : 0;
   const showSplitGuide = false;
   const volDeltaLabel = `${fmtSignedGapIntBR(accumGapTons)} Tons`;
-  const volDeltaColor = accumGapTons >= 0 ? "#16A34A" : C.haraldRed;
+  const volDeltaColor = accumGapTons >= 0 ? SLIDE_HEX.success : C.haraldRed;
 
   return (
     <g>
@@ -823,16 +813,16 @@ type ChartSeriesForThumbnail = ReturnType<typeof computeChartSeries>;
 const THUMB_COLORS = {
   border: "#d8dee8",
   softBorder: "#e7ebf2",
-  panel: "#ffffff",
-  panelAlt: "#f8fafc",
+  panel: SLIDE_HEX.white,
+  panelAlt: SLIDE_HEX.paper,
   ink: "#182230",
-  muted: "#667085",
-  red: "#C8102E",
+  muted: C.muted,
+  red: C.haraldRed,
   blue: "#2f6fed",
-  green: "#16a34a",
-  amber: "#d97706",
-  violet: "#7c3aed",
-  teal: "#0f766e",
+  green: SLIDE_HEX.success,
+  amber: SLIDE_HEX.warningDark,
+  violet: SLIDE_HEX.chart6,
+  teal: SLIDE_HEX.chart3,
 };
 
 const THUMB_SERIES_COLORS = [
@@ -1315,13 +1305,13 @@ function renderFallbackThumbnail(item: SlideItem, options?: { useData?: boolean 
 
   if (item.kind === "cover") {
     const isDivider = item.config.variant === "divider";
-    ctx.fillStyle = isDivider ? "#ffffff" : "#C8102E";
+    ctx.fillStyle = isDivider ? SLIDE_HEX.white : C.haraldRed;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = isDivider ? "#1C2430" : "#ffffff";
+    ctx.fillStyle = isDivider ? C.ink : SLIDE_HEX.white;
     ctx.font = "700 22px Calibri, Arial";
     ctx.fillText(item.config.title || "Titulo do slide", 18, canvas.height / 2);
     ctx.font = "12px Calibri, Arial";
-    ctx.fillStyle = isDivider ? "#667085" : "rgba(255,255,255,0.82)";
+    ctx.fillStyle = isDivider ? C.muted : "rgba(255,255,255,0.82)";
     ctx.fillText(item.config.subtitle || "Apresentacao", 18, canvas.height / 2 + 22);
   } else if (item.kind === "custom") {
     const bg = item.config.background;
@@ -1335,12 +1325,12 @@ function renderFallbackThumbnail(item: SlideItem, options?: { useData?: boolean 
       drawCustomThumbnailBlock(ctx, item.id, block, blockRect(block, sx, sy, canvas), sx, options?.useData !== false);
     });
   } else {
-    ctx.fillStyle = "#C8102E";
+    ctx.fillStyle = C.haraldRed;
     ctx.fillRect(0, 0, canvas.width, 28);
     ctx.fillStyle = "#111827";
     ctx.font = "700 18px Calibri, Arial";
     ctx.fillText(item.label || (item.kind === "budget_evo" ? "Overview CM/VOL" : "Overview DRE & Bridge"), 18, 70);
-    ctx.strokeStyle = "#C8102E";
+    ctx.strokeStyle = C.haraldRed;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(18, 92);

@@ -4,6 +4,7 @@ import type { PVMResult, PVMSkuDetail } from "./analytics";
 import type { PricingRow } from "./types";
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
+import { PPT_COLORS } from "./slideColors";
 import haraldFooterPng from "@/assets/harald-footer.png";
 import haraldFooterBarPng from "@/assets/harald-footer-bar.png";
 
@@ -45,36 +46,6 @@ function addHaraldFooter(slide: PptxGenJS.Slide) {
     h: HARALD_FOOTER_H,
   });
 }
-
-// ---------------------------------------------------------------------------
-// Paleta inspirada no slide "OVERVIEW DRE & BRIDGE" da Harald
-// ---------------------------------------------------------------------------
-const PPT_COLORS = {
-  ink: "1C2430",
-  muted: "667085",
-  line: "D0D5DD",
-  surface: "F8FAFC",
-  surfaceAlt: "EEF2F6",
-  positive: "16A34A",
-  negative: "DC2626",
-  base: "1D4ED8",
-  // Harald deck
-  haraldRed: "C8102E",
-  haraldRedDark: "8B0A1E",
-  // Tabela DRE — heatmap
-  heatGreenStrong: "63BE7B",
-  heatGreen: "A6D89A",
-  heatYellow: "F8E78D",
-  heatOrange: "F0A874",
-  heatRedStrong: "F8696B",
-  // Cores efeitos (slides de detalhe)
-  volume: "0F766E",
-  price: "7C3AED",
-  cost: "EA580C",
-  freight: "2563EB",
-  commission: "C2410C",
-  others: "6B7280",
-};
 
 type EffectKey = keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect">;
 
@@ -1099,7 +1070,7 @@ async function plotLineRow(
     const sepX = plotX + (sepColIdx - 0.5) * colW;
     slide.addShape("line", {
       x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
-      line: { color: "C8102E", width: 1.5, dashType: "solid" },
+      line: { color: PPT_COLORS.haraldRed, width: 1.5, dashType: "solid" },
     });
     if (deltaFmt) {
       const totalReal = data.reduce((s, m) => { const v = realGet(m); return v && v > 0 ? s + v : s; }, 0);
@@ -1108,12 +1079,12 @@ async function plotLineRow(
       slide.addText(deltaFmt(delta), {
         x: sepX - 0.8, y: plotY - 0.3, w: 1.6, h: 0.25,
         fontFace: "Calibri", fontSize: 11, bold: true,
-        color: delta >= 0 ? PPT_COLORS.positive : "C8102E",
+        color: delta >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
         align: "center", valign: "middle", margin: 0,
       });
       slide.addShape("line", {
         x: sepX - 0.8, y: plotY - 0.08, w: 1.6, h: 0,
-        line: { color: "C8102E", width: 1 },
+        line: { color: PPT_COLORS.haraldRed, width: 1 },
       });
     }
   }
@@ -1249,12 +1220,12 @@ function plotVolBars(
     const sepX = plotX + (sepColIdxV - 0.5) * colW;
     slide.addShape("line", {
       x: sepX, y: plotY + 0.05, w: 0, h: plotH - 0.1,
-      line: { color: "C8102E", width: 1.5, dashType: "solid" },
+      line: { color: PPT_COLORS.haraldRed, width: 1.5, dashType: "solid" },
     });
     slide.addText(volDeltaLabel, {
       x: sepX - 0.8, y: plotY - 0.3, w: 1.6, h: 0.25,
       fontFace: "Calibri", fontSize: 11, bold: true,
-      color: accumGapTons >= 0 ? PPT_COLORS.positive : "C8102E",
+      color: accumGapTons >= 0 ? PPT_COLORS.positive : PPT_COLORS.haraldRed,
       align: "center", valign: "middle", margin: 0,
     });
   }

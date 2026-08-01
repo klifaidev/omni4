@@ -111,7 +111,8 @@ import {
   dataSourceDescription,
   dataSourceLabel,
 } from "@/lib/slideDataSourceTheme";
-import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { fitCanvasScale } from "@/lib/canvasFit";
+import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import {
   getCustomSlideBlockText,
   getCustomSlideSpeakerNotesText,
@@ -611,8 +612,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         : 24;
       const availW = Math.max(el.clientWidth - paddingX, 100);
       const availH = Math.max(el.clientHeight - paddingY - shellMarginY, 100);
-      const s = Math.min(availW / CANVAS_W, availH / CANVAS_H);
-      setFitScale(s > 0 ? s : 0.1);
+      setFitScale(fitCanvasScale(availW, availH));
     }
     compute();
     const ro = new ResizeObserver(compute);
@@ -846,7 +846,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (!canEdit()) return;
     const title = (text: string, x: number, y: number, w: number, h: number, size = 34) => ({
       ...(newBlock("title", 0) as TitleBlock),
-      id: localId(), x, y, w, h, text, size, bold: true, color: "C8102E", align: "left",
+      id: localId(), x, y, w, h, text, size, bold: true, color: SLIDE_PPT_HEX.chart1, align: "left",
     }) as CustomBlock;
     const text = (content: string, x: number, y: number, w: number, h: number, size = 18) => ({
       ...(newBlock("text", 0) as TextBlock),
@@ -940,7 +940,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         size: 24,
         bold: true,
         italic: false,
-        color: "C8102E",
+        color: SLIDE_PPT_HEX.chart1,
         align: "left",
         letterSpacing: 0,
         lineHeight: 1.05,
@@ -1023,7 +1023,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         size: 28,
         bold: true,
         italic: false,
-        color: "C8102E",
+        color: SLIDE_PPT_HEX.chart1,
         align: "left",
         letterSpacing: 0,
         lineHeight: 1.05,

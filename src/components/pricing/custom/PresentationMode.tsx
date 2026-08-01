@@ -23,7 +23,8 @@ import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock 
 import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
-import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { fitCanvasScale } from "@/lib/canvasFit";
+import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
@@ -142,7 +143,7 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
 
   const slide = slides[idx];
   const prevSlide = prevIdx !== null ? slides[prevIdx] : null;
-  const factor = Math.min(screen.w / CANVAS_W, screen.h / CANVAS_H) * 0.95;
+  const factor = fitCanvasScale(screen.w, screen.h, { safetyMultiplier: 0.95 });
   const progress = slides.length > 1 ? ((idx + 1) / slides.length) * 100 : 100;
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
 

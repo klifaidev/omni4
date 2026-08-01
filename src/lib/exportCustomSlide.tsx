@@ -8,6 +8,8 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import { CANVAS_W, CANVAS_H, type CustomSlideConfig } from "./customSlide";
+import { fitCanvasScale } from "./canvasFit";
+import { PPT_COLORS } from "./slideColors";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 
@@ -210,13 +212,14 @@ async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvas
 
 async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
   const exportConfig = await prepareConfigForExport(config);
+  const hostScale = fitCanvasScale(CANVAS_W, CANVAS_H);
   const host = document.createElement("div");
   host.style.cssText = [
     "position:fixed",
     "left:0",
     `top:-${CANVAS_H + 200}px`,
-    `width:${CANVAS_W}px`,
-    `height:${CANVAS_H}px`,
+    `width:${CANVAS_W * hostScale}px`,
+    `height:${CANVAS_H * hostScale}px`,
     "background:#FFFFFF",
     "overflow:hidden",
     "pointer-events:none",
@@ -266,6 +269,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
 async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvasElement> {
   const captureW = CANVAS_W * LEGACY_SCALE;
   const captureH = CANVAS_H * LEGACY_SCALE;
+  const legacyFitScale = fitCanvasScale(captureW, captureH);
   const host = document.createElement("div");
   host.style.cssText = [
     "position:fixed",
@@ -295,7 +299,7 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
                 style: {
                   width: CANVAS_W,
                   height: CANVAS_H,
-                  transform: `scale(${LEGACY_SCALE})`,
+                  transform: `scale(${legacyFitScale})`,
                   transformOrigin: "top left",
                 },
               },
@@ -351,7 +355,7 @@ export async function addCustomSlide(
       h: 1,
       fontFace: "Calibri",
       fontSize: 18,
-      color: "C8102E",
+      color: PPT_COLORS.haraldRed,
       align: "center",
       valign: "middle",
     });

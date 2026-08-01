@@ -30,7 +30,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, Line, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { SLIDE_CHART_PALETTE, SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { SLIDE_CHART_PALETTE, SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 import { formatPct, formatTon, formatNum } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
