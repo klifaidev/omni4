@@ -86,7 +86,7 @@ import { newId } from "@/lib/slidesFlow";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { resolveTableFit, type FitInfo } from "@/lib/customCapacity";
+import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/customCapacity";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
@@ -4238,8 +4238,7 @@ function TableBlockEditor({ block, onChange }: {
     const patch: Partial<typeof block> = { showOthers: v };
     if (v && fit.truncated) {
       const extraRows = 1; // linha "Outros"
-      const ROW_H = 26;
-      const needed = block.h + extraRows * ROW_H + 4;
+      const needed = tableHeightWithExtraRows(block, fit.shown, extraRows);
       const maxH = CANVAS_H - block.y;
       patch.h = Math.min(maxH, needed);
     }

@@ -2,8 +2,8 @@
 // Calcula quantas linhas/séries cabem em um bloco com base na altura,
 // para alimentar o auto-fit e o alerta de truncamento.
 
-const TABLE_HEADER_H = 36;
-const TABLE_ROW_H = 26;
+export const TABLE_HEADER_H = 36;
+export const TABLE_ROW_H = 26;
 const TITLE_H = 32;
 
 /** Quantas linhas de dados cabem em uma tabela com cabeçalho. */
@@ -35,14 +35,30 @@ import type { TableBlock, ChartBlock, TopSkuBlock } from "./customSlide";
 export interface FitInfo { shown: number; total: number; truncated: boolean }
 
 export function resolveTableFit(block: TableBlock, totalRows: number): FitInfo {
-  const titleSize = block.title ? Math.max(14, block.titleSize ?? 18) : 0;
-  const titleGap = block.title ? titleSize + 12 : 0;
+  const titleGap = tableTitleGap(block);
   const cap = tableCapacity(Math.max(TABLE_HEADER_H + TABLE_ROW_H + 4, block.h - titleGap));
   const limit = block.autoFit !== false
     ? cap
     : Math.max(1, block.maxRows ?? cap);
   const shown = Math.min(limit, totalRows);
   return { shown, total: totalRows, truncated: totalRows > shown };
+}
+
+export function tableTitleGap(block: TableBlock): number {
+  const titleSize = block.title ? Math.max(14, block.titleSize ?? 18) : 0;
+  return block.title ? titleSize + 12 : 0;
+}
+
+export function effectiveTableRowHeight(block: TableBlock, shownRows: number): number {
+  if (block.autoFit !== false) return TABLE_ROW_H;
+  const rows = Math.max(1, shownRows);
+  const usable = block.h - tableTitleGap(block) - TABLE_HEADER_H - 4;
+  return Math.max(1, usable / rows);
+}
+
+export function tableHeightWithExtraRows(block: TableBlock, shownRows: number, extraRows: number): number {
+  const rowH = effectiveTableRowHeight(block, shownRows);
+  return block.h + Math.max(0, extraRows) * rowH + 4;
 }
 
 export function resolveTopSkuFit(block: TopSkuBlock, totalItems: number): FitInfo {
