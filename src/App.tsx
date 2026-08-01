@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -15,7 +16,6 @@ import Inovacao from "./pages/Inovacao.tsx";
 import MargemTarget from "./pages/MargemTarget.tsx";
 import Budget from "./pages/Budget.tsx";
 import Rolling from "./pages/Rolling.tsx";
-import SlidesBeta from "./pages/SlidesBeta.tsx";
 import Abc from "./pages/Abc.tsx";
 import Detalhe from "./pages/Detalhe.tsx";
 import Upload from "./pages/Upload.tsx";
@@ -27,6 +27,20 @@ import Estoque from "./pages/Estoque.tsx";
 import Positivacao from "./pages/Positivacao.tsx";
 import FarolCadastro from "./pages/FarolCadastro.tsx";
 import NotFound from "./pages/NotFound.tsx";
+
+const SlidesBeta = lazy(() => import("./pages/SlidesBeta.tsx"));
+
+function SlidesRouteFallback() {
+  return (
+    <div className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-background px-6">
+      <div className="w-full max-w-sm rounded-lg border border-border/70 bg-card/90 p-5 text-center shadow-sm">
+        <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <p className="text-sm font-medium text-foreground">Carregando Slides</p>
+        <p className="mt-1 text-xs text-muted-foreground">Preparando o editor e os recursos de exportacao.</p>
+      </div>
+    </div>
+  );
+}
 
 const App = () => (
   <TooltipProvider>
@@ -56,7 +70,14 @@ const App = () => (
             <Route path="/estoque" element={<Estoque />} />
             <Route path="/positivacao" element={<Positivacao />} />
             <Route path="/farol" element={<FarolCadastro />} />
-            <Route path="/slides" element={<SlidesBeta />} />
+            <Route
+              path="/slides"
+              element={(
+                <Suspense fallback={<SlidesRouteFallback />}>
+                  <SlidesBeta />
+                </Suspense>
+              )}
+            />
             <Route path="/upload" element={<Upload />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

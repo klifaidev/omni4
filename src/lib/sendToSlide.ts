@@ -17,8 +17,15 @@ export interface SendToSlidePayload {
 
 export const SEND_TO_SLIDE_EVENT = "omni:send-to-slide:capture";
 
+let latestSendToSlidePayload: SendToSlidePayload | null = null;
+
+export function getLatestSendToSlidePayload() {
+  return latestSendToSlidePayload;
+}
+
 export function captureSendToSlide(payload: SendToSlidePayload) {
   const detail = { ...payload, capturedAt: new Date().toISOString() };
+  latestSendToSlidePayload = detail;
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(SEND_TO_SLIDE_EVENT, { detail }));
   }

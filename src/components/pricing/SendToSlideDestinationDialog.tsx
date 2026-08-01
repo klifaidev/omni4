@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScaledPreview, warmSlideThumbnail } from "@/components/pricing/SlidePreview";
 import {
   SEND_TO_SLIDE_EVENT,
+  getLatestSendToSlidePayload,
   type SendToSlidePayload,
 } from "@/lib/sendToSlide";
 import {
@@ -48,6 +49,17 @@ export function SendToSlideDestinationDialog() {
   const visualIndex = useMemo(() => makeVisualIndex(items, recentSlideId), [items, recentSlideId]);
 
   useEffect(() => {
+    const latest = getLatestSendToSlidePayload();
+    if (latest) {
+      setPayload(latest);
+      const recent = useSlidesFlow.getState().selectedId;
+      const currentItems = useSlidesFlow.getState().items;
+      const canUseRecent = recent
+        ? currentItems.some((item) => item.id === recent && canApplySendToSlideToExistingSlide(item, latest))
+        : false;
+      setDestination(canUseRecent && recent ? recent : "new");
+    }
+
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<SendToSlidePayload>).detail;
       if (!detail) return;

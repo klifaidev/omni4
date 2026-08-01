@@ -17,14 +17,7 @@ import { useBudget } from "@/store/budget";
 import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
-import {
-  addBridgePvmSlides,
-  addBudgetEvoSlide,
-  addCoverSlide,
-  type SlideFlowItem,
-  type BudgetEvoRow,
-} from "./exportPpt";
-import { addCustomSlide } from "./exportCustomSlide";
+import type { SlideFlowItem, BudgetEvoRow } from "./exportPpt";
 import { defaultCustomSlide, type CustomSlideConfig } from "./customSlide";
 
 // ---------------------------------------------------------------------------
@@ -182,6 +175,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
             if (!ytd) {
               throw new Error(`Bridge PVM "${item.label}": sem dados Real/Budget suficientes para YTD.`);
             }
+            const { addBridgePvmSlides } = await import("./exportPpt");
             await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
             return;
           }
@@ -197,6 +191,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
               }
             : undefined;
           const result = calcPVM(filtered, ctx.metric, cfg.base, cfg.comp, cfg.mode, labels);
+          const { addBridgePvmSlides } = await import("./exportPpt");
           await addBridgePvmSlides(pptx, result, filtered, { onlyOverview: true });
         },
       };
@@ -210,6 +205,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
             throw new Error(`Budget Evolutivo "${item.label}": sem dados para o range selecionado.`);
           }
           const accum = computeBudgetEvoAccumGap(monthly);
+          const { addBudgetEvoSlide } = await import("./exportPpt");
           await addBudgetEvoSlide(pptx, monthly, accum);
         },
       };
@@ -218,6 +214,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       const cfg = item.config;
       return {
         build: async (pptx) => {
+          const { addCoverSlide } = await import("./exportPpt");
           await addCoverSlide(pptx, {
             title: cfg.title || "Apresentação",
             subtitle: cfg.subtitle,
@@ -231,6 +228,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       const id = item.id;
       return {
         build: async (pptx) => {
+          const { addCustomSlide } = await import("./exportCustomSlide");
           await addCustomSlide(pptx, cfg, { slideId: id });
         },
       };

@@ -1,13 +1,12 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { UpdateNotification } from "@/components/UpdateNotification";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Sidebar } from "@/components/pricing/Sidebar";
 import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import { NoResultsBanner } from "@/components/pricing/NoResultsBanner";
 import { ShortcutsHelp } from "@/components/pricing/ShortcutsHelp";
 import { CommandPalette } from "@/components/pricing/CommandPalette";
-import { SendToSlideDestinationDialog } from "@/components/pricing/SendToSlideDestinationDialog";
 import { useCommandPalette } from "@/store/commandPalette";
 import { useNotifications } from "@/store/notifications";
 import { loadState as loadKanban } from "@/lib/kanban";
@@ -18,6 +17,11 @@ import { useHistory } from "@/store/history";
 import { useMonthsInfo } from "@/store/selectors";
 import { PAGE_LABELS, NON_HISTORY_PATHS } from "@/lib/pageMeta";
 import { hasShareParams, parseShareParams } from "@/lib/shareUrl";
+import { SEND_TO_SLIDE_EVENT, getLatestSendToSlidePayload } from "@/lib/sendToSlide";
+
+const SendToSlideDestinationDialog = lazy(() => import("@/components/pricing/SendToSlideDestinationDialog").then((mod) => ({
+  default: mod.SendToSlideDestinationDialog,
+})));
 
 const NAV_MAP: Record<string, { path: string; label: string }> = {
   h: { path: "/", label: "Home" },
@@ -51,6 +55,7 @@ export default function AppShell() {
   const setFilter = usePricing((s) => s.setFilter);
   const setSelectedPeriods = usePricing((s) => s.setSelectedPeriods);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [sendToSlideDialogEnabled, setSendToSlideDialogEnabled] = useState(() => getLatestSendToSlidePayload() !== null);
   const commandOpen = useCommandPalette((s) => s.open);
   const setCommandOpen = useCommandPalette((s) => s.setOpen);
 
@@ -73,6 +78,12 @@ export default function AppShell() {
     const cleanUrl = window.location.pathname + window.location.hash;
     window.history.replaceState({}, "", cleanUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const enableDialog = () => setSendToSlideDialogEnabled(true);
+    window.addEventListener(SEND_TO_SLIDE_EVENT, enableDialog);
+    return () => window.removeEventListener(SEND_TO_SLIDE_EVENT, enableDialog);
   }, []);
 
   // Registra a página visitada no histórico (debounced para capturar filtros já aplicados)
@@ -272,7 +283,11 @@ export default function AppShell() {
       </main>
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
-      <SendToSlideDestinationDialog />
+      {sendToSlideDialogEnabled && (
+        <Suspense fallback={null}>
+          <SendToSlideDestinationDialog />
+        </Suspense>
+      )}
       <UpdateNotification />
     </div>
   );

@@ -8,7 +8,6 @@ import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import { applyFilters, calcPVM, type PVMResult, type PVMSkuDetail } from "@/lib/analytics";
 import { exportPvmCsv } from "@/lib/exportCsv";
-import { exportBridgePvmPpt } from "@/lib/exportPpt";
 import { formatBRL } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -260,6 +259,7 @@ export default function BridgePvm() {
                   onClick={async () => {
                     try {
                       setExportingPpt(true);
+                      const { exportBridgePvmPpt } = await import("@/lib/exportPpt");
                       await exportBridgePvmPpt(result, filtered);
                       toast.success("PPTX exportado com gráficos e tabelas editáveis.");
                     } catch (error) {

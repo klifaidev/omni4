@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { applyBudgetFilters } from "@/lib/budget";
-import { exportBudgetEvoPpt } from "@/lib/exportPpt";
 import { toast } from "sonner";
 
 import { fiscalYearStartYear, isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fiscalYear";
@@ -756,6 +755,7 @@ export default function Budget() {
                 className="gap-2"
                 onClick={async () => {
                   try {
+                    const { exportBudgetEvoPpt } = await import("@/lib/exportPpt");
                     await exportBudgetEvoPpt(monthlyRange, accumGap);
                     toast.success("PPTX gerado com os 4 evolutivos.");
                   } catch (e) {
