@@ -7,6 +7,7 @@ import {
   getCustomSlideBlockText,
   getCustomSlideYDocParts,
   insertCustomSlideBlock,
+  insertCustomSlideBlocks,
   patchCustomSlideBlock,
   removeCustomSlideBlock,
   replaceCustomSlideYDoc,
@@ -147,6 +148,49 @@ describe("customSlideYjs", () => {
     expect(titleMap?.constructor.name).toBe("YMap");
     expect(titleTexts?.constructor.name).toBe("YMap");
     expect(notes?.constructor.name).toBe("YText");
+  });
+
+  it("registers groups when inserting pre-grouped blocks into a Y.Doc", () => {
+    const doc = customSlideConfigToYDoc(sampleConfig);
+    const blocks = [
+      {
+        id: "story-bg",
+        kind: "shape",
+        x: 60,
+        y: 150,
+        w: 520,
+        h: 235,
+        z: 5,
+        shape: "roundRect",
+        fill: "FFF7F8",
+        groupId: "story-group",
+      },
+      {
+        id: "story-title",
+        kind: "title",
+        x: 88,
+        y: 172,
+        w: 460,
+        h: 38,
+        z: 6,
+        text: "Insight executivo",
+        size: 24,
+        bold: true,
+        color: "C8102E",
+        align: "left",
+        groupId: "story-group",
+      },
+    ] as CustomSlideConfig["blocks"];
+
+    insertCustomSlideBlocks(doc, blocks);
+    const restored = yDocToCustomSlideConfig(doc);
+
+    expect(restored.groups).toEqual([
+      { id: "group-1", memberIds: ["title-1", "text-1"] },
+      { id: "story-group", memberIds: ["story-bg", "story-title"] },
+    ]);
+    expect(restored.blocks.find((block) => block.id === "story-bg")?.groupId).toBe("story-group");
+    expect(restored.blocks.find((block) => block.id === "story-title")?.groupId).toBe("story-group");
   });
 
   it("reflects Y.Text edits back into the plain CustomSlideConfig", () => {

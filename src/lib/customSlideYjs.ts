@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { mergeGroupsFromBlocks } from "@/lib/customBlockGroups";
 import type { CustomBlock, CustomSlideConfig } from "@/lib/customSlide";
 
 type JsonObject = Record<string, unknown>;
@@ -185,18 +186,20 @@ export function getCustomSlideBlockMap(doc: Y.Doc, blockId: string): Y.Map<unkno
 }
 
 export function insertCustomSlideBlock(doc: Y.Doc, block: CustomBlock, index?: number): string {
-  const { blockOrder, blocks } = getParts(doc);
+  const { meta, blockOrder, blocks } = getParts(doc);
   doc.transact(() => {
     if (blocks.has(block.id)) return;
     const safeIndex = Math.max(0, Math.min(index ?? blockOrder.length, blockOrder.length));
     blocks.set(block.id, blockToYMap(block));
     blockOrder.insert(safeIndex, [block.id]);
+    const nextGroups = mergeGroupsFromBlocks(meta.get("groups") as CustomSlideConfig["groups"] | undefined, [block]);
+    if (nextGroups !== meta.get("groups")) meta.set("groups", nextGroups);
   });
   return block.id;
 }
 
 export function insertCustomSlideBlocks(doc: Y.Doc, newBlocks: CustomBlock[], index?: number): string[] {
-  const { blockOrder, blocks } = getParts(doc);
+  const { meta, blockOrder, blocks } = getParts(doc);
   const ids: string[] = [];
   doc.transact(() => {
     let insertAt = Math.max(0, Math.min(index ?? blockOrder.length, blockOrder.length));
@@ -207,6 +210,10 @@ export function insertCustomSlideBlocks(doc: Y.Doc, newBlocks: CustomBlock[], in
       ids.push(block.id);
       insertAt += 1;
     });
+    const insertedBlocks = newBlocks.filter((block) => ids.includes(block.id));
+    const currentGroups = meta.get("groups") as CustomSlideConfig["groups"] | undefined;
+    const nextGroups = mergeGroupsFromBlocks(currentGroups, insertedBlocks);
+    if (nextGroups !== currentGroups) meta.set("groups", nextGroups);
   });
   return ids;
 }

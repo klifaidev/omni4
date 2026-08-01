@@ -18,6 +18,7 @@ import { useShallow } from "zustand/react/shallow";
 import { temporal } from "zundo";
 import { useEffect, useState } from "react";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf } from "@/lib/slidesPerfCounters";
+import { mergeGroupsFromBlocks } from "@/lib/customBlockGroups";
 import type {
   BlockGroup,
   CustomBlock,
@@ -280,7 +281,11 @@ export function insertBlocksAction(blocks: CustomBlock[], label: EditorActionLab
   if (!cur || blocks.length === 0) return [];
   const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
   const next = blocks.map((blk, idx) => ({ ...blk, z: zTop + idx + 1 }) as CustomBlock);
-  mutate(label, (c) => ({ ...c, blocks: [...c.blocks, ...next] }));
+  mutate(label, (c) => ({
+    ...c,
+    blocks: [...c.blocks, ...next],
+    groups: mergeGroupsFromBlocks(c.groups, next),
+  }));
   return next.map((blk) => blk.id);
 }
 

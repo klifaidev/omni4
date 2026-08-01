@@ -330,6 +330,11 @@ function localId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function asNewBlockGroup(blocks: CustomBlock[]): CustomBlock[] {
+  const groupId = localId();
+  return blocks.map((block) => ({ ...block, groupId }) as CustomBlock);
+}
+
 function normalizePaletteText(value: string): string {
   return value
     .normalize("NFD")
@@ -910,7 +915,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const addInsightCard = () => {
     const x = 60;
     const y = 150;
-    const blocks: CustomBlock[] = [
+    const blocks = asNewBlockGroup([
       {
         id: localId(), kind: "shape",
         x, y, w: 520, h: 235, z: 1,
@@ -979,21 +984,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         backgroundColor: "FFE4E6",
         borderRadius: 8,
       } as CustomBlock,
-    ];
+    ]);
     if (collabYDoc) {
       insertYBlocks(blocks);
       return;
     }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
-      groupBlocksAction(ids);
       setSelection(ids);
     }
   };
   const addExecutiveSummaryCard = () => {
     const x = 60;
     const y = 90;
-    const blocks: CustomBlock[] = [
+    const blocks = asNewBlockGroup([
       {
         id: localId(), kind: "shape",
         x, y, w: 1180, h: 230, z: 1,
@@ -1092,21 +1096,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         backgroundColor: "FFFFFF",
         borderRadius: 10,
       } as CustomBlock,
-    ];
+    ]);
     if (collabYDoc) {
       insertYBlocks(blocks);
       return;
     }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
-      groupBlocksAction(ids);
       setSelection(ids);
     }
   };
   const addDecisionCard = () => {
     const x = 610;
     const y = 150;
-    const blocks: CustomBlock[] = [
+    const blocks = asNewBlockGroup([
       {
         id: localId(), kind: "shape",
         x, y, w: 520, h: 235, z: 1,
@@ -1205,21 +1208,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         backgroundColor: "FFE4E6",
         borderRadius: 8,
       } as CustomBlock,
-    ];
+    ]);
     if (collabYDoc) {
       insertYBlocks(blocks);
       return;
     }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
-      groupBlocksAction(ids);
       setSelection(ids);
     }
   };
   const addRiskOpportunityCard = () => {
     const x = 60;
     const y = 420;
-    const blocks: CustomBlock[] = [
+    const blocks = asNewBlockGroup([
       {
         id: localId(), kind: "shape",
         x, y, w: 520, h: 190, z: 1,
@@ -1287,14 +1289,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         backgroundColor: "",
         borderRadius: 0,
       } as CustomBlock,
-    ];
+    ]);
     if (collabYDoc) {
       insertYBlocks(blocks);
       return;
     }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
-      groupBlocksAction(ids);
       setSelection(ids);
     }
   };
