@@ -111,7 +111,6 @@ import {
   dataSourceDescription,
   dataSourceLabel,
 } from "@/lib/slideDataSourceTheme";
-import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import {
   getCustomSlideBlockText,
@@ -295,7 +294,8 @@ import {
   type AlignKind,
   type EditorActionLabel,
 } from "./editorStore";
-import { useEditorPrefs, snapToGrid, type GridSize, setEditorPrefs, getEditorPrefs } from "./editorPrefs";
+import { snapToGrid, type GridSize } from "./editorPrefs";
+import { useSlideEditorScale } from "./useSlideEditorScale";
 import { getTheme, type SlideTheme } from "@/lib/slideThemes";
 import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
@@ -490,7 +490,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       selectedCount: selectedIds.length,
     });
   });
-  const prefs = useEditorPrefs();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasShellRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const paletteRailRef = useRef<HTMLDivElement>(null);
+  const scaleRef = useRef(1);
+  const { prefs, scale, scaleKey } = useSlideEditorScale(wrapperRef, canvasShellRef);
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
@@ -520,7 +525,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   });
   const [canvasHovered, setCanvasHovered] = useState(false);
 
-  const [fitScale, setFitScale] = useState(1);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
   const guidesRef = useRef(guides);
   const pendingGuidesRef = useRef(guides);
@@ -538,12 +542,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       setInlineEditId(null);
     }
   }, [inlineEditId, config.blocks]);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const canvasShellRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const paletteRailRef = useRef<HTMLDivElement>(null);
-  const scaleRef = useRef(1);
-
   const openPaletteCategory = useCallback((category: PaletteCategory) => {
     setActivePaletteCategory(category);
     setPalettePanelOpen((open) => !(open && activePaletteCategory === category));
@@ -603,50 +601,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
   }, []);
 
-  // Calcula a escala para caber no contêiner mantendo a proporção 16:9
-  useLayoutEffect(() => {
-    function compute() {
-      const el = wrapperRef.current;
-      if (!el) return;
-      const styles = getComputedStyle(el);
-      const paddingX = parseFloat(styles.paddingLeft || "0") + parseFloat(styles.paddingRight || "0");
-      const paddingY = parseFloat(styles.paddingTop || "0") + parseFloat(styles.paddingBottom || "0");
-      const shellStyles = canvasShellRef.current ? getComputedStyle(canvasShellRef.current) : null;
-      const shellMarginY = shellStyles
-        ? parseFloat(shellStyles.marginTop || "0") + parseFloat(shellStyles.marginBottom || "0")
-        : 24;
-      const availW = Math.max(el.clientWidth - paddingX, 100);
-      const availH = Math.max(el.clientHeight - paddingY - shellMarginY, 100);
-      setFitScale(fitCanvasScale(availW, availH));
-    }
-    compute();
-    const ro = new ResizeObserver(compute);
-    if (wrapperRef.current) ro.observe(wrapperRef.current);
-    return () => ro.disconnect();
-  }, []);
-
   useEffect(() => {
     if (!slideId) return;
     registerCustomCanvas(slideId, canvasRef.current);
     return () => registerCustomCanvas(slideId, null);
   }, [slideId]);
 
-  // Ctrl+scroll to zoom canvas (reads/writes module-level prefs to avoid stale closure)
-  useEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setEditorPrefs({ zoom: Math.min(1.5, Math.max(0.5, getEditorPrefs().zoom + delta)) });
-    };
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, []);
-
-  const scale = fitScale * prefs.zoom;
-  const scaleKey = Math.round(scale * 1000);
   scaleRef.current = scale;
 
   const selected = selectedIds.length === 1
