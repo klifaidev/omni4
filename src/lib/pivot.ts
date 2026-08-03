@@ -84,19 +84,42 @@ function dimVal(row: Record<string, unknown>, dim: string): string {
   return String(v);
 }
 
-function aggregate(values: number[], fn: AggFn): number | null {
-  if (values.length === 0) return null;
+interface FieldAccumulator {
+  sum: number;
+  count: number;
+  min: number;
+  max: number;
+}
+
+function createAccumulator(value: number): FieldAccumulator {
+  return {
+    sum: value,
+    count: 1,
+    min: value,
+    max: value,
+  };
+}
+
+function addToAccumulator(acc: FieldAccumulator, value: number): void {
+  acc.sum += value;
+  acc.count += 1;
+  if (value < acc.min) acc.min = value;
+  if (value > acc.max) acc.max = value;
+}
+
+function aggregate(acc: FieldAccumulator | undefined, fn: AggFn): number | null {
+  if (!acc || acc.count === 0) return null;
   switch (fn) {
     case "sum":
-      return values.reduce((a, b) => a + b, 0);
+      return acc.sum;
     case "avg":
-      return values.reduce((a, b) => a + b, 0) / values.length;
+      return acc.sum / acc.count;
     case "count":
-      return values.length;
+      return acc.count;
     case "min":
-      return values.reduce((a, b) => a < b ? a : b, Infinity);
+      return acc.min;
     case "max":
-      return values.reduce((a, b) => a > b ? a : b, -Infinity);
+      return acc.max;
   }
 }
 
@@ -170,8 +193,9 @@ export function computePivot(
   const { headers: rowHeaders, keyOf: rowKeyOf } = buildHeaders(filtered, config.rows);
   const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filtered, config.cols);
 
-  // Buckets de valores brutos por (rowKey, colKey, measureField)
-  type Bucket = Record<string, number[]>;
+  // Buckets de acumuladores incrementais por (rowKey, colKey, measureField).
+  // Evita manter listas completas de valores brutos em memória.
+  type Bucket = Record<string, FieldAccumulator>;
   const cellBuckets = new Map<string, Map<string, Bucket>>();
   const rowBuckets = new Map<string, Bucket>();
   const colBuckets = new Map<string, Bucket>();
@@ -183,8 +207,8 @@ export function computePivot(
   }
 
   function pushBucket(b: Bucket, field: string, val: number) {
-    if (!b[field]) b[field] = [];
-    b[field].push(val);
+    if (!b[field]) b[field] = createAccumulator(val);
+    else addToAccumulator(b[field], val);
   }
 
   for (const r of filtered) {
@@ -223,7 +247,7 @@ export function computePivot(
     // primeiro, agregações diretas
     for (const m of config.values) {
       if (m.derive) continue;
-      out[m.id] = aggregate(b[m.field] ?? [], m.agg);
+      out[m.id] = aggregate(b[m.field], m.agg);
     }
     // depois, derivadas
     for (const m of config.values) {
