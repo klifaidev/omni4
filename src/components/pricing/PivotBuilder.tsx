@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   Columns3,
   Download,
   Eye,
@@ -41,11 +42,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { toast } from "sonner";
 
 type Zone = "rows" | "cols" | "values" | "filters";
 type VizMode = "heatmap" | "plain";
 type SortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
+type ShowAsMode = "normal" | "pctColuna" | "pctLinha" | "pctGeral";
 
 const DIM_GROUPS = ["Tempo", "Produto", "Inovação", "Comercial"] as const;
 
@@ -308,6 +318,38 @@ function fmtValue(measure: PivotMeasure, val: number | null | undefined): string
     case "tons": return `${formatNum(val / 1000, 1)} t`;
     default: return formatNum(val, 0, true);
   }
+}
+
+const SHOW_AS_OPTIONS: Array<{ mode: ShowAsMode; label: string }> = [
+  { mode: "normal", label: "Valor normal" },
+  { mode: "pctColuna", label: "Percentual do total da coluna" },
+  { mode: "pctLinha", label: "Percentual do total da linha" },
+  { mode: "pctGeral", label: "Percentual do total geral" },
+];
+
+function applyShowAs(
+  value: number | null | undefined,
+  mode: ShowAsMode,
+  totals: {
+    rowTotal?: number | null;
+    colTotal?: number | null;
+    grandTotal?: number | null;
+  },
+): number | null {
+  if (value === null || value === undefined || !isFinite(value)) return null;
+  if (mode === "normal") return value;
+  const divisor = mode === "pctColuna"
+    ? totals.colTotal
+    : mode === "pctLinha"
+      ? totals.rowTotal
+      : totals.grandTotal;
+  if (divisor === null || divisor === undefined || !isFinite(divisor) || divisor === 0) return null;
+  return value / divisor;
+}
+
+function fmtPivotDisplay(measure: PivotMeasure, val: number | null | undefined, mode: ShowAsMode): string {
+  if (mode === "normal") return fmtValue(measure, val);
+  return fmtValue({ ...measure, format: "percent" }, val);
 }
 
 function toneClass(tone?: PivotMeasure["tone"], val?: number | null) {
@@ -1325,22 +1367,9 @@ function PivotTable({
   highlightRow: string | null;
   setHighlightRow: (k: string | null) => void;
 }) {
-  if (measures.length === 0) {
-    return (
-      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 bg-card/20 text-sm">
-        <Sigma className="h-10 w-10 text-muted-foreground/40" />
-        <div className="text-muted-foreground">
-          Adicione ao menos uma medida em <span className="font-semibold text-foreground">Valores</span>
-        </div>
-        <div className="text-[11px] text-muted-foreground/60">
-          Clique em uma medida da paleta ou use um preset acima
-        </div>
-      </div>
-    );
-  }
-
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
   const cols = hasCols ? pivot.colHeaders : [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
+  const [showAsByMeasure, setShowAsByMeasure] = useState<Record<string, ShowAsMode>>({});
 
   const maxByMeasure = useMemo(() => {
     const map = new Map<string, number>();
@@ -1366,8 +1395,26 @@ function PivotTable({
     }
   }
 
+  function showAsFor(measureId: string): ShowAsMode {
+    return showAsByMeasure[measureId] ?? "normal";
+  }
+
   const cellPad = "py-1 px-2";
   const headerPad = "py-1.5 px-2";
+
+  if (measures.length === 0) {
+    return (
+      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 bg-card/20 text-sm">
+        <Sigma className="h-10 w-10 text-muted-foreground/40" />
+        <div className="text-muted-foreground">
+          Adicione ao menos uma medida em <span className="font-semibold text-foreground">Valores</span>
+        </div>
+        <div className="text-[11px] text-muted-foreground/60">
+          Clique em uma medida da paleta ou use um preset acima
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/30 shadow-sm">
@@ -1424,26 +1471,50 @@ function PivotTable({
               {cols.map((c) =>
                 measures.map((m) => {
                   const isSorted = sort && sort.col === c.key && sort.measure === m.id;
+                  const showAs = showAsFor(m.id);
                   return (
-                    <th
-                      key={`mh-${c.key}-${m.id}`}
-                      onClick={() => toggleSort(c.key, m.id)}
-                      className={cn(
-                        "cursor-pointer select-none border-b border-l border-border/40 bg-card/95 backdrop-blur text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary/80",
-                        headerPad,
-                        toneClass(m.tone),
-                        isSorted && "text-primary",
-                      )}
-                    >
-                      <span className="inline-flex items-center justify-end gap-1">
-                        {m.label}
-                        {isSorted ? (
-                          sort!.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                        ) : (
-                          <ArrowUpDown className="h-3 w-3 opacity-20" />
-                        )}
-                      </span>
-                    </th>
+                    <ContextMenu key={`mh-menu-${c.key}-${m.id}`}>
+                      <ContextMenuTrigger asChild>
+                        <th
+                          key={`mh-${c.key}-${m.id}`}
+                          onClick={() => toggleSort(c.key, m.id)}
+                          className={cn(
+                            "cursor-pointer select-none border-b border-l border-border/40 bg-card/95 backdrop-blur text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary/80",
+                            headerPad,
+                            toneClass(m.tone),
+                            isSorted && "text-primary",
+                            showAs !== "normal" && "bg-primary/10 text-primary",
+                          )}
+                          title="Clique para ordenar. Clique com o botão direito para mostrar valores como."
+                        >
+                          <span className="inline-flex items-center justify-end gap-1">
+                            {m.label}
+                            {showAs !== "normal" && (
+                              <span className="rounded-full bg-primary/15 px-1 text-[9px] normal-case tracking-normal text-primary">%</span>
+                            )}
+                            {isSorted ? (
+                              sort!.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 opacity-20" />
+                            )}
+                          </span>
+                        </th>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-64">
+                        <ContextMenuLabel>Mostrar valores como</ContextMenuLabel>
+                        <ContextMenuSeparator />
+                        {SHOW_AS_OPTIONS.map((option) => (
+                          <ContextMenuItem
+                            key={option.mode}
+                            onSelect={() => setShowAsByMeasure((prev) => ({ ...prev, [m.id]: option.mode }))}
+                            className="gap-2"
+                          >
+                            <Check className={cn("h-4 w-4", showAs === option.mode ? "opacity-100" : "opacity-0")} />
+                            <span>{option.label}</span>
+                          </ContextMenuItem>
+                        ))}
+                      </ContextMenuContent>
+                    </ContextMenu>
                   );
                 }),
               )}
@@ -1491,19 +1562,25 @@ function PivotTable({
                   {cols.map((c) => {
                     const cell = pivot.cells.get(rh.key)?.get(c.key) ?? {};
                     return measures.map((m) => {
-                      const v = cell[m.id] ?? null;
-                      const max = maxByMeasure.get(m.id) ?? 0;
+                      const rawValue = cell[m.id] ?? null;
+                      const showAs = showAsFor(m.id);
+                      const displayValue = applyShowAs(rawValue, showAs, {
+                        rowTotal: pivot.rowTotals.get(rh.key)?.[m.id],
+                        colTotal: pivot.colTotals.get(c.key)?.[m.id],
+                        grandTotal: pivot.grandTotal[m.id],
+                      });
+                      const max = showAs === "normal" ? (maxByMeasure.get(m.id) ?? 0) : 1;
                       return (
                         <td
                           key={`v-${rh.key}-${c.key}-${m.id}`}
-                          style={cellBg(viz, m, v, max)}
+                          style={cellBg(viz, m, displayValue, max)}
                           className={cn(
                             "border-l border-border/10 text-right tabular-nums transition-colors",
                             cellPad,
-                            toneClass(m.tone, v),
+                            toneClass(m.tone, displayValue),
                           )}
                         >
-                          {fmtValue(m, v)}
+                          {fmtPivotDisplay(m, displayValue, showAs)}
                         </td>
                       );
                     });
@@ -1512,6 +1589,39 @@ function PivotTable({
               );
             })}
           </tbody>
+          <tfoot className="sticky bottom-0 z-10">
+            <tr className="border-t border-border/50 bg-card/95 font-semibold shadow-[0_-8px_16px_rgba(15,23,42,0.08)] backdrop-blur">
+              <td
+                colSpan={Math.max(1, rowDims.length)}
+                className={cn("sticky left-0 z-[2] bg-card/95 text-left text-[10px] uppercase tracking-wider text-muted-foreground", cellPad)}
+              >
+                Total
+              </td>
+              {cols.map((c) =>
+                measures.map((m) => {
+                  const rawValue = pivot.colTotals.get(c.key)?.[m.id] ?? (c.key === "__all__" ? pivot.grandTotal[m.id] : null);
+                  const showAs = showAsFor(m.id);
+                  const displayValue = applyShowAs(rawValue, showAs, {
+                    rowTotal: pivot.grandTotal[m.id],
+                    colTotal: pivot.colTotals.get(c.key)?.[m.id],
+                    grandTotal: pivot.grandTotal[m.id],
+                  });
+                  return (
+                    <td
+                      key={`ft-${c.key}-${m.id}`}
+                      className={cn(
+                        "border-l border-border/20 text-right tabular-nums",
+                        cellPad,
+                        toneClass(m.tone, displayValue),
+                      )}
+                    >
+                      {fmtPivotDisplay(m, displayValue, showAs)}
+                    </td>
+                  );
+                }),
+              )}
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
