@@ -13,7 +13,7 @@ export interface PivotMeasure {
   field: string;
   agg: AggFn;
   /** formato de exibição */
-  format: "currency" | "number" | "percent" | "tons";
+  format: "currency" | "number" | "percent" | "tons" | "kg";
   /** classes opcionais para destacar (Real/Budget/delta) */
   tone?: "real" | "budget" | "delta" | "neutral";
   /** cálculo derivado a partir de outras medidas após agregação */

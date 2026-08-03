@@ -53,7 +53,7 @@ const DIM_GROUPS = ["Tempo", "Produto", "Inovação", "Comercial"] as const;
 function measuresFor(mode: PivotMode): PivotMeasure[] {
   const real: PivotMeasure[] = [
     { id: "rol_real", label: "ROL", field: "rol_real", agg: "sum", format: "currency", tone: "real" },
-    { id: "vol_real", label: "Volume", field: "volumeKg_real", agg: "sum", format: "tons", tone: "real" },
+    { id: "vol_real", label: "Volume", field: "volumeKg_real", agg: "sum", format: "kg", tone: "real" },
     { id: "cogs_real", label: "CPV", field: "cogs_real", agg: "sum", format: "currency", tone: "real" },
     { id: "cvar_real", label: "Custo Variável", field: "custoVariavel_real", agg: "sum", format: "currency", tone: "real" },
     { id: "cfix_real", label: "Custo Fixo", field: "custoFixo_real", agg: "sum", format: "currency", tone: "real" },
@@ -128,7 +128,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
   ];
   const budget: PivotMeasure[] = [
     { id: "rol_budget", label: "ROL", field: "rol_budget", agg: "sum", format: "currency", tone: "budget" },
-    { id: "vol_budget", label: "Volume", field: "volumeKg_budget", agg: "sum", format: "tons", tone: "budget" },
+    { id: "vol_budget", label: "Volume", field: "volumeKg_budget", agg: "sum", format: "kg", tone: "budget" },
     { id: "cm_budget", label: "CM", field: "cm_budget", agg: "sum", format: "currency", tone: "budget" },
     { id: "cpv_budget", label: "CPV", field: "cpv_budget", agg: "sum", format: "currency", tone: "budget" },
     {
@@ -185,8 +185,8 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
         return a.cm_real - a.cm_budget;
       },
     },
-    { id: "vol_real", label: "Vol Real", field: "volumeKg_real", agg: "sum", format: "tons", tone: "real" },
-    { id: "vol_budget", label: "Vol Budget", field: "volumeKg_budget", agg: "sum", format: "tons", tone: "budget" },
+    { id: "vol_real", label: "Vol Real", field: "volumeKg_real", agg: "sum", format: "kg", tone: "real" },
+    { id: "vol_budget", label: "Vol Budget", field: "volumeKg_budget", agg: "sum", format: "kg", tone: "budget" },
   ];
 
   return mode === "real" ? real : mode === "compare" ? compare : budget;
@@ -304,6 +304,7 @@ function fmtValue(measure: PivotMeasure, val: number | null | undefined): string
   switch (measure.format) {
     case "currency": return formatBRL(val, { compact: true });
     case "percent": return formatPct(val);
+    case "kg": return `${formatNum(val, 0, true)} kg`;
     case "tons": return `${formatNum(val / 1000, 1)} t`;
     default: return formatNum(val, 0, true);
   }
@@ -1547,6 +1548,7 @@ function ExportMenu({
     switch (format) {
       case "currency": return "#,##0.00";
       case "percent": return "0.00%";
+      case "kg": return "#,##0";
       case "tons": return "#,##0.000";
       default: return "#,##0.00";
     }
