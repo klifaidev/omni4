@@ -2,6 +2,16 @@
 // computa medidas em "values" e suporta filtros internos.
 // Genérico o suficiente para Real, Budget e Comparativo.
 
+/**
+ * `avg` calcula média aritmética simples dos valores linha a linha.
+ *
+ * Não use `avg` para medidas de razão/proporção como preço médio, margem %,
+ * R$/Kg ou qualquer indicador calculado por divisão entre duas grandezas.
+ * Nesses casos, agregue numerador e denominador com `sum` e calcule o resultado
+ * em `derive` (ex.: soma ROL / soma Volume). Usar `avg` sobre uma razão
+ * pré-calculada por linha gera média de médias, que fica estatisticamente
+ * incorreta quando volume, quantidade ou peso variam entre itens agregados.
+ */
 export type AggFn = "sum" | "avg" | "count" | "min" | "max";
 
 export interface PivotMeasure {
