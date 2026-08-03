@@ -74,6 +74,10 @@ const ZONE_LABELS: Record<Zone, string> = {
   values: "Valores",
 };
 
+const PIVOT_VIRTUAL_ROW_THRESHOLD = 200;
+const PIVOT_VIRTUAL_ROW_HEIGHT = 28;
+const PIVOT_VIRTUAL_OVERSCAN = 12;
+
 const DIM_GROUPS = ["Tempo", "Produto", "Inovação", "Comercial"] as const;
 
 // ---------- Catálogo de medidas por modo ----------
@@ -1497,6 +1501,52 @@ function PivotTable({
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
   const cols = hasCols ? pivot.colHeaders : [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
   const [showAsByMeasure, setShowAsByMeasure] = useState<Record<string, ShowAsMode>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const totalColumnCount = Math.max(1, rowDims.length) + cols.length * measures.length;
+  const shouldVirtualize = sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const updateViewport = () => setViewportHeight(el.clientHeight);
+    updateViewport();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const virtualRange = useMemo(() => {
+    if (!shouldVirtualize) {
+      return {
+        rows: sortedRows,
+        start: 0,
+        topSpacer: 0,
+        bottomSpacer: 0,
+      };
+    }
+
+    const visibleCount = Math.ceil(Math.max(viewportHeight, PIVOT_VIRTUAL_ROW_HEIGHT) / PIVOT_VIRTUAL_ROW_HEIGHT);
+    const maxStart = Math.max(0, sortedRows.length - 1);
+    const start = Math.min(
+      maxStart,
+      Math.max(0, Math.floor(scrollTop / PIVOT_VIRTUAL_ROW_HEIGHT) - PIVOT_VIRTUAL_OVERSCAN),
+    );
+    const end = Math.min(
+      sortedRows.length,
+      start + visibleCount + PIVOT_VIRTUAL_OVERSCAN * 2,
+    );
+
+    return {
+      rows: sortedRows.slice(start, end),
+      start,
+      topSpacer: start * PIVOT_VIRTUAL_ROW_HEIGHT,
+      bottomSpacer: Math.max(0, (sortedRows.length - end) * PIVOT_VIRTUAL_ROW_HEIGHT),
+    };
+  }, [scrollTop, shouldVirtualize, sortedRows, viewportHeight]);
 
   const maxByMeasure = useMemo(() => {
     const map = new Map<string, number>();
@@ -1545,7 +1595,13 @@ function PivotTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/30 shadow-sm">
-      <div className="relative max-h-[68vh] overflow-auto">
+      <div
+        ref={scrollRef}
+        className="relative max-h-[68vh] overflow-auto"
+        onScroll={(e) => {
+          if (shouldVirtualize) setScrollTop(e.currentTarget.scrollTop);
+        }}
+      >
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-20">
             {hasCols && (
@@ -1651,18 +1707,25 @@ function PivotTable({
             {sortedRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={Math.max(1, rowDims.length) + cols.length * measures.length}
+                  colSpan={totalColumnCount}
                   className="px-3 py-12 text-center text-sm text-muted-foreground"
                 >
                   Sem dados para exibir. Ajuste filtros ou desative "ocultar linhas vazias".
                 </td>
               </tr>
             )}
-            {sortedRows.map((rh, i) => {
+            {shouldVirtualize && virtualRange.topSpacer > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={totalColumnCount} style={{ height: virtualRange.topSpacer, padding: 0, border: 0 }} />
+              </tr>
+            )}
+            {virtualRange.rows.map((rh, virtualIndex) => {
+              const i = virtualRange.start + virtualIndex;
               const isHL = highlightRow === rh.key;
               return (
                 <tr
                   key={rh.key}
+                  style={shouldVirtualize ? { height: PIVOT_VIRTUAL_ROW_HEIGHT } : undefined}
                   onMouseEnter={() => setHighlightRow(rh.key)}
                   onMouseLeave={() => setHighlightRow(null)}
                   className={cn(
@@ -1715,6 +1778,11 @@ function PivotTable({
                 </tr>
               );
             })}
+            {shouldVirtualize && virtualRange.bottomSpacer > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={totalColumnCount} style={{ height: virtualRange.bottomSpacer, padding: 0, border: 0 }} />
+              </tr>
+            )}
           </tbody>
           <tfoot className="sticky bottom-0 z-10">
             <tr className="border-t border-border/50 bg-card/95 font-semibold shadow-[0_-8px_16px_rgba(15,23,42,0.08)] backdrop-blur">
