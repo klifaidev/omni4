@@ -16,6 +16,7 @@ import {
   Hash,
   Layers,
   Loader2,
+  MoreHorizontal,
   Plus,
   RotateCcw,
   Rows3,
@@ -41,6 +42,14 @@ import type { BudgetRow } from "@/lib/budget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
@@ -56,6 +65,14 @@ type Zone = "rows" | "cols" | "values" | "filters";
 type VizMode = "heatmap" | "plain";
 type SortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
 type ShowAsMode = "normal" | "pctColuna" | "pctLinha" | "pctGeral";
+type PivotFieldKind = "dimension" | "measure";
+
+const ZONE_LABELS: Record<Zone, string> = {
+  filters: "Filtros",
+  rows: "Linhas",
+  cols: "Colunas",
+  values: "Valores",
+};
 
 const DIM_GROUPS = ["Tempo", "Produto", "Inovação", "Comercial"] as const;
 
@@ -560,6 +577,18 @@ export function PivotBuilder({
     else if (zone === "filters") setFilterDims((p) => (p.includes(id) ? p : [...p, id]));
   }
 
+  function canFieldMoveToZone(id: string, zone: Zone) {
+    return zone === "values" ? measureMap.has(id) : isDimension(id);
+  }
+
+  function moveFieldToZone(id: string, from: Zone, to: Zone) {
+    if (from === to || !canFieldMoveToZone(id, to)) return;
+    removeFromZone(id, from);
+    addToZone(id, to);
+    setDragging(null);
+    setDragOver(null);
+  }
+
   function quickAdd(id: string) {
     if (measureMap.has(id)) addToZone(id, "values");
     else if (isDimension(id)) addToZone(id, "rows");
@@ -867,6 +896,9 @@ export function PivotBuilder({
                     selected={selected}
                     onChange={(s) => setFilterVals((prev) => ({ ...prev, [id]: s }))}
                     onRemove={() => removeFromZone(id, "filters")}
+                    currentZone="filters"
+                    fieldKind="dimension"
+                    onMoveToZone={(zone) => moveFieldToZone(id, "filters", zone)}
                     draggable
                     onDragStart={() => setDragging({ id, from: "filters" })}
                     onDragOver={(e) => {
@@ -903,6 +935,9 @@ export function PivotBuilder({
                   label={dimMap.get(id)?.label ?? id}
                   closable
                   onRemove={() => removeFromZone(id, "cols")}
+                  currentZone="cols"
+                  fieldKind="dimension"
+                  onMoveToZone={(zone) => moveFieldToZone(id, "cols", zone)}
                   draggable
                   onDragStart={() => setDragging({ id, from: "cols" })}
                   onDragOverChip={(e) => {
@@ -936,6 +971,9 @@ export function PivotBuilder({
                   label={dimMap.get(id)?.label ?? id}
                   closable
                   onRemove={() => removeFromZone(id, "rows")}
+                  currentZone="rows"
+                  fieldKind="dimension"
+                  onMoveToZone={(zone) => moveFieldToZone(id, "rows", zone)}
                   draggable
                   onDragStart={() => setDragging({ id, from: "rows" })}
                   onDragOverChip={(e) => {
@@ -972,6 +1010,9 @@ export function PivotBuilder({
                     tone={m?.tone}
                     closable
                     onRemove={() => removeFromZone(id, "values")}
+                    currentZone="values"
+                    fieldKind="measure"
+                    onMoveToZone={(zone) => moveFieldToZone(id, "values", zone)}
                     draggable
                     onDragStart={() => setDragging({ id, from: "values" })}
                     onDragOverChip={(e) => {
@@ -1018,12 +1059,78 @@ function Hint({ children }: { children: React.ReactNode }) {
   return <span className="text-[11px] italic text-muted-foreground/60">{children}</span>;
 }
 
+function FieldMoveMenu({
+  label,
+  currentZone,
+  fieldKind,
+  onMoveToZone,
+  onRemove,
+}: {
+  label: string;
+  currentZone: Zone;
+  fieldKind: PivotFieldKind;
+  onMoveToZone: (zone: Zone) => void;
+  onRemove: () => void;
+}) {
+  const canMoveTo = (zone: Zone) => (fieldKind === "measure" ? zone === "values" : zone !== "values");
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="ml-0.5 rounded-full p-0.5 opacity-60 outline-none transition hover:bg-foreground/10 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60"
+          aria-label={`Ações de ${label}`}
+          title={`Mover ou remover ${label}`}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <MoreHorizontal className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel className="truncate text-xs">{label}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {(["rows", "cols", "values", "filters"] as Zone[]).map((zone) => {
+          const disabled = zone === currentZone || !canMoveTo(zone);
+          return (
+            <DropdownMenuItem
+              key={zone}
+              disabled={disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveToZone(zone);
+              }}
+              className="text-xs"
+            >
+              Mover para {ZONE_LABELS[zone]}
+            </DropdownMenuItem>
+          );
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="text-xs text-destructive focus:text-destructive"
+        >
+          Remover
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function Chip({
   label,
   tone,
   closable,
   faded,
   onRemove,
+  currentZone,
+  fieldKind,
+  onMoveToZone,
   onClick,
   draggable,
   onDragStart,
@@ -1036,6 +1143,9 @@ function Chip({
   closable?: boolean;
   faded?: boolean;
   onRemove?: () => void;
+  currentZone?: Zone;
+  fieldKind?: PivotFieldKind;
+  onMoveToZone?: (zone: Zone) => void;
   onClick?: () => void;
   draggable?: boolean;
   onDragStart?: () => void;
@@ -1079,7 +1189,16 @@ function Chip({
     >
       <GripVertical className="h-3 w-3 opacity-40 transition-opacity group-hover:opacity-80" />
       {label}
-      {closable && (
+      {currentZone && fieldKind && onMoveToZone && onRemove && (
+        <FieldMoveMenu
+          label={label}
+          currentZone={currentZone}
+          fieldKind={fieldKind}
+          onMoveToZone={onMoveToZone}
+          onRemove={onRemove}
+        />
+      )}
+      {closable && !currentZone && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1101,6 +1220,9 @@ function FilterChip({
   selected,
   onChange,
   onRemove,
+  currentZone,
+  fieldKind,
+  onMoveToZone,
   draggable,
   onDragStart,
   onDragEnd,
@@ -1113,6 +1235,9 @@ function FilterChip({
   selected: string[];
   onChange: (next: string[]) => void;
   onRemove: () => void;
+  currentZone: Zone;
+  fieldKind: PivotFieldKind;
+  onMoveToZone: (zone: Zone) => void;
   draggable?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
@@ -1262,13 +1387,15 @@ function FilterChip({
           </div>
         </PopoverContent>
       </Popover>
-      <button
-        onClick={onRemove}
-        className="rounded-r-full border border-l-0 border-border/60 bg-secondary/60 px-1.5 py-0.5 hover:bg-secondary"
-        aria-label="Remover filtro"
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <span className="inline-flex items-center rounded-r-full border border-l-0 border-border/60 bg-secondary/60 px-1 py-0.5">
+        <FieldMoveMenu
+          label={label}
+          currentZone={currentZone}
+          fieldKind={fieldKind}
+          onMoveToZone={onMoveToZone}
+          onRemove={onRemove}
+        />
+      </span>
     </span>
   );
 }
