@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 import { computePivot } from "./pivot";
 
 describe("computePivot weighted ratio measures", () => {
+  it("tracks original row indexes for cell drill-through without duplicating row objects", () => {
+    const rows = [
+      { categoria: "A", mes: "Jan", valor: 10, canal: "Direto" },
+      { categoria: "A", mes: "Jan", valor: 5, canal: "Online" },
+      { categoria: "A", mes: "Fev", valor: 7, canal: "Direto" },
+      { categoria: "B", mes: "Jan", valor: 3, canal: "Direto" },
+    ];
+
+    const pivot = computePivot(rows, {
+      rows: ["categoria"],
+      cols: ["mes"],
+      filters: { canal: ["Direto"] },
+      values: [
+        { id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" },
+      ],
+    });
+
+    expect(pivot.cells.get("A")?.get("Jan")?.valor).toBe(10);
+    expect(pivot.drillRows.get("A")?.get("Jan")).toEqual([0]);
+    expect(pivot.drillRows.get("A")?.get("Fev")).toEqual([2]);
+    expect(pivot.drillRows.get("B")?.get("Jan")).toEqual([3]);
+  });
+
   it("aggregates sum, avg, count, min and max from incremental accumulators", () => {
     const rows = [
       { categoria: "A", valor: 10 },

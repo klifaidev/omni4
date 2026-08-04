@@ -51,6 +51,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
@@ -60,6 +67,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { exportTableCsv } from "@/lib/exportCsv";
 import { toast } from "sonner";
 
 type Zone = "rows" | "cols" | "values" | "filters";
@@ -67,6 +75,13 @@ type VizMode = "heatmap" | "plain";
 type SortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
 type ShowAsMode = "normal" | "pctColuna" | "pctLinha" | "pctGeral";
 type PivotFieldKind = "dimension" | "measure";
+type PivotDetailRow = Record<string, unknown>;
+type DrillSelection = {
+  rowValues: string[];
+  colValues: string[];
+  measure: PivotMeasure;
+  rows: PivotDetailRow[];
+};
 
 const ZONE_LABELS: Record<Zone, string> = {
   filters: "Filtros",
@@ -428,6 +443,7 @@ export function PivotBuilder({
   const [sort, setSort] = useState<SortState>(null);
   const [highlightRow, setHighlightRow] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(true);
+  const [drillSelection, setDrillSelection] = useState<DrillSelection | null>(null);
 
   const tableRef = useRef<HTMLDivElement>(null);
   const pivotRequestRef = useRef(0);
@@ -459,6 +475,7 @@ export function PivotBuilder({
     () => valueIds.map((id) => measureMap.get(id)).filter(Boolean) as PivotMeasure[],
     [valueIds, measureMap],
   );
+  const unifiedRecords = unified as unknown as PivotDetailRow[];
 
   // passar filterVals diretamente para o engine (arrays, não Sets)
   const filterValsForEngine = useMemo(() => {
@@ -1082,10 +1099,20 @@ export function PivotBuilder({
               sortedRows={sortedRows}
               highlightRow={highlightRow}
               setHighlightRow={setHighlightRow}
+              onOpenDrill={(selection) => setDrillSelection(selection)}
+              sourceRows={unifiedRecords}
             />
           </div>
         </div>
       </div>
+      <DrillThroughSheet
+        selection={drillSelection}
+        dimMap={dimMap}
+        measures={selectedMeasures}
+        onOpenChange={(open) => {
+          if (!open) setDrillSelection(null);
+        }}
+      />
     </div>
   );
 }
@@ -1158,6 +1185,133 @@ function FieldMoveMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+function DrillThroughSheet({
+  selection,
+  dimMap,
+  measures,
+  onOpenChange,
+}: {
+  selection: DrillSelection | null;
+  dimMap: Map<string, DimMeta>;
+  measures: PivotMeasure[];
+  onOpenChange: (open: boolean) => void;
+}) {
+  const columns = useMemo(() => {
+    if (!selection) return [] as { key: string; label: string }[];
+    const preferred = [
+      "periodo",
+      "mesLabel",
+      "sku",
+      "skuDesc",
+      "categoria",
+      "subcategoria",
+      "marca",
+      "canalAjustado",
+      "canal",
+      "cliente",
+      "regional",
+      "uf",
+    ];
+    const measureFields = measures.map((m) => m.field);
+    const keys = Array.from(new Set([...preferred, ...measureFields]));
+    return keys
+      .filter((key) => selection.rows.some((row) => {
+        const value = row[key];
+        return value !== null && value !== undefined && value !== "";
+      }))
+      .map((key) => ({
+        key,
+        label: dimMap.get(key)?.label ?? measures.find((m) => m.field === key)?.label ?? key,
+      }));
+  }, [dimMap, measures, selection]);
+
+  const context = selection
+    ? [
+        selection.rowValues.length > 0 ? selection.rowValues.join(" · ") : "Todas as linhas",
+        selection.colValues.length > 0 ? selection.colValues.join(" · ") : "Todas as colunas",
+      ].join(" | ")
+    : "";
+
+  const previewRows = selection?.rows.slice(0, 500) ?? [];
+
+  return (
+    <Sheet open={!!selection} onOpenChange={onOpenChange}>
+      <SheetContent className="flex w-[92vw] flex-col gap-4 p-0 sm:max-w-3xl">
+        <SheetHeader className="border-b border-border/40 px-5 py-4">
+          <SheetTitle>Detalhe da célula</SheetTitle>
+          <SheetDescription>
+            {selection ? `${selection.measure.label} · ${context}` : "Linhas originais da base"}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex items-center justify-between gap-3 px-5">
+          <div className="text-xs text-muted-foreground">
+            {selection?.rows.length.toLocaleString("pt-BR") ?? 0} linhas encontradas
+            {selection && selection.rows.length > previewRows.length && ` · exibindo primeiras ${previewRows.length.toLocaleString("pt-BR")}`}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            disabled={!selection || selection.rows.length === 0 || columns.length === 0}
+            onClick={() => {
+              if (!selection) return;
+              exportTableCsv(
+                selection.rows,
+                columns,
+                `drill_pivot_${selection.measure.id}_${new Date().toISOString().slice(0, 10)}.csv`,
+              );
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Exportar CSV
+          </Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
+          {previewRows.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/50 px-4 py-10 text-center text-sm text-muted-foreground">
+              Nenhuma linha encontrada para esta célula.
+            </div>
+          ) : (
+            <table className="w-full border-collapse text-xs">
+              <thead className="sticky top-0 z-10">
+                <tr>
+                  {columns.map((column) => (
+                    <th
+                      key={column.key}
+                      className="border-b border-border/40 bg-background px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((row, index) => (
+                  <tr key={index} className="border-b border-border/15 odd:bg-muted/20">
+                    {columns.map((column) => (
+                      <td key={column.key} className="max-w-[220px] truncate px-2 py-1.5">
+                        {formatDrillValue(row[column.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function formatDrillValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "number") return Number.isFinite(value) ? formatNum(value, 2) : "—";
+  return String(value);
 }
 
 function Chip({
@@ -1519,6 +1673,8 @@ function PivotTable({
   sortedRows,
   highlightRow,
   setHighlightRow,
+  onOpenDrill,
+  sourceRows,
 }: {
   pivot: PivotResult;
   measures: PivotMeasure[];
@@ -1531,6 +1687,8 @@ function PivotTable({
   sortedRows: PivotRowHeader[];
   highlightRow: string | null;
   setHighlightRow: (k: string | null) => void;
+  onOpenDrill: (selection: DrillSelection) => void;
+  sourceRows: PivotDetailRow[];
 }) {
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
   const cols = hasCols ? pivot.colHeaders : [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
@@ -1794,14 +1952,39 @@ function PivotTable({
                         grandTotal: pivot.grandTotal[m.id],
                       });
                       const max = showAs === "normal" ? (maxByMeasure.get(m.id) ?? 0) : 1;
+                      const drillIndexes = pivot.drillRows.get(rh.key)?.get(c.key) ?? [];
                       return (
                         <td
                           key={`v-${rh.key}-${c.key}-${m.id}`}
+                          role="button"
+                          tabIndex={drillIndexes.length > 0 ? 0 : -1}
+                          title={drillIndexes.length > 0 ? "Clique para ver as linhas que compõem este valor" : undefined}
+                          onClick={() => {
+                            if (drillIndexes.length === 0) return;
+                            onOpenDrill({
+                              rowValues: rh.values,
+                              colValues: c.values,
+                              measure: m,
+                              rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (drillIndexes.length === 0) return;
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            onOpenDrill({
+                              rowValues: rh.values,
+                              colValues: c.values,
+                              measure: m,
+                              rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
+                            });
+                          }}
                           style={cellBg(viz, m, displayValue, max)}
                           className={cn(
                             "border-l border-border/10 text-right tabular-nums transition-colors",
                             cellPad,
                             toneClass(m.tone, displayValue),
+                            drillIndexes.length > 0 && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
                           )}
                         >
                           {fmtPivotDisplay(m, displayValue, showAs)}

@@ -44,6 +44,7 @@ export function createEmptyPivotResult(): PivotResult {
     rowHeaders: [],
     colHeaders: [],
     cells: new Map(),
+    drillRows: new Map(),
     rowTotals: new Map(),
     colTotals: new Map(),
     grandTotal: {},

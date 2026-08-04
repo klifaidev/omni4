@@ -44,6 +44,8 @@ export interface PivotResult {
   colHeaders: PivotColHeader[];
   /** célula: cells[rowKey][colKey][measureId] */
   cells: Map<string, Map<string, Record<string, number | null>>>;
+  /** índices das linhas originais que compõem cada célula: drillRows[rowKey][colKey] */
+  drillRows: Map<string, Map<string, number[]>>;
   /** totais por linha */
   rowTotals: Map<string, Record<string, number | null>>;
   /** totais por coluna */
@@ -184,19 +186,21 @@ export function computePivot(
   config: PivotConfig,
 ): PivotResult {
   // Aplicar filtros
-  let filtered = rows;
+  let filtered = rows.map((row, index) => ({ row, index }));
   for (const [dim, allowed] of Object.entries(config.filters)) {
     if (!allowed || allowed.length === 0) continue;
-    filtered = filtered.filter((r) => allowed.includes(dimVal(r, dim)));
+    filtered = filtered.filter(({ row }) => allowed.includes(dimVal(row, dim)));
   }
+  const filteredRows = filtered.map(({ row }) => row);
 
-  const { headers: rowHeaders, keyOf: rowKeyOf } = buildHeaders(filtered, config.rows);
-  const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filtered, config.cols);
+  const { headers: rowHeaders, keyOf: rowKeyOf } = buildHeaders(filteredRows, config.rows);
+  const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filteredRows, config.cols);
 
   // Buckets de acumuladores incrementais por (rowKey, colKey, measureField).
   // Evita manter listas completas de valores brutos em memória.
   type Bucket = Record<string, FieldAccumulator>;
   const cellBuckets = new Map<string, Map<string, Bucket>>();
+  const drillRows = new Map<string, Map<string, number[]>>();
   const rowBuckets = new Map<string, Bucket>();
   const colBuckets = new Map<string, Bucket>();
   const grandBucket: Bucket = {};
@@ -211,7 +215,7 @@ export function computePivot(
     else addToAccumulator(b[field], val);
   }
 
-  for (const r of filtered) {
+  for (const { row: r, index } of filtered) {
     const rk = rowKeyOf(r);
     const ck = colKeyOf(r);
 
@@ -225,6 +229,17 @@ export function computePivot(
       cell = {};
       cellMap.set(ck, cell);
     }
+    let drillMap = drillRows.get(rk);
+    if (!drillMap) {
+      drillMap = new Map();
+      drillRows.set(rk, drillMap);
+    }
+    let drill = drillMap.get(ck);
+    if (!drill) {
+      drill = [];
+      drillMap.set(ck, drill);
+    }
+    drill.push(index);
     let rb = rowBuckets.get(rk);
     if (!rb) { rb = {}; rowBuckets.set(rk, rb); }
     let cb = colBuckets.get(ck);
@@ -271,5 +286,5 @@ export function computePivot(
   for (const [ck, b] of colBuckets) colTotals.set(ck, reduce(b));
   const grandTotal = reduce(grandBucket);
 
-  return { rowHeaders, colHeaders, cells, rowTotals, colTotals, grandTotal };
+  return { rowHeaders, colHeaders, cells, drillRows, rowTotals, colTotals, grandTotal };
 }
