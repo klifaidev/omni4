@@ -36,7 +36,8 @@ import {
   dimensionsForMode,
   type PivotMode,
 } from "@/lib/pivotData";
-import { computePivot, type PivotMeasure, type PivotRowHeader } from "@/lib/pivot";
+import type { PivotConfig, PivotMeasure, PivotResult, PivotRowHeader } from "@/lib/pivot";
+import { computePivotAsync, createEmptyPivotResult } from "@/lib/pivotWorkerClient";
 import type { PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { Button } from "@/components/ui/button";
@@ -429,6 +430,7 @@ export function PivotBuilder({
   const [paletteOpen, setPaletteOpen] = useState(true);
 
   const tableRef = useRef<HTMLDivElement>(null);
+  const pivotRequestRef = useRef(0);
 
   useEffect(() => {
     const def = defaultConfig(mode);
@@ -504,16 +506,42 @@ export function PivotBuilder({
     return map;
   }, [filteredForCascade, filterDims]);
 
-  const pivot = useMemo(
-    () =>
-      computePivot(unified as unknown as Record<string, unknown>[], {
-        rows: rowsDims,
-        cols: colsDims,
-        values: selectedMeasures,
-        filters: filterValsForEngine,
-      }),
-    [unified, rowsDims, colsDims, selectedMeasures, filterValsForEngine],
+  const pivotConfig = useMemo<PivotConfig>(
+    () => ({
+      rows: rowsDims,
+      cols: colsDims,
+      values: selectedMeasures,
+      filters: filterValsForEngine,
+    }),
+    [rowsDims, colsDims, selectedMeasures, filterValsForEngine],
   );
+  const [pivot, setPivot] = useState<PivotResult>(() => createEmptyPivotResult());
+  const [pivotLoading, setPivotLoading] = useState(false);
+
+  useEffect(() => {
+    const requestId = ++pivotRequestRef.current;
+    let cancelled = false;
+    setPivotLoading(true);
+
+    computePivotAsync(unified as unknown as Record<string, unknown>[], pivotConfig)
+      .then((result) => {
+        if (cancelled || requestId !== pivotRequestRef.current) return;
+        setPivot(result);
+      })
+      .catch((error) => {
+        if (cancelled || requestId !== pivotRequestRef.current) return;
+        console.error("[PivotBuilder] Erro ao recalcular tabela dinâmica:", error);
+        toast.error("Não foi possível recalcular a tabela dinâmica.");
+      })
+      .finally(() => {
+        if (cancelled || requestId !== pivotRequestRef.current) return;
+        setPivotLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [unified, pivotConfig]);
 
   // sortedRows: aplica hideEmpty (corrigido: verifica células, não total) + sort do usuário
   const sortedRows = useMemo(() => {
@@ -681,6 +709,12 @@ export function PivotBuilder({
                 {activeFiltersCount > 0 && ` · ${activeFiltersCount} filtros`}
               </p>
             </div>
+            {pivotLoading && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Recalculando...
+              </span>
+            )}
           </div>
 
           <div className="flex-1" />
@@ -1486,7 +1520,7 @@ function PivotTable({
   highlightRow,
   setHighlightRow,
 }: {
-  pivot: ReturnType<typeof computePivot>;
+  pivot: PivotResult;
   measures: PivotMeasure[];
   rowDims: string[];
   colDims: string[];
@@ -1837,7 +1871,7 @@ function ExportMenu({
   sortedRows,
   onExportReady,
 }: {
-  pivot: ReturnType<typeof computePivot>;
+  pivot: PivotResult;
   measures: PivotMeasure[];
   rowDims: string[];
   colDims: string[];
