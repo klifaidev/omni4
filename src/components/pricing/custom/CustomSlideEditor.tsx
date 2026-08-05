@@ -3250,13 +3250,13 @@ function FloatingBlockToolbar({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="center" className="w-48 p-1">
-          <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-secondary" onClick={onToFront}>
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onToFront}>
             Trazer para a frente de tudo
           </button>
-          <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-secondary" onClick={onToBack}>
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onToBack}>
             Enviar para o fundo
           </button>
-          <button className="w-full rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10" onClick={onDelete}>
+          <button className="w-full rounded px-2 py-1.5 text-left text-xs text-destructive outline-none hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive/60" onClick={onDelete}>
             Excluir bloco
           </button>
         </PopoverContent>
@@ -4268,7 +4268,7 @@ function TableBlockEditor({ block, onChange }: {
               <button key={d.id as string}
                 onClick={() => toggleRowDim(d.id as string)}
                 className={cn(
-                  "flex w-full items-center justify-between rounded px-2 py-1 text-xs hover:bg-secondary",
+                  "flex w-full items-center justify-between rounded px-2 py-1 text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60",
                   block.rowDims.includes(d.id as string) && "bg-primary/10 text-primary",
                 )}
               >
@@ -4316,7 +4316,7 @@ function TableBlockEditor({ block, onChange }: {
                 disabled={disabled}
                 title={disabled ? hint : undefined}
                 className={cn(
-                  "flex w-full items-center justify-between rounded px-2 py-1 text-xs hover:bg-secondary",
+                  "flex w-full items-center justify-between rounded px-2 py-1 text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60",
                   block.measures.includes(m.id) && "bg-primary/10 text-primary",
                   disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
                 )}
@@ -5149,7 +5149,7 @@ function PaletteGroup({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between px-2 py-1 slides-type-label hover:text-foreground">
+      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1 slides-type-label outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background">
         <span>{title}</span>
         <ChevronDown className={cn("h-3 w-3 transition-transform", open ? "" : "-rotate-90")} />
       </CollapsibleTrigger>
@@ -5170,11 +5170,11 @@ function PaletteButton({
   onToggleFavorite?: () => void;
 }) {
   return (
-    <div className="group flex items-center rounded-md hover:bg-surface-raised">
+    <div className="group flex items-center rounded-md hover:bg-surface-raised focus-within:bg-surface-raised">
       <button
         type="button"
         onClick={onClick}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
       >
         <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
         <span className="truncate">{label}</span>
@@ -5188,7 +5188,7 @@ function PaletteButton({
             onToggleFavorite();
           }}
           className={cn(
-            "mr-1 rounded p-0.5 transition-colors",
+            "mr-1 rounded p-0.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
             favorite
               ? "text-amber-500"
               : "text-muted-foreground/40 opacity-0 hover:text-amber-500 group-hover:opacity-100",
@@ -5214,7 +5214,7 @@ function QuickLayoutButton({
     <button
       type="button"
       onClick={onClick}
-      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-2.5 py-2 text-left outline-none transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
     >
       <div className="slides-type-section text-[12px]">{label}</div>
       <div className="mt-0.5 slides-type-helper leading-snug">{description}</div>
@@ -5235,7 +5235,7 @@ function TextStyleButton({
     <button
       type="button"
       onClick={onClick}
-      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      className="surface-raised mb-1 w-full rounded-lg border border-border/50 px-3 py-2 text-left outline-none transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
     >
       <span className={cn("block leading-tight", className)}>{label}</span>
     </button>

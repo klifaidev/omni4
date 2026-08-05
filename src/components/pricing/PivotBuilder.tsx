@@ -1429,8 +1429,17 @@ function Chip({
         }
       }}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onClick();
+      }}
+      tabIndex={0}
+      role={onClick ? "button" : undefined}
+      aria-label={onClick ? `Adicionar campo ${label}` : `Campo ${label}`}
       className={cn(
-        "group inline-flex cursor-grab select-none items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-sm transition-all hover:-translate-y-px hover:shadow active:cursor-grabbing",
+        "group inline-flex cursor-grab select-none items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-sm outline-none transition-all hover:-translate-y-px hover:shadow focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
         toneRing,
         faded && "opacity-50",
       )}
@@ -1452,7 +1461,7 @@ function Chip({
             e.stopPropagation();
             onRemove?.();
           }}
-          className="ml-0.5 rounded-full p-0.5 opacity-60 hover:bg-foreground/10 hover:opacity-100"
+          className="ml-0.5 rounded-full p-0.5 opacity-60 outline-none hover:bg-foreground/10 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60"
           aria-label="Remover"
         >
           <X className="h-3 w-3" />
@@ -1533,7 +1542,7 @@ function FilterChip({
         <PopoverTrigger asChild>
           <button
             className={cn(
-              "inline-flex cursor-grab items-center gap-1 rounded-l-full border border-r-0 px-2 py-0.5 text-[11px] font-medium transition-all hover:-translate-y-px active:cursor-grabbing",
+              "inline-flex cursor-grab items-center gap-1 rounded-l-full border border-r-0 px-2 py-0.5 text-[11px] font-medium outline-none transition-all hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
               count > 0
                 ? "border-primary/40 bg-primary/10 text-primary"
                 : "border-border/60 bg-secondary/60 text-foreground",
@@ -1577,8 +1586,11 @@ function FilterChip({
                       setInternalDrag(null);
                     }}
                     onDragEnd={() => setInternalDrag(null)}
+                    tabIndex={0}
+                    role="listitem"
+                    aria-label={`Valor selecionado ${v}. Use o mouse para reordenar.`}
                     className={cn(
-                      "flex cursor-grab items-center gap-2 rounded border border-border/40 bg-secondary/40 px-2 py-1 text-xs transition-colors hover:bg-secondary/70 active:cursor-grabbing",
+                      "flex cursor-grab items-center gap-2 rounded border border-border/40 bg-secondary/40 px-2 py-1 text-xs outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
                       internalDrag === v && "opacity-50",
                     )}
                   >
@@ -1586,7 +1598,8 @@ function FilterChip({
                     <span className="flex-1 truncate">{v}</span>
                     <button
                       onClick={() => onChange(selected.filter((x) => x !== v))}
-                      className="rounded p-0.5 opacity-60 hover:bg-foreground/10 hover:opacity-100"
+                      className="rounded p-0.5 opacity-60 outline-none hover:bg-foreground/10 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60"
+                      aria-label={`Remover ${v}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
