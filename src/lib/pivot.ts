@@ -40,6 +40,8 @@ export interface PivotConfig {
 export interface PivotResult {
   /** árvore de linhas: array de {keys, isTotal, depth, cells: {colKey: {measureId: number}}} */
   rowHeaders: PivotRowHeader[];
+  /** Apenas folhas de linha, preservando a lista plana usada antes da hierarquia expansível. */
+  leafRowHeaders: PivotRowHeader[];
   /** árvore de colunas */
   colHeaders: PivotColHeader[];
   /** célula: cells[rowKey][colKey][measureId] */
@@ -57,10 +59,10 @@ export interface PivotResult {
 export interface PivotRowHeader {
   key: string;          // chave única da linha (concat dos values)
   values: string[];     // valor por dimensão
-  // TODO: computar quando rowDims.length > 1. Reservado para hierarquia multi-nível. Atualmente sempre 0 — não usar em lógica de negócio.
   depth: number;
-  // Reservado para hierarquia multi-nível. Atualmente sempre true — não usar em lógica de negócio.
   isLeaf: boolean;
+  parentKey?: string;
+  childrenKeys?: string[];
 }
 
 export interface PivotColHeader {
@@ -181,6 +183,57 @@ function buildHeaders(
   };
 }
 
+function buildRowHeaders(
+  rows: Record<string, unknown>[],
+  dims: string[],
+): {
+  headers: PivotRowHeader[];
+  leafHeaders: PivotRowHeader[];
+  keyOf: (r: Record<string, unknown>) => string;
+  groupKeyOf: (r: Record<string, unknown>) => string | null;
+} {
+  const flat = buildHeaders(rows, dims);
+  const leafHeaders = flat.headers.map((header) => ({ ...header, isLeaf: true }));
+  if (dims.length <= 1) {
+    return {
+      headers: leafHeaders,
+      leafHeaders,
+      keyOf: flat.keyOf,
+      groupKeyOf: () => null,
+    };
+  }
+
+  const childrenByGroup = new Map<string, PivotRowHeader[]>();
+  const groupValues = new Map<string, string>();
+  for (const leaf of leafHeaders) {
+    const groupValue = leaf.values[0] ?? EMPTY;
+    const groupKey = groupValue;
+    const groupedLeaf = { ...leaf, depth: 1, parentKey: groupKey };
+    if (!childrenByGroup.has(groupKey)) childrenByGroup.set(groupKey, []);
+    childrenByGroup.get(groupKey)!.push(groupedLeaf);
+    groupValues.set(groupKey, groupValue);
+  }
+
+  const headers: PivotRowHeader[] = [];
+  for (const [groupKey, children] of childrenByGroup) {
+    headers.push({
+      key: groupKey,
+      values: [groupValues.get(groupKey) ?? EMPTY],
+      depth: 0,
+      isLeaf: false,
+      childrenKeys: children.map((child) => child.key),
+    });
+    headers.push(...children);
+  }
+
+  return {
+    headers,
+    leafHeaders: headers.filter((header) => header.isLeaf),
+    keyOf: flat.keyOf,
+    groupKeyOf: (r) => dimVal(r, dims[0]),
+  };
+}
+
 export function computePivot(
   rows: Record<string, unknown>[],
   config: PivotConfig,
@@ -193,7 +246,7 @@ export function computePivot(
   }
   const filteredRows = filtered.map(({ row }) => row);
 
-  const { headers: rowHeaders, keyOf: rowKeyOf } = buildHeaders(filteredRows, config.rows);
+  const { headers: rowHeaders, leafHeaders: leafRowHeaders, keyOf: rowKeyOf, groupKeyOf } = buildRowHeaders(filteredRows, config.rows);
   const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filteredRows, config.cols);
 
   // Buckets de acumuladores incrementais por (rowKey, colKey, measureField).
@@ -217,6 +270,7 @@ export function computePivot(
 
   for (const { row: r, index } of filtered) {
     const rk = rowKeyOf(r);
+    const gk = groupKeyOf(r);
     const ck = colKeyOf(r);
 
     let cellMap = cellBuckets.get(rk);
@@ -242,6 +296,38 @@ export function computePivot(
     drill.push(index);
     let rb = rowBuckets.get(rk);
     if (!rb) { rb = {}; rowBuckets.set(rk, rb); }
+    const groupCell = gk && gk !== rk ? (() => {
+      let groupCellMap = cellBuckets.get(gk);
+      if (!groupCellMap) {
+        groupCellMap = new Map();
+        cellBuckets.set(gk, groupCellMap);
+      }
+      let bucket = groupCellMap.get(ck);
+      if (!bucket) {
+        bucket = {};
+        groupCellMap.set(ck, bucket);
+      }
+      let groupDrillMap = drillRows.get(gk);
+      if (!groupDrillMap) {
+        groupDrillMap = new Map();
+        drillRows.set(gk, groupDrillMap);
+      }
+      let groupDrill = groupDrillMap.get(ck);
+      if (!groupDrill) {
+        groupDrill = [];
+        groupDrillMap.set(ck, groupDrill);
+      }
+      groupDrill.push(index);
+      return bucket;
+    })() : null;
+    const groupRowBucket = gk && gk !== rk ? (() => {
+      let bucket = rowBuckets.get(gk);
+      if (!bucket) {
+        bucket = {};
+        rowBuckets.set(gk, bucket);
+      }
+      return bucket;
+    })() : null;
     let cb = colBuckets.get(ck);
     if (!cb) { cb = {}; colBuckets.set(ck, cb); }
 
@@ -251,6 +337,8 @@ export function computePivot(
       if (!isFinite(num)) continue;
       pushBucket(cell, field, num);
       pushBucket(rb, field, num);
+      if (groupCell) pushBucket(groupCell, field, num);
+      if (groupRowBucket) pushBucket(groupRowBucket, field, num);
       pushBucket(cb, field, num);
       pushBucket(grandBucket, field, num);
     }
@@ -286,5 +374,5 @@ export function computePivot(
   for (const [ck, b] of colBuckets) colTotals.set(ck, reduce(b));
   const grandTotal = reduce(grandBucket);
 
-  return { rowHeaders, colHeaders, cells, drillRows, rowTotals, colTotals, grandTotal };
+  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows, rowTotals, colTotals, grandTotal };
 }

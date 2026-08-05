@@ -25,6 +25,47 @@ describe("computePivot weighted ratio measures", () => {
     expect(pivot.drillRows.get("B")?.get("Jan")).toEqual([3]);
   });
 
+  it("returns expandable row groups with leaf headers preserving the previous flat order", () => {
+    const rows = [
+      { categoria: "Chocolates", sku: "100", mes: "Jan", valor: 100 },
+      { categoria: "Chocolates", sku: "200", mes: "Jan", valor: 200 },
+      { categoria: "Coberturas", sku: "300", mes: "Jan", valor: 50 },
+      { categoria: "Chocolates", sku: "100", mes: "Fev", valor: 300 },
+    ];
+
+    const pivot = computePivot(rows, {
+      rows: ["categoria", "sku"],
+      cols: ["mes"],
+      filters: {},
+      values: [
+        { id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" },
+      ],
+    });
+
+    expect(pivot.rowHeaders.map((row) => ({
+      key: row.key,
+      depth: row.depth,
+      isLeaf: row.isLeaf,
+      parentKey: row.parentKey,
+      values: row.values,
+    }))).toEqual([
+      { key: "Chocolates", depth: 0, isLeaf: false, parentKey: undefined, values: ["Chocolates"] },
+      { key: "Chocolates\u001f100", depth: 1, isLeaf: true, parentKey: "Chocolates", values: ["Chocolates", "100"] },
+      { key: "Chocolates\u001f200", depth: 1, isLeaf: true, parentKey: "Chocolates", values: ["Chocolates", "200"] },
+      { key: "Coberturas", depth: 0, isLeaf: false, parentKey: undefined, values: ["Coberturas"] },
+      { key: "Coberturas\u001f300", depth: 1, isLeaf: true, parentKey: "Coberturas", values: ["Coberturas", "300"] },
+    ]);
+    expect(pivot.leafRowHeaders.map((row) => row.key)).toEqual([
+      "Chocolates\u001f100",
+      "Chocolates\u001f200",
+      "Coberturas\u001f300",
+    ]);
+    expect(pivot.rowTotals.get("Chocolates")?.valor).toBe(600);
+    expect(pivot.cells.get("Chocolates")?.get("Jan")?.valor).toBe(300);
+    expect(pivot.cells.get("Chocolates")?.get("Fev")?.valor).toBe(300);
+    expect(pivot.drillRows.get("Chocolates")?.get("Jan")).toEqual([0, 1]);
+  });
+
   it("aggregates sum, avg, count, min and max from incremental accumulators", () => {
     const rows = [
       { categoria: "A", valor: 10 },

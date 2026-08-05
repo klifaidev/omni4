@@ -4171,8 +4171,8 @@ function TableBlockEditor({ block, onChange }: {
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
     return {
-      totalRows: result.rowHeaders.length,
-      rowHeaders: result.rowHeaders.map((row) => ({
+      totalRows: result.leafRowHeaders.length,
+      rowHeaders: result.leafRowHeaders.map((row) => ({
         key: row.key,
         label: row.values.join(" / ") || "Total",
       })),

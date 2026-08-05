@@ -4,6 +4,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   Check,
+  ChevronDown,
+  ChevronRight,
   Columns3,
   Download,
   Eye,
@@ -444,6 +446,7 @@ export function PivotBuilder({
   const [highlightRow, setHighlightRow] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [drillSelection, setDrillSelection] = useState<DrillSelection | null>(null);
+  const [expandedRowKeys, setExpandedRowKeys] = useState<Set<string>>(() => new Set());
 
   const tableRef = useRef<HTMLDivElement>(null);
   const pivotRequestRef = useRef(0);
@@ -560,11 +563,28 @@ export function PivotBuilder({
     };
   }, [unified, pivotConfig]);
 
-  // sortedRows: aplica hideEmpty (corrigido: verifica células, não total) + sort do usuário
+  useEffect(() => {
+    const groupKeys = pivot.rowHeaders.filter((row) => !row.isLeaf).map((row) => row.key);
+    setExpandedRowKeys((prev) => {
+      if (groupKeys.length === 0) return prev.size === 0 ? prev : new Set();
+      let changed = false;
+      const next = new Set<string>();
+      for (const key of groupKeys) {
+        if (prev.has(key)) next.add(key);
+        else {
+          next.add(key);
+          changed = true;
+        }
+      }
+      if (next.size !== prev.size) changed = true;
+      return changed ? next : prev;
+    });
+  }, [pivot.rowHeaders]);
+
+  // sortedRows: aplica hideEmpty + sort do usuário dentro de cada grupo, preservando a ordem dos grupos
   const sortedRows = useMemo(() => {
-    let rows = pivot.rowHeaders;
-    if (hideEmpty) {
-      rows = rows.filter((rh) => {
+    const hasGroups = pivot.rowHeaders.some((row) => !row.isLeaf);
+    const rowHasValue = (rh: PivotRowHeader) => {
         const rowMap = pivot.cells.get(rh.key);
         if (!rowMap) return false;
         for (const cellRecord of rowMap.values()) {
@@ -573,21 +593,46 @@ export function PivotBuilder({
           }
         }
         return false;
-      });
-    }
-    if (sort) {
+    };
+    const filterLeaves = (rows: PivotRowHeader[]) => hideEmpty ? rows.filter(rowHasValue) : rows;
+    const sortLeaves = (rows: PivotRowHeader[]) => {
+      if (!sort) return rows;
       const getter = (k: string) => {
         const v = pivot.cells.get(k)?.get(sort.col)?.[sort.measure];
         return v ?? 0;
       };
-      rows = [...rows].sort((a, b) => {
+      return [...rows].sort((a, b) => {
         const va = getter(a.key);
         const vb = getter(b.key);
         return sort.dir === "asc" ? va - vb : vb - va;
       });
+    };
+
+    if (!hasGroups) return sortLeaves(filterLeaves(pivot.leafRowHeaders));
+
+    const childrenByParent = new Map<string, PivotRowHeader[]>();
+    for (const leaf of filterLeaves(pivot.leafRowHeaders)) {
+      const parent = leaf.parentKey ?? "";
+      const current = childrenByParent.get(parent) ?? [];
+      current.push(leaf);
+      childrenByParent.set(parent, current);
+    }
+
+    const rows: PivotRowHeader[] = [];
+    for (const header of pivot.rowHeaders) {
+      if (header.isLeaf) continue;
+      const children = sortLeaves(childrenByParent.get(header.key) ?? []);
+      if (hideEmpty && children.length === 0 && !rowHasValue(header)) continue;
+      rows.push(header);
+      rows.push(...children);
     }
     return rows;
   }, [pivot, selectedMeasures, sort, hideEmpty]);
+
+  const visibleRows = useMemo(
+    () => sortedRows.filter((row) => !row.isLeaf || !row.parentKey || expandedRowKeys.has(row.parentKey)),
+    [expandedRowKeys, sortedRows],
+  );
 
   // ----- Drag & Drop (HTML5) -----
   const [dragging, setDragging] = useState<{ id: string; from: Zone | "palette" } | null>(null);
@@ -677,6 +722,7 @@ export function PivotBuilder({
     setFilterDims([]);
     setFilterVals({});
     setSort(null);
+    setExpandedRowKeys(new Set());
   }
 
   function resetAll() {
@@ -687,6 +733,7 @@ export function PivotBuilder({
     setFilterDims([]);
     setFilterVals({});
     setSort(null);
+    setExpandedRowKeys(new Set());
   }
 
   const usedItems = new Set([...rowsDims, ...colsDims, ...filterDims, ...valueIds]);
@@ -722,7 +769,7 @@ export function PivotBuilder({
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                {pivot.rowHeaders.length.toLocaleString("pt-BR")} linhas · {selectedMeasures.length} medidas
+                {pivot.leafRowHeaders.length.toLocaleString("pt-BR")} linhas · {selectedMeasures.length} medidas
                 {activeFiltersCount > 0 && ` · ${activeFiltersCount} filtros`}
               </p>
             </div>
@@ -1096,7 +1143,16 @@ export function PivotBuilder({
               viz={viz}
               sort={sort}
               setSort={setSort}
-              sortedRows={sortedRows}
+              sortedRows={visibleRows}
+              expandedRowKeys={expandedRowKeys}
+              onToggleRowGroup={(key) => {
+                setExpandedRowKeys((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }}
               highlightRow={highlightRow}
               setHighlightRow={setHighlightRow}
               onOpenDrill={(selection) => setDrillSelection(selection)}
@@ -1671,6 +1727,8 @@ function PivotTable({
   sort,
   setSort,
   sortedRows,
+  expandedRowKeys,
+  onToggleRowGroup,
   highlightRow,
   setHighlightRow,
   onOpenDrill,
@@ -1685,12 +1743,15 @@ function PivotTable({
   sort: SortState;
   setSort: (s: SortState) => void;
   sortedRows: PivotRowHeader[];
+  expandedRowKeys: Set<string>;
+  onToggleRowGroup: (key: string) => void;
   highlightRow: string | null;
   setHighlightRow: (k: string | null) => void;
   onOpenDrill: (selection: DrillSelection) => void;
   sourceRows: PivotDetailRow[];
 }) {
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
+  const hasRowGroups = pivot.rowHeaders.some((row) => !row.isLeaf);
   const cols = hasCols ? pivot.colHeaders : [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
   const [showAsByMeasure, setShowAsByMeasure] = useState<Record<string, ShowAsMode>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1926,18 +1987,52 @@ function PivotTable({
                     isHL && "bg-primary/[0.06]",
                   )}
                 >
-                  {rowDims.map((_, idx) => (
-                    <td
-                      key={`rv-${rh.key}-${idx}`}
-                      className={cn(
-                        "text-foreground",
-                        cellPad,
-                        idx === 0 && "sticky left-0 z-[1] bg-card/85 backdrop-blur font-medium group-hover:bg-card",
-                      )}
-                    >
-                      {rh.values[idx] ?? ""}
-                    </td>
-                  ))}
+                  {rowDims.map((_, idx) => {
+                    const isGroup = !rh.isLeaf;
+                    const isGroupedLeaf = hasRowGroups && rh.isLeaf && rh.parentKey;
+                    const value = isGroup
+                      ? (idx === 0 ? rh.values[0] : "")
+                      : isGroupedLeaf && idx === 0
+                        ? ""
+                        : rh.values[idx] ?? "";
+                    const shouldShowLeafIndent = Boolean(isGroupedLeaf && idx === Math.min(1, rowDims.length - 1));
+                    return (
+                      <td
+                        key={`rv-${rh.key}-${idx}`}
+                        className={cn(
+                          "text-foreground",
+                          cellPad,
+                          idx === 0 && "sticky left-0 z-[1] bg-card/85 backdrop-blur font-medium group-hover:bg-card",
+                          isGroup && "bg-secondary/35 font-semibold",
+                        )}
+                      >
+                        <span
+                          className="inline-flex min-w-0 items-center gap-1.5"
+                          style={shouldShowLeafIndent ? { paddingLeft: `${rh.depth * 14}px` } : undefined}
+                        >
+                          {isGroup && idx === 0 && (
+                            <button
+                              type="button"
+                              aria-label={expandedRowKeys.has(rh.key) ? "Recolher grupo" : "Expandir grupo"}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onToggleRowGroup(rh.key);
+                              }}
+                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                            >
+                              {expandedRowKeys.has(rh.key)
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                          <span className={cn("truncate", isGroup && idx === 0 && "text-foreground")}>
+                            {value}
+                            {isGroup && idx === 0 ? " subtotal" : ""}
+                          </span>
+                        </span>
+                      </td>
+                    );
+                  })}
                   {rowDims.length === 0 && (
                     <td className={cn("sticky left-0 z-[1] bg-card/85 backdrop-blur font-semibold text-muted-foreground", cellPad)}>—</td>
                   )}
@@ -1983,6 +2078,7 @@ function PivotTable({
                           className={cn(
                             "border-l border-border/10 text-right tabular-nums transition-colors",
                             cellPad,
+                            !rh.isLeaf && "bg-secondary/25 font-semibold",
                             toneClass(m.tone, displayValue),
                             drillIndexes.length > 0 && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
                           )}
@@ -2109,7 +2205,17 @@ function ExportMenu({
 
       for (const rh of sortedRows) {
         const row: (string | number)[] = [];
-        rowDims.forEach((_, i) => row.push(rh.values[i] ?? ""));
+        rowDims.forEach((_, i) => {
+          if (!rh.isLeaf) {
+            row.push(i === 0 ? `${rh.values[0] ?? ""} subtotal` : "");
+          } else if (rh.parentKey && i === 0) {
+            row.push("");
+          } else if (rh.parentKey && i === Math.min(1, rowDims.length - 1)) {
+            row.push(`  ${rh.values[i] ?? ""}`);
+          } else {
+            row.push(rh.values[i] ?? "");
+          }
+        });
         for (const c of exportCols) {
           const cell = pivot.cells.get(rh.key)?.get(c.key) ?? {};
           for (const m of measures) row.push(safeNum(cell[m.id]));

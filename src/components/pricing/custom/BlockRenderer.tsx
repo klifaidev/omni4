@@ -797,7 +797,7 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
       ? b.sortMeasure
       : measures[0].id;
     const manualRank = new Map((b.manualRowOrder ?? []).map((key, index) => [key, index]));
-    const sortedHeaders = [...result.rowHeaders].sort((a, z) => {
+    const sortedHeaders = [...result.leafRowHeaders].sort((a, z) => {
       if (b.sortMode === "manual") {
         const ar = manualRank.get(a.key);
         const zr = manualRank.get(z.key);

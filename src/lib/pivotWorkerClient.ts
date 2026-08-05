@@ -42,6 +42,7 @@ const registeredRows = new Set<string>();
 export function createEmptyPivotResult(): PivotResult {
   return {
     rowHeaders: [],
+    leafRowHeaders: [],
     colHeaders: [],
     cells: new Map(),
     drillRows: new Map(),
