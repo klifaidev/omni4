@@ -177,7 +177,7 @@ function EvoChart({
   gradientId: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 transition-colors hover:bg-secondary/30">
+    <div className="surface-raised rounded-xl border border-border/40 p-4 transition-colors">
       <ChartHeader title={title} gapValue={gapValue} />
       <div className="h-60">
         <ResponsiveContainer width="100%" height="100%">
@@ -207,7 +207,7 @@ function EvoVolChart({ data, accumVolGap }: { data: EvoRow[]; accumVolGap: numbe
     `${Math.round(v).toLocaleString("pt-BR")} t`;
   const gapStr = `${accumVolGap >= 0 ? "+" : ""}${tonsFmt(accumVolGap)}`;
   return (
-    <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 transition-colors hover:bg-secondary/30">
+    <div className="surface-raised rounded-xl border border-border/40 p-4 transition-colors">
       <ChartHeader title="Volume (Tons)" gapValue={gapStr} />
       <div className="h-60">
         <ResponsiveContainer width="100%" height="100%">
@@ -899,7 +899,7 @@ export default function Budget() {
                 .sort((a, b) => pctVar(b.realRol, b.budRol) - pctVar(a.realRol, a.budRol))
                 .slice(0, 5)
                 .map((r) => (
-                  <li key={r.key} className="flex items-center justify-between rounded-lg border border-border/30 bg-secondary/20 px-3 py-2">
+                  <li key={r.key} className="surface-raised flex items-center justify-between rounded-lg border border-border/30 px-3 py-2">
                     <span className="text-sm font-medium truncate">{r.key}</span>
                     <VarBadge v={pctVar(r.realRol, r.budRol)} />
                   </li>
@@ -920,7 +920,7 @@ export default function Budget() {
                 .sort((a, b) => pctVar(a.realRol, a.budRol) - pctVar(b.realRol, b.budRol))
                 .slice(0, 5)
                 .map((r) => (
-                  <li key={r.key} className="flex items-center justify-between rounded-lg border border-border/30 bg-secondary/20 px-3 py-2">
+                  <li key={r.key} className="surface-raised flex items-center justify-between rounded-lg border border-border/30 px-3 py-2">
                     <span className="text-sm font-medium truncate">{r.key}</span>
                     <VarBadge v={pctVar(r.realRol, r.budRol)} />
                   </li>
@@ -1044,7 +1044,7 @@ function ProjStat({
   muted?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border/40 bg-secondary/20 p-4">
+    <div className="surface-raised rounded-xl border border-border/40 p-4">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={cn("mt-1 flex items-baseline text-xl font-bold tabular-nums", muted && "text-muted-foreground", valueClass)}>
         <span>{value}</span>

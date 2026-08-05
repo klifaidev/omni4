@@ -11,7 +11,7 @@ export const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
     <div
       ref={ref}
       className={cn(
-        "glass rounded-2xl p-6",
+        "surface-panel rounded-2xl border border-border/40 p-6 backdrop-blur-xl",
         hoverable && "glass-hover",
         glow === "blue" && "glow-blue",
         glow === "green" && "glow-green",

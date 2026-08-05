@@ -304,6 +304,8 @@
   }
   .glass-hover:hover {
     border-color: hsl(var(--glass-border) / 0.16);
+    background-color: hsl(var(--surface-raised) / 0.96);
+    box-shadow: var(--shadow-surface-raised);
     transform: translateY(-1px);
   }
 

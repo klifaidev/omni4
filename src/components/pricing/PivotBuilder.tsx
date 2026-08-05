@@ -752,7 +752,7 @@ export function PivotBuilder({
   return (
     <div className="space-y-4">
       {/* ═════════════════ COMMAND BAR ═════════════════ */}
-      <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 via-card/40 to-card/20 p-4">
+      <div className="surface-raised relative overflow-hidden rounded-2xl border border-border/50 p-4 backdrop-blur-xl">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-primary/15 blur-3xl" />
         <div className="pointer-events-none absolute -left-20 -bottom-20 h-52 w-52 rounded-full bg-accent/10 blur-3xl" />
 
@@ -889,7 +889,7 @@ export function PivotBuilder({
       {/* ═════════════════ MAIN GRID ═════════════════ */}
       <div className={cn("grid grid-cols-1 gap-4", paletteOpen ? "lg:grid-cols-[260px_1fr]" : "lg:grid-cols-[44px_1fr]")}>
         {/* PALETTE */}
-        <aside className="relative space-y-3 rounded-2xl border border-border/40 bg-card/30 p-3">
+        <aside className="surface-panel relative space-y-3 rounded-2xl border border-border/40 p-3 backdrop-blur-xl">
           <button
             onClick={() => setPaletteOpen((o) => !o)}
             className="absolute -right-3 top-3 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground hover:text-foreground"
@@ -1688,7 +1688,7 @@ function DropZone({
         onDrop();
       }}
       className={cn(
-        "relative min-h-[78px] overflow-hidden rounded-xl border bg-card/30 p-2.5 transition-all",
+        "surface-panel relative min-h-[78px] overflow-hidden rounded-xl border p-2.5 transition-all",
         "before:absolute before:left-0 before:top-0 before:h-full before:w-[3px] before:rounded-l-xl",
         accentRing,
         dragOver
@@ -1834,7 +1834,7 @@ function PivotTable({
 
   if (measures.length === 0) {
     return (
-      <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 bg-card/20 text-sm">
+      <div className="surface-panel flex h-72 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-sm">
         <Sigma className="h-10 w-10 text-muted-foreground/40" />
         <div className="text-muted-foreground">
           Adicione ao menos uma medida em <span className="font-semibold text-foreground">Valores</span>
@@ -1847,7 +1847,7 @@ function PivotTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/30 shadow-sm">
+    <div className="surface-panel overflow-hidden rounded-2xl border border-border/40 backdrop-blur-xl">
       <div
         ref={scrollRef}
         className="relative max-h-[68vh] overflow-auto"
