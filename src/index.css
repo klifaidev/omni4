@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Pricing Analytics — Harald: Dark Glassmorphism Design System
    All colors MUST be HSL.
 */
@@ -238,7 +246,7 @@
     background: var(--gradient-bg);
     background-attachment: fixed;
     font-feature-settings: "cv11", "ss01";
-    font-family: "Calibri", "Carlito", "Arial", sans-serif;
+    font-family: "Inter", "Arial", sans-serif;
     letter-spacing: -0.011em;
     transition: background 700ms cubic-bezier(0.4, 0, 0.2, 1);
   }

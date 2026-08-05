@@ -137,7 +137,7 @@ export default {
         xs: "2px",
       },
       fontFamily: {
-        sans: ["Calibri", "Carlito", "Arial", "sans-serif"],
+        sans: ["Inter", "Arial", "sans-serif"],
       },
     },
   },
