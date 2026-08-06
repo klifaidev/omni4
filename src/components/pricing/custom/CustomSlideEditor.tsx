@@ -544,6 +544,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
   });
   const [canvasHovered, setCanvasHovered] = useState(false);
+  const [spacePanActive, setSpacePanActive] = useState(false);
+  const [canvasPanning, setCanvasPanning] = useState(false);
 
   const [guides, setGuides] = useState<GuideState>(EMPTY_GUIDES);
   const guidesRef = useRef(guides);
@@ -1578,6 +1580,35 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   // Atalhos de teclado
   useEffect(() => {
+    const isEditingTarget = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+    };
+    const onSpaceDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (inlineEditId || isEditingTarget(e.target)) return;
+      e.preventDefault();
+      setSpacePanActive(true);
+    };
+    const onSpaceUp = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      setSpacePanActive(false);
+    };
+    const onWindowBlur = () => {
+      setSpacePanActive(false);
+      setCanvasPanning(false);
+    };
+    window.addEventListener("keydown", onSpaceDown);
+    window.addEventListener("keyup", onSpaceUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onSpaceDown);
+      window.removeEventListener("keyup", onSpaceUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [inlineEditId]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
@@ -2196,8 +2227,41 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <ClearFiltersToolbar />
         <div
           ref={wrapperRef}
-          className="continuous-corner-lg relative min-h-0 flex-1 overflow-auto border border-border/40 bg-secondary/20"
+          className={cn(
+            "continuous-corner-lg relative min-h-0 flex-1 overflow-auto border border-border/40 bg-secondary/20",
+            spacePanActive && !canvasPanning && "cursor-grab",
+            canvasPanning && "cursor-grabbing select-none",
+          )}
+          onMouseDownCapture={(e) => {
+            if (!spacePanActive || e.button !== 0) return;
+            const target = e.target as HTMLElement | null;
+            if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            clearGuides();
+            setMarquee(null);
+            setCanvasPanning(true);
+            const el = e.currentTarget;
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startScrollLeft = el.scrollLeft;
+            const startScrollTop = el.scrollTop;
+            const move = (ev: MouseEvent) => {
+              el.scrollLeft = startScrollLeft - (ev.clientX - startX);
+              el.scrollTop = startScrollTop - (ev.clientY - startY);
+            };
+            const up = () => {
+              window.removeEventListener("mousemove", move);
+              window.removeEventListener("mouseup", up);
+              window.removeEventListener("blur", up);
+              setCanvasPanning(false);
+            };
+            window.addEventListener("mousemove", move);
+            window.addEventListener("mouseup", up);
+            window.addEventListener("blur", up);
+          }}
           onMouseDown={(e) => {
+            if (spacePanActive) return;
             // Marquee selection ? only if mousedown is on the wrapper itself
             // (i.e. canvas background, not a block / Rnd handle / inspector).
             if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset?.canvasBg) return;
@@ -2428,6 +2492,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 if (selectedIds.length > 1 && isSelected) {
                   shapeResize = false;
                 }
+                if (spacePanActive) {
+                  shapeResize = false;
+                  shapeDisableDrag = true;
+                }
                 return (
                 <ContextMenu key={blk.id}>
                   <ContextMenuTrigger asChild>
@@ -2438,7 +2506,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         rotation={rotation}
                         scale={scale}
                         isSelected={isSelected}
-                        isLocked={!!blk.locked || readOnly}
+                        isLocked={!!blk.locked || readOnly || spacePanActive}
                         isEditing={isEditing}
                         showResizeHandles={selectedIds.length <= 1}
                         onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
@@ -2516,7 +2584,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           </div>
                         )}
-                        {isSelected && !blk.locked && !readOnly && !isEditing && (
+                        {isSelected && !blk.locked && !readOnly && !isEditing && !spacePanActive && (
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                           />
@@ -2752,7 +2820,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           </div>
                         )}
-                        {isSelected && !blk.locked && !readOnly && !isEditing && isRotatable && (
+                        {isSelected && !blk.locked && !readOnly && !isEditing && !spacePanActive && isRotatable && (
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                           />
@@ -6104,7 +6172,7 @@ function SpeakerNotesBar({
 // ---------------------------------------------------------------------------
 // ShortcutsDialog ? painel de referência rápida dos atalhos do editor.
 function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "?" : "Ctrl";
+  const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
   const sections: { title: string; items: [string, string][] }[] = [
     {
       title: "Edicao",
@@ -6152,6 +6220,8 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
       title: "Canvas",
       items: [
         [`${mod} + 0`, "Resetar zoom para 100%"],
+        [`${mod} + scroll`, "Dar zoom mantendo o cursor no mesmo ponto"],
+        ["Espaco + arrastar", "Navegar pelo canvas"],
         ["Shift + redimensionar", "Travar proporcao do bloco"],
         ["Tab", "Navegar por blocos e pain?is"],
         ["Enter / Espa?o", "Selecionar bloco focado"],

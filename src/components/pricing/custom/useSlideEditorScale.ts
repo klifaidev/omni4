@@ -37,12 +37,35 @@ export function useSlideEditorScale(
     const handler = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setEditorPrefs({ zoom: Math.min(1.5, Math.max(0.5, getEditorPrefs().zoom + delta)) });
+      const shell = canvasShellRef.current;
+      const currentZoom = getEditorPrefs().zoom;
+      const nextZoom = Math.min(1.5, Math.max(0.5, currentZoom + (e.deltaY > 0 ? -0.08 : 0.08)));
+      if (nextZoom === currentZoom) return;
+
+      const oldScale = fitScale * currentZoom;
+      const nextScale = fitScale * nextZoom;
+      const shellRect = shell?.getBoundingClientRect();
+      const anchor = shellRect
+        ? {
+            x: (e.clientX - shellRect.left) / Math.max(0.001, oldScale),
+            y: (e.clientY - shellRect.top) / Math.max(0.001, oldScale),
+            clientX: e.clientX,
+            clientY: e.clientY,
+          }
+        : null;
+
+      setEditorPrefs({ zoom: nextZoom });
+
+      if (!anchor || !shell) return;
+      requestAnimationFrame(() => {
+        const nextRect = shell.getBoundingClientRect();
+        el.scrollLeft += (nextRect.left + anchor.x * nextScale) - anchor.clientX;
+        el.scrollTop += (nextRect.top + anchor.y * nextScale) - anchor.clientY;
+      });
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, [wrapperRef]);
+  }, [canvasShellRef, fitScale, wrapperRef]);
 
   const scale = fitScale * prefs.zoom;
   const scaleKey = Math.round(scale * 1000);
