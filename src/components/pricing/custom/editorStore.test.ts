@@ -150,4 +150,57 @@ describe("editorStore undo/redo", () => {
     expect(bg).toMatchObject({ x: 60, y: 150, w: 1040, h: 470 });
     expect(title).toMatchObject({ x: 116, y: 194, w: 920, h: 76 });
   });
+
+  it("scales title and text font sizes when resizing a group", () => {
+    const onChange = vi.fn();
+    bindEditorStore({
+      background: "FFFFFF",
+      showHaraldFooter: true,
+      groups: [{ id: "story-group", memberIds: ["story-title", "story-text"] }],
+      blocks: [
+        {
+          id: "story-title",
+          kind: "title",
+          x: 100,
+          y: 100,
+          w: 300,
+          h: 50,
+          z: 1,
+          text: "Insight",
+          size: 24,
+          bold: true,
+          color: "C8102E",
+          align: "left",
+          groupId: "story-group",
+        },
+        {
+          id: "story-text",
+          kind: "text",
+          x: 100,
+          y: 160,
+          w: 300,
+          h: 90,
+          z: 2,
+          text: "Texto executivo",
+          size: 16,
+          color: "1C2430",
+          align: "left",
+          groupId: "story-group",
+        },
+      ] as CustomBlock[],
+    }, onChange, "slide-story-font-resize");
+
+    resizeGroupAction(
+      ["story-title", "story-text"],
+      { x: 100, y: 100, w: 300, h: 150 },
+      { x: 100, y: 100, w: 600, h: 300 },
+    );
+
+    const next = onChange.mock.calls.at(-1)?.[0] as CustomSlideConfig;
+    const title = next.blocks.find((block) => block.id === "story-title");
+    const text = next.blocks.find((block) => block.id === "story-text");
+
+    expect(title).toMatchObject({ size: 48 });
+    expect(text).toMatchObject({ size: 32 });
+  });
 });

@@ -55,6 +55,7 @@ export type EditorActionLabel =
   | "Redimensionar forma"
   | "Mover ponto da linha"
   | "Editar vértice"
+  | "Rotacionar"
   | "Ajustar geometria";
 
 interface EditorState {
@@ -742,6 +743,7 @@ export function resizeGroupAction(
   const cur = baseStore.getState().config;
   if (!cur) return;
   const set = new Set(ids);
+  const fontScale = Math.max(0.5, Math.min(3, (scaleX + scaleY) / 2));
   const patches = cur.blocks
     .filter((b) => set.has(b.id) && !b.locked)
     .map((b) => {
@@ -751,6 +753,10 @@ export function resizeGroupAction(
       const newY = next.y + dy * scaleY;
       const newW = Math.max(40, b.w * scaleX);
       const newH = Math.max(40, b.h * scaleY);
+      const textSizePatch =
+        (b.kind === "title" || b.kind === "text") && typeof b.size === "number"
+          ? { size: Math.max(8, Math.round(b.size * fontScale)) }
+          : {};
       return {
         id: b.id,
         patch: {
@@ -758,6 +764,7 @@ export function resizeGroupAction(
           y: Math.round(newY),
           w: Math.round(newW),
           h: Math.round(newH),
+          ...textSizePatch,
         } as Partial<CustomBlock>,
       };
     });

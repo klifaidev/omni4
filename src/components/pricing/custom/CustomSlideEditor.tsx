@@ -2280,6 +2280,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             <div
               ref={canvasRef}
               data-canvas-bg="true"
+              data-custom-slide-canvas="true"
               style={{
                 width: CANVAS_W,
                 height: CANVAS_H,
@@ -2463,8 +2464,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             selectBlock(blk.id, { additive: e.shiftKey });
                           }
                         }}
+                        data-block-frame-id={blk.id}
                       >
-                        <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
+                        <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
                           pointerEvents: "none",
                           visibility: blk.hidden ? "hidden" : "visible",
@@ -2691,6 +2693,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           }
                         }}
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
+                        data-block-frame-id={blk.id}
                         className={cn(
                           "group/block transition-[outline,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           altDragFlashIds.has(blk.id) && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
@@ -2699,7 +2702,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
                         )}
                       >
-                        <div data-block-id={blk.id} data-block-kind={blk.kind} style={{
+                        <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
                           pointerEvents: blk.kind === "chart" ? "auto" : "none",
                           visibility: blk.hidden ? "hidden" : "visible",
@@ -2867,8 +2870,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     bounds={bb}
                     active={active}
                     showHandles={showHandles}
-                    memberIds={members.map((m) => m.id)}
+                    members={members}
                     scaleRef={scaleRef}
+                    canvasEl={canvasRef.current}
                   />
                 );
               })}
@@ -2879,8 +2883,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   bounds={multiSelectionBounds}
                   active
                   showHandles
-                  memberIds={multiSelected.map((m) => m.id)}
+                  members={multiSelected}
                   scaleRef={scaleRef}
+                  canvasEl={canvasRef.current}
                 />
               )}
 
@@ -5440,6 +5445,8 @@ function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageB
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    const canvasRoot = e.currentTarget.closest('[data-custom-slide-canvas="true"]');
+    const visualEl = blockVisualElement(block.id, canvasRoot);
     const rndEl = (e.currentTarget as HTMLElement).parentElement;
     if (!rndEl) return;
     const rect = rndEl.getBoundingClientRect();
@@ -5448,6 +5455,22 @@ function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageB
     const startRot = block.rotation ?? 0;
     const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
     let raf: number | null = null;
+    let finalRot = Math.round(startRot);
+
+    const applyPreview = () => {
+      if (!visualEl) return;
+      const previewDelta = finalRot - startRot;
+      visualEl.style.transformOrigin = "50% 50%";
+      visualEl.style.transform = `rotate(${previewDelta}deg)`;
+      visualEl.style.willChange = "transform";
+    };
+
+    const clearPreview = () => {
+      if (!visualEl) return;
+      visualEl.style.transform = "";
+      visualEl.style.transformOrigin = "";
+      visualEl.style.willChange = "";
+    };
 
     const onMove = (ev: MouseEvent) => {
       if (raf !== null) cancelAnimationFrame(raf);
@@ -5459,7 +5482,8 @@ function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageB
         if (shiftKey) newRot = Math.round(newRot / 15) * 15;
         newRot = ((newRot % 360) + 360) % 360;
         if (newRot > 180) newRot -= 360;
-        patchBlockAction(block.id, { rotation: Math.round(newRot) } as never, "Rotacionar");
+        finalRot = Math.round(newRot);
+        applyPreview();
         raf = null;
       });
     };
@@ -5467,6 +5491,10 @@ function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageB
       if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      clearPreview();
+      if (finalRot !== Math.round(startRot)) {
+        patchBlockAction(block.id, { rotation: finalRot } as Partial<CustomBlock>, "Rotacionar");
+      }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -5508,6 +5536,19 @@ function clientToCanvas(
   if (!canvasEl) return null;
   const r = canvasEl.getBoundingClientRect();
   return { x: (clientX - r.left) / scale, y: (clientY - r.top) / scale };
+}
+
+function cssEscapeId(id: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(id);
+  return id.replace(/["\\]/g, "\\$&");
+}
+
+function blockFrameElement(id: string, root: ParentNode | null): HTMLElement | null {
+  return root?.querySelector<HTMLElement>(`[data-block-frame-id="${cssEscapeId(id)}"]`) ?? null;
+}
+
+function blockVisualElement(id: string, root: ParentNode | null): HTMLElement | null {
+  return root?.querySelector<HTMLElement>(`[data-block-visual-id="${cssEscapeId(id)}"]`) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -5619,16 +5660,18 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
 // proportional scale to every member ("Redimensionar grupo" ? undoable).
 // ---------------------------------------------------------------------------
 function GroupOverlay({
-  bounds, active, showHandles, memberIds, scaleRef,
+  bounds, active, showHandles, members, scaleRef, canvasEl,
 }: {
   bounds: { x: number; y: number; w: number; h: number };
   active: boolean;
   showHandles: boolean;
-  memberIds: string[];
+  members: CustomBlock[];
   scaleRef: React.MutableRefObject<number>;
+  canvasEl: HTMLDivElement | null;
 }) {
   const [preview, setPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const bb = preview ?? bounds;
+  const memberIds = useMemo(() => members.map((member) => member.id), [members]);
 
   type HandleDir = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -5639,7 +5682,52 @@ function GroupOverlay({
     const startX = e.clientX;
     const startY = e.clientY;
     const sc = scaleRef.current || 1;
-    const move = (ev: MouseEvent) => {
+    let raf: number | null = null;
+    let lastPreview: { x: number; y: number; w: number; h: number } | null = null;
+    const originalFrameStyles = new Map<string, { transform: string; transformOrigin: string; willChange: string; transition: string }>();
+
+    const applyMemberPreview = (nextPreview: { x: number; y: number; w: number; h: number }) => {
+      const scaleX = nextPreview.w / Math.max(1, origin.w);
+      const scaleY = nextPreview.h / Math.max(1, origin.h);
+      members.forEach((member) => {
+        if (member.locked) return;
+        const frame = blockFrameElement(member.id, canvasEl);
+        if (!frame) return;
+        if (!originalFrameStyles.has(member.id)) {
+          originalFrameStyles.set(member.id, {
+            transform: frame.style.transform,
+            transformOrigin: frame.style.transformOrigin,
+            willChange: frame.style.willChange,
+            transition: frame.style.transition,
+          });
+        }
+        const dx = member.x - origin.x;
+        const dy = member.y - origin.y;
+        const newX = nextPreview.x + dx * scaleX;
+        const newY = nextPreview.y + dy * scaleY;
+        const newW = Math.max(40, member.w * scaleX);
+        const newH = Math.max(40, member.h * scaleY);
+        const baseTransform = originalFrameStyles.get(member.id)?.transform ?? "";
+        frame.style.transformOrigin = "0 0";
+        frame.style.transition = "none";
+        frame.style.willChange = "transform";
+        frame.style.transform = `${baseTransform} translate(${newX - member.x}px, ${newY - member.y}px) scale(${newW / Math.max(1, member.w)}, ${newH / Math.max(1, member.h)})`;
+      });
+    };
+
+    const clearMemberPreview = () => {
+      originalFrameStyles.forEach((style, id) => {
+        const frame = blockFrameElement(id, canvasEl);
+        if (!frame) return;
+        frame.style.transform = style.transform;
+        frame.style.transformOrigin = style.transformOrigin;
+        frame.style.willChange = style.willChange;
+        frame.style.transition = style.transition;
+      });
+      originalFrameStyles.clear();
+    };
+
+    const computePreview = (ev: MouseEvent) => {
       const rawDx = (ev.clientX - startX) / sc;
       const rawDy = (ev.clientY - startY) / sc;
       let { x, y, w, h } = origin;
@@ -5652,18 +5740,32 @@ function GroupOverlay({
       }
       if (dir.includes("n")) {
         const nh = Math.max(40, origin.h - rawDy);
-        y = origin.y + (origin.h - nh);
-        h = nh;
+          y = origin.y + (origin.h - nh);
+          h = nh;
       }
-      setPreview({ x, y, w, h });
+      return { x, y, w, h };
+    };
+
+    const move = (ev: MouseEvent) => {
+      const nextPreview = computePreview(ev);
+      lastPreview = nextPreview;
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        setPreview(nextPreview);
+        applyMemberPreview(nextPreview);
+        raf = null;
+      });
     };
     const up = () => {
+      if (raf !== null) {
+        cancelAnimationFrame(raf);
+        raf = null;
+      }
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
-      setPreview((p) => {
-        if (p) resizeGroupAction(memberIds, origin, p);
-        return null;
-      });
+      clearMemberPreview();
+      if (lastPreview) resizeGroupAction(memberIds, origin, lastPreview);
+      setPreview(null);
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
