@@ -8,6 +8,7 @@
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
 import { useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
 import {
@@ -1869,6 +1870,7 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
 // ----------------------------------------------------------------------------
 export default function SlidesBeta() {
   usePageTitle("Slides");
+  const reduceMotion = useReducedMotion();
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
   const select = useSlidesFlow((s) => s.select);
@@ -1947,6 +1949,9 @@ export default function SlidesBeta() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 320, 300, 460);
   const [rightPanelWidth, setRightPanelWidth] = usePersistentWidth("omni4.slides.rightPanelWidth", 360, 340, 540);
+  const springTransition = reduceMotion
+    ? { duration: 0.01 }
+    : { type: "spring" as const, stiffness: 360, damping: 34, mass: 0.85 };
   const [templateApplying, setTemplateApplying] = useState(false);
   const [importApplying, setImportApplying] = useState(false);
   const [deckPreparation, setDeckPreparation] = useState<DeckPreparationState | null>(null);
@@ -2794,9 +2799,23 @@ export default function SlidesBeta() {
           </div>
         </div>
       )}
-      {deckPreparation?.visible && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-background/70 px-4 backdrop-blur-md">
-          <div className="surface-overlay w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-2xl">
+      <AnimatePresence initial={false}>
+        {deckPreparation?.visible && (
+          <motion.div
+            key="deck-preparation"
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-background/70 px-4 backdrop-blur-md"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0 }}
+            transition={springTransition}
+          >
+          <motion.div
+            className="surface-overlay w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-2xl"
+            initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
+            transition={springTransition}
+          >
             <div className="mb-4 flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -2830,9 +2849,10 @@ export default function SlidesBeta() {
             >
               Pular e continuar em segundo plano
             </Button>
-          </div>
-        </div>
-      )}
+          </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -2875,10 +2895,16 @@ export default function SlidesBeta() {
             })}
           </div>
 
+          <AnimatePresence initial={false}>
           {activeRailTab && (
-            <div
+            <motion.div
+              key="slides-rail-panel"
               className="surface-overlay absolute left-14 top-0 z-40 flex h-full min-h-0 flex-col border-r border-border/50"
               style={{ width: leftPanelWidth }}
+              initial={reduceMotion ? false : { opacity: 0, x: -18 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -14 }}
+              transition={springTransition}
             >
               <ResizeHandle side="right" onResize={(delta) => setLeftPanelWidth(leftPanelWidth + delta)} />
               <div className="flex items-center justify-between border-b border-border/40 px-3 py-2.5">
@@ -2966,8 +2992,9 @@ export default function SlidesBeta() {
                   )}
                 </div>
               </ScrollArea>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </aside>
 
         {/* ===== Coluna central: esteira ===== */}
@@ -3450,11 +3477,13 @@ export default function SlidesBeta() {
             </div>
           </div>
           {/* Painel de filtros (drawer lateral direito) */}
-          <div
+          <motion.div
             className={cn(
-              "surface-overlay absolute right-0 top-0 z-40 flex h-full w-[280px] flex-col border-l border-border/40 transition-transform duration-200",
-              filtersOpen ? "translate-x-0" : "translate-x-full",
+              "surface-overlay absolute right-0 top-0 z-40 flex h-full w-[280px] flex-col border-l border-border/40",
             )}
+            initial={false}
+            animate={{ x: filtersOpen ? 0 : "100%" }}
+            transition={springTransition}
           >
             <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
               <div className="flex items-center gap-2">
@@ -3603,7 +3632,7 @@ export default function SlidesBeta() {
                 </Button>
               </div>
             )}
-          </div>
+          </motion.div>
           {(templateApplying || importApplying || exporting) && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/55 backdrop-blur-sm">
               <div className="surface-overlay flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 px-4 py-3">

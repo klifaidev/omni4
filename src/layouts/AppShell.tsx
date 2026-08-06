@@ -1,4 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { UpdateNotification } from "@/components/UpdateNotification";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ export default function AppShell() {
   const months = useMonthsInfo();
   const addEntry = useHistory((s) => s.addEntry);
   const location = useLocation();
+  const reduceMotion = useReducedMotion();
   const setFilter = usePricing((s) => s.setFilter);
   const setSelectedPeriods = usePricing((s) => s.setSelectedPeriods);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -279,7 +281,17 @@ export default function AppShell() {
       <main className="flex-1 overflow-y-auto">
         <ActiveFiltersBar />
         <NoResultsBanner />
-        <Outlet />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={location.pathname}
+            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
+            transition={reduceMotion ? { duration: 0.01 } : { type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
       </main>
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
