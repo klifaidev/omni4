@@ -37,7 +37,7 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
   const dir = hasDelta ? (delta! > 0 ? "up" : delta! < 0 ? "down" : "flat") : null;
 
   const card = (
-    <GlassCard glow={glow} hoverable className={cn("surface-raised relative overflow-hidden animate-fade-up", className)}>
+    <GlassCard glow={glow} hoverable surface="raised" className={cn("relative overflow-hidden animate-fade-up", className)}>
       <div className="flex flex-col gap-3">
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           {label}

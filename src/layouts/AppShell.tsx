@@ -281,13 +281,20 @@ export default function AppShell() {
       <main className="flex-1 overflow-y-auto">
         <ActiveFiltersBar />
         <NoResultsBanner />
-        <AnimatePresence mode="wait" initial={false}>
+        <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
             key={location.pathname}
-            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
-            transition={reduceMotion ? { duration: 0.01 } : { type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{
+              opacity: 1,
+              transition: reduceMotion
+                ? { duration: 0.01 }
+                : { type: "spring", stiffness: 420, damping: 36, mass: 0.75 },
+            }}
+            exit={{
+              opacity: reduceMotion ? 1 : 0,
+              transition: reduceMotion ? { duration: 0.01 } : { duration: 0.08, ease: "easeOut" },
+            }}
           >
             <Outlet />
           </motion.div>
