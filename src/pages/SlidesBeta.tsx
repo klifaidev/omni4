@@ -45,6 +45,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -138,6 +142,63 @@ import {
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
+type SlideConfirmOptions = {
+  title: string;
+  description: string;
+  confirmLabel?: string;
+};
+
+function useSlideConfirm() {
+  const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const [options, setOptions] = useState<SlideConfirmOptions | null>(null);
+
+  const requestConfirm = useCallback((nextOptions: SlideConfirmOptions) => new Promise<boolean>((resolve) => {
+    resolverRef.current = resolve;
+    setOptions(nextOptions);
+  }), []);
+
+  const close = useCallback((confirmed: boolean) => {
+    resolverRef.current?.(confirmed);
+    resolverRef.current = null;
+    setOptions(null);
+  }, []);
+
+  const dialog = (
+    <AlertDialog open={!!options} onOpenChange={(open) => { if (!open) close(false); }}>
+      <AlertDialogContent className="surface-overlay">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{options?.title}</AlertDialogTitle>
+          <AlertDialogDescription>{options?.description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => close(false)}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => close(true)}
+          >
+            {options?.confirmLabel ?? "Excluir"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  return { requestConfirm, dialog };
+}
+
+function LocalSaveStatusBadge({ status }: { status: "saving" | "saved" | "error" }) {
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 slides-type-badge",
+      status === "error"
+        ? "border-destructive/35 bg-destructive/10 text-destructive"
+        : "border-success/35 bg-success/10 text-success",
+    )}>
+      {status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}
+      {status === "saving" ? "Salvando..." : status === "error" ? "Erro ao salvar" : "Salvo localmente"}
+    </span>
+  );
+}
 const CUSTOM_YJS_STORE_SYNC_MS = 120;
 const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
 const FLOW_CARD_ESTIMATED_HEIGHT = 98;
@@ -1017,6 +1078,7 @@ function FullscreenCustomEditor({
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
   const isCustom = current?.kind === "custom";
   const currentCustomYDoc = current?.kind === "custom" && getCollabYDoc ? getCollabYDoc(current) : null;
+  const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
   const [warmCustomSlideIds, setWarmCustomSlideIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -1095,11 +1157,18 @@ function FullscreenCustomEditor({
     select(created.id);
   };
 
-  const handleRemoveCurrent = () => {
+  const handleRemoveCurrent = async () => {
     if (guardReadOnly()) return;
     if (!current) return;
     const hasContent = current.kind === "custom" && current.config.blocks.length > 0;
-    if (hasContent && !confirm(`Remover "${current.label ?? "slide"}"? Os blocos serão perdidos.`)) return;
+    if (hasContent) {
+      const confirmed = await requestConfirm({
+        title: "Excluir slide?",
+        description: `"${current.label ?? "Slide"}" tem ${current.config.blocks.length} bloco(s). Essa ação remove o slide e seu conteúdo da esteira local.`,
+        confirmLabel: "Excluir slide",
+      });
+      if (!confirmed) return;
+    }
     const nextSel = items[idx + 1]?.id ?? items[idx - 1]?.id ?? null;
     removeItem(current.id);
     if (nextSel) {
@@ -1114,6 +1183,7 @@ function FullscreenCustomEditor({
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="flex h-[100vh] w-[100vw] max-w-none flex-col gap-3 rounded-none border-0 p-3 sm:rounded-none"
@@ -1290,6 +1360,8 @@ function FullscreenCustomEditor({
         </div>
       </DialogContent>
     </Dialog>
+    {confirmDialog}
+    </>
   );
 }
 
@@ -1800,6 +1872,7 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
   const deletePreset = useSlidesFlow((s) => s.deletePreset);
   const overwritePreset = useSlidesFlow((s) => s.overwritePreset);
+  const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
 
   if (presets.length === 0) {
     return (
@@ -1809,6 +1882,7 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
     );
   }
   return (
+    <>
     <div className="space-y-1.5">
       {presets
         .slice()
@@ -1854,7 +1928,14 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
               <Button
                 variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive"
                 title="Excluir"
-                onClick={() => { if (confirm(`Excluir "${p.name}"?`)) deletePreset(p.id); }}
+                onClick={async () => {
+                  const confirmed = await requestConfirm({
+                    title: "Excluir pré-definição?",
+                    description: `"${p.name}" tem ${p.items.length} slide(s). A pré-definição salva será removida deste computador.`,
+                    confirmLabel: "Excluir pré-definição",
+                  });
+                  if (confirmed) deletePreset(p.id);
+                }}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -1862,6 +1943,8 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
           </div>
         ))}
     </div>
+    {confirmDialog}
+    </>
   );
 }
 
@@ -2064,6 +2147,7 @@ export default function SlidesBeta() {
   const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
   const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
   const [collabSaveStatus, setCollabSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [localSaveStatus, setLocalSaveStatus] = useState<"saving" | "saved" | "error">("saved");
   const [edgeDegradedSince, setEdgeDegradedSince] = useState<number | null>(null);
   const [degradedNow, setDegradedNow] = useState(() => Date.now());
   const [isFollowingHost, setIsFollowingHost] = useState(false);
@@ -2071,6 +2155,9 @@ export default function SlidesBeta() {
   const lastSavedSnapshotRef = useRef<string>("");
   const saveTimerRef = useRef<number | null>(null);
   const savingRef = useRef(false);
+  const localSaveSignatureRef = useRef<string>("");
+  const localSaveTimerRef = useRef<number | null>(null);
+  const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
   const customYDocsRef = useRef<Map<string, Y.Doc>>(new Map());
   const customYProvidersRef = useRef<Map<string, SupabaseYjsProvider>>(new Map());
   const customYAwarenessRef = useRef<Map<string, Awareness>>(new Map());
@@ -2396,6 +2483,34 @@ export default function SlidesBeta() {
     [items, selectedId, transition],
   );
 
+  useEffect(() => {
+    if (roomId) return;
+    if (!localSaveSignatureRef.current) {
+      localSaveSignatureRef.current = currentSnapshotSignature;
+      setLocalSaveStatus("saved");
+      return;
+    }
+    if (localSaveSignatureRef.current === currentSnapshotSignature) return;
+    setLocalSaveStatus("saving");
+    if (localSaveTimerRef.current !== null) window.clearTimeout(localSaveTimerRef.current);
+    localSaveTimerRef.current = window.setTimeout(() => {
+      try {
+        window.localStorage.getItem("pricing.slidesFlow.v1");
+        localSaveSignatureRef.current = currentSnapshotSignature;
+        setLocalSaveStatus("saved");
+      } catch {
+        setLocalSaveStatus("error");
+      }
+      localSaveTimerRef.current = null;
+    }, 180);
+    return () => {
+      if (localSaveTimerRef.current !== null) {
+        window.clearTimeout(localSaveTimerRef.current);
+        localSaveTimerRef.current = null;
+      }
+    };
+  }, [currentSnapshotSignature, roomId]);
+
   const saveCollabSnapshotNow = useCallback(async () => {
     if (
       !persistentRoomDbId ||
@@ -2546,9 +2661,11 @@ export default function SlidesBeta() {
     try {
       const joined = await joinPersistentCollabRoom(normalizedCode);
       if (items.length > 0) {
-        const shouldReplace = window.confirm(
-          "Entrar nesta sala vai substituir a esteira local pelo snapshot mais recente da sala. Continuar?",
-        );
+        const shouldReplace = await requestConfirm({
+          title: "Substituir esteira local?",
+          description: `Entrar nesta sala vai substituir os ${items.length} slide(s) atuais pelo snapshot mais recente da sala colaborativa.`,
+          confirmLabel: "Substituir esteira",
+        });
         if (!shouldReplace) return;
       }
       applySnapshotFromCollab(joined.state);
@@ -3016,6 +3133,7 @@ export default function SlidesBeta() {
                   Incompleto
                 </Badge>
               )}
+              {!roomId && <LocalSaveStatusBadge status={localSaveStatus} />}
               {roomId && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 slides-type-badge text-success">
@@ -3243,7 +3361,13 @@ export default function SlidesBeta() {
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           if (guardViewOnly()) return;
-                          if (confirm("Limpar a esteira atual?")) clearItems();
+                          void requestConfirm({
+                            title: "Excluir todos os slides?",
+                            description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
+                            confirmLabel: "Excluir slides",
+                          }).then((confirmed) => {
+                            if (confirmed) clearItems();
+                          });
                         }}
                         disabled={viewOnly}
                       >
@@ -3332,7 +3456,13 @@ export default function SlidesBeta() {
                         variant="ghost" size="icon" className="hidden"
                         onClick={() => {
                           if (guardViewOnly()) return;
-                          if (confirm("Limpar a esteira atual?")) clearItems();
+                          void requestConfirm({
+                            title: "Excluir todos os slides?",
+                            description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
+                            confirmLabel: "Excluir slides",
+                          }).then((confirmed) => {
+                            if (confirmed) clearItems();
+                          });
                         }}
                         disabled={viewOnly}
                         aria-label="Limpar esteira"
@@ -3956,6 +4086,7 @@ export default function SlidesBeta() {
       </Dialog>
 
       <HistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
+      {confirmDialog}
 
       {presentationOpen && (
         <PresentationMode

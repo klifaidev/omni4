@@ -1515,7 +1515,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       cloneIds.forEach((id) => next.delete(id));
       return next;
     }), 260);
-    toast.success(cloneIds.length > 1 ? "Grupo duplicado para arraste." : "Bloco duplicado para arraste.", { duration: 1200 });
     return { cloneIds, originById };
   }, [canEdit, collabYDoc, config.blocks, draggableSiblings, insertYBlocks, maxBlockZ]);
 
@@ -1529,7 +1528,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (cut) {
       if (selectedIds.length === 1) removeBlock(selectedIds[0]);
       else removeBlocks(selectedIds);
-      toast.success("Bloco cortado");
     } else {
       toast.success("Bloco copiado");
     }
@@ -1551,14 +1549,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     clone.x = x;
     clone.y = y;
     if (collabYDoc) {
-      const ids = insertYBlocks([clone]);
-      if (ids.length > 0) toast.success("Bloco colado");
+      insertYBlocks([clone]);
       return;
     }
     const newId = insertBlockAction(clone, "Adicionar bloco");
     if (newId) {
       setSelection([newId]);
-      toast.success("Bloco colado");
     }
   }, [canEdit, collabYDoc, insertYBlocks]);
 
@@ -1626,13 +1622,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         if (k === "g" && !e.shiftKey) {
           e.preventDefault();
           if (!canEdit()) return;
-          if (selectedIds.length >= 2) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); }
+          if (selectedIds.length >= 2) groupBlocksAction(selectedIds);
           return;
         }
         if (k === "g" && e.shiftKey) {
           e.preventDefault();
           if (!canEdit()) return;
-          if (selectedIds.length > 0) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); }
+          if (selectedIds.length > 0) ungroupBlocksAction(selectedIds);
           return;
         }
         if (e.shiftKey && k === "h") { e.preventDefault(); centerSelectedH(); return; }
@@ -1895,7 +1891,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           >
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
               <span className="slides-type-label">Blocos</span>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setPalettePanelOpen(false)} aria-label="Fechar painel de blocos">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => setPalettePanelOpen(false)}
+                aria-label="Fechar painel de blocos"
+                title="Fechar painel de blocos"
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -2868,13 +2871,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     {selectedIds.length >= 2 && (
                       <>
                         <ContextMenuSeparator />
-                        <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}>
+                        <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) groupBlocksAction(selectedIds); }}>
                           Agrupar <ContextMenuShortcut>Ctrl+G</ContextMenuShortcut>
                         </ContextMenuItem>
                       </>
                     )}
                     {blk.groupId && (
-                      <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) { ungroupBlocksAction([blk.id]); toast.success("Grupo desfeito"); } }}>
+                      <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) ungroupBlocksAction([blk.id]); }}>
                         Desagrupar <ContextMenuShortcut>Ctrl+Shift+G</ContextMenuShortcut>
                       </ContextMenuItem>
                     )}
@@ -5339,6 +5342,7 @@ function TruncationAlert({ blockId, fit, unitPlural }: {
         onClick={() => { dismissedTruncations.set(blockId, key); force((n) => n + 1); }}
         className="absolute right-1 top-1 rounded p-0.5 hover:bg-amber-100"
         aria-label="Fechar"
+        title="Fechar aviso"
       >
         <X className="h-3 w-3 text-amber-700" />
       </button>
@@ -5386,6 +5390,7 @@ function PaletteButton({
         <button
           type="button"
           title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+          aria-label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
           onClick={(e) => {
             e.stopPropagation();
             onToggleFavorite();
@@ -5703,13 +5708,13 @@ function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, canEdit
       <div className="grid grid-cols-2 gap-1">
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly}
-          onClick={() => { if (canEdit()) { groupBlocksAction(selectedIds); toast.success("Blocos agrupados"); } }}
+          onClick={() => { if (canEdit()) groupBlocksAction(selectedIds); }}
           aria-label="Agrupar blocos selecionados">
           <GroupIcon className="h-3.5 w-3.5" /> Agrupar
         </Button>
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly || !hasGroup}
-          onClick={() => { if (canEdit()) { ungroupBlocksAction(selectedIds); toast.success("Grupo desfeito"); } }}
+          onClick={() => { if (canEdit()) ungroupBlocksAction(selectedIds); }}
           aria-label="Desagrupar blocos selecionados">
           <UngroupIcon className="h-3.5 w-3.5" /> Desagrupar
         </Button>
@@ -6071,6 +6076,7 @@ function PalettePopover({
                     className="h-6 w-6 rounded-md border border-border/50 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: `#${hex}` }}
                     title={`#${hex}`}
+                    aria-label={`Aplicar cor #${hex}`}
                   />
                 ))}
               </div>
@@ -6089,6 +6095,7 @@ function PalettePopover({
                   className="h-6 w-6 rounded-md border border-border/50 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: `#${hex}` }}
                   title={`#${hex}`}
+                  aria-label={`Aplicar cor #${hex}`}
                 />
               ))}
             </div>
