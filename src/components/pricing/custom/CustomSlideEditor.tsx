@@ -558,7 +558,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const altDragCloneRef = useRef<{ sourceId: string; cloneIds: string[]; originById: Map<string, { x: number; y: number }> } | null>(null);
+  const altDragCloneRef = useRef<{ sourceId: string } | null>(null);
   const [altDragFlashIds, setAltDragFlashIds] = useState<Set<string>>(() => new Set());
   // Inline text editing (double-click no bloco title/text).
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
@@ -1502,18 +1502,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     return [id];
   }, [config.blocks, config.groups, groupEditMemberId, selectedIds]);
 
-  const createAltDragClone = useCallback((sourceId: string): { cloneIds: string[]; originById: Map<string, { x: number; y: number }> } | null => {
-    if (!canEdit()) return null;
+  const createAltDragCloneAtOffset = useCallback((sourceId: string, dx: number, dy: number): string[] => {
+    if (!canEdit()) return [];
     const ids = draggableSiblings(sourceId);
     const zTop = maxBlockZ();
     const groupIdMap = new Map<string, string>();
-    const cloneOrigins: { x: number; y: number }[] = [];
     const clones = ids
       .map((id, index) => {
         const orig = config.blocks.find((block) => block.id === id);
         if (!orig || orig.locked) return null;
-        const cloneIndex = cloneOrigins.length;
-        cloneOrigins.push({ x: orig.x, y: orig.y });
         let groupId = orig.groupId;
         if (groupId) {
           if (!groupIdMap.has(groupId)) groupIdMap.set(groupId, localId());
@@ -1522,26 +1519,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         return {
           ...JSON.parse(JSON.stringify(orig)),
           id: localId(),
-          x: orig.x,
-          y: orig.y,
-          z: zTop + cloneIndex + 1,
+          x: orig.x + dx,
+          y: orig.y + dy,
+          z: zTop + index + 1,
           locked: false,
           groupId,
         } as CustomBlock;
       })
       .filter((block): block is CustomBlock => Boolean(block));
-    if (clones.length === 0) return null;
+    if (clones.length === 0) return [];
 
     const cloneIds = collabYDoc
       ? insertYBlocks(clones, false)
       : insertBlocksAction(clones, "Duplicar blocos");
-    if (cloneIds.length === 0) return null;
-
-    const originById = new Map<string, { x: number; y: number }>();
-    cloneIds.forEach((cloneId, index) => {
-      const origin = cloneOrigins[index];
-      if (origin) originById.set(cloneId, origin);
-    });
+    if (cloneIds.length === 0) return [];
 
     setSelection(cloneIds);
     setAltDragFlashIds(new Set(cloneIds));
@@ -1550,8 +1541,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       cloneIds.forEach((id) => next.delete(id));
       return next;
     }), 260);
-    return { cloneIds, originById };
-  }, [canEdit, collabYDoc, config.blocks, draggableSiblings, insertYBlocks, maxBlockZ]);
+    return cloneIds;
+  }, [canEdit, collabYDoc, config.blocks, draggableSiblings, insertBlocksAction, insertYBlocks, maxBlockZ]);
 
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
@@ -2657,18 +2648,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onDragStart={(e, _d) => {
                           const altDrag = "altKey" in e && e.altKey;
                           if (altDrag) {
-                            const cloneSession = createAltDragClone(blk.id);
-                            if (cloneSession && cloneSession.cloneIds.length > 0) {
-                              altDragCloneRef.current = { sourceId: blk.id, ...cloneSession };
-                              return;
-                            }
+                            altDragCloneRef.current = { sourceId: blk.id };
+                            return;
                           }
                           altDragCloneRef.current = null;
                           if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
                         }}
                         onDrag={(_, d) => {
-                          const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
-                          const ids = altDrag ? [...altDrag.cloneIds, blk.id] : draggableSiblings(blk.id);
+                          const ids = draggableSiblings(blk.id);
                           const snap = computeGuides(ids, d.x, d.y, blk.w, blk.h);
                           if (snap.guides.v.length || snap.guides.h.length || snap.guides.equalSpacing.length) {
                             d.x = snap.x; d.y = snap.y;
@@ -2683,7 +2670,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onDragStop={(_, d) => {
                           clearGuides();
                           const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
-                          const ids = altDrag ? altDrag.cloneIds : draggableSiblings(blk.id);
+                          const ids = draggableSiblings(blk.id);
                           let dx = d.x - blk.x;
                           let dy = d.y - blk.y;
                           if (prefs.gridEnabled) {
@@ -2694,18 +2681,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           }
                           if (altDrag) {
                             altDragCloneRef.current = null;
-                            const patches = ids
-                              .map((id) => {
-                                const origin = altDrag.originById.get(id);
-                                if (!origin) return null;
-                                return { id, patch: { x: origin.x + dx, y: origin.y + dy } as Partial<CustomBlock> };
-                              })
-                              .filter((patch): patch is { id: string; patch: Partial<CustomBlock> } => Boolean(patch));
-                            if (collabYDoc) {
-                              patches.forEach((item) => updateBlock(item.id, item.patch));
-                              return;
-                            }
-                            patchBlocksAction(patches, ids.length > 1 ? "Mover blocos" : "Mover bloco");
+                            createAltDragCloneAtOffset(blk.id, dx, dy);
                             return;
                           }
                           if (ids.length === 1) {
