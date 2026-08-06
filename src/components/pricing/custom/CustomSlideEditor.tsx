@@ -2121,7 +2121,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <ClearFiltersToolbar />
         <div
           ref={wrapperRef}
-          className="relative min-h-0 flex-1 overflow-auto rounded-lg border border-border/40 bg-secondary/20"
+          className="continuous-corner-lg relative min-h-0 flex-1 overflow-auto border border-border/40 bg-secondary/20"
           onMouseDown={(e) => {
             // Marquee selection ? only if mousedown is on the wrapper itself
             // (i.e. canvas background, not a block / Rnd handle / inspector).

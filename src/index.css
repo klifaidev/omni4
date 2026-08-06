@@ -400,6 +400,17 @@
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 
+/* Acabamento premium para superficies grandes. Mantem fallback nativo de border-radius. */
+.continuous-corner-lg {
+  border-radius: calc(var(--radius) * 1.4);
+}
+
+@supports (corner-shape: squircle) {
+  .continuous-corner-lg {
+    corner-shape: squircle;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --transition-smooth: linear;

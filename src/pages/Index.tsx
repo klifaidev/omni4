@@ -153,7 +153,7 @@ export default function Index() {
       <div className="space-y-6 px-8 py-6 animate-fade-up">
         {empty ? (
           <>
-            <GlassCard className="relative overflow-hidden p-10 glow-blue">
+            <GlassCard className="continuous-corner-lg relative overflow-hidden p-10 glow-blue">
               <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
               <div className="relative space-y-6">
                 <div className="space-y-3">
@@ -735,7 +735,7 @@ function KpisWidget({
 
   return (
     <>
-      <GlassCard className={cn("grid grid-cols-2 gap-6 p-6", cols)}>
+      <GlassCard className={cn("continuous-corner-lg grid grid-cols-2 gap-6 p-6", cols)}>
         {items.map((i) => (
           <Stat
             key={i.key}
