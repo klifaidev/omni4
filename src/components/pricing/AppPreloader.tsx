@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Database, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { preloadSavedBases, type BasesPreloadProgress } from "@/lib/preloadBases";
+import { preloadSlidesRoute } from "@/lib/preloadSlidesRoute";
 import { cn } from "@/lib/utils";
 
 type Unsubscribe = () => void;
@@ -170,6 +171,8 @@ export function AppPreloader({ children }: { children: React.ReactNode }) {
       });
 
       if (!alive || updateResult === "installing") return;
+
+      void preloadSlidesRoute().catch(() => undefined);
 
       await preloadSavedBases((next) => {
         if (!alive) return;

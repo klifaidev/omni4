@@ -27,8 +27,9 @@ import Estoque from "./pages/Estoque.tsx";
 import Positivacao from "./pages/Positivacao.tsx";
 import FarolCadastro from "./pages/FarolCadastro.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import { preloadSlidesRoute } from "@/lib/preloadSlidesRoute";
 
-const SlidesBeta = lazy(() => import("./pages/SlidesBeta.tsx"));
+const SlidesBeta = lazy(() => preloadSlidesRoute());
 
 function SlidesRouteFallback() {
   return (

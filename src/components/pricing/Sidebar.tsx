@@ -47,6 +47,7 @@ import { useTheme, type Theme } from "@/store/theme";
 import { useMemo, useState } from "react";
 import { GlobalSearch } from "./GlobalSearch";
 import { useCommandPalette } from "@/store/commandPalette";
+import { preloadSlidesRoute } from "@/lib/preloadSlidesRoute";
 
 const dashItems = [
   { to: "/", label: "Início", icon: Home, end: true },
@@ -97,6 +98,9 @@ export function Sidebar() {
   // On desktop (md+), `collapsed` controls the width.
   const desktopWidth = collapsed ? "md:w-14" : "md:w-[230px]";
   const closeMobile = () => setMobileOpen(false);
+  const warmRoute = (to: string) => {
+    if (to === "/slides") void preloadSlidesRoute().catch(() => undefined);
+  };
 
   return (
     <>
@@ -214,6 +218,8 @@ export function Sidebar() {
                 <NavLink
                   to={item.to}
                   onClick={closeMobile}
+                  onFocus={() => warmRoute(item.to)}
+                  onMouseEnter={() => warmRoute(item.to)}
                   title={collapsed ? item.label : undefined}
                   aria-label={item.label}
                   className={`flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground/80 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-primary/60 ${

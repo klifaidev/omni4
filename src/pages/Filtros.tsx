@@ -30,7 +30,7 @@ import { useMonthsInfo } from "@/store/selectors";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { applyFilters } from "@/lib/analytics";
 import { fiscalYearStartYear } from "@/lib/fiscalYear";
-import type { FilterKey, Filters, Metric, PricingRow } from "@/lib/types";
+import type { FilterKey, Filters, PricingRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const FILTER_DISPLAY_LABEL: Partial<Record<FilterKey, string>> = {
@@ -59,7 +59,6 @@ type FilterPreset = {
   name: string;
   filters: Filters;
   selectedPeriods: string[] | null;
-  metric: Metric;
   createdAt: string;
 };
 
@@ -72,6 +71,7 @@ const DIMENSION_GROUPS: { title: string; fields: DimensionField[] }[] = [
       { key: "canal", label: "Canal" },
       { key: "canalAjustado", label: "Canal Ajustado" },
       { key: "mercadoAjustado", label: "Mercado Ajustado" },
+      { key: "regional", label: "Regional" },
     ],
   },
   {
@@ -89,10 +89,6 @@ const DIMENSION_GROUPS: { title: string; fields: DimensionField[] }[] = [
       { key: "inovacao", label: "Inovação / Regular" },
       { key: "legado", label: "Legado" },
     ],
-  },
-  {
-    title: "Geografia",
-    fields: [{ key: "regional", label: "Regional" }],
   },
 ];
 
@@ -153,7 +149,6 @@ function loadFilterPresets(): FilterPreset[] {
         preset &&
         typeof preset.id === "string" &&
         typeof preset.name === "string" &&
-        (preset.metric === "cm" || preset.metric === "mb") &&
         typeof preset.createdAt === "string"
       );
     });
@@ -177,13 +172,11 @@ export default function Filtros() {
 
   const rows = usePricing((s) => s.rows);
   const filters = usePricing((s) => s.filters);
-  const metric = usePricing((s) => s.metric);
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
   const setFilter = usePricing((s) => s.setFilter);
   const clearFilters = usePricing((s) => s.clearFilters);
   const setSelectedPeriods = usePricing((s) => s.setSelectedPeriods);
   const setAllPeriods = usePricing((s) => s.setAllPeriods);
-  const setMetric = usePricing((s) => s.setMetric);
 
   const months = useMonthsInfo();
   const [presets, setPresets] = useState<FilterPreset[]>(() => loadFilterPresets());
@@ -332,8 +325,8 @@ export default function Filtros() {
   const currentPresetSummary = useMemo(() => {
     const filterCount = activeFilters.reduce((acc, item) => acc + item.values.length, 0);
     const periodText = isAllPeriods ? "todos os períodos" : `${selectedCount} período(s)`;
-    return `${filterCount} filtro(s) · ${periodText} · ${metric === "cm" ? "CM" : "MB"}`;
-  }, [activeFilters, isAllPeriods, metric, selectedCount]);
+    return `${filterCount} filtro(s) · ${periodText}`;
+  }, [activeFilters, isAllPeriods, selectedCount]);
 
   const handleSavePreset = () => {
     const name = presetName.trim();
@@ -343,7 +336,6 @@ export default function Filtros() {
       name,
       filters: JSON.parse(JSON.stringify(filters)) as Filters,
       selectedPeriods: selectedPeriods ? [...selectedPeriods] : null,
-      metric,
       createdAt: new Date().toISOString(),
     };
     setPresets((cur) => [nextPreset, ...cur]);
@@ -357,7 +349,6 @@ export default function Filtros() {
       if (values?.length) setFilter(key, values);
     }
     setSelectedPeriods(preset.selectedPeriods ? [...preset.selectedPeriods] : null);
-    setMetric(preset.metric);
   };
 
   const deletePreset = () => {
@@ -641,50 +632,6 @@ export default function Filtros() {
             </div>
           </GlassCard>
         )}
-
-        <section className="space-y-3 pt-4">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Configuração de análise
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Define como os indicadores são calculados; não altera quais registros entram na análise.
-            </p>
-          </div>
-          <GlassCard>
-            <h3 className="mb-5 text-base font-semibold text-foreground">Métrica principal</h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {(
-                [
-                  { value: "cm", label: "Contribuição de Margem (CM)" },
-                  { value: "mb", label: "Margem Bruta (MB)" },
-                ] as { value: "cm" | "mb"; label: string }[]
-              ).map(({ value, label }) => {
-                const active = metric === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setMetric(value)}
-                    className={cn(
-                      "cursor-pointer rounded-xl border p-4 text-left transition-colors",
-                      active
-                        ? "border-primary/60 bg-primary/10 text-primary"
-                        : "border-border/40 bg-card/40 text-muted-foreground hover:border-primary/30 hover:bg-card/60",
-                    )}
-                  >
-                    <span className="text-sm font-medium">{label}</span>
-                    {active && (
-                      <span className="mt-1 block text-[11px] font-normal opacity-70">
-                        Métrica ativa
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </GlassCard>
-        </section>
       </div>
     </div>
 
