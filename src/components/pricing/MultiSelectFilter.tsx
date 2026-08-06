@@ -9,6 +9,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const VIRTUALIZE_THRESHOLD = 200;
+const OPTION_ROW_HEIGHT = 32;
+const OPTION_LIST_HEIGHT = 280;
+const OPTION_OVERSCAN = 6;
+
 export interface MultiSelectOption {
   value: string;
   label: string;
@@ -33,6 +38,7 @@ export function MultiSelectFilter({
 }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [scrollTop, setScrollTop] = useState(0);
 
   const triggerClass =
     variant === "comercial"
@@ -61,6 +67,23 @@ export function MultiSelectFilter({
     if (!q) return options;
     return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, search]);
+
+  const shouldVirtualize = filteredOptions.length > VIRTUALIZE_THRESHOLD;
+  const virtualWindow = useMemo(() => {
+    if (!shouldVirtualize) {
+      return { options: filteredOptions, topSpacer: 0, bottomSpacer: 0 };
+    }
+
+    const start = Math.max(0, Math.floor(scrollTop / OPTION_ROW_HEIGHT) - OPTION_OVERSCAN);
+    const visibleCount = Math.ceil(OPTION_LIST_HEIGHT / OPTION_ROW_HEIGHT) + OPTION_OVERSCAN * 2;
+    const end = Math.min(filteredOptions.length, start + visibleCount);
+
+    return {
+      options: filteredOptions.slice(start, end),
+      topSpacer: start * OPTION_ROW_HEIGHT,
+      bottomSpacer: Math.max(0, (filteredOptions.length - end) * OPTION_ROW_HEIGHT),
+    };
+  }, [filteredOptions, scrollTop, shouldVirtualize]);
 
   const allFilteredValues = useMemo(
     () => filteredOptions.map((o) => o.value),
@@ -93,7 +116,13 @@ export function MultiSelectFilter({
   })();
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setScrollTop(0);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -131,7 +160,10 @@ export function MultiSelectFilter({
             placeholder="Buscar…"
             className="h-9"
             value={search}
-            onValueChange={setSearch}
+            onValueChange={(value) => {
+              setSearch(value);
+              setScrollTop(0);
+            }}
           />
 
           {/* Barra de ações estilo Excel */}
@@ -166,10 +198,16 @@ export function MultiSelectFilter({
             </button>
           </div>
 
-          <CommandList className="max-h-[280px]">
+          <CommandList
+            className="max-h-[280px]"
+            onScroll={(event) => {
+              if (shouldVirtualize) setScrollTop(event.currentTarget.scrollTop);
+            }}
+          >
             <CommandEmpty>Nada encontrado.</CommandEmpty>
             <CommandGroup>
-              {filteredOptions.map((o) => {
+              {virtualWindow.topSpacer > 0 && <div aria-hidden="true" style={{ height: virtualWindow.topSpacer }} />}
+              {virtualWindow.options.map((o) => {
                 const checked = selected.includes(o.value);
                 return (
                   <CommandItem
@@ -195,6 +233,9 @@ export function MultiSelectFilter({
                   </CommandItem>
                 );
               })}
+              {virtualWindow.bottomSpacer > 0 && (
+                <div aria-hidden="true" style={{ height: virtualWindow.bottomSpacer }} />
+              )}
             </CommandGroup>
           </CommandList>
 
