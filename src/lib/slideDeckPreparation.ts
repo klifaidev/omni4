@@ -262,12 +262,18 @@ export async function warmSpeculativeChartPaletteData(options?: {
     }, rows, block, effectiveMeasure, seriesDim, xDim);
     warmed += 1;
 
-    getOrComputeSlideCalc({
-      ...shared,
-      op: "chart-inspector-series",
-      slideId: null,
-      params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
-    }, () => computeChartSeries(rows, block.filters, block.measure, block.breakdown));
+    await computeChartSeriesAsync({
+      cache: {
+        ...shared,
+        op: "chart-inspector-series",
+        slideId: null,
+        params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
+      },
+      rows,
+      filters: block.filters,
+      measure: block.measure,
+      breakdown: block.breakdown,
+    });
     warmed += 1;
 
     const isRankingChart = RANKING_CHART_TYPES.includes(block.chartType as typeof RANKING_CHART_TYPES[number]);
@@ -282,12 +288,21 @@ export async function warmSpeculativeChartPaletteData(options?: {
 
       if (["pie", "donut", "funnel", "treemap"].includes(block.chartType)) {
         const rankingBreakdown = block.breakdown ?? "marca";
-        getOrComputeSlideCalc({
-          ...shared,
-          op: "chart-inspector-ranking",
-          slideId: null,
-          params: { filters: block.filters, breakdown: rankingBreakdown, measure: block.measure, topN: 50, mode: "all" },
-        }, () => computeTopRanking(rows, block.filters, rankingBreakdown, block.measure, 50, "all", null));
+        await computeTopRankingAsync({
+          cache: {
+            ...shared,
+            op: "chart-inspector-ranking",
+            slideId: null,
+            params: { filters: block.filters, breakdown: rankingBreakdown, measure: block.measure, topN: 50, mode: "all" },
+          },
+          rows,
+          filters: block.filters,
+          dim: rankingBreakdown,
+          measure: block.measure,
+          topN: 50,
+          periodMode: "all",
+          periodValue: null,
+        });
         warmed += 1;
       }
     }
@@ -295,19 +310,37 @@ export async function warmSpeculativeChartPaletteData(options?: {
     if ((block.chartType === "bubble" || block.chartType === "scatter") && (safeMeasureX || safeMeasureY)) {
       const dim = seriesDim ?? "marca";
       if (safeMeasureX) {
-        getOrComputeSlideCalc({
-          ...shared,
-          op: "chart-scatter-axis-ranking",
-          params: { filters: block.filters, dim, measure: safeMeasureX, axis: "x" },
-        }, () => computeTopRanking(rows, block.filters, dim, safeMeasureX, 50, "all", null));
+        await computeTopRankingAsync({
+          cache: {
+            ...shared,
+            op: "chart-scatter-axis-ranking",
+            params: { filters: block.filters, dim, measure: safeMeasureX, axis: "x" },
+          },
+          rows,
+          filters: block.filters,
+          dim,
+          measure: safeMeasureX,
+          topN: 50,
+          periodMode: "all",
+          periodValue: null,
+        });
         warmed += 1;
       }
       if (safeMeasureY) {
-        getOrComputeSlideCalc({
-          ...shared,
-          op: "chart-scatter-axis-ranking",
-          params: { filters: block.filters, dim, measure: safeMeasureY, axis: "y" },
-        }, () => computeTopRanking(rows, block.filters, dim, safeMeasureY, 50, "all", null));
+        await computeTopRankingAsync({
+          cache: {
+            ...shared,
+            op: "chart-scatter-axis-ranking",
+            params: { filters: block.filters, dim, measure: safeMeasureY, axis: "y" },
+          },
+          rows,
+          filters: block.filters,
+          dim,
+          measure: safeMeasureY,
+          topN: 50,
+          periodMode: "all",
+          periodValue: null,
+        });
         warmed += 1;
       }
     }
