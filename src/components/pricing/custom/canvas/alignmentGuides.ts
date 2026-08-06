@@ -6,10 +6,22 @@
 import { CANVAS_W, CANVAS_H, type CustomBlock } from "@/lib/customSlide";
 
 export interface Bounds { id: string; x: number; y: number; w: number; h: number }
+export interface EqualSpacingGuide {
+  axis: "x" | "y";
+  gap: number;
+  start: number;
+  end: number;
+  anchorStart: number;
+  anchorEnd: number;
+  movingStart: number;
+  movingEnd: number;
+  crossStart: number;
+  crossEnd: number;
+}
 export interface SnapResult {
   x: number;
   y: number;
-  guides: { v: number[]; h: number[] };
+  guides: { v: number[]; h: number[]; equalSpacing: EqualSpacingGuide[] };
 }
 
 const TOLERANCE = 6;
@@ -21,6 +33,7 @@ export function computeSnap(
 ): SnapResult {
   const v = new Set<number>();
   const h = new Set<number>();
+  const equalSpacing: EqualSpacingGuide[] = [];
   let snapX = moving.x;
   let snapY = moving.y;
   let bestDx = TOLERANCE + 1;
@@ -87,7 +100,78 @@ export function computeSnap(
     }
   }
 
-  return { x: snapX, y: snapY, guides: { v: Array.from(v), h: Array.from(h) } };
+  const spacingX = equalSpacingSnap("x", { ...moving, x: snapX, y: snapY }, others);
+  if (spacingX && Math.abs(spacingX.x - snapX) <= Math.max(TOLERANCE, Math.abs(spacingX.delta))) {
+    snapX = spacingX.x;
+    equalSpacing.push(spacingX.guide);
+  }
+
+  const spacingY = equalSpacingSnap("y", { ...moving, x: snapX, y: snapY }, others);
+  if (spacingY && Math.abs(spacingY.y - snapY) <= Math.max(TOLERANCE, Math.abs(spacingY.delta))) {
+    snapY = spacingY.y;
+    equalSpacing.push(spacingY.guide);
+  }
+
+  return { x: snapX, y: snapY, guides: { v: Array.from(v), h: Array.from(h), equalSpacing } };
+}
+
+function equalSpacingSnap(
+  axis: "x" | "y",
+  moving: { x: number; y: number; w: number; h: number },
+  others: Bounds[],
+): { x: number; y: number; delta: number; guide: EqualSpacingGuide } | null {
+  const startKey = axis === "x" ? "x" : "y";
+  const sizeKey = axis === "x" ? "w" : "h";
+  const crossStartKey = axis === "x" ? "y" : "x";
+  const crossSizeKey = axis === "x" ? "h" : "w";
+
+  const movingStart = moving[startKey];
+  const movingSize = moving[sizeKey];
+  const movingEnd = movingStart + movingSize;
+  const movingCrossStart = moving[crossStartKey];
+  const movingCrossEnd = movingCrossStart + moving[crossSizeKey];
+
+  const relevant = others.filter((b) => {
+    const crossStart = b[crossStartKey];
+    const crossEnd = crossStart + b[crossSizeKey];
+    return crossEnd > movingCrossStart && crossStart < movingCrossEnd;
+  });
+
+  const leftOrTop = relevant
+    .filter((b) => b[startKey] + b[sizeKey] <= movingStart)
+    .sort((a, b) => (b[startKey] + b[sizeKey]) - (a[startKey] + a[sizeKey]))[0];
+  const rightOrBottom = relevant
+    .filter((b) => b[startKey] >= movingEnd)
+    .sort((a, b) => a[startKey] - b[startKey])[0];
+
+  if (!leftOrTop || !rightOrBottom) return null;
+
+  const anchorStart = leftOrTop[startKey] + leftOrTop[sizeKey];
+  const anchorEnd = rightOrBottom[startKey];
+  const idealStart = (anchorStart + anchorEnd - movingSize) / 2;
+  const delta = idealStart - movingStart;
+  if (Math.abs(delta) > TOLERANCE) return null;
+
+  const snappedStart = Math.round(idealStart);
+  const snappedEnd = snappedStart + movingSize;
+  const gap = Math.max(0, Math.round(snappedStart - anchorStart));
+
+  const guide: EqualSpacingGuide = {
+    axis,
+    gap,
+    start: anchorStart,
+    end: anchorEnd,
+    anchorStart,
+    anchorEnd,
+    movingStart: snappedStart,
+    movingEnd: snappedEnd,
+    crossStart: movingCrossStart,
+    crossEnd: movingCrossEnd,
+  };
+
+  return axis === "x"
+    ? { x: snappedStart, y: moving.y, delta, guide }
+    : { x: moving.x, y: snappedStart, delta, guide };
 }
 
 /** Convert blocks (excluding ids in `excludeIds`) to bounds. */

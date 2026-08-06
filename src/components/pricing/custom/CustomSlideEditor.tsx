@@ -297,7 +297,7 @@ import {
 import { snapToGrid, type GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
 import { getTheme, type SlideTheme } from "@/lib/slideThemes";
-import { computeSnap, boundsOf, groupBounds } from "./canvas/alignmentGuides";
+import { computeSnap, boundsOf, groupBounds, type EqualSpacingGuide } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { AssetLibrary } from "./AssetLibrary";
@@ -439,6 +439,26 @@ type CustomTextAwareness = {
   field: string;
 };
 
+type GuideState = { v: number[]; h: number[]; equalSpacing: EqualSpacingGuide[] };
+
+const EMPTY_GUIDES: GuideState = { v: [], h: [], equalSpacing: [] };
+
+function equalSpacingGuidesEqual(a: EqualSpacingGuide[], b: EqualSpacingGuide[]): boolean {
+  return a.length === b.length && a.every((guide, index) => {
+    const other = b[index];
+    return guide.axis === other.axis
+      && guide.gap === other.gap
+      && guide.start === other.start
+      && guide.end === other.end
+      && guide.anchorStart === other.anchorStart
+      && guide.anchorEnd === other.anchorEnd
+      && guide.movingStart === other.movingStart
+      && guide.movingEnd === other.movingEnd
+      && guide.crossStart === other.crossStart
+      && guide.crossEnd === other.crossEnd;
+  });
+}
+
 function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
   const [value, setValue] = useState(() => yText?.toString() ?? fallback);
   useEffect(() => {
@@ -525,13 +545,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   });
   const [canvasHovered, setCanvasHovered] = useState(false);
 
-  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const [guides, setGuides] = useState<GuideState>(EMPTY_GUIDES);
   const guidesRef = useRef(guides);
   const pendingGuidesRef = useRef(guides);
   const guidesRafRef = useRef<number | null>(null);
   const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const altDragCloneRef = useRef<{ sourceId: string; cloneIds: string[]; originById: Map<string, { x: number; y: number }> } | null>(null);
+  const [altDragFlashIds, setAltDragFlashIds] = useState<Set<string>>(() => new Set());
   // Inline text editing (double-click no bloco title/text).
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   // Limpa inline edit se o bloco for excluído ou ficar bloqueado.
@@ -565,18 +587,19 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     return () => window.removeEventListener("resize", updateSide);
   }, [palettePanelOpen, activePaletteCategory]);
 
-  const setGuidesImmediate = useCallback((next: { v: number[]; h: number[] }) => {
+  const setGuidesImmediate = useCallback((next: GuideState) => {
     if (
       guidesRef.current.v.length === next.v.length
       && guidesRef.current.h.length === next.h.length
       && guidesRef.current.v.every((value, index) => value === next.v[index])
       && guidesRef.current.h.every((value, index) => value === next.h[index])
+      && equalSpacingGuidesEqual(guidesRef.current.equalSpacing, next.equalSpacing)
     ) return;
     guidesRef.current = next;
     setGuides(next);
   }, []);
 
-  const scheduleGuides = useCallback((next: { v: number[]; h: number[] }) => {
+  const scheduleGuides = useCallback((next: GuideState) => {
     pendingGuidesRef.current = next;
     if (guidesRafRef.current !== null) return;
     guidesRafRef.current = requestAnimationFrame(() => {
@@ -590,8 +613,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       cancelAnimationFrame(guidesRafRef.current);
       guidesRafRef.current = null;
     }
-    pendingGuidesRef.current = { v: [], h: [] };
-    setGuidesImmediate({ v: [], h: [] });
+    pendingGuidesRef.current = EMPTY_GUIDES;
+    setGuidesImmediate(EMPTY_GUIDES);
   }, [setGuidesImmediate]);
 
   useEffect(() => () => {
@@ -1441,6 +1464,58 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (selectedIds.includes(id) && selectedIds.length > 1) return selectedIds;
     return [id];
   }, [config.blocks, config.groups, groupEditMemberId, selectedIds]);
+
+  const createAltDragClone = useCallback((sourceId: string): { cloneIds: string[]; originById: Map<string, { x: number; y: number }> } | null => {
+    if (!canEdit()) return null;
+    const ids = draggableSiblings(sourceId);
+    const zTop = maxBlockZ();
+    const groupIdMap = new Map<string, string>();
+    const cloneOrigins: { x: number; y: number }[] = [];
+    const clones = ids
+      .map((id, index) => {
+        const orig = config.blocks.find((block) => block.id === id);
+        if (!orig || orig.locked) return null;
+        const cloneIndex = cloneOrigins.length;
+        cloneOrigins.push({ x: orig.x, y: orig.y });
+        let groupId = orig.groupId;
+        if (groupId) {
+          if (!groupIdMap.has(groupId)) groupIdMap.set(groupId, localId());
+          groupId = groupIdMap.get(groupId);
+        }
+        return {
+          ...JSON.parse(JSON.stringify(orig)),
+          id: localId(),
+          x: orig.x,
+          y: orig.y,
+          z: zTop + cloneIndex + 1,
+          locked: false,
+          groupId,
+        } as CustomBlock;
+      })
+      .filter((block): block is CustomBlock => Boolean(block));
+    if (clones.length === 0) return null;
+
+    const cloneIds = collabYDoc
+      ? insertYBlocks(clones, false)
+      : insertBlocksAction(clones, "Duplicar blocos");
+    if (cloneIds.length === 0) return null;
+
+    const originById = new Map<string, { x: number; y: number }>();
+    cloneIds.forEach((cloneId, index) => {
+      const origin = cloneOrigins[index];
+      if (origin) originById.set(cloneId, origin);
+    });
+
+    setSelection(cloneIds);
+    setAltDragFlashIds(new Set(cloneIds));
+    window.setTimeout(() => setAltDragFlashIds((current) => {
+      const next = new Set(current);
+      cloneIds.forEach((id) => next.delete(id));
+      return next;
+    }), 260);
+    toast.success(cloneIds.length > 1 ? "Grupo duplicado para arraste." : "Bloco duplicado para arraste.", { duration: 1200 });
+    return { cloneIds, originById };
+  }, [canEdit, collabYDoc, config.blocks, draggableSiblings, insertYBlocks, maxBlockZ]);
 
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
@@ -2471,13 +2546,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             setAspectResizeIds((prev) => new Set(prev).add(blk.id));
                           }
                         }}
-                        onDragStart={(_e, _d) => {
+                        onDragStart={(e, _d) => {
+                          const altDrag = "altKey" in e && e.altKey;
+                          if (altDrag) {
+                            const cloneSession = createAltDragClone(blk.id);
+                            if (cloneSession && cloneSession.cloneIds.length > 0) {
+                              altDragCloneRef.current = { sourceId: blk.id, ...cloneSession };
+                              return;
+                            }
+                          }
+                          altDragCloneRef.current = null;
                           if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
                         }}
                         onDrag={(_, d) => {
-                          const ids = draggableSiblings(blk.id);
+                          const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
+                          const ids = altDrag ? [...altDrag.cloneIds, blk.id] : draggableSiblings(blk.id);
                           const snap = computeGuides(ids, d.x, d.y, blk.w, blk.h);
-                          if (snap.guides.v.length || snap.guides.h.length) {
+                          if (snap.guides.v.length || snap.guides.h.length || snap.guides.equalSpacing.length) {
                             d.x = snap.x; d.y = snap.y;
                           }
                         }}
@@ -2489,7 +2574,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         }}
                         onDragStop={(_, d) => {
                           clearGuides();
-                          const ids = draggableSiblings(blk.id);
+                          const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
+                          const ids = altDrag ? altDrag.cloneIds : draggableSiblings(blk.id);
                           let dx = d.x - blk.x;
                           let dy = d.y - blk.y;
                           if (prefs.gridEnabled) {
@@ -2497,6 +2583,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             const sy = snapToGrid(d.y, prefs.gridSize);
                             dx = sx - blk.x;
                             dy = sy - blk.y;
+                          }
+                          if (altDrag) {
+                            altDragCloneRef.current = null;
+                            const patches = ids
+                              .map((id) => {
+                                const origin = altDrag.originById.get(id);
+                                if (!origin) return null;
+                                return { id, patch: { x: origin.x + dx, y: origin.y + dy } as Partial<CustomBlock> };
+                              })
+                              .filter((patch): patch is { id: string; patch: Partial<CustomBlock> } => Boolean(patch));
+                            if (collabYDoc) {
+                              patches.forEach((item) => updateBlock(item.id, item.patch));
+                              return;
+                            }
+                            patchBlocksAction(patches, ids.length > 1 ? "Mover blocos" : "Mover bloco");
+                            return;
                           }
                           if (ids.length === 1) {
                             updateBlock(blk.id, { x: blk.x + dx, y: blk.y + dy });
@@ -2591,6 +2693,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
                         className={cn(
                           "group/block transition-[outline,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          altDragFlashIds.has(blk.id) && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
                           isSelected
                             ? "outline outline-2 outline-offset-1 outline-primary"
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
@@ -2795,6 +2898,33 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   <line key={`gh-${i}`} y1={y} y2={y} x1={0} x2={CANVAS_W}
                     stroke={SLIDE_HEX.blue} strokeWidth={1} />
                 ))}
+                {guides.equalSpacing.map((guide, i) => {
+                  const label = `${guide.gap}px`;
+                  if (guide.axis === "x") {
+                    const y = Math.min(CANVAS_H - 12, Math.max(12, (guide.crossStart + guide.crossEnd) / 2));
+                    return (
+                      <g key={`geqx-${i}`}>
+                        <line x1={guide.anchorStart} x2={guide.movingStart} y1={y} y2={y}
+                          stroke="hsl(var(--warning))" strokeWidth={1.5} strokeDasharray="5 4" />
+                        <line x1={guide.movingEnd} x2={guide.anchorEnd} y1={y} y2={y}
+                          stroke="hsl(var(--warning))" strokeWidth={1.5} strokeDasharray="5 4" />
+                        <text x={(guide.start + guide.end) / 2} y={y - 6} textAnchor="middle"
+                          fill="hsl(var(--warning))" fontSize={11} fontWeight={700}>{label}</text>
+                      </g>
+                    );
+                  }
+                  const x = Math.min(CANVAS_W - 12, Math.max(12, (guide.crossStart + guide.crossEnd) / 2));
+                  return (
+                    <g key={`geqy-${i}`}>
+                      <line x1={x} x2={x} y1={guide.anchorStart} y2={guide.movingStart}
+                        stroke="hsl(var(--warning))" strokeWidth={1.5} strokeDasharray="5 4" />
+                      <line x1={x} x2={x} y1={guide.movingEnd} y2={guide.anchorEnd}
+                        stroke="hsl(var(--warning))" strokeWidth={1.5} strokeDasharray="5 4" />
+                      <text x={x + 8} y={(guide.start + guide.end) / 2} dominantBaseline="middle"
+                        fill="hsl(var(--warning))" fontSize={11} fontWeight={700}>{label}</text>
+                    </g>
+                  );
+                })}
               </svg>
 
               {/* Marquee selection rectangle (B8.2). */}
