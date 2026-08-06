@@ -1,6 +1,6 @@
-import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
+import type { ChartBlock, CustomChartType, KpiMeasureId } from "@/lib/customSlide";
 import type { SlideItem } from "@/lib/slidesFlow";
-import { isMeasureAvailable } from "@/lib/customSlide";
+import { isMeasureAvailable, newChartBlock, newPositivacaoChartBlock } from "@/lib/customSlide";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
@@ -15,6 +15,21 @@ import { ensureChartStyle } from "@/components/pricing/custom/chart/types";
 import type { PricingRow } from "@/lib/types";
 
 const RANKING_CHART_TYPES = ["pie", "donut", "bubble", "scatter", "funnel", "treemap"] as const;
+const SPECULATIVE_CHART_TYPES: CustomChartType[] = [
+  "line",
+  "column",
+  "stackedColumn",
+  "hbar",
+  "stackedBar",
+  "area",
+  "stackedArea",
+  "pie",
+  "donut",
+  "scatter",
+  "bubble",
+  "funnel",
+  "treemap",
+];
 
 function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeasureId {
   return dataSource === "forecast" ? "volume" : "rol";
@@ -93,6 +108,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
           op: "chart-series",
           slideId: item.id,
           blockId: block.id,
+          shareAcrossBlocks: true,
           dataSource: series.dataSource,
           dataSignature: getCachedRowsSignature(sourceRows),
           params: { filters: block.filters, measure, breakdown: null, xDim, comboSeriesName: series.name },
@@ -104,6 +120,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
         op: "chart-series",
         slideId: item.id,
         blockId: block.id,
+        shareAcrossBlocks: true,
         dataSource: block.dataSource,
         dataSignature,
         params: { filters: block.filters, measure: effectiveMeasure, seriesDim, xDim },
@@ -114,6 +131,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
     getOrComputeSlideCalc({
       op: "chart-inspector-series",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature,
       params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
@@ -125,6 +143,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
         op: "chart-tooltip-extra",
         slideId: item.id,
         blockId: block.id,
+        shareAcrossBlocks: true,
         dataSource: block.dataSource,
         dataSignature,
         params: { filters: block.filters, measure: safeTooltipMeasure, xDim },
@@ -137,6 +156,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
         op: "chart-line-series",
         slideId: item.id,
         blockId: block.id,
+        shareAcrossBlocks: true,
         dataSource: block.dataSource,
         dataSignature,
         params: { filters: block.filters, measure: safeMeasureLine, seriesDim },
@@ -151,6 +171,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
         op: "chart-ranking",
         slideId: item.id,
         blockId: block.id,
+        shareAcrossBlocks: true,
         dataSource: block.dataSource,
         dataSignature,
         params: { filters: block.filters, dim, measure: effectiveMeasure, chartType: block.chartType },
@@ -162,6 +183,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
         getOrComputeSlideCalc({
           op: "chart-inspector-ranking",
           blockId: block.id,
+          shareAcrossBlocks: true,
           dataSource: block.dataSource,
           dataSignature,
           params: { filters: block.filters, breakdown: rankingBreakdown, measure: block.measure, topN: 50, mode: "all" },
@@ -177,6 +199,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
           op: "chart-scatter-axis-ranking",
           slideId: item.id,
           blockId: block.id,
+          shareAcrossBlocks: true,
           dataSource: block.dataSource,
           dataSignature,
           params: { filters: block.filters, dim, measure: safeMeasureX, axis: "x" },
@@ -188,6 +211,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
           op: "chart-scatter-axis-ranking",
           slideId: item.id,
           blockId: block.id,
+          shareAcrossBlocks: true,
           dataSource: block.dataSource,
           dataSignature,
           params: { filters: block.filters, dim, measure: safeMeasureY, axis: "y" },
@@ -196,6 +220,99 @@ export async function warmSlideChartData(item: SlideItem, options?: {
       }
     }
     await options?.onBlock?.();
+  }
+
+  return warmed;
+}
+
+export async function warmSpeculativeChartPaletteData(options?: {
+  slideId?: string | null;
+  maxCharts?: number;
+  onChart?: () => Promise<void> | void;
+}): Promise<number> {
+  const maxCharts = options?.maxCharts ?? 6;
+  if (maxCharts <= 0) return 0;
+
+  const blocks = [
+    ...SPECULATIVE_CHART_TYPES.map((chartType) => newChartBlock(chartType, 0)),
+    newPositivacaoChartBlock(0),
+  ].slice(0, maxCharts);
+
+  let warmed = 0;
+  for (const block of blocks) {
+    const style = ensureChartStyle(block.style);
+    const xDim = block.fieldWells?.xDim ?? null;
+    const seriesDim = block.fieldWells?.colorDim ?? block.breakdown ?? null;
+    const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource) ?? fallbackMeasureForSource(block.dataSource);
+    const safeMeasureX = safeMeasureForSource(style.measureX, block.dataSource);
+    const safeMeasureY = safeMeasureForSource(style.measureY, block.dataSource);
+    const rows = rowsForDataSource(block.dataSource);
+    const dataSignature = getCachedRowsSignature(rows);
+    const shared = {
+      slideId: options?.slideId ?? null,
+      shareAcrossBlocks: true,
+      dataSource: block.dataSource,
+      dataSignature,
+    } satisfies Partial<SlideCalcCacheKeyInput>;
+
+    await warmChartSeriesCache({
+      ...shared,
+      op: "chart-series",
+      params: { filters: block.filters, measure: effectiveMeasure, seriesDim, xDim },
+    }, rows, block, effectiveMeasure, seriesDim, xDim);
+    warmed += 1;
+
+    getOrComputeSlideCalc({
+      ...shared,
+      op: "chart-inspector-series",
+      slideId: null,
+      params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
+    }, () => computeChartSeries(rows, block.filters, block.measure, block.breakdown));
+    warmed += 1;
+
+    const isRankingChart = RANKING_CHART_TYPES.includes(block.chartType as typeof RANKING_CHART_TYPES[number]);
+    if (isRankingChart) {
+      const dim = seriesDim ?? "marca";
+      await warmChartRankingCache({
+        ...shared,
+        op: "chart-ranking",
+        params: { filters: block.filters, dim, measure: effectiveMeasure, chartType: block.chartType },
+      }, rows, block, dim, effectiveMeasure);
+      warmed += 1;
+
+      if (["pie", "donut", "funnel", "treemap"].includes(block.chartType)) {
+        const rankingBreakdown = block.breakdown ?? "marca";
+        getOrComputeSlideCalc({
+          ...shared,
+          op: "chart-inspector-ranking",
+          slideId: null,
+          params: { filters: block.filters, breakdown: rankingBreakdown, measure: block.measure, topN: 50, mode: "all" },
+        }, () => computeTopRanking(rows, block.filters, rankingBreakdown, block.measure, 50, "all", null));
+        warmed += 1;
+      }
+    }
+
+    if ((block.chartType === "bubble" || block.chartType === "scatter") && (safeMeasureX || safeMeasureY)) {
+      const dim = seriesDim ?? "marca";
+      if (safeMeasureX) {
+        getOrComputeSlideCalc({
+          ...shared,
+          op: "chart-scatter-axis-ranking",
+          params: { filters: block.filters, dim, measure: safeMeasureX, axis: "x" },
+        }, () => computeTopRanking(rows, block.filters, dim, safeMeasureX, 50, "all", null));
+        warmed += 1;
+      }
+      if (safeMeasureY) {
+        getOrComputeSlideCalc({
+          ...shared,
+          op: "chart-scatter-axis-ranking",
+          params: { filters: block.filters, dim, measure: safeMeasureY, axis: "y" },
+        }, () => computeTopRanking(rows, block.filters, dim, safeMeasureY, 50, "all", null));
+        warmed += 1;
+      }
+    }
+
+    await options?.onChart?.();
   }
 
   return warmed;

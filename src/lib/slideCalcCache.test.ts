@@ -68,6 +68,42 @@ describe("slideCalcCache", () => {
     expect(calls).toBe(3);
   });
 
+  it("can share explicitly block-independent calculations across block ids", () => {
+    let sharedCalls = 0;
+    const sharedBase = {
+      op: "chart-series",
+      slideId: "slide-1",
+      dataSource: "ke30",
+      dataSignature: "rows-v1",
+      shareAcrossBlocks: true,
+      params: { filters: {}, measure: "rol", breakdown: null },
+    };
+
+    const first = getOrComputeSlideCalc({ ...sharedBase, blockId: "block-a" }, () => {
+      sharedCalls += 1;
+      return { value: "warmed" };
+    });
+    const second = getOrComputeSlideCalc({ ...sharedBase, blockId: "block-b" }, () => {
+      sharedCalls += 1;
+      return { value: "miss" };
+    });
+
+    let isolatedCalls = 0;
+    const isolatedBase = { ...sharedBase, op: "custom-bridge-pvm", shareAcrossBlocks: false };
+    getOrComputeSlideCalc({ ...isolatedBase, blockId: "block-a" }, () => {
+      isolatedCalls += 1;
+      return 1;
+    });
+    getOrComputeSlideCalc({ ...isolatedBase, blockId: "block-b" }, () => {
+      isolatedCalls += 1;
+      return 2;
+    });
+
+    expect(second).toBe(first);
+    expect(sharedCalls).toBe(1);
+    expect(isolatedCalls).toBe(2);
+  });
+
   it("caps cache growth with LRU eviction", () => {
     setSlideCalcCacheMaxEntriesForTest(3);
 

@@ -4,6 +4,14 @@ export type SlideCalcCacheKeyInput = {
   op: string;
   slideId?: string | null;
   blockId?: string | null;
+  /**
+   * Use only for computations whose result is fully determined by op, slide,
+   * data source/signature and params. Chart data series/rankings fit this:
+   * blockId is useful for diagnostics, but does not change the math. Layout or
+   * block-specific calculations must keep this false so different blocks do not
+   * collide in cache.
+   */
+  shareAcrossBlocks?: boolean;
   dataSource?: string | null;
   dataSignature?: string | null;
   params?: unknown;
@@ -47,7 +55,7 @@ export function buildSlideCalcCacheKey(input: SlideCalcCacheKeyInput): string {
   return [
     input.op,
     input.slideId ?? "no-slide",
-    input.blockId ?? "no-block",
+    input.shareAcrossBlocks ? "shared-block" : input.blockId ?? "no-block",
     input.dataSource ?? "default",
     input.dataSignature ?? "no-data",
     hashString(stableStringify(input.params ?? null)),

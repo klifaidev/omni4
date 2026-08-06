@@ -5,7 +5,7 @@ import type { PricingRow } from "@/lib/types";
 import { usePricing } from "@/store/pricing";
 import { clearSlideCalcCache, getCachedRowsSignature, getOrComputeSlideCalc } from "./slideCalcCache";
 import { computeChartSeries } from "./customKpi";
-import { warmSlideChartData } from "./slideDeckPreparation";
+import { warmSlideChartData, warmSpeculativeChartPaletteData } from "./slideDeckPreparation";
 
 const rows = [
   { periodo: "001.2026", mes: 1, ano: 2026, marca: "A", canal: "Direto", rol: 100, contribMarginal: 25, volumeKg: 10 },
@@ -69,6 +69,7 @@ describe("slideDeckPreparation", () => {
       op: "chart-series",
       slideId: "slide-1",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature,
       params: { filters: block.filters, measure: "cm", seriesDim: "marca", xDim: null },
@@ -81,6 +82,7 @@ describe("slideDeckPreparation", () => {
     const inspectorSeries = getOrComputeSlideCalc({
       op: "chart-inspector-series",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature,
       params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
@@ -106,6 +108,7 @@ describe("slideDeckPreparation", () => {
       op: "chart-series",
       slideId: "slide-1",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature,
       params: { filters: block.filters, measure: "cm", seriesDim: "marca", xDim: null },
@@ -120,6 +123,7 @@ describe("slideDeckPreparation", () => {
       op: "chart-series",
       slideId: "slide-1",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature: getCachedRowsSignature(rows),
       params: { filters: block.filters, measure: "cm", seriesDim: "marca", xDim: null },
@@ -127,6 +131,7 @@ describe("slideDeckPreparation", () => {
     getOrComputeSlideCalc({
       op: "chart-inspector-series",
       blockId: block.id,
+      shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature: getCachedRowsSignature(rows),
       params: { filters: block.filters, measure: block.measure, breakdown: block.breakdown },
@@ -140,7 +145,7 @@ describe("slideDeckPreparation", () => {
   it("can limit how many chart blocks are warmed in one preparation pass", async () => {
     usePricing.setState({ rows, metric: "cm" });
     const first = chartBlock();
-    const second = { ...chartBlock(), id: "chart-2" };
+    const second = { ...chartBlock(), id: "chart-2", measure: "rol" as const };
 
     const warmed = await warmSlideChartData(slideWithCharts([first, second]), { maxBlocks: 1 });
 
@@ -152,6 +157,7 @@ describe("slideDeckPreparation", () => {
       op: "chart-series",
       slideId: "slide-1",
       blockId: first.id,
+      shareAcrossBlocks: true,
       dataSource: first.dataSource,
       dataSignature,
       params: { filters: first.filters, measure: "cm", seriesDim: "marca", xDim: null },
@@ -165,15 +171,39 @@ describe("slideDeckPreparation", () => {
       op: "chart-series",
       slideId: "slide-1",
       blockId: second.id,
+      shareAcrossBlocks: true,
       dataSource: second.dataSource,
       dataSignature,
-      params: { filters: second.filters, measure: "cm", seriesDim: "marca", xDim: null },
+      params: { filters: second.filters, measure: "rol", seriesDim: "marca", xDim: null },
     }, () => {
       secondCalls += 1;
-      return computeChartSeries(rows, second.filters, "cm", "marca", null);
+      return computeChartSeries(rows, second.filters, "rol", "marca", null);
     });
 
     expect(firstCalls).toBe(0);
     expect(secondCalls).toBe(1);
+  });
+
+  it("warms speculative chart palette data without requiring the future block id", async () => {
+    usePricing.setState({ rows, metric: "cm" });
+
+    await warmSpeculativeChartPaletteData({ slideId: "slide-1", maxCharts: 1 });
+
+    const dataSignature = getCachedRowsSignature(rows);
+    let calls = 0;
+    getOrComputeSlideCalc({
+      op: "chart-series",
+      slideId: "slide-1",
+      blockId: "future-chart-id",
+      shareAcrossBlocks: true,
+      dataSource: "ke30",
+      dataSignature,
+      params: { filters: {}, measure: "cm", seriesDim: null, xDim: null },
+    }, () => {
+      calls += 1;
+      return computeChartSeries(rows, {}, "cm", null, null);
+    });
+
+    expect(calls).toBe(0);
   });
 });

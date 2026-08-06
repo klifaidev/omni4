@@ -94,6 +94,8 @@ import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
+import { getCachedRowsSignature } from "@/lib/slideCalcCache";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
 import type { Filters } from "@/lib/types";
@@ -322,6 +324,7 @@ type Icon = React.ComponentType<{ className?: string }>;
 const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
 const PALETTE_FAVORITES_KEY = "omni4.customSlide.paletteFavorites";
 const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
+const SPECULATIVE_CHART_WARM_MAX = 10;
 type PaletteCategory = "favorites" | "models" | "charts" | "elements" | "story" | "omni" | "assets";
 type PalettePanelSide = "right" | "left";
 
@@ -515,6 +518,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const canvasRef = useRef<HTMLDivElement>(null);
   const paletteRailRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
+  const speculativeChartWarmSignaturesRef = useRef<Set<string>>(new Set());
   const { prefs, scale, scaleKey } = useSlideEditorScale(wrapperRef, canvasShellRef);
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -1438,6 +1442,37 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleOmniPalette = OMNI_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.group));
+  const chartWarmDataSignature = useMemo(() => [
+    slideId,
+    getCachedRowsSignature(pricingRows),
+    getCachedRowsSignature(budgetRows),
+    getCachedRowsSignature(forecastRows),
+    getCachedRowsSignature(rollingRows),
+  ].join("|"), [slideId, pricingRows, budgetRows, forecastRows, rollingRows]);
+  useEffect(() => {
+    if (!palettePanelOpen || activePaletteCategory !== "charts" || visibleChartPalette.length === 0) return;
+    if (speculativeChartWarmSignaturesRef.current.has(chartWarmDataSignature)) return;
+    speculativeChartWarmSignaturesRef.current.add(chartWarmDataSignature);
+    let cancelled = false;
+    const yieldToUi = () => new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+    void (async () => {
+      try {
+        await warmSpeculativeChartPaletteData({
+          slideId,
+          maxCharts: SPECULATIVE_CHART_WARM_MAX,
+          onChart: async () => {
+            await yieldToUi();
+            if (cancelled) throw new Error("cancelled");
+          },
+        });
+      } catch {
+        // Speculative warming is best-effort; a failed worker/cache fill should never affect editing.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activePaletteCategory, chartWarmDataSignature, palettePanelOpen, slideId, visibleChartPalette.length]);
   const hasPaletteResults = isPaletteSearching
     ? visibleStorytellingPalette.length > 0
       || visibleChartPalette.length > 0

@@ -224,6 +224,7 @@ export function ChartInspector({
       return getOrComputeSlideCalc({
         op: "chart-inspector-series",
         blockId,
+        shareAcrossBlocks: true,
         dataSource,
         dataSignature: dsRowsSignature,
         params: { filters, measure, breakdown },
@@ -248,6 +249,7 @@ export function ChartInspector({
       return getOrComputeSlideCalc({
         op: "chart-inspector-ranking",
         blockId,
+        shareAcrossBlocks: true,
         dataSource,
         dataSignature: dsRowsSignature,
         params: { filters, breakdown: rankingBreakdown, measure, topN: 50, mode: "all" },
