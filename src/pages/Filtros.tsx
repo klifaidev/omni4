@@ -28,9 +28,9 @@ import { MultiSelectFilter, type MultiSelectOption } from "@/components/pricing/
 import { usePricing } from "@/store/pricing";
 import { useMonthsInfo } from "@/store/selectors";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { applyFilters } from "@/lib/analytics";
+import { computeAvailableOptionsPerDimension } from "@/lib/filterOptions";
 import { fiscalYearStartYear } from "@/lib/fiscalYear";
-import type { FilterKey, Filters, PricingRow } from "@/lib/types";
+import type { FilterKey, Filters } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const FILTER_DISPLAY_LABEL: Partial<Record<FilterKey, string>> = {
@@ -91,44 +91,6 @@ const DIMENSION_GROUPS: { title: string; fields: DimensionField[] }[] = [
     ],
   },
 ];
-
-function fieldHasValues(rows: PricingRow[], key: FilterKey): boolean {
-  return rows.some((r) => {
-    const v = (r as Record<string, unknown>)[key];
-    return typeof v === "string" && v.trim().length > 0;
-  });
-}
-
-function getDimensionOptions(rows: PricingRow[], key: FilterKey): MultiSelectOption[] {
-  if (key === "sku") {
-    const options = new Map<string, string>();
-    for (const r of rows) {
-      if (!r.sku?.trim()) continue;
-      const desc = r.skuDesc?.trim();
-      if (!options.has(r.sku)) options.set(r.sku, desc ? `${r.sku} - ${desc}` : r.sku);
-    }
-    return Array.from(options, ([value, label]) => ({ value, label })).sort((a, b) =>
-      a.value.localeCompare(b.value, "pt-BR"),
-    );
-  }
-
-  const vals = new Set<string>();
-  for (const r of rows) {
-    const v = (r as Record<string, unknown>)[key];
-    if (typeof v === "string" && v.trim().length > 0) vals.add(v);
-  }
-  return Array.from(vals)
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
-    .map((value) => ({ value, label: value }));
-}
-
-function filtersWithoutKey(filters: Filters, key: FilterKey): Filters {
-  const next: Filters = {};
-  for (const [filterKey, values] of Object.entries(filters) as [FilterKey, string[] | undefined][]) {
-    if (filterKey !== key && values && values.length > 0) next[filterKey] = values;
-  }
-  return next;
-}
 
 function samePeriods(a: string[] | null, b: string[]): boolean {
   if (a === null) return false;
@@ -252,18 +214,18 @@ export default function Filtros() {
     return Array.from(groups.entries()).map(([year, items]) => ({ year, months: items }));
   }, [months]);
 
-  const matchingRows = useMemo(
-    () => applyFilters(rows, filters, selectedPeriods),
-    [filters, rows, selectedPeriods],
+  const dimensionKeys = useMemo(
+    () => DIMENSION_GROUPS.flatMap((group) => group.fields.map((field) => field.key)),
+    [],
   );
 
-  const matchingSkuCount = useMemo(() => {
-    const skus = new Set<string>();
-    for (const r of matchingRows) {
-      if (r.sku) skus.add(r.sku);
-    }
-    return skus.size;
-  }, [matchingRows]);
+  const filterOptionsSummary = useMemo(
+    () => computeAvailableOptionsPerDimension(rows, filters, selectedPeriods, dimensionKeys),
+    [dimensionKeys, filters, rows, selectedPeriods],
+  );
+
+  const matchingRows = filterOptionsSummary.matchingRows;
+  const matchingSkuCount = filterOptionsSummary.matchingSkuCount;
 
   const activePeriodLabel = useMemo(() => {
     if (isAllPeriods || months.length === 0) return "Todos os períodos";
@@ -275,27 +237,17 @@ export default function Filtros() {
 
   // Options are cross-filtered by the other dimensions and period, but not by themselves.
   const dimensionFilterGroups = useMemo<DimensionFilterGroup[]>(() => {
-    const scopedRowsByKey = new Map<FilterKey, PricingRow[]>();
-
-    const getScopedRows = (key: FilterKey) => {
-      const cached = scopedRowsByKey.get(key);
-      if (cached) return cached;
-      const scopedRows = applyFilters(rows, filtersWithoutKey(filters, key), selectedPeriods);
-      scopedRowsByKey.set(key, scopedRows);
-      return scopedRows;
-    };
-
     return DIMENSION_GROUPS.map(({ title, fields }) => ({
       title,
       filters: fields
-        .filter(({ key }) => fieldHasValues(rows, key))
+        .filter(({ key }) => filterOptionsSummary.hasValuesByKey.get(key))
         .map(({ key, label }) => ({
           key,
           label,
-          options: getDimensionOptions(getScopedRows(key), key),
+          options: filterOptionsSummary.optionsByKey.get(key) ?? [],
         })),
     })).filter((group) => group.filters.length > 0);
-  }, [filters, rows, selectedPeriods]);
+  }, [filterOptionsSummary]);
 
   const hasDimensionFilters = dimensionFilterGroups.length > 0;
 
