@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computePivot } from "./pivot";
+import { computePivot, getDrillRowsForCell, type PivotConfig } from "./pivot";
 
 describe("computePivot weighted ratio measures", () => {
-  it("tracks original row indexes for cell drill-through without duplicating row objects", () => {
+  it("resolves original row indexes for cell drill-through lazily", () => {
     const rows = [
       { categoria: "A", mes: "Jan", valor: 10, canal: "Direto" },
       { categoria: "A", mes: "Jan", valor: 5, canal: "Online" },
@@ -10,19 +10,21 @@ describe("computePivot weighted ratio measures", () => {
       { categoria: "B", mes: "Jan", valor: 3, canal: "Direto" },
     ];
 
-    const pivot = computePivot(rows, {
+    const config: PivotConfig = {
       rows: ["categoria"],
       cols: ["mes"],
       filters: { canal: ["Direto"] },
       values: [
         { id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" },
       ],
-    });
+    };
+    const pivot = computePivot(rows, config);
 
     expect(pivot.cells.get("A")?.get("Jan")?.valor).toBe(10);
-    expect(pivot.drillRows.get("A")?.get("Jan")).toEqual([0]);
-    expect(pivot.drillRows.get("A")?.get("Fev")).toEqual([2]);
-    expect(pivot.drillRows.get("B")?.get("Jan")).toEqual([3]);
+    expect(pivot.drillRows.size).toBe(0);
+    expect(getDrillRowsForCell(rows, config, "A", "Jan")).toEqual([0]);
+    expect(getDrillRowsForCell(rows, config, "A", "Fev")).toEqual([2]);
+    expect(getDrillRowsForCell(rows, config, "B", "Jan")).toEqual([3]);
   });
 
   it("returns expandable row groups with leaf headers preserving the previous flat order", () => {
@@ -33,14 +35,15 @@ describe("computePivot weighted ratio measures", () => {
       { categoria: "Chocolates", sku: "100", mes: "Fev", valor: 300 },
     ];
 
-    const pivot = computePivot(rows, {
+    const config: PivotConfig = {
       rows: ["categoria", "sku"],
       cols: ["mes"],
       filters: {},
       values: [
         { id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" },
       ],
-    });
+    };
+    const pivot = computePivot(rows, config);
 
     expect(pivot.rowHeaders.map((row) => ({
       key: row.key,
@@ -63,7 +66,9 @@ describe("computePivot weighted ratio measures", () => {
     expect(pivot.rowTotals.get("Chocolates")?.valor).toBe(600);
     expect(pivot.cells.get("Chocolates")?.get("Jan")?.valor).toBe(300);
     expect(pivot.cells.get("Chocolates")?.get("Fev")?.valor).toBe(300);
-    expect(pivot.drillRows.get("Chocolates")?.get("Jan")).toEqual([0, 1]);
+    expect(pivot.drillRows.size).toBe(0);
+    expect(getDrillRowsForCell(rows, config, "Chocolates", "Jan")).toEqual([0, 1]);
+    expect(getDrillRowsForCell(rows, config, "Chocolates\u001f100", "Jan")).toEqual([0]);
   });
 
   it("aggregates sum, avg, count, min and max from incremental accumulators", () => {

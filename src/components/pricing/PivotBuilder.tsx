@@ -38,7 +38,14 @@ import {
   dimensionsForMode,
   type PivotMode,
 } from "@/lib/pivotData";
-import type { PivotConfig, PivotMeasure, PivotResult, PivotRowHeader } from "@/lib/pivot";
+import {
+  getDrillRowsForCell,
+  type PivotColHeader,
+  type PivotConfig,
+  type PivotMeasure,
+  type PivotResult,
+  type PivotRowHeader,
+} from "@/lib/pivot";
 import { computePivotAsync, createEmptyPivotResult } from "@/lib/pivotWorkerClient";
 import type { PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
@@ -1157,6 +1164,7 @@ export function PivotBuilder({
               setHighlightRow={setHighlightRow}
               onOpenDrill={(selection) => setDrillSelection(selection)}
               sourceRows={unifiedRecords}
+              pivotConfig={pivotConfig}
             />
           </div>
         </div>
@@ -1746,6 +1754,7 @@ function PivotTable({
   setHighlightRow,
   onOpenDrill,
   sourceRows,
+  pivotConfig,
 }: {
   pivot: PivotResult;
   measures: PivotMeasure[];
@@ -1762,6 +1771,7 @@ function PivotTable({
   setHighlightRow: (k: string | null) => void;
   onOpenDrill: (selection: DrillSelection) => void;
   sourceRows: PivotDetailRow[];
+  pivotConfig: PivotConfig;
 }) {
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
   const hasRowGroups = pivot.rowHeaders.some((row) => !row.isLeaf);
@@ -1772,6 +1782,21 @@ function PivotTable({
   const [viewportHeight, setViewportHeight] = useState(0);
   const totalColumnCount = Math.max(1, rowDims.length) + cols.length * measures.length;
   const shouldVirtualize = sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD;
+  const openDrill = (row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => {
+    const drillIndexes = getDrillRowsForCell(
+      sourceRows as Record<string, unknown>[],
+      pivotConfig,
+      row.key,
+      col.key,
+    );
+    if (drillIndexes.length === 0) return;
+    onOpenDrill({
+      rowValues: row.values,
+      colValues: col.values,
+      measure,
+      rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
+    });
+  };
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -2060,32 +2085,22 @@ function PivotTable({
                         grandTotal: pivot.grandTotal[m.id],
                       });
                       const max = showAs === "normal" ? (maxByMeasure.get(m.id) ?? 0) : 1;
-                      const drillIndexes = pivot.drillRows.get(rh.key)?.get(c.key) ?? [];
+                      const canDrill = pivot.cells.get(rh.key)?.has(c.key) ?? false;
                       return (
                         <td
                           key={`v-${rh.key}-${c.key}-${m.id}`}
                           role="button"
-                          tabIndex={drillIndexes.length > 0 ? 0 : -1}
-                          title={drillIndexes.length > 0 ? "Clique para ver as linhas que compõem este valor" : undefined}
+                          tabIndex={canDrill ? 0 : -1}
+                          title={canDrill ? "Clique para ver as linhas que compõem este valor" : undefined}
                           onClick={() => {
-                            if (drillIndexes.length === 0) return;
-                            onOpenDrill({
-                              rowValues: rh.values,
-                              colValues: c.values,
-                              measure: m,
-                              rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
-                            });
+                            if (!canDrill) return;
+                            openDrill(rh, c, m);
                           }}
                           onKeyDown={(event) => {
-                            if (drillIndexes.length === 0) return;
+                            if (!canDrill) return;
                             if (event.key !== "Enter" && event.key !== " ") return;
                             event.preventDefault();
-                            onOpenDrill({
-                              rowValues: rh.values,
-                              colValues: c.values,
-                              measure: m,
-                              rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
-                            });
+                            openDrill(rh, c, m);
                           }}
                           style={cellBg(viz, m, displayValue, max)}
                           className={cn(
@@ -2093,7 +2108,7 @@ function PivotTable({
                             cellPad,
                             !rh.isLeaf && "bg-secondary/25 font-semibold",
                             toneClass(m.tone, displayValue),
-                            drillIndexes.length > 0 && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
+                            canDrill && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
                           )}
                         >
                           {fmtPivotDisplay(m, displayValue, showAs)}

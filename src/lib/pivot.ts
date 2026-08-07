@@ -46,7 +46,10 @@ export interface PivotResult {
   colHeaders: PivotColHeader[];
   /** célula: cells[rowKey][colKey][measureId] */
   cells: Map<string, Map<string, Record<string, number | null>>>;
-  /** índices das linhas originais que compõem cada célula: drillRows[rowKey][colKey] */
+  /**
+   * Mantido vazio por compatibilidade. Drill-through agora é calculado sob demanda
+   * por getDrillRowsForCell para não materializar todas as combinações na abertura.
+   */
   drillRows: Map<string, Map<string, number[]>>;
   /** totais por linha */
   rowTotals: Map<string, Record<string, number | null>>;
@@ -239,12 +242,11 @@ export function computePivot(
   config: PivotConfig,
 ): PivotResult {
   // Aplicar filtros
-  let filtered = rows.map((row, index) => ({ row, index }));
+  let filteredRows = rows;
   for (const [dim, allowed] of Object.entries(config.filters)) {
     if (!allowed || allowed.length === 0) continue;
-    filtered = filtered.filter(({ row }) => allowed.includes(dimVal(row, dim)));
+    filteredRows = filteredRows.filter((row) => allowed.includes(dimVal(row, dim)));
   }
-  const filteredRows = filtered.map(({ row }) => row);
 
   const { headers: rowHeaders, leafHeaders: leafRowHeaders, keyOf: rowKeyOf, groupKeyOf } = buildRowHeaders(filteredRows, config.rows);
   const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filteredRows, config.cols);
@@ -253,7 +255,6 @@ export function computePivot(
   // Evita manter listas completas de valores brutos em memória.
   type Bucket = Record<string, FieldAccumulator>;
   const cellBuckets = new Map<string, Map<string, Bucket>>();
-  const drillRows = new Map<string, Map<string, number[]>>();
   const rowBuckets = new Map<string, Bucket>();
   const colBuckets = new Map<string, Bucket>();
   const grandBucket: Bucket = {};
@@ -268,7 +269,7 @@ export function computePivot(
     else addToAccumulator(b[field], val);
   }
 
-  for (const { row: r, index } of filtered) {
+  for (const r of filteredRows) {
     const rk = rowKeyOf(r);
     const gk = groupKeyOf(r);
     const ck = colKeyOf(r);
@@ -283,17 +284,6 @@ export function computePivot(
       cell = {};
       cellMap.set(ck, cell);
     }
-    let drillMap = drillRows.get(rk);
-    if (!drillMap) {
-      drillMap = new Map();
-      drillRows.set(rk, drillMap);
-    }
-    let drill = drillMap.get(ck);
-    if (!drill) {
-      drill = [];
-      drillMap.set(ck, drill);
-    }
-    drill.push(index);
     let rb = rowBuckets.get(rk);
     if (!rb) { rb = {}; rowBuckets.set(rk, rb); }
     const groupCell = gk && gk !== rk ? (() => {
@@ -307,17 +297,6 @@ export function computePivot(
         bucket = {};
         groupCellMap.set(ck, bucket);
       }
-      let groupDrillMap = drillRows.get(gk);
-      if (!groupDrillMap) {
-        groupDrillMap = new Map();
-        drillRows.set(gk, groupDrillMap);
-      }
-      let groupDrill = groupDrillMap.get(ck);
-      if (!groupDrill) {
-        groupDrill = [];
-        groupDrillMap.set(ck, groupDrill);
-      }
-      groupDrill.push(index);
       return bucket;
     })() : null;
     const groupRowBucket = gk && gk !== rk ? (() => {
@@ -374,5 +353,39 @@ export function computePivot(
   for (const [ck, b] of colBuckets) colTotals.set(ck, reduce(b));
   const grandTotal = reduce(grandBucket);
 
-  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows, rowTotals, colTotals, grandTotal };
+  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows: new Map(), rowTotals, colTotals, grandTotal };
+}
+
+export function getDrillRowsForCell(
+  rows: Record<string, unknown>[],
+  config: PivotConfig,
+  rowKey: string,
+  colKey: string,
+): number[] {
+  const activeFilters = Object.entries(config.filters).filter(([, allowed]) => allowed && allowed.length > 0);
+  const { keyOf: rowKeyOf, groupKeyOf } = buildRowHeaders([], config.rows);
+  const { keyOf: colKeyOf } = buildHeaders([], config.cols);
+  const indexes: number[] = [];
+
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    let matchesFilters = true;
+    for (const [dim, allowed] of activeFilters) {
+      if (!allowed.includes(dimVal(row, dim))) {
+        matchesFilters = false;
+        break;
+      }
+    }
+    if (!matchesFilters) continue;
+
+    const leafKey = rowKeyOf(row);
+    const groupKey = groupKeyOf(row);
+    const matchesRow = leafKey === rowKey || (groupKey != null && groupKey === rowKey);
+    if (!matchesRow) continue;
+    if (colKeyOf(row) !== colKey) continue;
+
+    indexes.push(index);
+  }
+
+  return indexes;
 }
