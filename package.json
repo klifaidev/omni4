@@ -129,6 +129,7 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "OMNI4-Pricing-Analytics-Setup-${version}.${ext}",
     "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
     "files": [
