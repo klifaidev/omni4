@@ -157,6 +157,11 @@ function cacheFileName(nomeArquivo, cacheKind) {
   return `${cacheKind}-${encoded}.json`;
 }
 
+function cacheDirName(nomeArquivo, cacheKind) {
+  const encoded = Buffer.from(nomeArquivo, "utf8").toString("base64url");
+  return `${cacheKind}-${encoded}`;
+}
+
 function getBaseFilePath(tipo, nomeArquivo) {
   return path.join(getBasesDir(), tipo, nomeArquivo);
 }
@@ -176,17 +181,50 @@ function getProcessedCachePath(tipo, nomeArquivo, cacheKind) {
   return path.join(getBasesCacheDir(), tipo, cacheFileName(nomeArquivo, cacheKind));
 }
 
+function getProcessedChunkDir(tipo, nomeArquivo, cacheKind) {
+  return path.join(getBasesCacheDir(), tipo, cacheDirName(nomeArquivo, cacheKind));
+}
+
+function getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind) {
+  return `${getProcessedChunkDir(tipo, nomeArquivo, cacheKind)}.tmp`;
+}
+
+function removePathIfExists(targetPath) {
+  if (!fs.existsSync(targetPath)) return;
+  fs.rmSync(targetPath, { recursive: true, force: true });
+}
+
 function deleteProcessedCache(tipo, nomeArquivo) {
   const cacheDir = path.join(getBasesCacheDir(), tipo);
   if (!fs.existsSync(cacheDir)) return;
   if (!nomeArquivo) {
-    for (const f of fs.readdirSync(cacheDir)) fs.unlinkSync(path.join(cacheDir, f));
+    for (const f of fs.readdirSync(cacheDir)) removePathIfExists(path.join(cacheDir, f));
     return;
   }
-  const suffix = `-${Buffer.from(nomeArquivo, "utf8").toString("base64url")}.json`;
+  const encoded = Buffer.from(nomeArquivo, "utf8").toString("base64url");
+  const suffix = `-${encoded}.json`;
+  const dirSuffix = `-${encoded}`;
   for (const f of fs.readdirSync(cacheDir)) {
-    if (f.endsWith(suffix)) fs.unlinkSync(path.join(cacheDir, f));
+    if (f.endsWith(suffix) || f.endsWith(dirSuffix) || f.endsWith(`${dirSuffix}.tmp`)) {
+      removePathIfExists(path.join(cacheDir, f));
+    }
   }
+}
+
+function isSignatureMatch(cacheSignature, signature) {
+  return (
+    cacheSignature?.nomeArquivo === signature.nomeArquivo &&
+    cacheSignature?.tamanho === signature.tamanho &&
+    cacheSignature?.ultimaModificacao === signature.ultimaModificacao
+  );
+}
+
+function readChunkManifest(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+}
+
+function writeChunkManifest(dir, manifest) {
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
 }
 
 ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
@@ -264,15 +302,47 @@ ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheK
     const valid =
       envelope?.version === version &&
       envelope?.cacheKind === cacheKind &&
-      cacheSignature?.nomeArquivo === signature.nomeArquivo &&
-      cacheSignature?.tamanho === signature.tamanho &&
-      cacheSignature?.ultimaModificacao === signature.ultimaModificacao &&
+      isSignatureMatch(cacheSignature, signature) &&
       envelope?.payload;
     if (!valid) return { ok: true, hit: false, motivo: "cache_invalido" };
     return { ok: true, hit: true, payload: envelope.payload };
   } catch (err) {
     log.warn("Cache processado invalido, sera reprocessado:", tipo, nomeArquivo, err.message);
     return { ok: true, hit: false, motivo: "cache_corrompido" };
+  }
+});
+
+ipcMain.handle("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+  try {
+    const signature = getBaseSignature(tipo, nomeArquivo);
+    if (!signature) return { ok: true, hit: false, motivo: "arquivo_ausente" };
+    const chunkDir = getProcessedChunkDir(tipo, nomeArquivo, cacheKind);
+    if (!fs.existsSync(chunkDir)) return { ok: true, hit: false, motivo: "cache_ausente" };
+    const manifest = readChunkManifest(chunkDir);
+    const valid =
+      manifest?.version === version &&
+      manifest?.cacheKind === cacheKind &&
+      manifest?.complete === true &&
+      isSignatureMatch(manifest?.signature, signature) &&
+      manifest?.header &&
+      Number.isInteger(manifest?.chunks);
+    if (!valid) return { ok: true, hit: false, motivo: "cache_invalido" };
+    return { ok: true, hit: true, manifest };
+  } catch (err) {
+    log.warn("Manifesto de cache processado invalido:", tipo, nomeArquivo, err.message);
+    return { ok: true, hit: false, motivo: "cache_corrompido" };
+  }
+});
+
+ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo, cacheKind, index }) => {
+  try {
+    const chunkDir = getProcessedChunkDir(tipo, nomeArquivo, cacheKind);
+    const chunkPath = path.join(chunkDir, "chunks", `chunk-${String(index).padStart(5, "0")}.json`);
+    if (!fs.existsSync(chunkPath)) return { ok: false, erro: "chunk_ausente" };
+    return { ok: true, rows: JSON.parse(fs.readFileSync(chunkPath, "utf8")) };
+  } catch (err) {
+    log.warn("Erro ao carregar chunk de cache processado:", tipo, nomeArquivo, err.message);
+    return { ok: false, erro: err.message };
   }
 });
 
@@ -294,6 +364,64 @@ ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheK
     return { ok: true };
   } catch (err) {
     log.warn("Erro ao salvar cache processado:", tipo, nomeArquivo, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:processed-chunked-start", async (event, { tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize }) => {
+  try {
+    const signature = getBaseSignature(tipo, nomeArquivo);
+    if (!signature) return { ok: false, erro: "arquivo_base_ausente" };
+    ensureBasesCacheDir(tipo);
+    const tempDir = getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind);
+    removePathIfExists(tempDir);
+    fs.mkdirSync(path.join(tempDir, "chunks"), { recursive: true });
+    writeChunkManifest(tempDir, {
+      version,
+      cacheKind,
+      signature,
+      savedAt: new Date().toISOString(),
+      header,
+      totalRows,
+      chunkSize,
+      chunks: 0,
+      complete: false,
+    });
+    return { ok: true };
+  } catch (err) {
+    log.warn("Erro ao iniciar cache processado em chunks:", tipo, nomeArquivo, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo, cacheKind, index, rows }) => {
+  try {
+    const tempDir = getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind);
+    if (!fs.existsSync(tempDir)) return { ok: false, erro: "cache_temp_ausente" };
+    const chunkPath = path.join(tempDir, "chunks", `chunk-${String(index).padStart(5, "0")}.json`);
+    fs.writeFileSync(chunkPath, JSON.stringify(rows));
+    return { ok: true };
+  } catch (err) {
+    log.warn("Erro ao salvar chunk de cache processado:", tipo, nomeArquivo, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:processed-chunked-finish", async (event, { tipo, nomeArquivo, cacheKind, chunks }) => {
+  try {
+    const tempDir = getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind);
+    if (!fs.existsSync(tempDir)) return { ok: false, erro: "cache_temp_ausente" };
+    const manifest = readChunkManifest(tempDir);
+    manifest.chunks = chunks;
+    manifest.complete = true;
+    manifest.savedAt = new Date().toISOString();
+    writeChunkManifest(tempDir, manifest);
+    const finalDir = getProcessedChunkDir(tipo, nomeArquivo, cacheKind);
+    removePathIfExists(finalDir);
+    fs.renameSync(tempDir, finalDir);
+    return { ok: true };
+  } catch (err) {
+    log.warn("Erro ao finalizar cache processado em chunks:", tipo, nomeArquivo, err.message);
     return { ok: false, erro: err.message };
   }
 });

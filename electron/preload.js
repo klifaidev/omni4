@@ -46,6 +46,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("bases:processed-load", { tipo, nomeArquivo, cacheKind, version }),
     salvarProcessado: (tipo, nomeArquivo, cacheKind, version, payload) =>
       ipcRenderer.invoke("bases:processed-save", { tipo, nomeArquivo, cacheKind, version, payload }),
+    carregarProcessadoManifesto: (tipo, nomeArquivo, cacheKind, version) =>
+      ipcRenderer.invoke("bases:processed-chunked-meta", { tipo, nomeArquivo, cacheKind, version }),
+    carregarProcessadoChunk: (tipo, nomeArquivo, cacheKind, index) =>
+      ipcRenderer.invoke("bases:processed-chunked-load", { tipo, nomeArquivo, cacheKind, index }),
+    iniciarProcessadoEmChunks: (tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize) =>
+      ipcRenderer.invoke("bases:processed-chunked-start", { tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize }),
+    salvarProcessadoChunk: (tipo, nomeArquivo, cacheKind, index, rows) =>
+      ipcRenderer.invoke("bases:processed-chunked-save", { tipo, nomeArquivo, cacheKind, index, rows }),
+    finalizarProcessadoEmChunks: (tipo, nomeArquivo, cacheKind, chunks) =>
+      ipcRenderer.invoke("bases:processed-chunked-finish", { tipo, nomeArquivo, cacheKind, chunks }),
     info: () =>
       ipcRenderer.invoke("bases:info"),
     deletar: (tipo, nomeArquivo) =>
