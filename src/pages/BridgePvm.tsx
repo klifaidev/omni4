@@ -75,6 +75,7 @@ export default function BridgePvm() {
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
   const [showFilterNote, setShowFilterNote] = useState(true);
   const [exportingPpt, setExportingPpt] = useState(false);
+  const lastAutoPvmPairRef = useRef<{ mode: "fy" | "month"; base: string; comp: string } | null>(null);
 
   const options = useMemo(
     () =>
@@ -84,17 +85,38 @@ export default function BridgePvm() {
     [pvmMode, fyList, months],
   );
 
-  // Defaults: pick first and last available option whenever mode/data changes
-  // and current values are invalid.
+  const defaultPvmPair = useMemo(() => {
+    if (options.length < 2) return null;
+    const baseIndex = pvmMode === "month" ? options.length - 2 : 0;
+    return {
+      mode: pvmMode,
+      base: options[baseIndex].value,
+      comp: options[options.length - 1].value,
+    };
+  }, [options, pvmMode]);
+
+  // Defaults: month mode opens with latest month vs immediately previous.
+  // FY mode keeps the historical first vs last behavior. If the user is still
+  // on the previous automatic pair and new data arrives, advance the default.
   useEffect(() => {
-    if (options.length < 2) return;
+    if (!defaultPvmPair) return;
     const values = new Set(options.map((o) => o.value));
     const baseOk = pvmBase && values.has(pvmBase);
     const compOk = pvmComp && values.has(pvmComp);
-    if (!baseOk || !compOk) {
-      setPvm(options[0].value, options[options.length - 1].value);
+    const previousAutoPair = lastAutoPvmPairRef.current;
+    const isCurrentAutoPair =
+      previousAutoPair &&
+      previousAutoPair.mode === pvmMode &&
+      previousAutoPair.base === pvmBase &&
+      previousAutoPair.comp === pvmComp;
+
+    if (!baseOk || !compOk || isCurrentAutoPair) {
+      lastAutoPvmPairRef.current = defaultPvmPair;
+      if (pvmBase !== defaultPvmPair.base || pvmComp !== defaultPvmPair.comp) {
+        setPvm(defaultPvmPair.base, defaultPvmPair.comp);
+      }
     }
-  }, [options, pvmBase, pvmComp, setPvm]);
+  }, [defaultPvmPair, options, pvmBase, pvmComp, pvmMode, setPvm]);
 
   const filtered = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
 

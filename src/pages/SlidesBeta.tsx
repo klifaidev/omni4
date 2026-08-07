@@ -7,7 +7,7 @@
 //  3. Pode salvar a esteira como Pré-definição (localStorage)
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
-import { useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import * as Y from "yjs";
 import { Awareness } from "y-protocols/awareness";
@@ -59,7 +59,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, Bell, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X, MoreHorizontal,
+  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X, MoreHorizontal,
   MonitorPlay, RefreshCw, Share2, Timer,
   Search,
 } from "lucide-react";
@@ -73,7 +73,6 @@ import {
   SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
-import { buildSlidesPreflight, type SlidePreflightIssue, type SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { smartDefaults } from "@/lib/slidesSmartDefaults";
 import { warmSlideChartData } from "@/lib/slideDeckPreparation";
 import { guardSlideReadOnly } from "@/lib/slidesReadOnly";
@@ -92,7 +91,6 @@ import type { PptxSlide } from "@/components/pricing/custom/ImportPptxDialog";
 import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
 import type { CustomBlock, CustomSlideConfig, ImageBlock } from "@/lib/customSlide";
 import { PresentationMode } from "@/components/pricing/custom/PresentationMode";
-import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import type { SlideTemplate } from "@/lib/slideTemplates";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useCollaboration } from "@/hooks/use-collaboration";
@@ -108,7 +106,6 @@ import { formatDistanceToNow, format as formatDate } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/components/pricing/slides/SlideCatalogFlow";
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
-import { PreflightPopover } from "@/components/pricing/slides/SlidesPreflightPopover";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlidePrecompute";
 import { useSlideExport } from "@/hooks/useSlideExport";
@@ -437,33 +434,6 @@ const FILTER_LABEL: Record<FilterKey, string> = {
   legado: "Legado",
 };
 
-const PREFLIGHT_SEVERITY_RANK: Record<SlidePreflightSeverity, number> = {
-  error: 3,
-  warning: 2,
-  info: 1,
-};
-
-function highestPreflightSeverity(issues: SlidePreflightIssue[]): SlidePreflightSeverity | null {
-  return issues.reduce<SlidePreflightSeverity | null>((highest, issue) => {
-    if (!highest) return issue.severity;
-    return PREFLIGHT_SEVERITY_RANK[issue.severity] > PREFLIGHT_SEVERITY_RANK[highest] ? issue.severity : highest;
-  }, null);
-}
-
-function preflightSeverityLabel(severity: SlidePreflightSeverity | null): string {
-  if (severity === "error") return "Incompleto";
-  if (severity === "warning") return "Com alerta";
-  if (severity === "info") return "Com observacao";
-  return "Pronto";
-}
-
-function preflightSeverityClasses(severity: SlidePreflightSeverity | null): string {
-  if (severity === "error") return "border-destructive/50 bg-destructive/10 text-destructive";
-  if (severity === "warning") return "border-warning/50 bg-warning/10 text-warning";
-  if (severity === "info") return "border-primary/40 bg-primary/10 text-primary";
-  return "border-success/40 bg-success/10 text-success";
-}
-
 function uniqueValues(
   pricing: PricingRow[],
   budget: BudgetRow[],
@@ -768,7 +738,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
-  currentUser, onCommentEvent, preflightIssues = [], previewVisible = true,
+  currentUser, onCommentEvent, previewVisible = true,
 }: {
   item: SlideItem;
   index: number;
@@ -777,7 +747,6 @@ function StripThumbnail({
   editingUsers?: CollabUser[];
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
-  preflightIssues?: SlidePreflightIssue[];
   previewVisible?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
@@ -793,9 +762,6 @@ function StripThumbnail({
   const Icon = ICON_MAP[meta.icon];
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
   const ready = isItemReady(item);
-  const preflightSeverity = highestPreflightSeverity(preflightIssues);
-  const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
-  const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
   const displayName = item.label ?? meta.title;
 
   // Subscribe to comment changes so the badge updates live.
@@ -814,22 +780,16 @@ function StripThumbnail({
       className={cn(
         "surface-raised group relative cursor-pointer rounded-md border transition-colors",
         active ? "border-primary ring-2 ring-primary/40" : "border-border/40 hover:border-border/80",
-        preflightSeverity === "error" && !active && "border-destructive/50",
-        preflightSeverity === "warning" && !active && "border-warning/50",
-        preflightSeverity === "info" && !active && "border-primary/35",
-        preflightSeverity && "shadow-[0_0_0_1px_hsl(var(--background))]",
+        !ready.ok && !active && "border-destructive/50",
       )}
     >
-      {statusSeverity && (
+      {!ready.ok && (
         <div
-          className={cn(
-            "absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border px-1 text-[9px] font-semibold shadow-sm",
-            preflightSeverityClasses(statusSeverity),
-          )}
-          title={!ready.ok ? `Incompleto: ${ready.reason}` : `${preflightSeverityLabel(statusSeverity)}: ${preflightIssues.length} ponto(s) no preflight`}
+          className="absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-destructive/50 bg-destructive/10 px-1 text-[9px] font-semibold text-destructive shadow-sm"
+          title={`Incompleto: ${ready.reason}`}
         >
           <AlertTriangle className="h-3 w-3" />
-          {statusCount}
+          1
         </div>
       )}
       {hasNotes && (
@@ -1048,13 +1008,12 @@ function CommentsThread({
 
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
-  currentUser, onCommentEvent, preflightIssuesBySlide, readOnly = false,
+  currentUser, onCommentEvent, readOnly = false,
   yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {},
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   readOnly?: boolean;
-  preflightIssuesBySlide: Map<string, SlidePreflightIssue[]>;
   collaborators?: CollabUser[];
   isConnected?: boolean;
   updateCursor?: (x: number, y: number) => void;
@@ -1291,7 +1250,6 @@ function FullscreenCustomEditor({
                         editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
-                        preflightIssues={preflightIssuesBySlide.get(it.id) ?? []}
                         previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
                         onClick={() => {
                           if (it.id === current?.id) return;
@@ -1398,12 +1356,10 @@ function Inspector({
   item,
   onOpenFullscreen,
   readOnly,
-  preflightIssues = [],
 }: {
   item: SlideItem | null;
   onOpenFullscreen: () => void;
   readOnly: boolean;
-  preflightIssues?: SlidePreflightIssue[];
 }) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
   const pricing = usePricing((s) => s.rows);
@@ -1428,13 +1384,8 @@ function Inspector({
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
   const ready = isItemReady(item);
-  const preflightSeverity = highestPreflightSeverity(preflightIssues);
-  const statusSeverity: SlidePreflightSeverity | null = !ready.ok || preflightSeverity === "error"
-    ? "error"
-    : preflightSeverity;
   const statusItems = [
     ...(!ready.ok ? [{ title: "Config incompleta", detail: ready.reason }] : []),
-    ...preflightIssues.map((issue) => ({ title: issue.title, detail: issue.detail })),
   ];
   const guardedUpdateItem = (updater: Parameters<typeof updateItem>[1]) => {
     if (readOnly) {
@@ -1477,13 +1428,18 @@ function Inspector({
           <TabsContent value="status" className="mt-0 space-y-3">
             <div className="space-y-1">
               <div className="slides-type-section">Saude do slide</div>
-              <p className="slides-type-helper">Mostra pendencias de preenchimento, alertas de exportacao e pontos do preflight.</p>
+              <p className="slides-type-helper">Mostra se o slide tem a configuração mínima necessária para exibição e exportação.</p>
             </div>
-            <div className={cn("min-w-0 rounded-lg border p-3", preflightSeverityClasses(statusSeverity))}>
+            <div className={cn(
+              "min-w-0 rounded-lg border p-3",
+              ready.ok
+                ? "border-success/40 bg-success/10 text-success"
+                : "border-destructive/50 bg-destructive/10 text-destructive",
+            )}>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2 slides-type-section">
-                  {statusSeverity ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <ShieldCheck className="h-4 w-4 shrink-0" />}
-                  {preflightSeverityLabel(statusSeverity)}
+                  {ready.ok ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+                  {ready.ok ? "Pronto" : "Incompleto"}
                 </div>
                 {statusItems.length > 0 && (
                   <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 slides-type-badge text-current">
@@ -1493,7 +1449,7 @@ function Inspector({
               </div>
               <div className="mt-2 min-w-0 space-y-1.5 slides-type-helper leading-snug">
                 {statusItems.length === 0 ? (
-                  <p>Todos os campos essenciais estao preenchidos e nenhum risco foi encontrado.</p>
+                  <p>Todos os campos essenciais estao preenchidos.</p>
                 ) : (
                   statusItems.map((statusItem, idx) => (
                     <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-surface-base/70 px-2 py-1.5 [overflow-wrap:anywhere]">
@@ -2012,13 +1968,6 @@ export default function SlidesBeta() {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
   const metric = usePricing((s) => s.metric);
-  const setMetric = usePricing((s) => s.setMetric);
-  const pricingFilters = usePricing((s) => s.filters);
-  const selectedPeriods = usePricing((s) => s.selectedPeriods);
-  const setPricingFilter = usePricing((s) => s.setFilter);
-  const clearPricingFilters = usePricing((s) => s.clearFilters);
-  const togglePeriod = usePricing((s) => s.togglePeriod);
-  const setAllPeriods = usePricing((s) => s.setAllPeriods);
 
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [dragging, setDragging] = useState<{ source: "catalog"; kind: SlideKind } | null>(null);
@@ -2027,7 +1976,6 @@ export default function SlidesBeta() {
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [presentationPresenterMode, setPresentationPresenterMode] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [leftPanelWidth, setLeftPanelWidth] = usePersistentWidth("omni4.slides.leftPanelWidth", 320, 300, 460);
@@ -2759,18 +2707,7 @@ export default function SlidesBeta() {
     initialDeckPreparationCheckedRef.current = true;
     startDeckPreparation(items, "Preparando deck");
   }, [items, startDeckPreparation]);
-  const deferredItemsForPreflight = useDeferredValue(items);
-  const readyAll = deferredItemsForPreflight.every((i) => isItemReady(i).ok);
-  const preflight = useMemo(() => buildSlidesPreflight(deferredItemsForPreflight), [deferredItemsForPreflight]);
-  const preflightIssuesBySlide = useMemo(() => {
-    const map = new Map<string, SlidePreflightIssue[]>();
-    for (const issue of preflight.issues) {
-      const current = map.get(issue.slideId) ?? [];
-      current.push(issue);
-      map.set(issue.slideId, current);
-    }
-    return map;
-  }, [preflight.issues]);
+  const readyAll = items.every((i) => isItemReady(i).ok);
   const {
     exporting,
     fileName,
@@ -2780,39 +2717,19 @@ export default function SlidesBeta() {
   } = useSlideExport({
     items,
     readyAll,
-    preflightErrors: preflight.errors,
     pricingRows,
     budgetRows,
     metric,
   });
 
-  const globalActiveFilterCount = useMemo(() => {
-    let n = 0;
-    if (selectedPeriods !== null) n++;
-    n += Object.values(pricingFilters).filter((v) => v && v.length > 0).length;
-    return n;
-  }, [selectedPeriods, pricingFilters]);
-
   const exportDisabledReason = useMemo(() => {
     if (items.length === 0) return "Adicione ao menos um slide para exportar.";
     const incomplete = items.filter((i) => !isItemReady(i).ok).length;
     if (incomplete > 0) {
-      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""} - abra o preflight para ver quais.`;
-    }
-    if (preflight.errors > 0) {
-      return `Existem ${preflight.errors} erro${preflight.errors > 1 ? "s" : ""} de preflight - abra o preflight para revisar.`;
+      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""}.`;
     }
     return null;
-  }, [items, preflight.errors]);
-
-  const globalFilterSummary = useMemo(() => {
-    const parts: string[] = [];
-    if (selectedPeriods !== null) parts.push(`${selectedPeriods.length} período${selectedPeriods.length > 1 ? "s" : ""}`);
-    for (const [key, values] of Object.entries(pricingFilters)) {
-      if (values && values.length > 0) parts.push(`${key}: ${values.length}`);
-    }
-    return parts.length ? parts.join(" · ") : "Nenhum filtro global aplicado";
-  }, [pricingFilters, selectedPeriods]);
+  }, [items]);
 
   const confirmExport = async () => {
     const format = exportConfirm;
@@ -2881,7 +2798,6 @@ export default function SlidesBeta() {
       <Topbar
         title="Slides"
         showPeriodStrip={false}
-        periodSummaryLabel="Filtro global"
         subtitle="Monte uma apresentação combinando slides com filtros independentes"
       />
       {viewOnly && (
@@ -3474,31 +3390,7 @@ export default function SlidesBeta() {
                   </Tooltip>
                 )}
                 <div className="mx-2 h-6 w-px bg-border/50" />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline" size="sm" className="relative h-8 gap-1.5"
-                      onClick={() => setFiltersOpen((v) => !v)}
-                    >
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      Filtros
-                      {globalActiveFilterCount > 0 && (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
-                          {globalActiveFilterCount}
-                        </span>
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{filtersOpen ? "Fechar filtros" : "Abrir filtros"}</TooltipContent>
-                </Tooltip>
                 <TransitionSelect />
-                <div className="mx-1 h-5 w-px bg-border/50" />
-                <PreflightPopover
-                  issues={preflight.issues}
-                  errors={preflight.errors}
-                  warnings={preflight.warnings}
-                  onSelectSlide={select}
-                />
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -3570,9 +3462,6 @@ export default function SlidesBeta() {
             </TooltipProvider>
           </div>
 
-          {/* Barra de filtros ativos */}
-          {globalActiveFilterCount > 0 && <ActiveFiltersBar />}
-
           {/* Conteúdo da esteira */}
           <div
             ref={flowPreviewWindow.viewportRef}
@@ -3592,7 +3481,6 @@ export default function SlidesBeta() {
                           item={item}
                           index={idx}
                           selected={selectedId === item.id}
-                          preflightIssues={preflightIssuesBySlide.get(item.id) ?? []}
                           previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
                           onSelect={() => select(item.id)}
                           onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
@@ -3606,163 +3494,6 @@ export default function SlidesBeta() {
               </FlowDropZone>
             </div>
           </div>
-          {/* Painel de filtros (drawer lateral direito) */}
-          <motion.div
-            className={cn(
-              "surface-overlay absolute right-0 top-0 z-40 flex h-full w-[280px] flex-col border-l border-border/40",
-            )}
-            initial={false}
-            animate={{ x: filtersOpen ? 0 : "100%" }}
-            transition={springTransition}
-          >
-            <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal className="h-4 w-4" />
-                <span className="slides-type-section">Filtros globais</span>
-                {globalActiveFilterCount > 0 && (
-                  <Badge variant="secondary" className="h-5 px-1.5 slides-type-badge">
-                    {globalActiveFilterCount}
-                  </Badge>
-                )}
-              </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setFiltersOpen(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <ScrollArea className="flex-1">
-              <div className="space-y-5 p-4">
-                {/* Período */}
-                <div className="space-y-2">
-                  <Label className="slides-type-label">
-                    Periodo global do deck
-                  </Label>
-                  <p className="slides-type-helper">
-                    Afeta a aba Slides e os slides que usam filtros globais. Filtros especificos continuam no inspector do slide.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => setAllPeriods()}
-                      className={cn(
-                      "rounded-full border px-2.5 py-0.5 slides-type-badge transition-colors",
-                        selectedPeriods === null
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/60 text-muted-foreground hover:border-primary/40",
-                      )}
-                    >
-                      Todos
-                    </button>
-                    {months.map((m) => (
-                      <button
-                        key={m.periodo}
-                        onClick={() => togglePeriod(m.periodo)}
-                        className={cn(
-                          "rounded-full border px-2.5 py-0.5 slides-type-badge transition-colors",
-                          selectedPeriods?.includes(m.periodo)
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border/60 text-muted-foreground hover:border-primary/40",
-                        )}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Marca */}
-                {(() => {
-                  const opts = uniqueValues(pricingRows, budgetRows, "marca").map((v) => ({ value: v, label: v }));
-                  if (opts.length === 0) return null;
-                  return (
-                    <div className="space-y-1.5">
-                      <Label className="slides-type-label">
-                        Marca
-                      </Label>
-                      <MultiSelectFilter
-                        options={opts}
-                        selected={pricingFilters.marca ?? []}
-                        onChange={(vals) => setPricingFilter("marca", vals)}
-                        variant="sku"
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Canal */}
-                {(() => {
-                  const opts = uniqueValues(pricingRows, budgetRows, "canal").map((v) => ({ value: v, label: v }));
-                  if (opts.length === 0) return null;
-                  return (
-                    <div className="space-y-1.5">
-                      <Label className="slides-type-label">
-                        Canal
-                      </Label>
-                      <MultiSelectFilter
-                        options={opts}
-                        selected={pricingFilters.canal ?? []}
-                        onChange={(vals) => setPricingFilter("canal", vals)}
-                        variant="comercial"
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Categoria */}
-                {(() => {
-                  const opts = uniqueValues(pricingRows, budgetRows, "categoria").map((v) => ({ value: v, label: v }));
-                  if (opts.length === 0) return null;
-                  return (
-                    <div className="space-y-1.5">
-                      <Label className="slides-type-label">
-                        Categoria
-                      </Label>
-                      <MultiSelectFilter
-                        options={opts}
-                        selected={pricingFilters.categoria ?? []}
-                        onChange={(vals) => setPricingFilter("categoria", vals)}
-                        variant="sku"
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Métrica */}
-                <div className="space-y-1.5">
-                  <Label className="slides-type-label">
-                    Métrica
-                  </Label>
-                  <div className="flex gap-2">
-                    {(["cm", "mb"] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setMetric(m)}
-                        className={cn(
-                          "flex-1 rounded-lg border py-1.5 slides-type-badge uppercase transition-colors",
-                          metric === m
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border/60 text-muted-foreground hover:border-primary/40",
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </ScrollArea>
-
-            {globalActiveFilterCount > 0 && (
-              <div className="border-t border-border/40 p-3">
-                <Button
-                  variant="outline" size="sm" className="w-full gap-1.5"
-                  onClick={() => { clearPricingFilters(); setAllPeriods(); }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Limpar filtros
-                </Button>
-              </div>
-            )}
-          </motion.div>
           {(templateApplying || importApplying || exporting) && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/55 backdrop-blur-sm">
               <div className="surface-overlay flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
@@ -3798,7 +3529,6 @@ export default function SlidesBeta() {
             <Inspector
               item={selected}
               readOnly={viewOnly}
-              preflightIssues={selected ? preflightIssuesBySlide.get(selected.id) ?? [] : []}
               onOpenFullscreen={() => setFullscreenOpen(true)}
             />
           ) : (
@@ -3846,16 +3576,6 @@ export default function SlidesBeta() {
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Slides</span>
               <span className="font-medium">{items.length}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Filtros globais</span>
-              <span className="max-w-[220px] text-right font-medium">{globalFilterSummary}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Preflight</span>
-              <span className={cn("font-medium", preflight.errors > 0 ? "text-destructive" : preflight.warnings > 0 ? "text-warning" : "text-success")}>
-                {preflight.errors > 0 ? `${preflight.errors} erro(s)` : preflight.warnings > 0 ? `${preflight.warnings} aviso(s)` : "Pronto"}
-              </span>
             </div>
           </div>
           <DialogFooter>
@@ -3936,7 +3656,6 @@ export default function SlidesBeta() {
         updateSlideId={updateSlideId}
         currentUser={currentUser}
         onCommentEvent={handleCommentEvent}
-        preflightIssuesBySlide={preflightIssuesBySlide}
         readOnly={viewOnly}
         yjsCollabReady={yjsCollabReady}
         getCollabYDoc={ensureCustomYProvider}
@@ -4002,7 +3721,7 @@ export default function SlidesBeta() {
                   placeholder="Ex.: Alice"
                 />
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  A sala salva snapshots Yjs criptografados. Exportacao e preflight continuam usando a estrutura normal do deck.
+                  A sala salva snapshots Yjs criptografados e mantém a estrutura normal do deck para exportação.
                 </p>
                 <Button className="w-full gap-2" onClick={handleCreatePersistentRoom} disabled={viewOnly || collabBusy === "create"}>
                   {collabBusy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}

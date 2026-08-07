@@ -78,7 +78,7 @@ export const usePricing = create<PricingState>((set, get) => ({
   filters: {},
   selectedPeriods: null,
   missing: EMPTY_MISSING,
-  pvmMode: "fy",
+  pvmMode: "month",
   pvmBase: null,
   pvmComp: null,
   parsing: false,

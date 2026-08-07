@@ -16,14 +16,12 @@ function normalizeExportFileName(name: string, extension: "pptx" | "pdf"): strin
 export function useSlideExport({
   items,
   readyAll,
-  preflightErrors,
   pricingRows,
   budgetRows,
   metric,
 }: {
   items: SlideItem[];
   readyAll: boolean;
-  preflightErrors: number;
   pricingRows: PricingRow[];
   budgetRows: BudgetRow[];
   metric: Metric;
@@ -37,12 +35,8 @@ export function useSlideExport({
       toast.error("Existem slides incompletos. Configure-os antes de exportar.");
       return false;
     }
-    if (preflightErrors > 0) {
-      toast.error("O preflight encontrou erro critico antes da exportacao.");
-      return false;
-    }
     return true;
-  }, [items.length, preflightErrors, readyAll]);
+  }, [items.length, readyAll]);
 
   const handleExportPdf = useCallback(async () => {
     if (!canExport()) return;

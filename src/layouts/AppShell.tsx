@@ -60,6 +60,7 @@ export default function AppShell() {
   const [sendToSlideDialogEnabled, setSendToSlideDialogEnabled] = useState(() => getLatestSendToSlidePayload() !== null);
   const commandOpen = useCommandPalette((s) => s.open);
   const setCommandOpen = useCommandPalette((s) => s.setOpen);
+  const showActiveFiltersBar = location.pathname !== "/slides";
 
   // Restaura filtros a partir da URL compartilhada (uma vez no mount)
   useEffect(() => {
@@ -279,7 +280,7 @@ export default function AppShell() {
     <div className="flex h-screen w-full overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
-        <ActiveFiltersBar />
+        {showActiveFiltersBar && <ActiveFiltersBar />}
         <NoResultsBanner />
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div

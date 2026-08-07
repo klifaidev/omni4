@@ -1,6 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { calcPVM, computeKPIs, aggregateBy, computePriceDecomposition } from "@/lib/analytics";
+import { beforeEach, describe, it, expect } from "vitest";
+import {
+  aggregateBy,
+  applyFilters,
+  calcPVM,
+  clearApplyFiltersCacheForTest,
+  computeKPIs,
+  computePriceDecomposition,
+  getApplyFiltersCacheStatsForTest,
+} from "@/lib/analytics";
 import { makeRow } from "./_helpers";
+
+beforeEach(() => {
+  clearApplyFiltersCacheForTest();
+});
 
 describe("calcPVM", () => {
   it("month mode: volume up + price down → volEffect > 0, priceEffect < 0, current = base + sum(effects)", () => {
@@ -61,6 +73,53 @@ describe("computeKPIs", () => {
   it("rol = 0 → margemPct = 0 (não NaN)", () => {
     const k = computeKPIs([makeRow({ rol: 0, margemBruta: 0 })], "mb");
     expect(k.margemPct).toBe(0);
+  });
+});
+
+describe("applyFilters cache", () => {
+  it("reaproveita o mesmo resultado para a mesma base, filtros e periodos", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", canal: "Direto", sku: "A" }),
+      makeRow({ periodo: "005.2026", canal: "Distribuidor", sku: "B" }),
+      makeRow({ periodo: "005.2026", canal: "Direto", sku: "C" }),
+    ];
+
+    const first = applyFilters(rows, { canal: ["Direto"] }, ["005.2026"]);
+    const second = applyFilters(rows, { canal: ["Direto"] }, ["005.2026"]);
+
+    expect(second).toBe(first);
+    expect(second.map((row) => row.sku)).toEqual(["C"]);
+    expect(getApplyFiltersCacheStatsForTest()).toEqual({ hits: 1, misses: 1 });
+  });
+
+  it("normaliza ordem de filtros e periodos porque a selecao tem o mesmo significado", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", canal: "Direto", marca: "X", sku: "A" }),
+      makeRow({ periodo: "005.2026", canal: "Direto", marca: "Y", sku: "B" }),
+      makeRow({ periodo: "006.2026", canal: "Distribuidor", marca: "X", sku: "C" }),
+    ];
+
+    const first = applyFilters(rows, { canal: ["Direto"], marca: ["X", "Y"] }, ["005.2026", "004.2026"]);
+    const second = applyFilters(rows, { marca: ["Y", "X"], canal: ["Direto"] }, ["004.2026", "005.2026"]);
+
+    expect(second).toBe(first);
+    expect(second.map((row) => row.sku)).toEqual(["A", "B"]);
+    expect(getApplyFiltersCacheStatsForTest()).toEqual({ hits: 1, misses: 1 });
+  });
+
+  it("nao reutiliza cache quando a base muda de referencia", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", canal: "Direto", sku: "A" }),
+      makeRow({ periodo: "005.2026", canal: "Distribuidor", sku: "B" }),
+    ];
+    const sameContentNewReference = [...rows];
+
+    const first = applyFilters(rows, { canal: ["Direto"] }, null);
+    const second = applyFilters(sameContentNewReference, { canal: ["Direto"] }, null);
+
+    expect(second).not.toBe(first);
+    expect(second.map((row) => row.sku)).toEqual(["A"]);
+    expect(getApplyFiltersCacheStatsForTest()).toEqual({ hits: 0, misses: 2 });
   });
 });
 

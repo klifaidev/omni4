@@ -4,7 +4,39 @@ import type { BudgetRow } from "./budget";
 export const measureOf = (r: PricingRow, m: Metric) =>
   m === "cm" ? r.contribMarginal : r.margemBruta;
 
-export function applyFilters(
+type ApplyFiltersCacheEntry = {
+  key: string;
+  value: PricingRow[];
+  usedAt: number;
+};
+
+const APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS = 80;
+let applyFiltersTick = 0;
+let applyFiltersCacheHits = 0;
+let applyFiltersCacheMisses = 0;
+let applyFiltersCache = new WeakMap<PricingRow[], Map<string, ApplyFiltersCacheEntry>>();
+
+function sortedValues(values: string[] | undefined): string[] {
+  return values?.length ? [...values].sort() : [];
+}
+
+function buildApplyFiltersCacheKey(filters: Filters, selectedPeriods: string[] | null): string {
+  const normalizedFilters = Object.entries(filters)
+    .map(([key, values]) => [key, sortedValues(values)] as const)
+    .filter(([, values]) => values.length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  const normalizedPeriods = selectedPeriods?.length ? [...selectedPeriods].sort() : null;
+  return JSON.stringify({ filters: normalizedFilters, selectedPeriods: normalizedPeriods });
+}
+
+function trimApplyFiltersCache(cache: Map<string, ApplyFiltersCacheEntry>): void {
+  if (cache.size <= APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS) return;
+  const entries = Array.from(cache.values()).sort((a, b) => a.usedAt - b.usedAt);
+  const removeCount = cache.size - APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS;
+  for (let i = 0; i < removeCount; i += 1) cache.delete(entries[i].key);
+}
+
+export function applyFiltersUncached(
   rows: PricingRow[],
   filters: Filters,
   selectedPeriods: string[] | null,
@@ -18,6 +50,43 @@ export function applyFilters(
     }
     return true;
   });
+}
+
+export function applyFilters(
+  rows: PricingRow[],
+  filters: Filters,
+  selectedPeriods: string[] | null,
+): PricingRow[] {
+  const key = buildApplyFiltersCacheKey(filters, selectedPeriods);
+  let rowsCache = applyFiltersCache.get(rows);
+  if (!rowsCache) {
+    rowsCache = new Map<string, ApplyFiltersCacheEntry>();
+    applyFiltersCache.set(rows, rowsCache);
+  }
+
+  const hit = rowsCache.get(key);
+  if (hit) {
+    hit.usedAt = ++applyFiltersTick;
+    applyFiltersCacheHits += 1;
+    return hit.value;
+  }
+
+  applyFiltersCacheMisses += 1;
+  const value = applyFiltersUncached(rows, filters, selectedPeriods);
+  rowsCache.set(key, { key, value, usedAt: ++applyFiltersTick });
+  trimApplyFiltersCache(rowsCache);
+  return value;
+}
+
+export function clearApplyFiltersCacheForTest(): void {
+  applyFiltersCache = new WeakMap<PricingRow[], Map<string, ApplyFiltersCacheEntry>>();
+  applyFiltersTick = 0;
+  applyFiltersCacheHits = 0;
+  applyFiltersCacheMisses = 0;
+}
+
+export function getApplyFiltersCacheStatsForTest(): { hits: number; misses: number } {
+  return { hits: applyFiltersCacheHits, misses: applyFiltersCacheMisses };
 }
 
 export interface KPI {
