@@ -6,8 +6,19 @@ export interface InfoBase {
   quantidade: number;
   nomeArquivo?: string;
   nomeArquivos: string[];
+  arquivos?: InfoArquivoBase[];
   tamanhoTotal: number;
   ultimaModificacao: string;
+}
+
+export interface InfoArquivoBase {
+  nomeArquivo: string;
+  tamanho: number;
+  ultimaModificacao: string;
+}
+
+interface ArquivoBaseSalvo extends InfoArquivoBase {
+  conteudoBase64: string;
 }
 
 declare global {
@@ -15,7 +26,10 @@ declare global {
     electronAPI?: {
       bases?: {
         salvar: (tipo: string, nomeArquivo: string, conteudoBase64: string) => Promise<{ ok: boolean; erro?: string }>;
-        carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: Array<{ nomeArquivo: string; conteudoBase64: string; tamanho: number; ultimaModificacao: string }>; motivo?: string; erro?: string }>;
+        carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: ArquivoBaseSalvo[]; motivo?: string; erro?: string }>;
+        carregarArquivo?: (tipo: string, nomeArquivo: string) => Promise<{ ok: boolean; arquivo?: ArquivoBaseSalvo; motivo?: string; erro?: string }>;
+        carregarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; payload?: unknown; motivo?: string; erro?: string }>;
+        salvarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, payload: unknown) => Promise<{ ok: boolean; erro?: string }>;
         info: () => Promise<{ ok: boolean; bases?: Record<string, InfoBase>; erro?: string }>;
         deletar: (tipo: string, nomeArquivo?: string) => Promise<{ ok: boolean; erro?: string }>;
       };
@@ -36,11 +50,13 @@ function fileToDataUrlBase64(file: File): Promise<string> {
   });
 }
 
-function base64ToFile(base64: string, nomeArquivo: string): File {
-  const binary = atob(base64);
+function arquivoSalvoToFile({ conteudoBase64, nomeArquivo, ultimaModificacao }: ArquivoBaseSalvo): File {
+  const binary = atob(conteudoBase64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], nomeArquivo);
+  const ext = nomeArquivo.split(".").pop() ?? "csv";
+  const mime = ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  return new File([bytes], nomeArquivo, { type: mime, lastModified: new Date(ultimaModificacao).getTime() });
 }
 
 export function useBasesLocais() {
@@ -56,14 +72,21 @@ export function useBasesLocais() {
     if (!window.electronAPI?.bases) return [];
     const result = await window.electronAPI.bases.carregar(tipo);
     if (!result.ok || !result.arquivos) return [];
-    return result.arquivos.map(({ nomeArquivo, conteudoBase64, ultimaModificacao }) => {
-      const binary = atob(conteudoBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const ext = nomeArquivo.split(".").pop() ?? "csv";
-      const mime = ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      return new File([bytes], nomeArquivo, { type: mime, lastModified: new Date(ultimaModificacao).getTime() });
-    });
+    return result.arquivos.map(arquivoSalvoToFile);
+  }, []);
+
+  const carregarArquivo = useCallback(async (tipo: TipoBase, nomeArquivo: string): Promise<File | null> => {
+    if (!window.electronAPI?.bases) return null;
+    const result = window.electronAPI.bases.carregarArquivo
+      ? await window.electronAPI.bases.carregarArquivo(tipo, nomeArquivo)
+      : await window.electronAPI.bases.carregar(tipo);
+    if (!result.ok) return null;
+    if ("arquivo" in result && result.arquivo) return arquivoSalvoToFile(result.arquivo);
+    if ("arquivos" in result && result.arquivos) {
+      const found = result.arquivos.find((arquivo) => arquivo.nomeArquivo === nomeArquivo);
+      return found ? arquivoSalvoToFile(found) : null;
+    }
+    return null;
   }, []);
 
   const infoBasesSalvas = useCallback(async (): Promise<Record<TipoBase, InfoBase | undefined>> => {
@@ -79,5 +102,5 @@ export function useBasesLocais() {
     return result.ok;
   }, []);
 
-  return { isElectron, salvarBase, carregarBase, infoBasesSalvas, deletarBase };
+  return { isElectron, salvarBase, carregarBase, carregarArquivo, infoBasesSalvas, deletarBase };
 }

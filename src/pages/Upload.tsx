@@ -21,12 +21,13 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useUploadGuard } from "@/store/uploadGuard";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { parseCsvFile } from "@/lib/csv";
-import { parseBudgetFile } from "@/lib/budget";
+import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
+import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
 import { parseForecastFile } from "@/lib/forecast";
 import { parseRollingFile } from "@/lib/rolling";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
-import { useBasesLocais, type TipoBase, type InfoBase } from "@/hooks/use-bases-locais";
+import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
+import { useBasesLocais, type InfoArquivoBase, type TipoBase, type InfoBase } from "@/hooks/use-bases-locais";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +48,16 @@ const EXPECTED_COLS = [
   "Volume (kg), CMV / Custo",
   "Margem Bruta, Contribuição Marginal",
 ];
+
+function arquivosDaBase(base: InfoBase | undefined): InfoArquivoBase[] {
+  if (!base) return [];
+  if (base.arquivos?.length) return base.arquivos;
+  return base.nomeArquivos.map((nomeArquivo) => ({
+    nomeArquivo,
+    tamanho: 0,
+    ultimaModificacao: base.ultimaModificacao,
+  }));
+}
 
 
 
@@ -256,9 +267,17 @@ export default function Upload() {
         toast.info("Carregando base KE30 salva...");
         try {
           setParsingStart();
-          const savedFiles = await basesLocais.carregarBase("ke30");
-          for (const file of savedFiles) {
-            const parsed = await parseCsvFile(file);
+          const savedFiles = arquivosDaBase(info.ke30);
+          for (const arquivo of savedFiles) {
+            let parsed = await loadProcessedBase<ParsedCsv>("ke30", arquivo.nomeArquivo, "ke30-parsed-csv");
+            if (!parsed) {
+              const file = await basesLocais.carregarArquivo("ke30", arquivo.nomeArquivo);
+              if (!file) continue;
+              parsed = await parseCsvFile(file);
+              if (parsed.rows.length > 0) {
+                saveProcessedBaseInBackground("ke30", arquivo.nomeArquivo, "ke30-parsed-csv", parsed);
+              }
+            }
             if (parsed.rows.length > 0) {
               addParsed(parsed.rows, parsed.file, false, parsed.missing);
             }
@@ -271,9 +290,17 @@ export default function Upload() {
         toast.info("Carregando base Budget salva...");
         try {
           setParsingStart();
-          const savedFiles = await basesLocais.carregarBase("budget");
-          for (const file of savedFiles) {
-            const parsed = await parseBudgetFile(file);
+          const savedFiles = arquivosDaBase(info.budget);
+          for (const arquivo of savedFiles) {
+            let parsed = await loadProcessedBase<ParsedBudget>("budget", arquivo.nomeArquivo, "budget-parsed-xlsx");
+            if (!parsed) {
+              const file = await basesLocais.carregarArquivo("budget", arquivo.nomeArquivo);
+              if (!file) continue;
+              parsed = await parseBudgetFile(file);
+              if (parsed.rows.length > 0) {
+                saveProcessedBaseInBackground("budget", arquivo.nomeArquivo, "budget-parsed-xlsx", parsed);
+              }
+            }
             if (parsed.rows.length > 0) {
               addBudget(parsed.rows, parsed.file, false);
             }
@@ -318,9 +345,9 @@ export default function Upload() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAfterApply = useCallback(
-    async (applied: { tipo: TipoBase; file: File }[]) => {
+    async (applied: { tipo: TipoBase; file: File; parsed?: ParsedCsv | ParsedBudget }[]) => {
       const toConfirm: Array<{ tipo: TipoBase; file: File; dataExistente: string }> = [];
-      for (const { tipo, file } of applied) {
+      for (const { tipo, file, parsed } of applied) {
         try {
           const infoAtual = await basesLocais.infoBasesSalvas();
           const jaExiste = infoAtual[tipo]?.nomeArquivos?.includes(file.name);
@@ -333,6 +360,12 @@ export default function Upload() {
           } else {
             const resultado = await basesLocais.salvarBase(tipo, file);
             if (resultado?.ok) {
+              if (tipo === "ke30" && parsed) {
+                saveProcessedBaseInBackground("ke30", file.name, "ke30-parsed-csv", parsed);
+              }
+              if (tipo === "budget" && parsed) {
+                saveProcessedBaseInBackground("budget", file.name, "budget-parsed-xlsx", parsed);
+              }
               toast.success(`Base ${tipo.toUpperCase()} salva localmente.`);
             } else {
               toast.error(`Falha ao salvar base ${tipo.toUpperCase()} localmente.`);

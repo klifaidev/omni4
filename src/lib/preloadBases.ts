@@ -10,7 +10,10 @@ import { useForecast } from "@/store/forecast";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { useRolling } from "@/store/rolling";
-import type { InfoBase, TipoBase } from "@/hooks/use-bases-locais";
+import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
+import type { ParsedBudget } from "@/lib/budget";
+import type { ParsedCsv } from "@/lib/csv";
+import type { InfoArquivoBase, InfoBase, TipoBase } from "@/hooks/use-bases-locais";
 
 type PreloadStatus = "idle" | "loading" | "done" | "error";
 
@@ -50,6 +53,27 @@ async function carregarBase(tipo: TipoBase): Promise<File[]> {
   return result.arquivos.map(({ nomeArquivo, conteudoBase64, ultimaModificacao }) =>
     base64ToFile(conteudoBase64, nomeArquivo, ultimaModificacao),
   );
+}
+
+async function carregarArquivo(tipo: TipoBase, arquivo: InfoArquivoBase): Promise<File | null> {
+  if (!window.electronAPI?.bases) return null;
+  if (window.electronAPI.bases.carregarArquivo) {
+    const result = await window.electronAPI.bases.carregarArquivo(tipo, arquivo.nomeArquivo);
+    if (!result.ok || !result.arquivo) return null;
+    return base64ToFile(result.arquivo.conteudoBase64, result.arquivo.nomeArquivo, result.arquivo.ultimaModificacao);
+  }
+  const files = await carregarBase(tipo);
+  return files.find((file) => file.name === arquivo.nomeArquivo) ?? null;
+}
+
+function arquivosDaBase(base: InfoBase | undefined): InfoArquivoBase[] {
+  if (!base) return [];
+  if (base.arquivos?.length) return base.arquivos;
+  return base.nomeArquivos.map((nomeArquivo) => ({
+    nomeArquivo,
+    tamanho: 0,
+    ultimaModificacao: base.ultimaModificacao,
+  }));
 }
 
 function emptyProgress(): BasesPreloadProgress {
@@ -111,9 +135,8 @@ export async function preloadSavedBases(
 
     try {
       pricing.setParsingStart();
-      const files = await carregarBase(tipo);
-
       if (tipo === "deparaInovacao") {
+        const files = await carregarBase(tipo);
         const latest = files[files.length - 1];
         if (latest) {
           const parsed = await parseInovacaoDeparaFile(latest);
@@ -124,8 +147,16 @@ export async function preloadSavedBases(
       }
 
       if (tipo === "ke30" && usePricing.getState().files.length === 0) {
-        for (const file of files) {
-          const parsed = await parseCsvFile(file);
+        for (const arquivo of arquivosDaBase(info[tipo])) {
+          let parsed = await loadProcessedBase<ParsedCsv>("ke30", arquivo.nomeArquivo, "ke30-parsed-csv");
+          if (!parsed) {
+            const file = await carregarArquivo("ke30", arquivo);
+            if (!file) continue;
+            parsed = await parseCsvFile(file);
+            if (parsed.rows.length > 0) {
+              saveProcessedBaseInBackground("ke30", arquivo.nomeArquivo, "ke30-parsed-csv", parsed);
+            }
+          }
           if (parsed.rows.length > 0) {
             usePricing.getState().addParsed(parsed.rows, parsed.file, false, parsed.missing);
           }
@@ -133,8 +164,16 @@ export async function preloadSavedBases(
       }
 
       if (tipo === "budget" && useBudget.getState().rows.length === 0) {
-        for (const file of files) {
-          const parsed = await parseBudgetFile(file);
+        for (const arquivo of arquivosDaBase(info[tipo])) {
+          let parsed = await loadProcessedBase<ParsedBudget>("budget", arquivo.nomeArquivo, "budget-parsed-xlsx");
+          if (!parsed) {
+            const file = await carregarArquivo("budget", arquivo);
+            if (!file) continue;
+            parsed = await parseBudgetFile(file);
+            if (parsed.rows.length > 0) {
+              saveProcessedBaseInBackground("budget", arquivo.nomeArquivo, "budget-parsed-xlsx", parsed);
+            }
+          }
           if (parsed.rows.length > 0) {
             useBudget.getState().addBudget(parsed.rows, parsed.file, false);
           }
@@ -142,6 +181,7 @@ export async function preloadSavedBases(
       }
 
       if (tipo === "forecast" && useForecast.getState().rows.length === 0) {
+        const files = await carregarBase(tipo);
         for (const file of files) {
           const parsed = await parseForecastFile(file);
           if (parsed.rows.length > 0) {
@@ -151,6 +191,7 @@ export async function preloadSavedBases(
       }
 
       if (tipo === "rolling" && useRolling.getState().rows.length === 0) {
+        const files = await carregarBase(tipo);
         for (const file of files) {
           const parsed = await parseRollingFile(file);
           if (parsed.rows.length > 0) {
@@ -160,6 +201,7 @@ export async function preloadSavedBases(
       }
 
       if (tipo === "demanda" && useDemanda.getState().deck === null) {
+        const files = await carregarBase(tipo);
         const latest = files[files.length - 1];
         if (latest) {
           const parsed = await parseDemandaXlsx(latest);

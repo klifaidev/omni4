@@ -52,6 +52,11 @@ interface QueueItem {
 }
 
 type SavedBaseType = "ke30" | "budget" | "forecast" | "rolling";
+type AppliedBase = {
+  tipo: SavedBaseType;
+  file: File;
+  parsed?: ParsedCsv | ParsedBudget;
+};
 
 let _idSeq = 0;
 const nextId = () => `q_${Date.now()}_${++_idSeq}`;
@@ -63,7 +68,7 @@ export function UploadQueue({
   onDeleteFile,
   isElectron,
 }: {
-  onAfterApply?: (applied: { tipo: SavedBaseType; file: File }[]) => void;
+  onAfterApply?: (applied: AppliedBase[]) => void;
   savedTypes?: Set<string>;
   onSaveFile?: (tipo: SavedBaseType, file: File) => void;
   onDeleteFile?: (tipo: SavedBaseType) => void;
@@ -315,7 +320,7 @@ export function UploadQueue({
       if (!confirmReplace) return;
     }
     setApplying(true);
-    const successfullyApplied: { tipo: SavedBaseType; file: File }[] = [];
+    const successfullyApplied: AppliedBase[] = [];
     try {
       for (const it of readyItems) {
         if (it.kind === "real" && it.realPayload) {
@@ -325,14 +330,14 @@ export function UploadQueue({
             it.duplicateMonths.length > 0 ? confirmReplace : false,
             it.realPayload.missing,
           );
-          if (it.originalFile) successfullyApplied.push({ tipo: "ke30", file: it.originalFile });
+          if (it.originalFile) successfullyApplied.push({ tipo: "ke30", file: it.originalFile, parsed: it.realPayload });
         } else if (it.kind === "budget" && it.budgetPayload) {
           addBudget(
             it.budgetPayload.rows,
             it.budgetPayload.file,
             it.duplicateMonths.length > 0 ? confirmReplace : false,
           );
-          if (it.originalFile) successfullyApplied.push({ tipo: "budget", file: it.originalFile });
+          if (it.originalFile) successfullyApplied.push({ tipo: "budget", file: it.originalFile, parsed: it.budgetPayload });
         } else if (it.kind === "forecast" && it.forecastPayload) {
           addForecast(
             it.forecastPayload.rows,

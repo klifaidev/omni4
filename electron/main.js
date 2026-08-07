@@ -142,6 +142,53 @@ function ensureBasesDir() {
   return dir;
 }
 
+function getBasesCacheDir() {
+  return path.join(app.getPath("userData"), "bases-cache");
+}
+
+function ensureBasesCacheDir(tipo) {
+  const dir = path.join(getBasesCacheDir(), tipo);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function cacheFileName(nomeArquivo, cacheKind) {
+  const encoded = Buffer.from(nomeArquivo, "utf8").toString("base64url");
+  return `${cacheKind}-${encoded}.json`;
+}
+
+function getBaseFilePath(tipo, nomeArquivo) {
+  return path.join(getBasesDir(), tipo, nomeArquivo);
+}
+
+function getBaseSignature(tipo, nomeArquivo) {
+  const caminho = getBaseFilePath(tipo, nomeArquivo);
+  if (!fs.existsSync(caminho)) return null;
+  const stats = fs.statSync(caminho);
+  return {
+    nomeArquivo,
+    tamanho: stats.size,
+    ultimaModificacao: stats.mtime.toISOString(),
+  };
+}
+
+function getProcessedCachePath(tipo, nomeArquivo, cacheKind) {
+  return path.join(getBasesCacheDir(), tipo, cacheFileName(nomeArquivo, cacheKind));
+}
+
+function deleteProcessedCache(tipo, nomeArquivo) {
+  const cacheDir = path.join(getBasesCacheDir(), tipo);
+  if (!fs.existsSync(cacheDir)) return;
+  if (!nomeArquivo) {
+    for (const f of fs.readdirSync(cacheDir)) fs.unlinkSync(path.join(cacheDir, f));
+    return;
+  }
+  const suffix = `-${Buffer.from(nomeArquivo, "utf8").toString("base64url")}.json`;
+  for (const f of fs.readdirSync(cacheDir)) {
+    if (f.endsWith(suffix)) fs.unlinkSync(path.join(cacheDir, f));
+  }
+}
+
 ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
   try {
     const dir = ensureBasesDir();
@@ -149,6 +196,7 @@ ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }
     if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
     const destino = path.join(subDir, nomeArquivo);
     fs.writeFileSync(destino, Buffer.from(conteudoBase64, "base64"));
+    deleteProcessedCache(tipo, nomeArquivo);
     log.info("Base salva:", destino);
     return { ok: true, caminho: destino };
   } catch (err) {
@@ -185,6 +233,71 @@ ipcMain.handle("bases:load", async (event, { tipo }) => {
   }
 });
 
+ipcMain.handle("bases:load-file", async (event, { tipo, nomeArquivo }) => {
+  try {
+    const caminho = getBaseFilePath(tipo, nomeArquivo);
+    if (!fs.existsSync(caminho)) return { ok: false, motivo: "nenhum_arquivo" };
+    const stats = fs.statSync(caminho);
+    return {
+      ok: true,
+      arquivo: {
+        nomeArquivo,
+        conteudoBase64: fs.readFileSync(caminho).toString("base64"),
+        tamanho: stats.size,
+        ultimaModificacao: stats.mtime.toISOString(),
+      },
+    };
+  } catch (err) {
+    log.error("Erro ao carregar arquivo de base:", err);
+    return { ok: false, motivo: "erro", erro: err.message };
+  }
+});
+
+ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+  try {
+    const signature = getBaseSignature(tipo, nomeArquivo);
+    if (!signature) return { ok: true, hit: false, motivo: "arquivo_ausente" };
+    const cachePath = getProcessedCachePath(tipo, nomeArquivo, cacheKind);
+    if (!fs.existsSync(cachePath)) return { ok: true, hit: false, motivo: "cache_ausente" };
+    const envelope = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    const cacheSignature = envelope?.signature;
+    const valid =
+      envelope?.version === version &&
+      envelope?.cacheKind === cacheKind &&
+      cacheSignature?.nomeArquivo === signature.nomeArquivo &&
+      cacheSignature?.tamanho === signature.tamanho &&
+      cacheSignature?.ultimaModificacao === signature.ultimaModificacao &&
+      envelope?.payload;
+    if (!valid) return { ok: true, hit: false, motivo: "cache_invalido" };
+    return { ok: true, hit: true, payload: envelope.payload };
+  } catch (err) {
+    log.warn("Cache processado invalido, sera reprocessado:", tipo, nomeArquivo, err.message);
+    return { ok: true, hit: false, motivo: "cache_corrompido" };
+  }
+});
+
+ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheKind, version, payload }) => {
+  try {
+    const signature = getBaseSignature(tipo, nomeArquivo);
+    if (!signature) return { ok: false, erro: "arquivo_base_ausente" };
+    const cacheDir = ensureBasesCacheDir(tipo);
+    const destino = path.join(cacheDir, cacheFileName(nomeArquivo, cacheKind));
+    const temp = `${destino}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify({
+      version,
+      cacheKind,
+      signature,
+      savedAt: new Date().toISOString(),
+      payload,
+    }));
+    fs.renameSync(temp, destino);
+    return { ok: true };
+  } catch (err) {
+    log.warn("Erro ao salvar cache processado:", tipo, nomeArquivo, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
 ipcMain.handle("bases:info", async () => {
   try {
     const dir = getBasesDir();
@@ -200,10 +313,16 @@ ipcMain.handle("bases:info", async () => {
       });
       if (arquivos.length > 0) {
         const stats = arquivos.map(f => fs.statSync(path.join(subDir, f)));
+        const detalhes = arquivos.map((f, idx) => ({
+          nomeArquivo: f,
+          tamanho: stats[idx].size,
+          ultimaModificacao: stats[idx].mtime.toISOString(),
+        }));
         bases[tipo] = {
           quantidade: arquivos.length,
           nomeArquivo: arquivos[arquivos.length - 1],
           nomeArquivos: arquivos,
+          arquivos: detalhes,
           tamanhoTotal: stats.reduce((s, st) => s + st.size, 0),
           ultimaModificacao: new Date(Math.max(...stats.map(st => st.mtime.getTime()))).toISOString(),
         };
@@ -222,10 +341,12 @@ ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
     if (nomeArquivo) {
       const caminho = path.join(subDir, nomeArquivo);
       if (fs.existsSync(caminho)) fs.unlinkSync(caminho);
+      deleteProcessedCache(tipo, nomeArquivo);
     } else {
       for (const f of fs.readdirSync(subDir)) {
         fs.unlinkSync(path.join(subDir, f));
       }
+      deleteProcessedCache(tipo);
     }
     log.info("Base deletada:", tipo, nomeArquivo ?? "(todos)");
     return { ok: true };

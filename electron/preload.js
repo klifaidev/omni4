@@ -40,6 +40,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("bases:save", { tipo, nomeArquivo, conteudoBase64 }),
     carregar: (tipo) =>
       ipcRenderer.invoke("bases:load", { tipo }),
+    carregarArquivo: (tipo, nomeArquivo) =>
+      ipcRenderer.invoke("bases:load-file", { tipo, nomeArquivo }),
+    carregarProcessado: (tipo, nomeArquivo, cacheKind, version) =>
+      ipcRenderer.invoke("bases:processed-load", { tipo, nomeArquivo, cacheKind, version }),
+    salvarProcessado: (tipo, nomeArquivo, cacheKind, version, payload) =>
+      ipcRenderer.invoke("bases:processed-save", { tipo, nomeArquivo, cacheKind, version, payload }),
     info: () =>
       ipcRenderer.invoke("bases:info"),
     deletar: (tipo, nomeArquivo) =>
