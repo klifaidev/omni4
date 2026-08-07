@@ -4,7 +4,11 @@ import type { TipoBase } from "@/hooks/use-bases-locais";
 
 export const PROCESSED_BASE_CACHE_VERSION = 1;
 const MAX_MONOLITHIC_CACHE_ROWS = 200_000;
-const CHUNKED_CACHE_ROWS = 50_000;
+const DEFAULT_CHUNKED_CACHE_ROWS = 50_000;
+const MIN_CHUNKED_CACHE_ROWS = 1_000;
+const TARGET_CHUNK_JSON_BYTES = 16 * 1024 * 1024;
+const MAX_MONOLITHIC_CACHE_BYTES = 64 * 1024 * 1024;
+const SAMPLE_ROWS_FOR_SIZE_ESTIMATE = 500;
 
 export type ProcessedBaseCacheKind = "ke30-parsed-csv" | "budget-parsed-xlsx";
 
@@ -62,6 +66,43 @@ function payloadHeader(payload: ProcessedPayload): ProcessedHeader {
   return header as ProcessedHeader;
 }
 
+function estimateRowsJsonBytes(rows: unknown[]): { avgRowBytes: number; totalRowsBytes: number } {
+  if (rows.length === 0) return { avgRowBytes: 2, totalRowsBytes: 2 };
+  const sampleSize = Math.min(rows.length, SAMPLE_ROWS_FOR_SIZE_ESTIMATE);
+  let sampleBytes = 2;
+  for (let index = 0; index < sampleSize; index++) {
+    const rowJson = JSON.stringify(rows[index]);
+    sampleBytes += rowJson.length + 1;
+  }
+  const avgRowBytes = Math.max(2, sampleBytes / sampleSize);
+  return {
+    avgRowBytes,
+    totalRowsBytes: Math.ceil(avgRowBytes * rows.length + 2),
+  };
+}
+
+function computeChunkSize(avgRowBytes: number): number {
+  if (!Number.isFinite(avgRowBytes) || avgRowBytes <= 0) return DEFAULT_CHUNKED_CACHE_ROWS;
+  const estimatedRowsByBytes = Math.floor(TARGET_CHUNK_JSON_BYTES / avgRowBytes);
+  return Math.max(MIN_CHUNKED_CACHE_ROWS, Math.min(DEFAULT_CHUNKED_CACHE_ROWS, estimatedRowsByBytes));
+}
+
+export function computeProcessedCachePlan(rows: unknown[]): {
+  mode: "monolithic" | "chunked";
+  chunkSize: number;
+  estimatedBytes: number;
+} {
+  const estimate = estimateRowsJsonBytes(rows);
+  const shouldChunk =
+    rows.length > MAX_MONOLITHIC_CACHE_ROWS ||
+    estimate.totalRowsBytes > MAX_MONOLITHIC_CACHE_BYTES;
+  return {
+    mode: shouldChunk ? "chunked" : "monolithic",
+    chunkSize: shouldChunk ? computeChunkSize(estimate.avgRowBytes) : rows.length,
+    estimatedBytes: estimate.totalRowsBytes,
+  };
+}
+
 function withRows<T extends ProcessedPayload>(header: ProcessedHeader, rows: unknown[]): T | null {
   const payload = { ...header, rows };
   return hasParsedShape(payload) ? (payload as T) : null;
@@ -106,8 +147,14 @@ export async function saveProcessedBase(
   const api = window.electronAPI?.bases;
   if (!api || !hasParsedShape(payload)) return;
   try {
-    if (payload.rows.length > MAX_MONOLITHIC_CACHE_ROWS && api.iniciarProcessadoEmChunks && api.salvarProcessadoChunk && api.finalizarProcessadoEmChunks) {
-      const chunkCount = Math.ceil(payload.rows.length / CHUNKED_CACHE_ROWS);
+    const plan = computeProcessedCachePlan(payload.rows);
+    if (plan.mode === "chunked") {
+      if (!api.iniciarProcessadoEmChunks || !api.salvarProcessadoChunk || !api.finalizarProcessadoEmChunks) {
+        console.warn("Cache processado grande sem suporte a chunks; salvamento ignorado:", tipo, nomeArquivo);
+        return;
+      }
+      let chunkSize = plan.chunkSize;
+      let chunkCount = Math.ceil(payload.rows.length / chunkSize);
       const start = await api.iniciarProcessadoEmChunks(
         tipo,
         nomeArquivo,
@@ -115,13 +162,33 @@ export async function saveProcessedBase(
         PROCESSED_BASE_CACHE_VERSION,
         payloadHeader(payload),
         payload.rows.length,
-        CHUNKED_CACHE_ROWS,
+        chunkSize,
       );
       if (!start.ok) return;
       for (let index = 0; index < chunkCount; index++) {
-        const rows = payload.rows.slice(index * CHUNKED_CACHE_ROWS, (index + 1) * CHUNKED_CACHE_ROWS);
+        const rows = payload.rows.slice(index * chunkSize, (index + 1) * chunkSize);
         const saved = await api.salvarProcessadoChunk(tipo, nomeArquivo, cacheKind, index, rows);
-        if (!saved.ok) return;
+        if (!saved.ok) {
+          if (chunkSize <= MIN_CHUNKED_CACHE_ROWS) {
+            console.warn("Falha ao salvar chunk minimo do cache processado:", tipo, nomeArquivo, saved.erro);
+            return;
+          }
+          chunkSize = Math.max(MIN_CHUNKED_CACHE_ROWS, Math.floor(chunkSize / 2));
+          chunkCount = Math.ceil(payload.rows.length / chunkSize);
+          index = -1;
+          const restart = await api.iniciarProcessadoEmChunks(
+            tipo,
+            nomeArquivo,
+            cacheKind,
+            PROCESSED_BASE_CACHE_VERSION,
+            payloadHeader(payload),
+            payload.rows.length,
+            chunkSize,
+          );
+          if (!restart.ok) return;
+          await yieldToBrowser();
+          continue;
+        }
         await yieldToBrowser();
       }
       await api.finalizarProcessadoEmChunks(tipo, nomeArquivo, cacheKind, chunkCount);

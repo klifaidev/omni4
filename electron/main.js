@@ -363,7 +363,8 @@ ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheK
     fs.renameSync(temp, destino);
     return { ok: true };
   } catch (err) {
-    log.warn("Erro ao salvar cache processado:", tipo, nomeArquivo, err.message);
+    const rowCount = Array.isArray(payload?.rows) ? payload.rows.length : "desconhecido";
+    log.warn("Erro ao salvar cache processado monolitico:", tipo, nomeArquivo, `rows=${rowCount}`, err.message);
     return { ok: false, erro: err.message };
   }
 });
@@ -402,7 +403,8 @@ ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo
     fs.writeFileSync(chunkPath, JSON.stringify(rows));
     return { ok: true };
   } catch (err) {
-    log.warn("Erro ao salvar chunk de cache processado:", tipo, nomeArquivo, err.message);
+    const rowCount = Array.isArray(rows) ? rows.length : "desconhecido";
+    log.warn("Erro ao salvar chunk de cache processado:", tipo, nomeArquivo, `index=${index}`, `rows=${rowCount}`, err.message);
     return { ok: false, erro: err.message };
   }
 });
