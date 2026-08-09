@@ -7,6 +7,7 @@ import { getDeParaBySku } from "./depara";
 import { getInovacao, getLegado } from "./deparaInovacao";
 import { getCanalAjustado } from "./deparaComercial";
 import { normHeader, parseDecimal, parsePeriod } from "./format";
+import { createStringInterner, internTrimmed } from "./stringIntern";
 import type { Filters } from "./types";
 
 export interface BudgetRow {
@@ -102,6 +103,7 @@ function dataToPeriod(raw: unknown): ReturnType<typeof parsePeriod> | null {
 }
 
 export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
+  const intern = createStringInterner();
   const warnings: string[] = [];
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
@@ -158,12 +160,13 @@ export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
     const p = dataToPeriod(norm.periodo);
     if (!p) { skippedNoPeriod++; continue; }
 
-    const sku = norm.sku != null ? String(norm.sku).trim() : undefined;
-    const canal = norm.canal ? String(norm.canal).trim() : undefined;
-    const skuDescRaw = norm.skuDesc ? String(norm.skuDesc).trim() : undefined;
-    const statusRaw = norm.status != null ? String(norm.status).trim() : undefined;
+    const sku = norm.sku != null ? internTrimmed(norm.sku, intern) : undefined;
+    const canal = norm.canal ? internTrimmed(norm.canal, intern) : undefined;
+    const skuDescRaw = norm.skuDesc ? internTrimmed(norm.skuDesc, intern) : undefined;
+    const statusRaw = norm.status != null ? internTrimmed(norm.status, intern) : undefined;
 
     const dep = sku ? getDeParaBySku(sku) : null;
+    const legado = getLegado(sku);
 
     const volumeKg = parseDecimal(norm.volume);
     const receita = parseDecimal(norm.receita);
@@ -177,27 +180,27 @@ export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
     if (kind === "budget") countBudget++; else countReal++;
 
     rows.push({
-      periodo: p.periodo,
+      periodo: intern(p.periodo),
       mes: p.mes,
       ano: p.ano,
-      fy: p.fy,
+      fy: intern(p.fy),
       fyNum: p.fyNum,
       status: statusRaw,
       kind,
       canal,
-      canalAjustado: getCanalAjustado(canal) ?? undefined,
+      canalAjustado: canal ? intern(getCanalAjustado(canal) ?? "") || undefined : undefined,
       sku,
-      skuDesc: dep?.skuDesc ?? skuDescRaw,
-      categoria: dep?.categoria,
-      subcategoria: dep?.subcategoria,
-      marca: dep?.marca,
-      tecnologia: dep?.tecnologia,
-      formato: dep?.formato,
-      mercado: dep?.mercado,
-      faixaPeso: dep?.faixaPeso,
-      sabor: dep?.sabor,
-      inovacao: getInovacao(sku),
-      legado: getLegado(sku),
+      skuDesc: dep?.skuDesc ? intern(dep.skuDesc) : skuDescRaw,
+      categoria: dep?.categoria ? intern(dep.categoria) : undefined,
+      subcategoria: dep?.subcategoria ? intern(dep.subcategoria) : undefined,
+      marca: dep?.marca ? intern(dep.marca) : undefined,
+      tecnologia: dep?.tecnologia ? intern(dep.tecnologia) : undefined,
+      formato: dep?.formato ? intern(dep.formato) : undefined,
+      mercado: dep?.mercado ? intern(dep.mercado) : undefined,
+      faixaPeso: dep?.faixaPeso ? intern(dep.faixaPeso) : undefined,
+      sabor: dep?.sabor ? intern(dep.sabor) : undefined,
+      inovacao: intern(getInovacao(sku)),
+      legado: legado ? intern(legado) : undefined,
       volumeKg,
       receita,
       cm,

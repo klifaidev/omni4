@@ -1,6 +1,7 @@
 import type { ParsedBudget } from "@/lib/budget";
 import type { ParsedCsv } from "@/lib/csv";
 import type { TipoBase } from "@/hooks/use-bases-locais";
+import { createStringInterner, type StringInterner } from "@/lib/stringIntern";
 
 export const PROCESSED_BASE_CACHE_VERSION = 1;
 const MAX_MONOLITHIC_CACHE_ROWS = 200_000;
@@ -14,6 +15,52 @@ export type ProcessedBaseCacheKind = "ke30-parsed-csv" | "budget-parsed-xlsx";
 
 type ProcessedPayload = ParsedCsv | ParsedBudget;
 type ProcessedHeader = Omit<ProcessedPayload, "rows">;
+
+const KE30_INTERN_FIELDS = [
+  "periodo",
+  "fy",
+  "marca",
+  "canal",
+  "categoria",
+  "subcategoria",
+  "formato",
+  "sku",
+  "skuDesc",
+  "cliente",
+  "gestorResp",
+  "regiao",
+  "uf",
+  "regional",
+  "canalAjustado",
+  "mercadoAjustado",
+  "mercado",
+  "sabor",
+  "tecnologia",
+  "faixaPeso",
+  "inovacao",
+  "legado",
+] as const;
+
+const BUDGET_INTERN_FIELDS = [
+  "periodo",
+  "fy",
+  "status",
+  "kind",
+  "canal",
+  "canalAjustado",
+  "sku",
+  "skuDesc",
+  "categoria",
+  "subcategoria",
+  "marca",
+  "tecnologia",
+  "formato",
+  "mercado",
+  "faixaPeso",
+  "sabor",
+  "inovacao",
+  "legado",
+] as const;
 
 interface ChunkedManifest {
   version: number;
@@ -108,6 +155,29 @@ function withRows<T extends ProcessedPayload>(header: ProcessedHeader, rows: unk
   return hasParsedShape(payload) ? (payload as T) : null;
 }
 
+function internRowFields(row: unknown, fields: readonly string[], intern: StringInterner): void {
+  if (!row || typeof row !== "object") return;
+  const record = row as Record<string, unknown>;
+  for (const field of fields) {
+    const value = record[field];
+    if (typeof value === "string") record[field] = intern(value);
+  }
+}
+
+function internProcessedRows(rows: unknown[], cacheKind: ProcessedBaseCacheKind, intern: StringInterner): void {
+  const fields = cacheKind === "budget-parsed-xlsx" ? BUDGET_INTERN_FIELDS : KE30_INTERN_FIELDS;
+  for (const row of rows) internRowFields(row, fields, intern);
+}
+
+function internProcessedPayload<T extends ProcessedPayload>(
+  payload: T,
+  cacheKind: ProcessedBaseCacheKind,
+  intern = createStringInterner(),
+): T {
+  internProcessedRows(payload.rows, cacheKind, intern);
+  return payload;
+}
+
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
@@ -120,7 +190,9 @@ export async function loadProcessedBase<T extends ProcessedPayload>(
   const api = window.electronAPI?.bases;
   if (!api?.carregarProcessado) return null;
   const result = await api.carregarProcessado(tipo, nomeArquivo, cacheKind, PROCESSED_BASE_CACHE_VERSION);
-  if (result.ok && result.hit && hasParsedShape(result.payload)) return result.payload as T;
+  if (result.ok && result.hit && hasParsedShape(result.payload)) {
+    return internProcessedPayload(result.payload as T, cacheKind);
+  }
 
   const canLoadChunks = api.carregarProcessadoManifesto && api.carregarProcessadoChunk;
   if (!canLoadChunks) return null;
@@ -128,9 +200,11 @@ export async function loadProcessedBase<T extends ProcessedPayload>(
   if (!meta.ok || !meta.hit || !hasChunkedManifestShape(meta.manifest)) return null;
 
   const rows: unknown[] = [];
+  const intern = createStringInterner();
   for (let index = 0; index < meta.manifest.chunks; index++) {
     const chunk = await api.carregarProcessadoChunk(tipo, nomeArquivo, cacheKind, index);
     if (!chunk.ok || !Array.isArray(chunk.rows)) return null;
+    internProcessedRows(chunk.rows, cacheKind, intern);
     rows.push(...chunk.rows);
     await yieldToBrowser();
   }

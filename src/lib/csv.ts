@@ -9,6 +9,7 @@ import {
   getMercadoAjustadoFromRegiao,
   getRegionalFromUf,
 } from "./deparaComercial";
+import { createStringInterner, internTrimmed } from "./stringIntern";
 
 // Map of normalized header → canonical field
 // Keys are normalized via normHeader (lowercase, no accents/spaces/punct).
@@ -192,6 +193,7 @@ export interface ParsedCsv {
 }
 
 export async function parseCsvFile(file: File): Promise<ParsedCsv> {
+  const intern = createStringInterner();
   // Try UTF-8 first; fallback to Windows-1252 if replacement char detected
   let text = await file.text();
   if (text.includes("\uFFFD")) {
@@ -269,7 +271,7 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
       ) {
         (obj as Record<string, number>)[dest] = parseDecimal(val);
       } else {
-        (obj as Record<string, string>)[dest] = (val ?? "").toString().trim();
+        (obj as Record<string, string>)[dest] = internTrimmed(val, intern);
       }
     }
 
@@ -278,8 +280,8 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
     if (obj.sku) {
       const m = obj.sku.match(/^\s*(\d{3,})\s*[-–—:.\s]+\s*(.+?)\s*$/);
       if (m) {
-        obj.sku = m[1];
-        if (!obj.skuDesc) obj.skuDesc = m[2];
+        obj.sku = intern(m[1]);
+        if (!obj.skuDesc) obj.skuDesc = intern(m[2]);
       }
     }
 
@@ -287,15 +289,15 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
     // Mesmo que a base tenha os campos preenchidos, o De Para tem prioridade.
     const dp = getDeParaBySku(obj.sku);
     if (dp) {
-      obj.categoria = dp.categoria || obj.categoria;
-      obj.subcategoria = dp.subcategoria || obj.subcategoria;
-      obj.formato = dp.formato || obj.formato;
-      obj.marca = dp.marca || obj.marca;
-      obj.tecnologia = dp.tecnologia || obj.tecnologia;
-      obj.mercado = dp.mercado || obj.mercado;
-      obj.faixaPeso = dp.faixaPeso || obj.faixaPeso;
-      obj.sabor = dp.sabor || obj.sabor;
-      obj.skuDesc = dp.skuDesc || obj.skuDesc;
+      obj.categoria = dp.categoria ? intern(dp.categoria) : obj.categoria;
+      obj.subcategoria = dp.subcategoria ? intern(dp.subcategoria) : obj.subcategoria;
+      obj.formato = dp.formato ? intern(dp.formato) : obj.formato;
+      obj.marca = dp.marca ? intern(dp.marca) : obj.marca;
+      obj.tecnologia = dp.tecnologia ? intern(dp.tecnologia) : obj.tecnologia;
+      obj.mercado = dp.mercado ? intern(dp.mercado) : obj.mercado;
+      obj.faixaPeso = dp.faixaPeso ? intern(dp.faixaPeso) : obj.faixaPeso;
+      obj.sabor = dp.sabor ? intern(dp.sabor) : obj.sabor;
+      obj.skuDesc = dp.skuDesc ? intern(dp.skuDesc) : obj.skuDesc;
     }
     // SKU pendente: ausente OU presente com algum campo vazio.
     if (obj.sku) {
@@ -314,27 +316,28 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
     // Sempre tem prioridade sobre o que veio do CSV.
     if (obj.canal) {
       const canalAj = getCanalAjustado(obj.canal);
-      if (canalAj) obj.canalAjustado = canalAj;
+      if (canalAj) obj.canalAjustado = intern(canalAj);
       else missingCanais.add(obj.canal);
     }
 
     if (obj.regiao) {
       const uf = getUfFromRegiao(obj.regiao);
       const mercadoAj = getMercadoAjustadoFromRegiao(obj.regiao);
-      if (uf) obj.uf = uf;
-      if (mercadoAj) obj.mercadoAjustado = mercadoAj;
+      if (uf) obj.uf = intern(uf);
+      if (mercadoAj) obj.mercadoAjustado = intern(mercadoAj);
       if (!uf && !mercadoAj) missingRegioes.add(obj.regiao);
     }
 
     if (obj.uf) {
       const regional = getRegionalFromUf(obj.uf);
-      if (regional) obj.regional = regional;
+      if (regional) obj.regional = intern(regional);
       else missingUfs.add(obj.uf);
     }
 
     // De Para de Inovação — classifica SKU como "Inovação" ou "Regular" + legado.
-    obj.inovacao = getInovacao(obj.sku);
-    obj.legado = getLegado(obj.sku);
+    obj.inovacao = intern(getInovacao(obj.sku));
+    const legado = getLegado(obj.sku);
+    obj.legado = legado ? intern(legado) : legado;
 
 
     const period = parsePeriod(obj.periodo as string);
@@ -343,10 +346,10 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
       if (!firstFailureSample) firstFailureSample = raw;
       continue;
     }
-    obj.periodo = period.periodo;
+    obj.periodo = intern(period.periodo);
     obj.mes = period.mes;
     obj.ano = period.ano;
-    obj.fy = period.fy;
+    obj.fy = intern(period.fy);
     obj.fyNum = period.fyNum;
 
     obj.rol = obj.rol ?? 0;
