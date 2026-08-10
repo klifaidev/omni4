@@ -53,6 +53,74 @@ describe("calcPVM", () => {
     expect(res.others).toBe(0);
     expect(res.skuDetails).toEqual([]);
   });
+
+  it("routes residual tiny-volume SKUs to others instead of exploding unit effects", () => {
+    const rows = [
+      makeRow({
+        periodo: "007.2025",
+        mes: 7,
+        ano: 2025,
+        sku: "CORE",
+        volumeKg: 10_000,
+        rol: 100_000,
+        cogs: 60_000,
+        margemBruta: 40_000,
+        contribMarginal: 40_000,
+      }),
+      makeRow({
+        periodo: "007.2026",
+        mes: 7,
+        ano: 2026,
+        fy: "FY26/27",
+        fyNum: 202627,
+        sku: "CORE",
+        volumeKg: 10_000,
+        rol: 101_000,
+        cogs: 60_000,
+        margemBruta: 41_000,
+        contribMarginal: 41_000,
+      }),
+      makeRow({
+        periodo: "007.2025",
+        mes: 7,
+        ano: 2025,
+        sku: "RESIDUAL",
+        volumeKg: 0.001,
+        rol: 10_000_000_000,
+        cogs: 1_000,
+        margemBruta: 9_999_999_000,
+        contribMarginal: 9_999_999_000,
+      }),
+      makeRow({
+        periodo: "007.2026",
+        mes: 7,
+        ano: 2026,
+        fy: "FY26/27",
+        fyNum: 202627,
+        sku: "RESIDUAL",
+        volumeKg: 100,
+        rol: 1_000,
+        cogs: 600,
+        margemBruta: 400,
+        contribMarginal: 400,
+      }),
+    ];
+
+    const res = calcPVM(rows, "mb", "007.2025", "007.2026", "month");
+    const residual = res.skuDetails.find((item) => item.sku === "RESIDUAL");
+
+    expect(residual?.residualCause).toBe("low_volume");
+    expect(residual?.priceEffect).toBe(0);
+    expect(residual?.costEffect).toBe(0);
+    expect(residual?.freightEffect).toBe(0);
+    expect(residual?.commissionEffect).toBe(0);
+    expect(Math.abs(res.price)).toBeLessThan(10_000);
+    expect(Math.abs(res.cost)).toBeLessThan(10_000);
+    expect(res.base + res.volume + res.price + res.cost + res.freight + res.commission + res.others).toBeCloseTo(
+      res.current,
+      6,
+    );
+  });
 });
 
 describe("computeKPIs", () => {

@@ -393,6 +393,15 @@ export interface PVMResult {
   skuDetails: PVMSkuDetail[];
 }
 
+const MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS = 0.001;
+const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
+
+function minMaterialVolumeForUnitEffects(aggregates: Iterable<{ vol: number }>): number {
+  let totalVolume = 0;
+  for (const row of aggregates) totalVolume += Math.max(0, row.vol);
+  return Math.max(MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS, totalVolume * MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS);
+}
+
 /**
  * Detailed PVM bridge between two periods (FY or month).
  * Decomposes CM/MB variation into:
@@ -436,6 +445,8 @@ export function calcPVMFromRows(
 
   const a = aggSku(baseRows);
   const b = aggSku(compRows);
+  const minMaterialVolumeA = minMaterialVolumeForUnitEffects(a.values());
+  const minMaterialVolumeB = minMaterialVolumeForUnitEffects(b.values());
 
   // Map of sku key → human-readable description (prefer comp period, fallback to base)
   const descMap = new Map<string, string>();
@@ -487,6 +498,16 @@ export function calcPVMFromRows(
     // SKUs órfãos (só A ou só B) → impacto total cai em Mix/Outros (resíduo).
     if (!ra || !rb || ra.vol === 0 || rb.vol === 0) {
       detail.othersEffect = (rb?.margem ?? 0) - (ra?.margem ?? 0);
+      detail.skuOnlyEffect = detail.othersEffect;
+      detail.residualCause = "sku_only";
+      skuDetails.push(detail);
+      continue;
+    }
+
+    if (Math.abs(ra.vol) < minMaterialVolumeA || Math.abs(rb.vol) < minMaterialVolumeB) {
+      detail.othersEffect = rb.margem - ra.margem;
+      detail.lowVolumeResidualEffect = detail.othersEffect;
+      detail.residualCause = "low_volume";
       skuDetails.push(detail);
       continue;
     }
@@ -518,6 +539,8 @@ export function calcPVMFromRows(
     // residual per-SKU (mix puro): ΔMargem - soma dos efeitos calculados
     detail.othersEffect =
       (rb.margem - ra.margem) - skuVol - skuPrice - skuCost - skuFreight - skuComm;
+    detail.mixResidualEffect = detail.othersEffect;
+    detail.residualCause = "mix";
 
     volEffect += skuVol;
     priceEffect += skuPrice;
