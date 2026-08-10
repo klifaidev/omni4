@@ -159,6 +159,8 @@ const HEADER_MAP: Record<string, keyof PricingRow | "ignore"> = {
   centro: "ignore",
 };
 
+const GENERIC_UNIT_HEADERS = new Set(["1000", "1000kg", "1000brl"]);
+
 function detectDelimiter(sample: string): string {
   const counts = [";", ",", "\t", "|"].map((d) => ({
     d,
@@ -166,6 +168,59 @@ function detectDelimiter(sample: string): string {
   }));
   counts.sort((a, b) => b.n - a.n);
   return counts[0].d || ";";
+}
+
+function canonicalHeaderScore(cells: string[]): number {
+  let score = 0;
+  for (const cell of cells) {
+    const canonical = HEADER_MAP[normHeader(cell)];
+    if (canonical && canonical !== "ignore") {
+      score++;
+      if (canonical === "periodo") score += 100;
+      if (canonical === "sku" || canonical === "cliente" || canonical === "canal") score += 10;
+    }
+  }
+  return score;
+}
+
+function prepareCsvForParsing(text: string, delimiter: string): string {
+  const preview = Papa.parse<string[]>(text, {
+    delimiter,
+    header: false,
+    skipEmptyLines: true,
+    preview: 20,
+  });
+  const rows = preview.data;
+  let headerIndex = 0;
+  let bestScore = -1;
+
+  for (let index = 0; index < rows.length; index++) {
+    const score = canonicalHeaderScore(rows[index]);
+    if (score > bestScore) {
+      bestScore = score;
+      headerIndex = index;
+    }
+  }
+
+  if (headerIndex === 0) return text;
+
+  const header = [...rows[headerIndex]];
+  for (let col = 0; col < header.length; col++) {
+    const key = normHeader(header[col] ?? "");
+    if (HEADER_MAP[key] && !GENERIC_UNIT_HEADERS.has(key)) continue;
+
+    for (let row = headerIndex - 1; row >= 0; row--) {
+      const candidate = rows[row]?.[col];
+      const candidateKey = normHeader(candidate ?? "");
+      if (candidate && HEADER_MAP[candidateKey] && candidateKey !== "real") {
+        header[col] = candidate;
+        break;
+      }
+    }
+  }
+
+  const lines = text.split(/\r?\n/);
+  return `${Papa.unparse([header], { delimiter })}\n${lines.slice(headerIndex + 1).join("\n")}`;
 }
 
 export interface MissingSkuItem {
@@ -207,8 +262,9 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
 
   const sample = text.split("\n").slice(0, 5).join("\n");
   const delimiter = detectDelimiter(sample);
+  const parseText = prepareCsvForParsing(text, delimiter);
 
-  const result = Papa.parse<Record<string, string>>(text, {
+  const result = Papa.parse<Record<string, string>>(parseText, {
     header: true,
     delimiter,
     skipEmptyLines: true,
