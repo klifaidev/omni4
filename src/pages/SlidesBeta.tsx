@@ -131,6 +131,7 @@ import {
   type SupabaseYjsProvider,
   type YjsTextAwarenessState,
 } from "@/lib/supabaseYjsProvider";
+import { reportRendererError } from "@/lib/rendererErrorReporting";
 import {
   compactCustomSlideBlockOrder,
   customSlideConfigToYDoc,
@@ -2253,16 +2254,28 @@ export default function SlidesBeta() {
     }
     if (customYProvidersRef.current.has(item.id)) return doc;
 
-    const awareness = new Awareness(doc);
-    awareness.setLocalStateField("user", currentUser);
-    const updateAwareness = () => {
-      setTextAwarenessBySlide((current) => ({
-        ...current,
-        [item.id]: getTextAwarenessStates(awareness, awareness.clientID),
-      }));
-    };
-    awareness.on("update", updateAwareness);
-    customYAwarenessRef.current.set(item.id, awareness);
+    let awareness: Awareness | undefined;
+    try {
+      awareness = new Awareness(doc);
+      awareness.setLocalStateField("user", currentUser);
+      const updateAwareness = () => {
+        if (!awareness) return;
+        setTextAwarenessBySlide((current) => ({
+          ...current,
+          [item.id]: getTextAwarenessStates(awareness, awareness.clientID),
+        }));
+      };
+      awareness.on("update", updateAwareness);
+      customYAwarenessRef.current.set(item.id, awareness);
+    } catch (error) {
+      reportRendererError("slides.yjs-awareness-init", error);
+      setTextAwarenessBySlide((current) => {
+        if (!current[item.id]) return current;
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+    }
 
     const provider = createSupabaseYjsProvider({
       doc,
