@@ -8,7 +8,7 @@ export type ChartType =
   | "stackedColumn" | "stackedBar" | "stackedArea"
   | "pie" | "donut" | "bubble" | "area"
   | "scatter" | "combo" | "waterfall"
-  | "funnel" | "treemap" | "radar" | "histogram" | "boxplot";
+  | "funnel" | "treemap" | "mapaBrasil" | "radar" | "histogram" | "boxplot";
 
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type GridStyle = "solid" | "dashed";
@@ -186,6 +186,13 @@ export interface TreemapStyleCfg {
   borderWidth: number;
 }
 
+export type BrazilMapPalette = "harald" | "blue" | "diverging" | "gray";
+
+export interface BrazilMapStyleCfg {
+  palette: BrazilMapPalette;
+  minRolSharePct: number;
+}
+
 export interface RadarStyleCfg {
   fillArea: boolean;
   fillOpacity: number; // 0..1
@@ -274,6 +281,7 @@ export interface ChartStyle {
   waterfall: WaterfallStyleCfg;
   funnel: FunnelStyleCfg;
   treemap: TreemapStyleCfg;
+  mapaBrasil: BrazilMapStyleCfg;
   radar: RadarStyleCfg;
   histogram: HistogramStyleCfg;
   boxplot: BoxplotStyleCfg;
@@ -348,6 +356,10 @@ export function defaultChartStyle(): ChartStyle {
       labelSize: 11, labelColor: SLIDE_HEX.white,
       borderColor: SLIDE_HEX.white, borderWidth: 1,
     },
+    mapaBrasil: {
+      palette: "harald",
+      minRolSharePct: 0.1,
+    },
     radar: {
       fillArea: true, fillOpacity: 0.35,
       gridShape: "polygon", gridColor: SLIDE_HEX.grid,
@@ -394,6 +406,7 @@ export function ensureChartStyle(s?: Partial<ChartStyle>): ChartStyle {
     waterfall: { ...d.waterfall, ...(s.waterfall ?? {}) },
     funnel: { ...d.funnel, ...(s.funnel ?? {}) },
     treemap: { ...d.treemap, ...(s.treemap ?? {}) },
+    mapaBrasil: { ...d.mapaBrasil, ...(s.mapaBrasil ?? {}) },
     radar: { ...d.radar, ...(s.radar ?? {}) },
     histogram: { ...d.histogram, ...(s.histogram ?? {}) },
     boxplot: { ...d.boxplot, ...(s.boxplot ?? {}) },

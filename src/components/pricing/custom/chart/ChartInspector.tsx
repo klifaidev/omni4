@@ -158,6 +158,7 @@ const ALL_TYPES: { value: ChartBlock["chartType"]; label: string }[] = [
   { value: "waterfall", label: "Waterfall" },
   { value: "funnel", label: "Funil" },
   { value: "treemap", label: "Mapa de árvore" },
+  { value: "mapaBrasil", label: "Mapa do Brasil" },
   { value: "radar", label: "Radar" },
   { value: "histogram", label: "Histograma" },
   { value: "boxplot", label: "Caixa (Box)" },
@@ -170,10 +171,10 @@ function sectionsFor(ct: ChartBlock["chartType"]) {
   const isBarFamily = ["bar", "column", "hbar", "stackedColumn", "stackedBar"].includes(ct);
   const isAreaFamily = ct === "area" || ct === "stackedArea";
   const isComboLineFamily = ct === "line" || ct === "combo";
-  const showAxes = !["pie", "donut", "funnel", "treemap", "radar", "histogram", "boxplot"].includes(ct);
+  const showAxes = !["pie", "donut", "funnel", "treemap", "mapaBrasil", "radar", "histogram", "boxplot"].includes(ct);
   const showGrid = showAxes && ct !== "histogram"
-    && !["funnel", "treemap", "boxplot"].includes(ct) ? true : false;
-  const showSeries = !["pie", "donut", "bubble", "scatter", "waterfall", "funnel", "treemap", "histogram"].includes(ct);
+    && !["funnel", "treemap", "mapaBrasil", "boxplot"].includes(ct) ? true : false;
+  const showSeries = !["pie", "donut", "bubble", "scatter", "waterfall", "funnel", "treemap", "mapaBrasil", "histogram"].includes(ct);
   return {
     showAxes, showGrid,
     showSeries,
@@ -1014,6 +1015,31 @@ export function ChartInspector({
             <NumberStepper value={style.treemap.borderWidth} min={0} max={5}
               onChange={(v) => updPath("treemap", { borderWidth: v })} suffix="px" />
           </Row>
+        </Section>
+      )}
+
+      {/* ===== Type-specific: Brazil map ===== */}
+      {ct === "mapaBrasil" && (
+        <Section title="Mapa do Brasil" onReset={() => resetPath("mapaBrasil")}>
+          <Row label="Paleta">
+            <Segmented value={style.mapaBrasil.palette}
+              onChange={(v) => updPath("mapaBrasil", { palette: v as never })}
+              options={[
+                { value: "harald", label: "Harald" },
+                { value: "blue", label: "Azul" },
+                { value: "diverging", label: "+/-" },
+                { value: "gray", label: "Cinza" },
+              ]} />
+          </Row>
+          <Row label="Corte SKU/UF">
+            <NumberStepper value={style.mapaBrasil.minRolSharePct} min={0} max={10} step={0.1}
+              onChange={(v) => updPath("mapaBrasil", {
+                minRolSharePct: Math.max(0, Math.round(v * 10) / 10),
+              })} suffix="%" />
+          </Row>
+          <p className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+            Exclui, dentro de cada UF, SKUs com participacao individual no ROL menor que este corte antes de calcular o KPI do estado.
+          </p>
         </Section>
       )}
 

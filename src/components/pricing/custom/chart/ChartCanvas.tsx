@@ -81,7 +81,7 @@ import {
   type TopRankingResult,
 } from "@/lib/slideCalcWorkerClient";
 import {
-  ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type ChartStyle,
+  ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type BrazilMapPalette, type ChartStyle,
 } from "./types";
 import {
   ChartTooltip, applySort, evalCondColor, renderRefLines,
@@ -250,6 +250,10 @@ type BrazilMapDatum = BrazilStatePath & {
   value: number | null;
   rank: number | null;
   rows: number;
+  excludedSkus: number;
+  excludedRows: number;
+  rolIncluded: number;
+  rolTotal: number;
 };
 
 const SVG_UF_ID = /^BR([A-Z]{2})$/;
@@ -336,25 +340,79 @@ function rowBrazilUf(row: PricingRow): string | null {
     ?? normalizeBrazilUf(getUfFromRegiao(resolveFieldValue(record, "regiao")));
 }
 
-function computeBrazilMapData(rows: PricingRow[], filters: ChartBlock["filters"], measure: KpiMeasureId): BrazilMapDatum[] {
+function rowBrazilSkuKey(row: PricingRow): string {
+  const record = row as unknown as Record<string, unknown>;
+  const sku = resolveFieldValue(record, "sku") || resolveFieldValue(record, "codigoSku");
+  const desc = resolveFieldValue(record, "skuDesc") || resolveFieldValue(record, "produto");
+  return String(sku || desc || "sem-sku").trim() || "sem-sku";
+}
+
+function addRowToKpi(agg: ReturnType<typeof aggregateKpi>, row: PricingRow) {
+  agg.rol += row.rol;
+  agg.volume += row.volumeKg;
+  agg.cm += row.contribMarginal;
+  agg.mb += row.margemBruta;
+  agg.cv += row.custoVariavel;
+  agg.frete += row.frete;
+  agg.comissao += row.comissao;
+  if ((row.volumeKg ?? 0) > 0 || (row.rol ?? 0) > 0) {
+    const cliente = clienteId(row.cliente);
+    if (cliente) agg.clientesPositivados.add(cliente);
+  }
+}
+
+function computeBrazilMapData(
+  rows: PricingRow[],
+  filters: ChartBlock["filters"],
+  measure: KpiMeasureId,
+  minRolSharePct: number,
+): BrazilMapDatum[] {
   const filtered = applyFilters(rows, filters ?? {}, null);
-  const byUf = new Map<string, { agg: ReturnType<typeof aggregateKpi>; rows: number }>();
+  const byUfSku = new Map<string, Map<string, { rows: PricingRow[]; rol: number }>>();
   for (const row of filtered) {
     const uf = rowBrazilUf(row);
     if (!uf) continue;
-    const current = byUf.get(uf) ?? { agg: aggregateKpi([]), rows: 0 };
-    current.agg.rol += row.rol;
-    current.agg.volume += row.volumeKg;
-    current.agg.cm += row.contribMarginal;
-    current.agg.mb += row.margemBruta;
-    current.agg.cv += row.custoVariavel;
-    current.agg.frete += row.frete;
-    current.agg.comissao += row.comissao;
-    if ((row.volumeKg ?? 0) > 0 || (row.rol ?? 0) > 0) {
-      const cliente = clienteId(row.cliente);
-      if (cliente) current.agg.clientesPositivados.add(cliente);
+    const skuKey = rowBrazilSkuKey(row);
+    const skuMap = byUfSku.get(uf) ?? new Map<string, { rows: PricingRow[]; rol: number }>();
+    const sku = skuMap.get(skuKey) ?? { rows: [], rol: 0 };
+    sku.rows.push(row);
+    sku.rol += row.rol ?? 0;
+    skuMap.set(skuKey, sku);
+    byUfSku.set(uf, skuMap);
+  }
+
+  const byUf = new Map<string, {
+    agg: ReturnType<typeof aggregateKpi>;
+    rows: number;
+    excludedSkus: number;
+    excludedRows: number;
+    rolIncluded: number;
+    rolTotal: number;
+  }>();
+  const cutoffRatio = Math.max(0, minRolSharePct || 0) / 100;
+  for (const [uf, skuMap] of byUfSku.entries()) {
+    const skuEntries = Array.from(skuMap.values());
+    const rolTotal = skuEntries.reduce((sum, sku) => sum + Math.max(0, sku.rol), 0);
+    const threshold = rolTotal > 0 ? rolTotal * cutoffRatio : 0;
+    const current = {
+      agg: aggregateKpi([]),
+      rows: 0,
+      excludedSkus: 0,
+      excludedRows: 0,
+      rolIncluded: 0,
+      rolTotal,
+    };
+    for (const sku of skuEntries) {
+      const exclude = threshold > 0 && Math.max(0, sku.rol) < threshold;
+      if (exclude) {
+        current.excludedSkus += 1;
+        current.excludedRows += sku.rows.length;
+        continue;
+      }
+      current.rolIncluded += sku.rol;
+      current.rows += sku.rows.length;
+      for (const row of sku.rows) addRowToKpi(current.agg, row);
     }
-    current.rows += 1;
     byUf.set(uf, current);
   }
   const ranks = Array.from(byUf.entries())
@@ -374,6 +432,10 @@ function computeBrazilMapData(rows: PricingRow[], filters: ChartBlock["filters"]
       value: item ? pickMeasure(item.agg, measure) : null,
       rank: rankByUf.get(state.uf) ?? null,
       rows: item?.rows ?? 0,
+      excludedSkus: item?.excludedSkus ?? 0,
+      excludedRows: item?.excludedRows ?? 0,
+      rolIncluded: item?.rolIncluded ?? 0,
+      rolTotal: item?.rolTotal ?? 0,
     };
   });
 }
@@ -982,6 +1044,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
 
   const brazilMapData = useMemo(() => {
     if (!isBrazilMap) return [];
+    const minRolSharePct = Math.max(0, style.mapaBrasil.minRolSharePct || 0);
     return getOrComputeSlideCalc({
       op: "chart-mapa-brasil",
       slideId: cacheSlideId,
@@ -989,9 +1052,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       shareAcrossBlocks: true,
       dataSource: block.dataSource,
       dataSignature: dsRowsSignature,
-      params: { filters: block.filters, measure: effectiveMeasure },
-    }, () => computeBrazilMapData(dsRows, block.filters, effectiveMeasure));
-  }, [isBrazilMap, cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, dsRows]);
+      params: { filters: block.filters, measure: effectiveMeasure, minRolSharePct },
+    }, () => computeBrazilMapData(dsRows, block.filters, effectiveMeasure, minRolSharePct));
+  }, [isBrazilMap, cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, style.mapaBrasil.minRolSharePct, dsRows]);
 
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
@@ -1974,6 +2037,39 @@ function ChartLoadingSkeleton() {
   );
 }
 
+function brazilMapPaletteStops(palette: BrazilMapPalette): { start: string; mid?: string; end: string } {
+  if (palette === "blue") return { start: SLIDE_HEX.blueSoft, end: SLIDE_HEX.blueDark };
+  if (palette === "diverging") return { start: SLIDE_HEX.chart1, mid: SLIDE_HEX.gridSoft, end: SLIDE_HEX.success };
+  if (palette === "gray") return { start: SLIDE_HEX.gridSoft, end: SLIDE_HEX.slate700 };
+  return { start: "#FCE7EC", end: SLIDE_HEX.chart1 };
+}
+
+function brazilMapColor(value: number | null, min: number, max: number, palette: BrazilMapPalette): string {
+  if (value === null || !Number.isFinite(value)) return SLIDE_HEX.gridSoft;
+  const stops = brazilMapPaletteStops(palette);
+  if (palette === "diverging") {
+    const extent = Math.max(Math.abs(min), Math.abs(max), 1);
+    if (value < 0) return mixHex(stops.mid ?? SLIDE_HEX.gridSoft, stops.start, Math.min(1, Math.abs(value) / extent));
+    return mixHex(stops.mid ?? SLIDE_HEX.gridSoft, stops.end, Math.min(1, value / extent));
+  }
+  const range = max - min;
+  const t = range > 0 ? (value - min) / range : 0.55;
+  return mixHex(stops.start, stops.end, Math.max(0.08, Math.min(1, t)));
+}
+
+function brazilMapLegendGradient(min: number, max: number, palette: BrazilMapPalette): string {
+  const stops = brazilMapPaletteStops(palette);
+  if (palette === "diverging") {
+    if (min < 0 && max > 0) {
+      const extent = Math.max(Math.abs(min), Math.abs(max), 1);
+      const neutralAt = Math.max(0, Math.min(100, ((0 + extent) / (2 * extent)) * 100));
+      return `linear-gradient(90deg, ${stops.start}, ${stops.mid ?? SLIDE_HEX.gridSoft} ${neutralAt}%, ${stops.end})`;
+    }
+    return `linear-gradient(90deg, ${brazilMapColor(min, min, max, palette)}, ${brazilMapColor(max, min, max, palette)})`;
+  }
+  return `linear-gradient(90deg, ${brazilMapColor(min, min, max, palette)}, ${brazilMapColor(max, min, max, palette)})`;
+}
+
 function BrazilMapChart({
   data,
   style,
@@ -1995,13 +2091,12 @@ function BrazilMapChart({
   const values = active.map((state) => state.value as number);
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 0;
-  const range = max - min;
+  const palette = style.mapaBrasil.palette;
+  const minRolSharePct = Math.max(0, style.mapaBrasil.minRolSharePct || 0);
   const selectedUfs = ownFilter?.dimension === "uf" ? new Set(ownFilter.values) : null;
   const hasSelection = !!selectedUfs && selectedUfs.size > 0;
   const colorFor = (value: number | null) => {
-    if (value === null || !Number.isFinite(value)) return SLIDE_HEX.gridSoft;
-    const t = range > 0 ? (value - min) / range : 0.55;
-    return mixHex("#FCE7EC", SLIDE_HEX.chart1, Math.max(0.08, Math.min(1, t)));
+    return brazilMapColor(value, min, max, palette);
   };
   const label = KPI_MEASURES_LABEL[measure] ?? measure;
   const format = (value: number) => formatValue(value, measureFmt, measure, style.dataLabels.decimals);
@@ -2029,6 +2124,7 @@ function BrazilMapChart({
       </div>
       <svg
         viewBox="0 0 1000 912"
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={`Mapa do Brasil por ${label}`}
         style={{ flex: 1, minHeight: 0, width: "100%", filter: "drop-shadow(0 10px 18px rgba(15, 23, 42, 0.08))" }}
@@ -2053,7 +2149,7 @@ function BrazilMapChart({
               filter={selected ? `url(#map-state-shadow-${measure})` : undefined}
               style={{
                 cursor: emits && hasValue ? "pointer" : "default",
-                transition: "opacity 160ms ease, fill 160ms ease, stroke-width 160ms ease",
+                transition: "opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1), fill 260ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke-width 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
               }}
               onClick={(event) => {
                 event.stopPropagation();
@@ -2063,7 +2159,7 @@ function BrazilMapChart({
               <title>
                 {state.name}
                 {hasValue
-                  ? ` - ${label}: ${format(state.value as number)}${state.rank ? ` - #${state.rank} no ranking` : ""}`
+                  ? ` - ${label}: ${format(state.value as number)}${state.rank ? ` - #${state.rank} no ranking` : ""}${state.excludedSkus > 0 ? ` - ${state.excludedSkus} SKUs abaixo do corte` : ""}`
                   : " - sem dados"}
               </title>
             </path>
@@ -2121,13 +2217,13 @@ function BrazilMapChart({
           flex: 1,
           height: 7,
           borderRadius: 999,
-          background: `linear-gradient(90deg, ${mixHex("#FCE7EC", SLIDE_HEX.chart1, 0.08)}, ${SLIDE_HEX.chart1})`,
+          background: brazilMapLegendGradient(min, max, palette),
           boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.08)",
         }} />
         <span>{format(max)}</span>
       </div>
       <div style={{ fontSize: 9, color: SLIDE_HEX.slate400, lineHeight: 1.2 }}>
-        Sem UF preenchida: fora do mapa
+        Corte SKU: {minRolSharePct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do ROL da UF · Sem UF preenchida: fora do mapa
       </div>
     </div>
   );
