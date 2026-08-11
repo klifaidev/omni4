@@ -64,6 +64,8 @@ import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { getUfFromRegiao } from "@/lib/deparaComercial";
+import { clienteId } from "@/lib/farol";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
@@ -86,6 +88,7 @@ import {
   linearFit, movingAvg, resolveBridgeColumns, FunnelSVG,
   computeTrendlineSeries, type ChartTooltipPayload,
 } from "./chartHelpers";
+import brMapRaw from "@/assets/br.svg?raw";
 
 type PeriodLikeRow = { mes?: number; ano?: number; periodo?: string };
 type ChartClickState = {
@@ -236,6 +239,143 @@ function compactGapLabel(value: number, measure: ChartBlock["measure"]) {
   if (abs >= 1_000_000) return `${signedPt(value / 1_000_000, 0)} Mi`;
   if (abs >= 1_000) return `${signedPt(value / 1_000, 0)} mil`;
   return signedPt(value, 0);
+}
+
+type BrazilStatePath = { uf: string; name: string; d: string };
+type BrazilLabelPoint = { uf: string; label: string; x: number; y: number };
+type BrazilMapDatum = BrazilStatePath & {
+  label: string;
+  x: number;
+  y: number;
+  value: number | null;
+  rank: number | null;
+  rows: number;
+};
+
+const SVG_UF_ID = /^BR([A-Z]{2})$/;
+const BASIC_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: "\"",
+  apos: "'",
+  lt: "<",
+  gt: ">",
+};
+
+function decodeBasicHtml(value: string): string {
+  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (_full, entity: string) => {
+    if (entity[0] === "#") {
+      const code = entity[1]?.toLowerCase() === "x"
+        ? parseInt(entity.slice(2), 16)
+        : parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCharCode(code) : _full;
+    }
+    return BASIC_HTML_ENTITIES[entity] ?? _full;
+  });
+}
+
+function svgAttr(tag: string, attr: string): string {
+  const match = tag.match(new RegExp(`${attr}="([^"]*)"`, "i"));
+  return match ? decodeBasicHtml(match[1]) : "";
+}
+
+function parseBrazilSvg(raw: string): { states: BrazilStatePath[]; labelPoints: BrazilLabelPoint[] } {
+  const states: BrazilStatePath[] = [];
+  for (const match of raw.matchAll(/<path\b[^>]*>/gi)) {
+    const tag = match[0];
+    const id = svgAttr(tag, "id");
+    const uf = id.match(SVG_UF_ID)?.[1];
+    const d = svgAttr(tag, "d");
+    if (!uf || !d) continue;
+    states.push({ uf, name: svgAttr(tag, "name") || uf, d });
+  }
+  const labelPoints: BrazilLabelPoint[] = [];
+  for (const match of raw.matchAll(/<circle\b[^>]*>/gi)) {
+    const tag = match[0];
+    const id = svgAttr(tag, "id");
+    const uf = id.match(SVG_UF_ID)?.[1];
+    const x = Number(svgAttr(tag, "cx"));
+    const y = Number(svgAttr(tag, "cy"));
+    if (!uf || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    labelPoints.push({ uf, label: svgAttr(tag, "class") || uf, x, y });
+  }
+  return { states, labelPoints };
+}
+
+const BRAZIL_MAP = parseBrazilSvg(brMapRaw);
+const VALID_BRAZIL_UFS = new Set(BRAZIL_MAP.states.map((state) => state.uf));
+const BRAZIL_STATE_NAME_TO_UF = new Map(
+  BRAZIL_MAP.states.map((state) => [
+    state.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim(),
+    state.uf,
+  ]),
+);
+
+function normalizeBrazilUf(value: unknown): string | null {
+  const text = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  if (VALID_BRAZIL_UFS.has(text)) return text;
+  const brCode = text.match(/\bBR\s*\/?\s*([A-Z]{2})\b/)?.[1];
+  if (brCode && VALID_BRAZIL_UFS.has(brCode)) return brCode;
+  const byName = BRAZIL_STATE_NAME_TO_UF.get(text);
+  if (byName) return byName;
+  for (const [name, uf] of BRAZIL_STATE_NAME_TO_UF) {
+    if (name.length > 2 && text.includes(name)) return uf;
+  }
+  return null;
+}
+
+function rowBrazilUf(row: PricingRow): string | null {
+  const record = row as unknown as Record<string, unknown>;
+  return normalizeBrazilUf(resolveFieldValue(record, "uf"))
+    ?? normalizeBrazilUf(resolveFieldValue(record, "regiao"))
+    ?? normalizeBrazilUf(getUfFromRegiao(resolveFieldValue(record, "regiao")));
+}
+
+function computeBrazilMapData(rows: PricingRow[], filters: ChartBlock["filters"], measure: KpiMeasureId): BrazilMapDatum[] {
+  const filtered = applyFilters(rows, filters ?? {}, null);
+  const byUf = new Map<string, { agg: ReturnType<typeof aggregateKpi>; rows: number }>();
+  for (const row of filtered) {
+    const uf = rowBrazilUf(row);
+    if (!uf) continue;
+    const current = byUf.get(uf) ?? { agg: aggregateKpi([]), rows: 0 };
+    current.agg.rol += row.rol;
+    current.agg.volume += row.volumeKg;
+    current.agg.cm += row.contribMarginal;
+    current.agg.mb += row.margemBruta;
+    current.agg.cv += row.custoVariavel;
+    current.agg.frete += row.frete;
+    current.agg.comissao += row.comissao;
+    if ((row.volumeKg ?? 0) > 0 || (row.rol ?? 0) > 0) {
+      const cliente = clienteId(row.cliente);
+      if (cliente) current.agg.clientesPositivados.add(cliente);
+    }
+    current.rows += 1;
+    byUf.set(uf, current);
+  }
+  const ranks = Array.from(byUf.entries())
+    .map(([uf, item]) => ({ uf, value: pickMeasure(item.agg, measure) }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => b.value - a.value);
+  const rankByUf = new Map(ranks.map((item, index) => [item.uf, index + 1]));
+  const pointByUf = new Map(BRAZIL_MAP.labelPoints.map((point) => [point.uf, point]));
+  return BRAZIL_MAP.states.map((state) => {
+    const item = byUf.get(state.uf);
+    const point = pointByUf.get(state.uf);
+    return {
+      ...state,
+      label: point?.label ?? state.name,
+      x: point?.x ?? 0,
+      y: point?.y ?? 0,
+      value: item ? pickMeasure(item.agg, measure) : null,
+      rank: rankByUf.get(state.uf) ?? null,
+      rows: item?.rows ?? 0,
+    };
+  });
 }
 
 // Auto-contrast text color from background hex
@@ -590,6 +730,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }, [cf.filters, legendDim]);
   const hasPeriodFilter = activePeriods.size > 0;
   const hasLegendFilter = activeLegendValues.size > 0;
+  const isBrazilMap = block.chartType === "mapaBrasil";
 
   // (Cross-filter highlighted segments are now drawn by <SegmentOverlay>
   // via Recharts <Customized>, no ref/state plumbing needed.)
@@ -672,7 +813,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }), [cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, seriesDim, xDim]);
   const rawCacheKey = useMemo(() => buildSlideCalcCacheKey(rawCacheInput), [rawCacheInput]);
   const workerRaw = useAsyncSlideCalc(
-    !manualComboRaw,
+    !manualComboRaw && !isBrazilMap,
     EMPTY_CHART_SERIES,
     rawCacheKey,
     () => computeChartSeriesAsync({
@@ -839,9 +980,23 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }, [isRankingChart, workerRanking.value, block.sortConfig]);
   const rankingLoading = isRankingChart && workerRanking.loading;
 
+  const brazilMapData = useMemo(() => {
+    if (!isBrazilMap) return [];
+    return getOrComputeSlideCalc({
+      op: "chart-mapa-brasil",
+      slideId: cacheSlideId,
+      blockId: block.id,
+      shareAcrossBlocks: true,
+      dataSource: block.dataSource,
+      dataSignature: dsRowsSignature,
+      params: { filters: block.filters, measure: effectiveMeasure },
+    }, () => computeBrazilMapData(dsRows, block.filters, effectiveMeasure));
+  }, [isBrazilMap, cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, dsRows]);
+
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
   const rankingEmpty = ranking.length === 0;
+  const brazilMapEmpty = isBrazilMap && brazilMapData.every((state) => state.value === null);
   // Bridge PVM has its own data path (calcPVM) and own empty state.
   const isPvmBridge = block.chartType === "waterfall"
     && (style.waterfall.mode ?? "pvm") === "pvm";
@@ -854,7 +1009,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     );
   }
 
-  if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (!isRankingChart && seriesEmpty))) {
+  if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (isBrazilMap && brazilMapEmpty) || (!isRankingChart && !isBrazilMap && seriesEmpty))) {
     // Distinguish "no data because of incoming filter" vs "no data at all"
     const filteredOut = incoming.length > 0 && rawDsRows.length > 0 && dsRows.length === 0;
     return (
@@ -1510,6 +1665,18 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         </Scatter>
       </ScatterChart>
     );
+  } else if (ct === "mapaBrasil") {
+    chart = (
+      <BrazilMapChart
+        data={brazilMapData}
+        style={style}
+        measure={effectiveMeasure}
+        measureFmt={measureFmt}
+        ownFilter={ownFilter}
+        emits={emits}
+        onStateClick={(uf, event) => handleEmitOn("uf", uf, { shift: !!event.shiftKey })}
+      />
+    );
   } else if (ct === "waterfall") {
     chart = (
       <WaterfallChart
@@ -1755,7 +1922,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
             {budgetGap.text}
           </div>
         )}
-        {ct === "waterfall" ? chart as React.ReactElement : (
+        {ct === "waterfall" || ct === "mapaBrasil" ? chart as React.ReactElement : (
           <ResponsiveContainer width="100%" height="100%">
             {chart as React.ReactElement}
           </ResponsiveContainer>
@@ -1802,6 +1969,165 @@ function ChartLoadingSkeleton() {
             style={{ height: `${height}%`, animationDelay: `${index * 60}ms` }}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function BrazilMapChart({
+  data,
+  style,
+  measure,
+  measureFmt,
+  ownFilter,
+  emits,
+  onStateClick,
+}: {
+  data: BrazilMapDatum[];
+  style: ChartStyle;
+  measure: KpiMeasureId;
+  measureFmt: ReturnType<typeof inferFormat>;
+  ownFilter: ActiveFilter | null;
+  emits: boolean;
+  onStateClick: (uf: string, event: React.MouseEvent<SVGPathElement>) => void;
+}) {
+  const active = data.filter((state) => state.value !== null && Number.isFinite(state.value));
+  const values = active.map((state) => state.value as number);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const range = max - min;
+  const selectedUfs = ownFilter?.dimension === "uf" ? new Set(ownFilter.values) : null;
+  const hasSelection = !!selectedUfs && selectedUfs.size > 0;
+  const colorFor = (value: number | null) => {
+    if (value === null || !Number.isFinite(value)) return SLIDE_HEX.gridSoft;
+    const t = range > 0 ? (value - min) / range : 0.55;
+    return mixHex("#FCE7EC", SLIDE_HEX.chart1, Math.max(0.08, Math.min(1, t)));
+  };
+  const label = KPI_MEASURES_LABEL[measure] ?? measure;
+  const format = (value: number) => formatValue(value, measureFmt, measure, style.dataLabels.decimals);
+  return (
+    <div style={{
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
+      padding: "6px 8px 8px",
+      overflow: "hidden",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        minHeight: 16,
+        fontSize: 10,
+        color: SLIDE_HEX.pptMuted,
+      }}>
+        <span>{label} por UF</span>
+        <span>{active.length} UFs com dados</span>
+      </div>
+      <svg
+        viewBox="0 0 1000 912"
+        role="img"
+        aria-label={`Mapa do Brasil por ${label}`}
+        style={{ flex: 1, minHeight: 0, width: "100%", filter: "drop-shadow(0 10px 18px rgba(15, 23, 42, 0.08))" }}
+      >
+        <defs>
+          <filter id={`map-state-shadow-${measure}`} x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="4" stdDeviation="5" floodColor="#0B1220" floodOpacity="0.16" />
+          </filter>
+        </defs>
+        {data.map((state) => {
+          const hasValue = state.value !== null && Number.isFinite(state.value);
+          const selected = selectedUfs?.has(state.uf) ?? false;
+          const dimmed = hasSelection && !selected;
+          return (
+            <path
+              key={state.uf}
+              d={state.d}
+              fill={colorFor(state.value)}
+              opacity={hasValue ? (dimmed ? 0.38 : 0.95) : 0.38}
+              stroke={selected ? SLIDE_HEX.ink : SLIDE_HEX.white}
+              strokeWidth={selected ? 2.5 : 0.9}
+              filter={selected ? `url(#map-state-shadow-${measure})` : undefined}
+              style={{
+                cursor: emits && hasValue ? "pointer" : "default",
+                transition: "opacity 160ms ease, fill 160ms ease, stroke-width 160ms ease",
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (emits && hasValue) onStateClick(state.uf, event);
+              }}
+            >
+              <title>
+                {state.name}
+                {hasValue
+                  ? ` - ${label}: ${format(state.value as number)}${state.rank ? ` - #${state.rank} no ranking` : ""}`
+                  : " - sem dados"}
+              </title>
+            </path>
+          );
+        })}
+        {style.dataLabels.show && BRAZIL_MAP.labelPoints.map((point) => {
+          const state = data.find((item) => item.uf === point.uf);
+          if (!state || state.value === null || !Number.isFinite(state.value)) return null;
+          const text = style.dataLabels.showCategory
+            ? `${point.uf} ${format(state.value)}`
+            : point.uf;
+          return (
+            <text
+              key={point.uf}
+              x={point.x}
+              y={point.y + 5}
+              textAnchor="middle"
+              paintOrder="stroke"
+              stroke={luminance(colorFor(state.value)) > 0.55 ? SLIDE_HEX.white : SLIDE_HEX.ink}
+              strokeWidth={1.6}
+              fill={luminance(colorFor(state.value)) > 0.55 ? SLIDE_HEX.ink : SLIDE_HEX.white}
+              fontSize={Math.max(9, Math.min(18, style.dataLabels.size))}
+              fontWeight={style.dataLabels.bold ? 800 : 700}
+              style={{ pointerEvents: "none", userSelect: "none" }}
+            >
+              {text}
+            </text>
+          );
+        })}
+        {!style.dataLabels.show && BRAZIL_MAP.labelPoints.map((point) => {
+          const state = data.find((item) => item.uf === point.uf);
+          if (!state || state.value === null || !Number.isFinite(state.value)) return null;
+          return (
+            <text
+              key={point.uf}
+              x={point.x}
+              y={point.y + 4}
+              textAnchor="middle"
+              paintOrder="stroke"
+              stroke={SLIDE_HEX.ink}
+              strokeWidth={1}
+              fill={SLIDE_HEX.white}
+              fontSize={12}
+              fontWeight={800}
+              style={{ pointerEvents: "none", userSelect: "none", opacity: 0.86 }}
+            >
+              {point.uf}
+            </text>
+          );
+        })}
+      </svg>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: SLIDE_HEX.pptMuted, fontSize: 10 }}>
+        <span>{format(min)}</span>
+        <div style={{
+          flex: 1,
+          height: 7,
+          borderRadius: 999,
+          background: `linear-gradient(90deg, ${mixHex("#FCE7EC", SLIDE_HEX.chart1, 0.08)}, ${SLIDE_HEX.chart1})`,
+          boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.08)",
+        }} />
+        <span>{format(max)}</span>
+      </div>
+      <div style={{ fontSize: 9, color: SLIDE_HEX.slate400, lineHeight: 1.2 }}>
+        Sem UF preenchida: fora do mapa
       </div>
     </div>
   );

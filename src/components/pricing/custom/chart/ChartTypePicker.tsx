@@ -7,7 +7,7 @@ import {
   LineChart, AreaChart, BarChart3, BarChartHorizontal,
   PieChart, Donut, ScatterChart, Circle, Filter,
   Hexagon, Radar, BarChart, BarChart2, Layers, ChevronsRight,
-  ChartNoAxesColumn, AlignJustify, BoxSelect, LayoutList, ChevronDown,
+  ChartNoAxesColumn, AlignJustify, BoxSelect, LayoutList, ChevronDown, Map,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -35,6 +35,7 @@ const ADVANCED_TYPES: Item[] = [
   { value: "scatter",       label: "Dispersão",        icon: <ScatterChart className="h-4 w-4" /> },
   { value: "funnel",        label: "Funil",            icon: <Filter className="h-4 w-4" /> },
   { value: "treemap",       label: "Mapa de árvore",   icon: <Hexagon className="h-4 w-4" /> },
+  { value: "mapaBrasil",    label: "Mapa do Brasil",   icon: <Map className="h-4 w-4" /> },
   { value: "radar",         label: "Radar",            icon: <Radar className="h-4 w-4" /> },
   { value: "histogram",     label: "Histograma",       icon: <BarChart2 className="h-4 w-4" /> },
   { value: "boxplot",       label: "Caixa (Box)",      icon: <BoxSelect className="h-4 w-4" /> },

@@ -358,7 +358,7 @@ export type CustomChartType =
   | "stackedColumn" | "stackedBar" | "stackedArea"
   | "pie" | "donut" | "bubble" | "area"
   | "scatter" | "combo" | "waterfall"
-  | "funnel" | "treemap" | "radar" | "boxplot" | "histogram";
+  | "funnel" | "treemap" | "mapaBrasil" | "radar" | "boxplot" | "histogram";
 
 // Importação tardia para evitar ciclo
 import type { ChartStyle } from "@/components/pricing/custom/chart/types";
@@ -973,6 +973,7 @@ export const CHART_TYPE_LABELS: Record<CustomChartType, string> = {
   scatter: "Dispersão",
   waterfall: "Bridge",
   funnel: "Funil",
+  mapaBrasil: "Mapa do Brasil",
   treemap: "Mapa de Árvore",
   radar: "Radar",
   boxplot: "Caixa",

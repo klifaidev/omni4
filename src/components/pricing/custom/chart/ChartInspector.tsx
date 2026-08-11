@@ -536,7 +536,7 @@ export function ChartInspector({
             {unavailableHintForSource(block.dataSource)}
           </p>
         )}
-        {(ct !== "waterfall" || (style.waterfall.mode ?? "pvm") === "manual") && (
+        {ct !== "mapaBrasil" && (ct !== "waterfall" || (style.waterfall.mode ?? "pvm") === "manual") && (
           <Row label="Quebrar por">
             <SelectField value={block.breakdown ?? "__none__"}
               onChange={(v) => {
