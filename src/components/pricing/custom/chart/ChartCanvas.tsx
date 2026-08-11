@@ -243,6 +243,8 @@ function compactGapLabel(value: number, measure: ChartBlock["measure"]) {
 
 type BrazilStatePath = { uf: string; name: string; d: string };
 type BrazilLabelPoint = { uf: string; label: string; x: number; y: number };
+type BrazilMapSvg = { states: BrazilStatePath[]; labelPoints: BrazilLabelPoint[] };
+type BrazilMapIndex = BrazilMapSvg & { validUfs: Set<string>; stateNameToUf: Map<string, string> };
 type BrazilMapDatum = BrazilStatePath & {
   label: string;
   x: number;
@@ -282,7 +284,7 @@ function svgAttr(tag: string, attr: string): string {
   return match ? decodeBasicHtml(match[1]) : "";
 }
 
-function parseBrazilSvg(raw: string): { states: BrazilStatePath[]; labelPoints: BrazilLabelPoint[] } {
+function parseBrazilSvg(raw: string): BrazilMapSvg {
   const states: BrazilStatePath[] = [];
   for (const match of raw.matchAll(/<path\b[^>]*>/gi)) {
     const tag = match[0];
@@ -302,19 +304,24 @@ function parseBrazilSvg(raw: string): { states: BrazilStatePath[]; labelPoints: 
     if (!uf || !Number.isFinite(x) || !Number.isFinite(y)) continue;
     labelPoints.push({ uf, label: svgAttr(tag, "class") || uf, x, y });
   }
+  if (states.length === 0) {
+    throw new Error("Brazil SVG has no state paths.");
+  }
   return { states, labelPoints };
 }
 
-const BRAZIL_MAP = parseBrazilSvg(brMapRaw);
-const VALID_BRAZIL_UFS = new Set(BRAZIL_MAP.states.map((state) => state.uf));
-const BRAZIL_STATE_NAME_TO_UF = new Map(
-  BRAZIL_MAP.states.map((state) => [
-    state.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim(),
-    state.uf,
-  ]),
-);
+function indexBrazilMap(map: BrazilMapSvg): BrazilMapIndex {
+  return {
+    ...map,
+    validUfs: new Set(map.states.map((state) => state.uf)),
+    stateNameToUf: new Map(map.states.map((state) => [
+      state.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim(),
+      state.uf,
+    ])),
+  };
+}
 
-function normalizeBrazilUf(value: unknown): string | null {
+function normalizeBrazilUf(value: unknown, map: BrazilMapIndex): string | null {
   const text = String(value ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -322,22 +329,22 @@ function normalizeBrazilUf(value: unknown): string | null {
     .replace(/\s+/g, " ")
     .trim();
   if (!text) return null;
-  if (VALID_BRAZIL_UFS.has(text)) return text;
+  if (map.validUfs.has(text)) return text;
   const brCode = text.match(/\bBR\s*\/?\s*([A-Z]{2})\b/)?.[1];
-  if (brCode && VALID_BRAZIL_UFS.has(brCode)) return brCode;
-  const byName = BRAZIL_STATE_NAME_TO_UF.get(text);
+  if (brCode && map.validUfs.has(brCode)) return brCode;
+  const byName = map.stateNameToUf.get(text);
   if (byName) return byName;
-  for (const [name, uf] of BRAZIL_STATE_NAME_TO_UF) {
+  for (const [name, uf] of map.stateNameToUf) {
     if (name.length > 2 && text.includes(name)) return uf;
   }
   return null;
 }
 
-function rowBrazilUf(row: PricingRow): string | null {
+function rowBrazilUf(row: PricingRow, map: BrazilMapIndex): string | null {
   const record = row as unknown as Record<string, unknown>;
-  return normalizeBrazilUf(resolveFieldValue(record, "uf"))
-    ?? normalizeBrazilUf(resolveFieldValue(record, "regiao"))
-    ?? normalizeBrazilUf(getUfFromRegiao(resolveFieldValue(record, "regiao")));
+  return normalizeBrazilUf(resolveFieldValue(record, "uf"), map)
+    ?? normalizeBrazilUf(resolveFieldValue(record, "regiao"), map)
+    ?? normalizeBrazilUf(getUfFromRegiao(resolveFieldValue(record, "regiao")), map);
 }
 
 function rowBrazilSkuKey(row: PricingRow): string {
@@ -366,11 +373,12 @@ function computeBrazilMapData(
   filters: ChartBlock["filters"],
   measure: KpiMeasureId,
   minRolSharePct: number,
+  map: BrazilMapIndex,
 ): BrazilMapDatum[] {
   const filtered = applyFilters(rows, filters ?? {}, null);
   const byUfSku = new Map<string, Map<string, { rows: PricingRow[]; rol: number }>>();
   for (const row of filtered) {
-    const uf = rowBrazilUf(row);
+    const uf = rowBrazilUf(row, map);
     if (!uf) continue;
     const skuKey = rowBrazilSkuKey(row);
     const skuMap = byUfSku.get(uf) ?? new Map<string, { rows: PricingRow[]; rol: number }>();
@@ -420,8 +428,8 @@ function computeBrazilMapData(
     .filter((item) => Number.isFinite(item.value))
     .sort((a, b) => b.value - a.value);
   const rankByUf = new Map(ranks.map((item, index) => [item.uf, index + 1]));
-  const pointByUf = new Map(BRAZIL_MAP.labelPoints.map((point) => [point.uf, point]));
-  return BRAZIL_MAP.states.map((state) => {
+  const pointByUf = new Map(map.labelPoints.map((point) => [point.uf, point]));
+  return map.states.map((state) => {
     const item = byUf.get(state.uf);
     const point = pointByUf.get(state.uf);
     return {
@@ -1042,24 +1050,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }, [isRankingChart, workerRanking.value, block.sortConfig]);
   const rankingLoading = isRankingChart && workerRanking.loading;
 
-  const brazilMapData = useMemo(() => {
-    if (!isBrazilMap) return [];
-    const minRolSharePct = Math.max(0, style.mapaBrasil.minRolSharePct || 0);
-    return getOrComputeSlideCalc({
-      op: "chart-mapa-brasil",
-      slideId: cacheSlideId,
-      blockId: block.id,
-      shareAcrossBlocks: true,
-      dataSource: block.dataSource,
-      dataSignature: dsRowsSignature,
-      params: { filters: block.filters, measure: effectiveMeasure, minRolSharePct },
-    }, () => computeBrazilMapData(dsRows, block.filters, effectiveMeasure, minRolSharePct));
-  }, [isBrazilMap, cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, style.mapaBrasil.minRolSharePct, dsRows]);
-
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
   const rankingEmpty = ranking.length === 0;
-  const brazilMapEmpty = isBrazilMap && brazilMapData.every((state) => state.value === null);
   // Bridge PVM has its own data path (calcPVM) and own empty state.
   const isPvmBridge = block.chartType === "waterfall"
     && (style.waterfall.mode ?? "pvm") === "pvm";
@@ -1072,7 +1065,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     );
   }
 
-  if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (isBrazilMap && brazilMapEmpty) || (!isRankingChart && !isBrazilMap && seriesEmpty))) {
+  if (!missingData && !isPvmBridge && ((isRankingChart && rankingEmpty) || (!isRankingChart && !isBrazilMap && seriesEmpty))) {
     // Distinguish "no data because of incoming filter" vs "no data at all"
     const filteredOut = incoming.length > 0 && rawDsRows.length > 0 && dsRows.length === 0;
     return (
@@ -1731,7 +1724,12 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   } else if (ct === "mapaBrasil") {
     chart = (
       <BrazilMapChart
-        data={brazilMapData}
+        rows={dsRows}
+        filters={block.filters}
+        cacheSlideId={cacheSlideId}
+        blockId={block.id}
+        dataSource={block.dataSource}
+        dataSignature={dsRowsSignature}
         style={style}
         measure={effectiveMeasure}
         measureFmt={measureFmt}
@@ -2071,7 +2069,12 @@ function brazilMapLegendGradient(min: number, max: number, palette: BrazilMapPal
 }
 
 function BrazilMapChart({
-  data,
+  rows,
+  filters,
+  cacheSlideId,
+  blockId,
+  dataSource,
+  dataSignature,
   style,
   measure,
   measureFmt,
@@ -2079,7 +2082,12 @@ function BrazilMapChart({
   emits,
   onStateClick,
 }: {
-  data: BrazilMapDatum[];
+  rows: PricingRow[];
+  filters: ChartBlock["filters"];
+  cacheSlideId?: string;
+  blockId: string;
+  dataSource: ChartBlock["dataSource"];
+  dataSignature: string;
   style: ChartStyle;
   measure: KpiMeasureId;
   measureFmt: ReturnType<typeof inferFormat>;
@@ -2087,12 +2095,32 @@ function BrazilMapChart({
   emits: boolean;
   onStateClick: (uf: string, event: React.MouseEvent<SVGPathElement>) => void;
 }) {
+  const parsedMap = useMemo<{ map: BrazilMapIndex | null; error: string | null }>(() => {
+    try {
+      return { map: indexBrazilMap(parseBrazilSvg(brMapRaw)), error: null };
+    } catch (error) {
+      console.error("[Slides] Falha ao carregar mapa do Brasil", error);
+      return { map: null, error: "Nao foi possivel carregar o mapa." };
+    }
+  }, []);
+  const minRolSharePct = Math.max(0, style.mapaBrasil.minRolSharePct || 0);
+  const data = useMemo(() => {
+    if (!parsedMap.map) return [];
+    return getOrComputeSlideCalc({
+      op: "chart-mapa-brasil",
+      slideId: cacheSlideId,
+      blockId,
+      shareAcrossBlocks: true,
+      dataSource,
+      dataSignature,
+      params: { filters, measure, minRolSharePct },
+    }, () => computeBrazilMapData(rows, filters, measure, minRolSharePct, parsedMap.map!));
+  }, [parsedMap.map, cacheSlideId, blockId, dataSource, dataSignature, filters, measure, minRolSharePct, rows]);
   const active = data.filter((state) => state.value !== null && Number.isFinite(state.value));
   const values = active.map((state) => state.value as number);
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 0;
   const palette = style.mapaBrasil.palette;
-  const minRolSharePct = Math.max(0, style.mapaBrasil.minRolSharePct || 0);
   const selectedUfs = ownFilter?.dimension === "uf" ? new Set(ownFilter.values) : null;
   const hasSelection = !!selectedUfs && selectedUfs.size > 0;
   const colorFor = (value: number | null) => {
@@ -2100,6 +2128,21 @@ function BrazilMapChart({
   };
   const label = KPI_MEASURES_LABEL[measure] ?? measure;
   const format = (value: number) => formatValue(value, measureFmt, measure, style.dataLabels.decimals);
+  if (parsedMap.error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted-foreground">
+        <span className="font-semibold text-foreground">Nao foi possivel carregar o mapa</span>
+        <span className="text-xs">O restante do editor continua disponivel. Tente reabrir o slide ou atualizar o aplicativo.</span>
+      </div>
+    );
+  }
+  if (active.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+        Sem dados por UF para os filtros escolhidos
+      </div>
+    );
+  }
   return (
     <div style={{
       width: "100%",
@@ -2165,7 +2208,7 @@ function BrazilMapChart({
             </path>
           );
         })}
-        {style.dataLabels.show && BRAZIL_MAP.labelPoints.map((point) => {
+        {style.dataLabels.show && (parsedMap.map?.labelPoints ?? []).map((point) => {
           const state = data.find((item) => item.uf === point.uf);
           if (!state || state.value === null || !Number.isFinite(state.value)) return null;
           const text = style.dataLabels.showCategory
@@ -2189,7 +2232,7 @@ function BrazilMapChart({
             </text>
           );
         })}
-        {!style.dataLabels.show && BRAZIL_MAP.labelPoints.map((point) => {
+        {!style.dataLabels.show && (parsedMap.map?.labelPoints ?? []).map((point) => {
           const state = data.find((item) => item.uf === point.uf);
           if (!state || state.value === null || !Number.isFinite(state.value)) return null;
           return (
