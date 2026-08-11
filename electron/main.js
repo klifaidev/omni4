@@ -131,6 +131,20 @@ ipcMain.on("check-for-updates", () => {
   }
 });
 
+ipcMain.on("renderer:error", (event, payload = {}) => {
+  const senderUrl = event.senderFrame?.url || event.sender?.getURL?.() || "unknown";
+  const context = payload.context || {};
+  log.error("=== ERRO DE RENDERIZACAO ===");
+  log.error("Origem:", payload.source || "unknown");
+  log.error("Mensagem:", payload.message || "Sem mensagem");
+  log.error("Rota:", context.route || "unknown");
+  log.error("URL:", context.href || senderUrl);
+  log.error("Timestamp:", payload.timestamp || new Date().toISOString());
+  if (payload.componentStack) log.error("Component stack:", payload.componentStack);
+  if (payload.stack) log.error("Stack:", payload.stack);
+  log.error("=== FIM ERRO DE RENDERIZACAO ===");
+});
+
 // Bases locais: armazenamento de arquivos de dados
 function getBasesDir() {
   return path.join(app.getPath("userData"), "bases");
