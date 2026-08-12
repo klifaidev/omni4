@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CustomCellValue, CustomTable } from "@/store/customTables";
 import { normalizeCustomTable } from "@/store/customTables";
+import { evaluateCustomTable } from "@/lib/customTableFormulas";
 import { cn } from "@/lib/utils";
 
 type CellCoord = { row: number; col: number };
@@ -31,6 +32,7 @@ function columnName(index: number) {
 function parseBrazilianNumber(value: string): string | number {
   const trimmed = value.trim();
   if (!trimmed) return "";
+  if (trimmed.startsWith("=") || trimmed.startsWith("'=")) return trimmed;
   const compact = trimmed.replace(/\s/g, "");
   const brNumber = /^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(compact);
   const plainNumber = /^-?\d+([.,]\d+)?$/.test(compact);
@@ -44,6 +46,11 @@ function parseBrazilianNumber(value: string): string | number {
 
 function displayValue(value: CustomCellValue) {
   return typeof value === "number" ? String(value).replace(".", ",") : value;
+}
+
+function pastedCellValue(value: string): CustomCellValue {
+  const parsed = parseBrazilianNumber(value);
+  return typeof parsed === "string" && parsed.trim().startsWith("=") ? `'${parsed}` : parsed;
 }
 
 function ensureSize(table: CustomTable, minRows: number, minCols: number): CustomTable {
@@ -81,6 +88,8 @@ export function CustomTableEditorDialog({ open, table, onOpenChange, onSave }: C
     }
     return { filledRows, filledCells };
   }, [draft]);
+
+  const formulaResults = useMemo(() => evaluateCustomTable(draft?.rows ?? []), [draft?.rows]);
 
   if (!draft) return null;
 
@@ -168,7 +177,7 @@ export function CustomTableEditorDialog({ open, table, onOpenChange, onSave }: C
     if (!text.includes("\t") && !text.includes("\n")) return;
     event.preventDefault();
     const pasted = text.replace(/\r/g, "").split("\n").filter((line, index, arr) => line !== "" || index < arr.length - 1)
-      .map((line) => line.split("\t").map(parseBrazilianNumber));
+      .map((line) => line.split("\t").map(pastedCellValue));
     const rowCount = startRow + pasted.length;
     const colCount = startCol + Math.max(...pasted.map((row) => row.length));
     setDraft((current) => {
@@ -262,7 +271,11 @@ export function CustomTableEditorDialog({ open, table, onOpenChange, onSave }: C
                           if (node) inputRefs.current.set(key, node);
                           else inputRefs.current.delete(key);
                         }}
-                        value={displayValue(cell)}
+                        value={displayValue(
+                          active.row === rowIndex && active.col === colIndex
+                            ? cell
+                            : formulaResults[rowIndex]?.[colIndex]?.value ?? cell,
+                        )}
                         onFocus={() => setActive({ row: rowIndex, col: colIndex })}
                         onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)}
                         onBlur={(event) => updateCell(rowIndex, colIndex, parseBrazilianNumber(event.target.value))}
@@ -271,7 +284,9 @@ export function CustomTableEditorDialog({ open, table, onOpenChange, onSave }: C
                         className={cn(
                           "h-9 w-full bg-transparent px-2 text-sm outline-none transition-colors",
                           active.row === rowIndex && active.col === colIndex && "bg-primary/10 ring-1 ring-inset ring-primary/50",
+                          formulaResults[rowIndex]?.[colIndex]?.error && "bg-destructive/10 text-destructive ring-1 ring-inset ring-destructive/40",
                         )}
+                        title={formulaResults[rowIndex]?.[colIndex]?.error}
                       />
                     </div>
                   ))}
