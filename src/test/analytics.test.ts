@@ -8,6 +8,7 @@ import {
   computePriceDecomposition,
   getApplyFiltersCacheStatsForTest,
 } from "@/lib/analytics";
+import { getSkuMixEffect } from "@/lib/pvmReading";
 import { makeRow } from "./_helpers";
 
 beforeEach(() => {
@@ -120,6 +121,78 @@ describe("calcPVM", () => {
       res.current,
       6,
     );
+  });
+
+  it("keeps Mix page SKU mix total reconciled with Bridge PVM others effect", () => {
+    const rows = [
+      makeRow({
+        periodo: "007.2025",
+        mes: 7,
+        ano: 2025,
+        sku: "CORE",
+        volumeKg: 1_000,
+        rol: 10_000,
+        cogs: 5_000,
+        margemBruta: 5_000,
+        contribMarginal: 5_000,
+      }),
+      makeRow({
+        periodo: "007.2026",
+        mes: 7,
+        ano: 2026,
+        fy: "FY26/27",
+        fyNum: 202627,
+        sku: "CORE",
+        volumeKg: 1_100,
+        rol: 12_000,
+        cogs: 5_500,
+        margemBruta: 6_500,
+        contribMarginal: 6_500,
+      }),
+      makeRow({
+        periodo: "007.2026",
+        mes: 7,
+        ano: 2026,
+        fy: "FY26/27",
+        fyNum: 202627,
+        sku: "NEW",
+        volumeKg: 100,
+        rol: 1_000,
+        cogs: 400,
+        margemBruta: 600,
+        contribMarginal: 600,
+      }),
+      makeRow({
+        periodo: "007.2025",
+        mes: 7,
+        ano: 2025,
+        sku: "TINY",
+        volumeKg: 0.001,
+        rol: 100,
+        cogs: 40,
+        margemBruta: 60,
+        contribMarginal: 60,
+      }),
+      makeRow({
+        periodo: "007.2026",
+        mes: 7,
+        ano: 2026,
+        fy: "FY26/27",
+        fyNum: 202627,
+        sku: "TINY",
+        volumeKg: 100,
+        rol: 1_000,
+        cogs: 500,
+        margemBruta: 500,
+        contribMarginal: 500,
+      }),
+    ];
+
+    const res = calcPVM(rows, "mb", "007.2025", "007.2026", "month");
+    const mixPageTotal = res.skuDetails.reduce((sum, detail) => sum + getSkuMixEffect(detail), 0);
+
+    expect(res.skuDetails.some((detail) => (detail.lowVolumeResidualEffect ?? 0) !== 0)).toBe(true);
+    expect(mixPageTotal).toBeCloseTo(res.others, 6);
   });
 });
 

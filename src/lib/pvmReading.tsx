@@ -30,7 +30,11 @@ function strong(children: ReactNode, tone: "neutral" | "pos" | "neg" = "neutral"
 }
 
 export function getSkuMixEffect(detail: PVMSkuDetail): number {
-  return (detail.mixResidualEffect ?? 0) + (detail.skuOnlyEffect ?? 0);
+  return (
+    (detail.mixResidualEffect ?? 0) +
+    (detail.skuOnlyEffect ?? 0) +
+    (detail.lowVolumeResidualEffect ?? 0)
+  );
 }
 
 export function buildPvmReading(result: PVMResult): ReactNode[] {

@@ -196,6 +196,7 @@ export default function Mix() {
     () => result?.skuDetails.reduce((sum, detail) => sum + (detail.lowVolumeResidualEffect ?? 0), 0) ?? 0,
     [result],
   );
+  const decomposedMixTotal = mixTotal - lowVolumeResidual;
 
   const categoryDrivers = useMemo(
     () => (result ? buildDimensionDrivers(result.skuDetails, filteredRows, basePeriod, compPeriod, periodMode, "categoria") : []),
@@ -504,9 +505,14 @@ export default function Mix() {
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{concentration.description}</p>
                   </div>
                   {Math.abs(lowVolumeResidual) >= 1 && (
-                    <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                      Residuo de baixo volume separado: {formatBRL(lowVolumeResidual, { compact: true })}.
-                    </p>
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                      <div className="font-semibold">Abertura do total de Mix Margem</div>
+                      <p className="mt-1 leading-relaxed">
+                        Do total acima, {formatBRL(decomposedMixTotal, { compact: true })} vem do mix de SKUs
+                        comparaveis e {formatBRL(lowVolumeResidual, { compact: true })} vem de SKUs com volume
+                        residual insuficiente para decomposicao confiavel.
+                      </p>
+                    </div>
                   )}
                 </div>
               </GlassCard>
