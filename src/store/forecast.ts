@@ -12,22 +12,34 @@ interface ForecastState {
   reclassifyInovacao: () => void;
 }
 
+function activeForecastFiles(files: ForecastFile[], rows: ForecastRow[], replacingFile: ForecastFile, replacingCycles: Set<string>) {
+  return files
+    .filter((file) => file.name !== replacingFile.name)
+    .map((file) => {
+      const cycles = file.cycles.filter((cycle) => !replacingCycles.has(cycle));
+      if (cycles.length === file.cycles.length) return file;
+      const cycleSet = new Set(cycles);
+      return {
+        ...file,
+        cycles,
+        rowCount: rows.filter((row) => cycleSet.has(row.forecastCycle)).length,
+      };
+    })
+    .filter((file) => file.cycles.length > 0);
+}
+
 export const useForecast = create<ForecastState>((set) => ({
   rows: [],
   files: [],
 
-  addForecast: (newRows, file, replaceCycles) => {
+  addForecast: (newRows, file, _replaceCycles) => {
     const newCycles = new Set(newRows.map((r) => r.forecastCycle));
     set((s) => {
-      const keptRows = replaceCycles
-        ? s.rows.filter((r) => !newCycles.has(r.forecastCycle))
-        : s.rows;
-      const keptFiles = replaceCycles
-        ? s.files.filter((f) => !f.cycles.some((c) => newCycles.has(c)))
-        : s.files;
+      const keptRows = s.rows.filter((r) => !newCycles.has(r.forecastCycle));
+      const keptFiles = activeForecastFiles(s.files, keptRows, file, newCycles);
       return {
         rows: [...keptRows, ...newRows],
-        files: [...keptFiles, file],
+        files: [...keptFiles, { ...file, cycles: Array.from(newCycles).sort(), rowCount: newRows.length }],
       };
     });
   },

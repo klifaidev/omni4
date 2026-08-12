@@ -12,22 +12,45 @@ interface BudgetState {
   reclassifyInovacao: () => void;
 }
 
+function sortPeriods(periods: Iterable<string>) {
+  return Array.from(periods).sort((a, b) => {
+    const [am, ay] = a.split(".").map((x) => parseInt(x, 10));
+    const [bm, by] = b.split(".").map((x) => parseInt(x, 10));
+    return ay - by || am - bm;
+  });
+}
+
+function activeFileMonths(files: BudgetFile[], rows: BudgetRow[], replacingFile: BudgetFile, replacingPeriods: Set<string>) {
+  return files
+    .filter((file) => file.name !== replacingFile.name)
+    .map((file) => {
+      const months = file.months.filter((month) => !replacingPeriods.has(month));
+      if (months.length === file.months.length) return file;
+      const monthSet = new Set(months);
+      return {
+        ...file,
+        months,
+        rowCount: rows.filter((row) => monthSet.has(row.periodo)).length,
+      };
+    })
+    .filter((file) => file.months.length > 0);
+}
+
 export const useBudget = create<BudgetState>((set) => ({
   rows: [],
   files: [],
 
-  addBudget: (newRows, file, replaceMonths) => {
+  addBudget: (newRows, file, _replaceMonths) => {
     const newPeriods = new Set(newRows.map((r) => r.periodo));
     set((s) => {
-      const keptRows = replaceMonths
-        ? s.rows.filter((r) => !newPeriods.has(r.periodo))
-        : s.rows;
-      const keptFiles = replaceMonths
-        ? s.files.filter((f) => !f.months.some((m) => newPeriods.has(m)))
-        : s.files;
+      const keptRows = s.rows.filter((r) => !newPeriods.has(r.periodo));
+      const keptFiles = activeFileMonths(s.files, keptRows, file, newPeriods);
       return {
         rows: [...keptRows, ...newRows],
-        files: [...keptFiles, file],
+        files: [
+          ...keptFiles,
+          { ...file, months: sortPeriods(newPeriods), rowCount: newRows.length },
+        ],
       };
     });
   },
