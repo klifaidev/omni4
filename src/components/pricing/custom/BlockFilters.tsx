@@ -44,6 +44,7 @@ export function BlockFilters({
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
   const baseRows = useMemo(() => {
+    if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);

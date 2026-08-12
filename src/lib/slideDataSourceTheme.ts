@@ -38,6 +38,12 @@ export const SLIDE_DATA_SOURCE_THEME: Record<BlockDataSource, SlideDataSourceThe
     badgeClass: "bg-data-source-budget-real/15 text-data-source-budget-real",
     activeClass: "bg-data-source-budget-real/20 text-data-source-budget-real",
   },
+  personalizado: {
+    label: "Personalizado",
+    description: "Tabela livre criada no Omni4, sem filtros globais.",
+    badgeClass: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
+    activeClass: "bg-sky-500/20 text-sky-700 dark:text-sky-200",
+  },
 };
 
 export function slideDataSourceTheme(ds: BlockDataSource | undefined): SlideDataSourceTheme {

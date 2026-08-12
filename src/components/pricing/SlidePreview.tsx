@@ -19,6 +19,7 @@ import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
 import { useRolling } from "@/store/rolling";
+import { useCustomTables } from "@/store/customTables";
 import { AlertCircle, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -39,6 +40,7 @@ import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { computeChartSeries, computeKpiBlock } from "@/lib/customKpi";
+import { buildCustomTableChartData } from "@/lib/customTableChartData";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -960,6 +962,13 @@ function fallbackChartMeasure(block: ChartBlock) {
 }
 
 function getThumbnailChartSeries(slideId: string, block: ChartBlock): ChartSeriesForThumbnail | null {
+  if (block.dataSource === "personalizado") {
+    const tables = useCustomTables.getState().tables;
+    const table = tables.find((item) => item.id === block.customTableId) ?? tables[0] ?? null;
+    const custom = buildCustomTableChartData(table, block);
+    if (custom.warnings.some((warning) => warning.startsWith("Escolha") || warning.startsWith("A tabela"))) return null;
+    return { periodos: custom.periodos, series: custom.series };
+  }
   const rows = rowsForThumbnailDataSource(block.dataSource);
   if (!rows.length) return null;
   const measure = fallbackChartMeasure(block);

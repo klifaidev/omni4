@@ -3881,20 +3881,17 @@ function FilteredInspector({
   };
 
   const dsBadgeLabel = dataSourceLabel(ds);
-  const dsBadgeCls = ds === "forecast"
-    ? "bg-amber-500/15 text-amber-700 dark:text-amber-200"
-    : ds === "ke30"
-    ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
-    : ds === "budget"
-      ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
-      : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300";
+  const dsBadgeCls = dataSourceBadgeClass(ds);
   const sourceOptions: BlockDataSource[] = [
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
     ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
     ...(hasRolling ? (["rolling"] as BlockDataSource[]) : []),
+    ...(block.kind === "chart" ? (["personalizado"] as BlockDataSource[]) : []),
   ];
-  const dsDesc = ds === "forecast"
+  const dsDesc = ds === "personalizado"
+    ? dataSourceDescription(ds)
+    : ds === "forecast"
     ? "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto."
     : ds === "ke30"
     ? "Detalhada (KE30): receita, custos, margens, frete, comissão."

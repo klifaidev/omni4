@@ -61,9 +61,11 @@ import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
 import { useRolling } from "@/store/rolling";
+import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
+import { buildCustomTableChartData } from "@/lib/customTableChartData";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { clienteId } from "@/lib/farol";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
@@ -631,18 +633,29 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
+  const customTables = useCustomTables((s) => s.tables);
+  const isCustomSource = block.dataSource === "personalizado";
+  const customTable = useMemo(
+    () => customTables.find((table) => table.id === block.customTableId) ?? customTables[0] ?? null,
+    [customTables, block.customTableId],
+  );
+  const customChartData = useMemo(
+    () => buildCustomTableChartData(customTable, block),
+    [customTable, block],
+  );
   const sourceCounts = {
     pricing: pricing.length,
     budget: budget.length,
     forecast: forecast.length,
     rolling: rolling.length,
   };
-  const missingData = block.chartType === "combo" && block.comboSeries?.length
+  const missingData = isCustomSource ? null : block.chartType === "combo" && block.comboSeries?.length
     ? block.comboSeries
         .map((series) => missingLocalDataLabel(series.dataSource, sourceCounts))
         .find((label): label is string => !!label) ?? null
     : missingLocalDataLabel(block.dataSource, sourceCounts);
   const rawDsRows = useMemo(() => {
+    if (block.dataSource === "personalizado") return [];
     if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     if (block.dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
@@ -697,6 +710,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   const budgetSignature = useMemo(() => getCachedRowsSignature(budget), [budget]);
   const rowsForDataSource = useMemo(() => {
     const sourceRows = (dataSource: ChartBlock["dataSource"]) => {
+      if (dataSource === "personalizado") return [];
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
       if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
       if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
@@ -883,7 +897,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }), [cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, effectiveMeasure, seriesDim, xDim]);
   const rawCacheKey = useMemo(() => buildSlideCalcCacheKey(rawCacheInput), [rawCacheInput]);
   const workerRaw = useAsyncSlideCalc(
-    !manualComboRaw && !isBrazilMap,
+    !isCustomSource && !manualComboRaw && !isBrazilMap,
     EMPTY_CHART_SERIES,
     rawCacheKey,
     () => computeChartSeriesAsync({
@@ -896,8 +910,8 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       }),
     "chart-series",
   );
-  const raw = manualComboRaw ?? workerRaw.value;
-  const rawLoading = !manualComboRaw && workerRaw.loading;
+  const raw = isCustomSource ? customChartData : (manualComboRaw ?? workerRaw.value);
+  const rawLoading = !isCustomSource && !manualComboRaw && workerRaw.loading;
   const data = useMemo(() => {
     const seriesSum = (ser: (typeof raw.series)[number]) =>
       ser.values.reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
@@ -1018,7 +1032,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }), [cacheSlideId, block.id, block.dataSource, dsRowsSignature, block.filters, seriesDim, effectiveMeasure, block.chartType]);
   const rankingCacheKey = useMemo(() => buildSlideCalcCacheKey(rankingCacheInput), [rankingCacheInput]);
   const workerRanking = useAsyncSlideCalc(
-    isRankingChart,
+    !isCustomSource && isRankingChart,
     EMPTY_RANKING,
     rankingCacheKey,
     () => computeTopRankingAsync({
@@ -1035,7 +1049,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   );
   const ranking = useMemo(() => {
     if (!isRankingChart) return [];
-    const base = workerRanking.value;
+    const base = isCustomSource ? customChartData.ranking : workerRanking.value;
     // FIX 2 â€” apply sortConfig to ranking (pie/donut/funnel/treemap/bubble/scatter)
     const sc = block.sortConfig;
     if (!sc) return base;
@@ -1047,8 +1061,8 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       return sc.dir === "asc" ? [...base].reverse() : base;
     }
     return base;
-  }, [isRankingChart, workerRanking.value, block.sortConfig]);
-  const rankingLoading = isRankingChart && workerRanking.loading;
+  }, [isRankingChart, isCustomSource, customChartData.ranking, workerRanking.value, block.sortConfig]);
+  const rankingLoading = !isCustomSource && isRankingChart && workerRanking.loading;
 
   // ---- empty states ----
   const seriesEmpty = data.periodos.length === 0 || data.series.length === 0;
@@ -1056,6 +1070,27 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   // Bridge PVM has its own data path (calcPVM) and own empty state.
   const isPvmBridge = block.chartType === "waterfall"
     && (style.waterfall.mode ?? "pvm") === "pvm";
+  const customBlockingWarning = isCustomSource
+    ? customChartData.warnings.find((warning) => (
+      warning.startsWith("Escolha")
+      || warning.startsWith("A tabela")
+      || warning.startsWith("Mapa")
+      || warning.startsWith("Cascata")
+    )) ?? null
+    : null;
+  const customNonBlockingWarnings = isCustomSource
+    ? customChartData.warnings.filter((warning) => warning !== customBlockingWarning)
+    : [];
+
+  if (customBlockingWarning) {
+    return (
+      <Wrapper style={style} hasIncoming={incoming.length > 0}>
+        <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
+          {customBlockingWarning}
+        </div>
+      </Wrapper>
+    );
+  }
 
   if (!missingData && !isPvmBridge && (rawLoading || rankingLoading)) {
     return (
@@ -1965,6 +2000,22 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         }}>{block.title}</div>
       )}
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+        {customNonBlockingWarnings.length > 0 && (
+          <div style={{
+            position: "absolute",
+            top: 2,
+            left: 8,
+            right: 8,
+            zIndex: 7,
+            textAlign: "center",
+            fontFamily: "Calibri, sans-serif",
+            fontSize: 10,
+            color: SLIDE_HEX.slate500,
+            pointerEvents: "none",
+          }}>
+            {customNonBlockingWarnings[0]}
+          </div>
+        )}
         {budgetGap && (
           <div style={{
             position: "absolute",

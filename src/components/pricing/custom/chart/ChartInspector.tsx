@@ -2,7 +2,7 @@
 // Sections shown depend on chartType. Filters live in a separate tab (already
 // handled by FilteredInspector wrapper outside).
 
-import type { BlockDataSource, ChartBlock, KpiMeasureId } from "@/lib/customSlide";
+import type { BlockDataSource, ChartBlock, CustomTableChartOrientation, KpiMeasureId } from "@/lib/customSlide";
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
@@ -28,12 +28,14 @@ import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useForecast } from "@/store/forecast";
 import { useRolling } from "@/store/rolling";
+import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
+import { buildCustomTableChartData } from "@/lib/customTableChartData";
 import { useMemo } from "react";
 import { Trash2, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -206,13 +208,24 @@ export function ChartInspector({
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
   const rolling = useRolling((s) => s.rows);
+  const customTables = useCustomTables((s) => s.tables);
   const dataSource = block.dataSource;
+  const isCustomSource = dataSource === "personalizado";
   const filters = block.filters;
   const measure = block.measure;
   const breakdown = block.breakdown;
   const blockId = block.id;
   const comboSeries = block.comboSeries;
+  const selectedCustomTable = useMemo(
+    () => customTables.find((table) => table.id === block.customTableId) ?? customTables[0] ?? null,
+    [customTables, block.customTableId],
+  );
+  const customChartData = useMemo(
+    () => buildCustomTableChartData(selectedCustomTable, block),
+    [selectedCustomTable, block],
+  );
   const dsRows = useMemo(() => {
+    if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
@@ -221,6 +234,7 @@ export function ChartInspector({
   }, [dataSource, pricing, budget, forecast, rolling]);
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
   const detectedChartSeries = useMemo(() => {
+    if (isCustomSource) return customChartData;
     try {
       return getOrComputeSlideCalc({
         op: "chart-inspector-series",
@@ -233,7 +247,7 @@ export function ChartInspector({
     } catch {
       return null;
     }
-  }, [blockId, dataSource, dsRows, dsRowsSignature, filters, measure, breakdown]);
+  }, [isCustomSource, customChartData, blockId, dataSource, dsRows, dsRowsSignature, filters, measure, breakdown]);
   const detectedSeries = useMemo(() => {
     if (ct === "combo" && comboSeries?.length) {
       return comboSeries.map((s) => s.name?.trim() || dataSourceLabel(s.dataSource));
@@ -245,6 +259,7 @@ export function ChartInspector({
   }, [detectedChartSeries]);
   const detectedRanking = useMemo(() => {
     if (!["pie", "donut", "funnel", "treemap"].includes(ct)) return [];
+    if (isCustomSource) return customChartData.ranking.map((r) => r.name);
     const rankingBreakdown = breakdown ?? "marca";
     try {
       return getOrComputeSlideCalc({
@@ -256,7 +271,7 @@ export function ChartInspector({
         params: { filters, breakdown: rankingBreakdown, measure, topN: 50, mode: "all" },
       }, () => computeTopRanking(dsRows, filters, rankingBreakdown, measure, 50, "all", null)).map((r) => r.name);
     } catch { return []; }
-  }, [ct, blockId, dataSource, dsRows, dsRowsSignature, filters, breakdown, measure]);
+  }, [ct, isCustomSource, customChartData.ranking, blockId, dataSource, dsRows, dsRowsSignature, filters, breakdown, measure]);
 
   const updSeries = (key: string, patch: Partial<SeriesStyle>) => {
     const next = [...style.series];
@@ -345,6 +360,68 @@ export function ChartInspector({
         <TabsContent value="dados" className="mt-3 space-y-3">
       {/* ===== Data ===== */}
       <Section title="Medidas e dimensões" defaultOpen>
+        {isCustomSource && (
+          <div className="mb-3 space-y-2 rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5">
+            <div>
+              <div className="text-[12px] font-semibold text-foreground">Tabela personalizada</div>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                O grafico usa os dados vivos da tabela livre. Ao editar a tabela, o bloco atualiza na proxima renderizacao.
+              </p>
+            </div>
+            {customTables.length === 0 ? (
+              <div className="space-y-2 rounded-md border border-dashed border-border/60 bg-background/60 p-2 text-[11px] text-muted-foreground">
+                Nenhuma tabela personalizada foi criada ainda.
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="mt-1 h-7 w-full text-[11px]"
+                  onClick={() => { window.location.hash = "#/upload"; }}
+                >
+                  Criar em Upload / Bases
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Row label="Tabela">
+                  <SelectField
+                    value={(block.customTableId ?? selectedCustomTable?.id ?? customTables[0]?.id ?? "__none__") as string}
+                    onChange={(v) => onChange({ customTableId: v === "__none__" ? null : v })}
+                    options={[
+                      ...customTables.map((table) => ({ value: table.id, label: table.name })),
+                      { value: "__none__", label: "Nenhuma tabela" },
+                    ]}
+                  />
+                </Row>
+                <Row label="Orientacao">
+                  <SelectField
+                    value={(block.customTableOrientation ?? "auto") as CustomTableChartOrientation}
+                    onChange={(v) => onChange({ customTableOrientation: v })}
+                    options={[
+                      { value: "auto", label: `Auto (${customChartData.orientation === "rows" ? "linhas" : "colunas"})` },
+                      { value: "rows", label: "Linhas = categorias" },
+                      { value: "columns", label: "Colunas = categorias" },
+                    ]}
+                  />
+                </Row>
+                {customChartData.valueOptions.length > 1 && ["pie", "donut", "funnel", "treemap"].includes(ct) && (
+                  <Row label="Serie">
+                    <SelectField
+                      value={(block.customTableValueColumn ?? customChartData.valueOptions[0]?.value ?? "__none__") as string}
+                      onChange={(v) => onChange({ customTableValueColumn: v === "__none__" ? null : v })}
+                      options={customChartData.valueOptions}
+                    />
+                  </Row>
+                )}
+                {customChartData.warnings.map((warning) => (
+                  <p key={warning} className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-700 dark:text-amber-200">
+                    {warning}
+                  </p>
+                ))}
+              </>
+            )}
+          </div>
+        )}
         <Row label="Medida">
           <SelectField value={block.measure}
             onChange={(v) => onChange({ measure: v as KpiMeasureId })}

@@ -119,7 +119,8 @@ export type KpiFormat = "auto" | "currency" | "percent" | "tons" | "number";
  * - "budget": base agregada / orçamentária (Excel Budget — useBudget)
  * Padrão histórico: "ke30".
  */
-export type BlockDataSource = "ke30" | "budget" | "forecast" | "rolling" | "budget_real";
+export type BlockDataSource = "ke30" | "budget" | "forecast" | "rolling" | "budget_real" | "personalizado";
+export type CustomTableChartOrientation = "auto" | "rows" | "columns";
 
 /** Medidas suportadas pela base Budget (subset do KpiMeasureId). */
 export const BUDGET_SUPPORTED_MEASURES: ReadonlyArray<KpiMeasureId> = [
@@ -389,6 +390,12 @@ export interface ChartBlock extends BaseBlock {
   style?: Partial<ChartStyle>;
   /** Fonte de dados — default "ke30". */
   dataSource?: BlockDataSource;
+  /** Personalizado only: tabela livre usada pelo grafico. */
+  customTableId?: string | null;
+  /** Personalizado only: interpreta linhas como categorias ou colunas como categorias. */
+  customTableOrientation?: CustomTableChartOrientation;
+  /** Personalizado only: serie numerica usada por graficos de ranking/pizza. */
+  customTableValueColumn?: string | null;
   /** Combo only: series explicitas, cada uma podendo ler de uma base diferente. */
   comboSeries?: Array<{
     id: string;
@@ -1067,7 +1074,7 @@ export function isFromRollingBase(ds: BlockDataSource | undefined): boolean {
 /** Migra valores antigos de dataSource para o esquema atual. */
 export function migrateDataSource(ds: string | undefined): BlockDataSource {
   if (ds === "real") return "ke30";
-  if (ds === "budget" || ds === "budget_real" || ds === "forecast" || ds === "rolling" || ds === "ke30") return ds;
+  if (ds === "budget" || ds === "budget_real" || ds === "forecast" || ds === "rolling" || ds === "ke30" || ds === "personalizado") return ds;
   return "ke30";
 }
 
