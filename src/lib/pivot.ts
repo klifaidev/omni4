@@ -28,12 +28,14 @@ export interface PivotMeasure {
   tone?: "real" | "budget" | "delta" | "neutral";
   /** cálculo derivado a partir de outras medidas após agregação */
   derive?: (acc: Record<string, number | null>) => number | null;
+  dependsOn?: string[];
 }
 
 export interface PivotConfig {
   rows: string[];      // dimensões em linhas
   cols: string[];      // dimensões em colunas
   values: PivotMeasure[];
+  measureCatalog?: PivotMeasure[];
   filters: Record<string, string[]>; // {dim: allowed values}
 }
 
@@ -259,8 +261,27 @@ export function computePivot(
   const colBuckets = new Map<string, Bucket>();
   const grandBucket: Bucket = {};
 
+  const visibleMeasureIds = new Set(config.values.map((measure) => measure.id));
+  const measureById = new Map<string, PivotMeasure>();
+  for (const measure of [...(config.measureCatalog ?? []), ...config.values]) {
+    measureById.set(measure.id, measure);
+  }
+  const effectiveMeasureIds = new Set<string>();
+  const visitMeasure = (measure: PivotMeasure) => {
+    if (effectiveMeasureIds.has(measure.id)) return;
+    for (const depId of measure.dependsOn ?? []) {
+      const dep = measureById.get(depId);
+      if (dep) visitMeasure(dep);
+    }
+    effectiveMeasureIds.add(measure.id);
+  };
+  config.values.forEach(visitMeasure);
+  const effectiveValues = Array.from(effectiveMeasureIds)
+    .map((id) => measureById.get(id))
+    .filter((measure): measure is PivotMeasure => !!measure);
+
   const directFields = new Set<string>();
-  for (const m of config.values) {
+  for (const m of effectiveValues) {
     if (!m.derive) directFields.add(m.field);
   }
 
@@ -327,16 +348,18 @@ export function computePivot(
   function reduce(b: Bucket): Record<string, number | null> {
     const out: Record<string, number | null> = {};
     // primeiro, agregações diretas
-    for (const m of config.values) {
+    for (const m of effectiveValues) {
       if (m.derive) continue;
       out[m.id] = aggregate(b[m.field], m.agg);
     }
     // depois, derivadas
-    for (const m of config.values) {
+    for (const m of effectiveValues) {
       if (!m.derive) continue;
       out[m.id] = m.derive(out);
     }
-    return out;
+    return Object.fromEntries(
+      Object.entries(out).filter(([measureId]) => visibleMeasureIds.has(measureId)),
+    );
   }
 
   const cells = new Map<string, Map<string, Record<string, number | null>>>();

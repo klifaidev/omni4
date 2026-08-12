@@ -142,4 +142,70 @@ describe("computePivot weighted ratio measures", () => {
     expect(row?.preco_ponderado).toBeCloseTo(1200 / 110, 6);
     expect(row?.preco_avg_incorreto).not.toBeCloseTo(row?.preco_ponderado ?? 0, 6);
   });
+
+  it("aggregates hidden dependencies when CM % is selected alone", () => {
+    const rows = [
+      { categoria: "A", mes: "Jan", rol_real: 1000, cm_real: 250 },
+      { categoria: "A", mes: "Jan", rol_real: 500, cm_real: 200 },
+    ];
+    const rol = { id: "rol_real", label: "ROL", field: "rol_real", agg: "sum", format: "currency" } as const;
+    const cm = { id: "cm_real", label: "CM", field: "cm_real", agg: "sum", format: "currency" } as const;
+    const cmPct = {
+      id: "cm_pct_real",
+      label: "CM %",
+      field: "cm_real",
+      agg: "sum",
+      format: "percent",
+      dependsOn: ["rol_real", "cm_real"],
+      derive: (acc: Record<string, number | null>) => (
+        acc.rol_real && acc.cm_real != null ? acc.cm_real / acc.rol_real : null
+      ),
+    } as const;
+
+    const pivot = computePivot(rows, {
+      rows: ["categoria"],
+      cols: ["mes"],
+      filters: {},
+      values: [cmPct],
+      measureCatalog: [rol, cm, cmPct],
+    });
+
+    const cell = pivot.cells.get("A")?.get("Jan");
+    expect(cell?.cm_pct_real).toBeCloseTo(450 / 1500, 6);
+    expect(cell).not.toHaveProperty("rol_real");
+    expect(cell).not.toHaveProperty("cm_real");
+  });
+
+  it("aggregates hidden dependencies when CM R$/Kg is selected alone", () => {
+    const rows = [
+      { categoria: "A", mes: "Jan", volumeKg_real: 100, cm_real: 250 },
+      { categoria: "A", mes: "Jan", volumeKg_real: 50, cm_real: 200 },
+    ];
+    const vol = { id: "vol_real", label: "Volume", field: "volumeKg_real", agg: "sum", format: "kg" } as const;
+    const cm = { id: "cm_real", label: "CM", field: "cm_real", agg: "sum", format: "currency" } as const;
+    const cmKg = {
+      id: "cm_kg_real",
+      label: "CM R$/Kg",
+      field: "cm_real",
+      agg: "sum",
+      format: "number",
+      dependsOn: ["vol_real", "cm_real"],
+      derive: (acc: Record<string, number | null>) => (
+        acc.vol_real && acc.cm_real != null ? acc.cm_real / acc.vol_real : null
+      ),
+    } as const;
+
+    const pivot = computePivot(rows, {
+      rows: ["categoria"],
+      cols: ["mes"],
+      filters: {},
+      values: [cmKg],
+      measureCatalog: [vol, cm, cmKg],
+    });
+
+    const cell = pivot.cells.get("A")?.get("Jan");
+    expect(cell?.cm_kg_real).toBeCloseTo(450 / 150, 6);
+    expect(cell).not.toHaveProperty("vol_real");
+    expect(cell).not.toHaveProperty("cm_real");
+  });
 });

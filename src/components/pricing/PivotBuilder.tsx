@@ -128,6 +128,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "percent",
       tone: "real",
+      dependsOn: ["rol_real", "cm_real"],
       derive: (a) => {
         if (a.rol_real == null || a.cm_real == null) return null;
         return a.rol_real > 0 ? a.cm_real / a.rol_real : 0;
@@ -140,6 +141,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "percent",
       tone: "real",
+      dependsOn: ["rol_real", "mb_real"],
       derive: (a) => {
         if (a.rol_real == null || a.mb_real == null) return null;
         return a.rol_real > 0 ? a.mb_real / a.rol_real : 0;
@@ -152,6 +154,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "number",
       tone: "real",
+      dependsOn: ["vol_real", "rol_real"],
       derive: (a) => {
         if (a.vol_real == null || a.rol_real == null) return null;
         return a.vol_real > 0 ? a.rol_real / a.vol_real : 0;
@@ -164,6 +167,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "number",
       tone: "real",
+      dependsOn: ["vol_real", "cm_real"],
       derive: (a) => {
         if (a.vol_real == null || a.cm_real == null) return null;
         return a.vol_real > 0 ? a.cm_real / a.vol_real : 0;
@@ -176,6 +180,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "percent",
       tone: "real",
+      dependsOn: ["rol_real", "com_real"],
       derive: (a) => {
         if (a.rol_real == null || a.com_real == null) return null;
         return a.rol_real > 0 ? a.com_real / a.rol_real : 0;
@@ -194,6 +199,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "percent",
       tone: "budget",
+      dependsOn: ["rol_budget", "cm_budget"],
       derive: (a) => {
         if (a.rol_budget == null || a.cm_budget == null) return null;
         return a.rol_budget > 0 ? a.cm_budget / a.rol_budget : 0;
@@ -210,6 +216,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "currency",
       tone: "delta",
+      dependsOn: ["rol_real", "rol_budget"],
       derive: (a) => {
         if (a.rol_real == null || a.rol_budget == null) return null;
         return a.rol_real - a.rol_budget;
@@ -222,6 +229,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "percent",
       tone: "delta",
+      dependsOn: ["rol_real", "rol_budget"],
       derive: (a) => {
         if (a.rol_real == null || a.rol_budget == null) return null;
         return a.rol_budget !== 0 ? (a.rol_real - a.rol_budget) / Math.abs(a.rol_budget) : null;
@@ -236,6 +244,7 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
       agg: "sum",
       format: "currency",
       tone: "delta",
+      dependsOn: ["cm_real", "cm_budget"],
       derive: (a) => {
         if (a.cm_real == null || a.cm_budget == null) return null;
         return a.cm_real - a.cm_budget;
@@ -538,9 +547,10 @@ export function PivotBuilder({
       rows: rowsDims,
       cols: colsDims,
       values: selectedMeasures,
+      measureCatalog,
       filters: filterValsForEngine,
     }),
-    [rowsDims, colsDims, selectedMeasures, filterValsForEngine],
+    [rowsDims, colsDims, selectedMeasures, measureCatalog, filterValsForEngine],
   );
   const [pivot, setPivot] = useState<PivotResult>(() => createEmptyPivotResult());
   const [pivotLoading, setPivotLoading] = useState(false);

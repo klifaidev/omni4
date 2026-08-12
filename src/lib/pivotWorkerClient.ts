@@ -4,8 +4,9 @@ type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
 };
 
-type PivotWorkerConfig = Omit<PivotConfig, "values"> & {
+type PivotWorkerConfig = Omit<PivotConfig, "values" | "measureCatalog"> & {
   values: SerializablePivotMeasure[];
+  measureCatalog?: SerializablePivotMeasure[];
 };
 
 type PivotWorkerResponse = {
@@ -67,14 +68,16 @@ function rowsPayload(rowsKey: string, rows: Record<string, unknown>[]): Record<s
 }
 
 function toWorkerConfig(config: PivotConfig): PivotWorkerConfig {
+  const serializeMeasure = (measure: PivotMeasure): SerializablePivotMeasure => {
+    const { derive: _derive, ...serializable } = measure;
+    return measure.derive ? { ...serializable, deriveId: measure.id } : serializable;
+  };
   return {
     rows: config.rows,
     cols: config.cols,
     filters: config.filters,
-    values: config.values.map((measure) => {
-      const { derive: _derive, ...serializable } = measure;
-      return measure.derive ? { ...serializable, deriveId: measure.id } : serializable;
-    }),
+    values: config.values.map(serializeMeasure),
+    measureCatalog: config.measureCatalog?.map(serializeMeasure),
   };
 }
 

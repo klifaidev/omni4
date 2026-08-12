@@ -4,8 +4,9 @@ type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
 };
 
-type PivotWorkerConfig = Omit<PivotConfig, "values"> & {
+type PivotWorkerConfig = Omit<PivotConfig, "values" | "measureCatalog"> & {
   values: SerializablePivotMeasure[];
+  measureCatalog?: SerializablePivotMeasure[];
 };
 
 type PivotWorkerRequest = {
@@ -77,14 +78,16 @@ function deriveFor(id: string): PivotMeasure["derive"] {
 }
 
 function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
+  const hydrateMeasure = (measure: SerializablePivotMeasure): PivotMeasure => {
+    const { deriveId, ...base } = measure;
+    return deriveId ? { ...base, derive: deriveFor(deriveId) } : base;
+  };
   return {
     rows: config.rows,
     cols: config.cols,
     filters: config.filters,
-    values: config.values.map((measure) => {
-      const { deriveId, ...base } = measure;
-      return deriveId ? { ...base, derive: deriveFor(deriveId) } : base;
-    }),
+    values: config.values.map(hydrateMeasure),
+    measureCatalog: config.measureCatalog?.map(hydrateMeasure),
   };
 }
 
