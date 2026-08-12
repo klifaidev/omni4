@@ -424,12 +424,15 @@ interface Props {
   /** Optional collaborative Yjs document. When present, free text fields write to Y.Text. */
   collabYDoc?: Y.Doc | null;
   textAwareness?: CustomTextAwareness[];
+  /** True when the Slides workspace is kept alive but hidden in standby. */
+  isStandby?: boolean;
 }
 
 function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
   return prev.slideId === next.slideId
     && prev.config === next.config
     && prev.readOnly === next.readOnly
+    && prev.isStandby === next.isStandby
     && prev.collabYDoc === next.collabYDoc
     && prev.collaborators === next.collaborators
     && prev.textAwareness === next.textAwareness;
@@ -487,6 +490,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   onCursorMove,
   collabYDoc,
   textAwareness = [],
+  isStandby = false,
 }: Props) {
   if (isSlidePerfEnabled()) recordSlideRender("CustomSlideEditor", slideId);
   // Bind the parent's config <-> internal Zustand+temporal store first so
@@ -1451,7 +1455,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     getCachedRowsSignature(rollingRows),
   ].join("|"), [slideId, pricingRows, budgetRows, forecastRows, rollingRows]);
   useEffect(() => {
-    if (!palettePanelOpen || activePaletteCategory !== "charts" || visibleChartPalette.length === 0) return;
+    if (isStandby || !palettePanelOpen || activePaletteCategory !== "charts" || visibleChartPalette.length === 0) return;
     if (speculativeChartWarmSignaturesRef.current.has(chartWarmDataSignature)) return;
     speculativeChartWarmSignaturesRef.current.add(chartWarmDataSignature);
     let cancelled = false;
@@ -1473,7 +1477,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       }
     })();
     return () => { cancelled = true; };
-  }, [activePaletteCategory, chartWarmDataSignature, palettePanelOpen, slideId, visibleChartPalette.length]);
+  }, [activePaletteCategory, chartWarmDataSignature, isStandby, palettePanelOpen, slideId, visibleChartPalette.length]);
   const hasPaletteResults = isPaletteSearching
     ? visibleStorytellingPalette.length > 0
       || visibleChartPalette.length > 0

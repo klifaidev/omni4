@@ -60,7 +60,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, Bell, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X, MoreHorizontal,
-  MonitorPlay, RefreshCw, Share2, Timer,
+  MonitorPlay, PanelRightClose, RefreshCw, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1010,7 +1010,7 @@ function CommentsThread({
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
   currentUser, onCommentEvent, readOnly = false,
-  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {},
+  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {}, isStandby = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1024,6 +1024,7 @@ function FullscreenCustomEditor({
   yjsCollabReady?: boolean;
   getCollabYDoc?: (item: Extract<SlideItem, { kind: "custom" }>) => Y.Doc | null;
   textAwarenessBySlide?: Record<string, YjsTextAwarenessState[]>;
+  isStandby?: boolean;
 }) {
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
@@ -1309,6 +1310,7 @@ function FullscreenCustomEditor({
                 onCursorMove={updateCursor}
                 collabYDoc={currentCustomYDoc}
                 textAwareness={textAwarenessBySlide[current.id] ?? []}
+                isStandby={isStandby}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -1908,8 +1910,13 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
 // ----------------------------------------------------------------------------
 // Página
 // ----------------------------------------------------------------------------
-export default function SlidesBeta() {
-  usePageTitle("Slides");
+interface SlidesBetaProps {
+  onMinimize?: () => void;
+  isStandby?: boolean;
+}
+
+export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBetaProps) {
+  usePageTitle("Slides", !isStandby);
   const reduceMotion = useReducedMotion();
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
@@ -3111,6 +3118,23 @@ export default function SlidesBeta() {
                   </TooltipTrigger>
                   <TooltipContent>Galeria de templates</TooltipContent>
                 </Tooltip>
+                {onMinimize && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5"
+                        onClick={onMinimize}
+                        aria-label="Minimizar editor de Slides"
+                      >
+                        <PanelRightClose className="h-3.5 w-3.5" />
+                        Minimizar
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Manter o deck em standby e consultar outra aba</TooltipContent>
+                  </Tooltip>
+                )}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label="Abrir menu de compartilhamento">
@@ -3673,6 +3697,7 @@ export default function SlidesBeta() {
         yjsCollabReady={yjsCollabReady}
         getCollabYDoc={ensureCustomYProvider}
         textAwarenessBySlide={textAwarenessBySlide}
+        isStandby={isStandby}
       />
 
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>

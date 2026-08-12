@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { UpdateNotification } from "@/components/UpdateNotification";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { PanelRightOpen, Presentation, X } from "lucide-react";
 import { Sidebar } from "@/components/pricing/Sidebar";
 import { ActiveFiltersBar } from "@/components/pricing/ActiveFiltersBar";
 import { NoResultsBanner } from "@/components/pricing/NoResultsBanner";
@@ -19,10 +20,13 @@ import { useMonthsInfo } from "@/store/selectors";
 import { PAGE_LABELS, NON_HISTORY_PATHS } from "@/lib/pageMeta";
 import { hasShareParams, parseShareParams } from "@/lib/shareUrl";
 import { SEND_TO_SLIDE_EVENT, getLatestSendToSlidePayload } from "@/lib/sendToSlide";
+import { preloadSlidesRoute } from "@/lib/preloadSlidesRoute";
+import { useSlidesFlow } from "@/store/slidesFlow";
 
 const SendToSlideDestinationDialog = lazy(() => import("@/components/pricing/SendToSlideDestinationDialog").then((mod) => ({
   default: mod.SendToSlideDestinationDialog,
 })));
+const SlidesBeta = lazy(() => preloadSlidesRoute());
 
 const NAV_MAP: Record<string, { path: string; label: string }> = {
   h: { path: "/", label: "Home" },
@@ -34,6 +38,18 @@ const NAV_MAP: Record<string, { path: string; label: string }> = {
   u: { path: "/budget", label: "Budget" },
   s: { path: "/slides", label: "Slides" },
 };
+
+function SlidesRouteFallback() {
+  return (
+    <div className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-background px-6">
+      <div className="w-full max-w-sm rounded-lg border border-border/70 bg-card/90 p-5 text-center shadow-sm">
+        <div className="mx-auto mb-4 h-9 w-9 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <p className="text-sm font-medium text-foreground">Carregando Slides</p>
+        <p className="mt-1 text-xs text-muted-foreground">Preparando o editor e os recursos de exportacao.</p>
+      </div>
+    </div>
+  );
+}
 
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
@@ -61,6 +77,63 @@ export default function AppShell() {
   const commandOpen = useCommandPalette((s) => s.open);
   const setCommandOpen = useCommandPalette((s) => s.setOpen);
   const showActiveFiltersBar = location.pathname !== "/slides";
+  const isSlidesRoute = location.pathname === "/slides";
+  const slidesItems = useSlidesFlow((s) => s.items);
+  const slidesSelectedId = useSlidesFlow((s) => s.selectedId);
+  const [slidesMounted, setSlidesMounted] = useState(false);
+  const [slidesMinimized, setSlidesMinimized] = useState(false);
+  const lastNonSlidesPathRef = useRef("/");
+  const slidesShouldRender = slidesMounted || isSlidesRoute;
+  const selectedSlideIndex = slidesSelectedId ? slidesItems.findIndex((item) => item.id === slidesSelectedId) : -1;
+  const standbyLabel = slidesItems.length > 0
+    ? `${slidesItems.length} ${slidesItems.length === 1 ? "slide" : "slides"}`
+    : "Deck em edicao";
+
+  useEffect(() => {
+    if (isSlidesRoute) {
+      setSlidesMounted(true);
+      setSlidesMinimized(false);
+      return;
+    }
+    lastNonSlidesPathRef.current = `${location.pathname}${location.search}${location.hash}`;
+  }, [isSlidesRoute, location.hash, location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!slidesMinimized) return;
+    const timeout = window.setTimeout(() => {
+      toast("Slides em standby ha 30 minutos", {
+        description: "O editor continua preservado em segundo plano. Ignore para manter ou encerre para liberar memoria.",
+        action: {
+          label: "Encerrar",
+          onClick: () => {
+            setSlidesMinimized(false);
+            setSlidesMounted(false);
+          },
+        },
+        duration: 12000,
+      });
+    }, 30 * 60 * 1000);
+    return () => window.clearTimeout(timeout);
+  }, [slidesMinimized]);
+
+  const minimizeSlides = () => {
+    setSlidesMounted(true);
+    setSlidesMinimized(true);
+    navigate(lastNonSlidesPathRef.current || "/");
+    toast.info("Slides minimizado. A sessao continua em standby.", { duration: 2200 });
+  };
+
+  const restoreSlides = () => {
+    setSlidesMounted(true);
+    setSlidesMinimized(false);
+    navigate("/slides");
+  };
+
+  const closeStandbySlides = () => {
+    setSlidesMinimized(false);
+    setSlidesMounted(false);
+    toast.info("Sessao de Slides em standby encerrada.", { duration: 1800 });
+  };
 
   // Restaura filtros a partir da URL compartilhada (uma vez no mount)
   useEffect(() => {
@@ -282,25 +355,64 @@ export default function AppShell() {
       <main className="flex-1 overflow-y-auto">
         {showActiveFiltersBar && <ActiveFiltersBar />}
         <NoResultsBanner />
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
-            key={location.pathname}
-            initial={reduceMotion ? false : { opacity: 0 }}
-            animate={{
-              opacity: 1,
-              transition: reduceMotion
-                ? { duration: 0.01 }
-                : { type: "spring", stiffness: 420, damping: 36, mass: 0.75 },
-            }}
-            exit={{
-              opacity: reduceMotion ? 1 : 0,
-              transition: reduceMotion ? { duration: 0.01 } : { duration: 0.08, ease: "easeOut" },
-            }}
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
+        {slidesShouldRender && (
+          <div className={isSlidesRoute && !slidesMinimized ? "block" : "hidden"} aria-hidden={!isSlidesRoute || slidesMinimized}>
+            <Suspense fallback={<SlidesRouteFallback />}>
+              <SlidesBeta onMinimize={minimizeSlides} isStandby={slidesMinimized || !isSlidesRoute} />
+            </Suspense>
+          </div>
+        )}
+        {!isSlidesRoute && (
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{
+                opacity: 1,
+                transition: reduceMotion
+                  ? { duration: 0.01 }
+                  : { type: "spring", stiffness: 420, damping: 36, mass: 0.75 },
+              }}
+              exit={{
+                opacity: reduceMotion ? 1 : 0,
+                transition: reduceMotion ? { duration: 0.01 } : { duration: 0.08, ease: "easeOut" },
+              }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+        )}
       </main>
+      {slidesMinimized && (
+        <div className="fixed right-0 top-1/2 z-50 flex -translate-y-1/2 items-center gap-2 rounded-l-2xl border border-r-0 border-primary/30 bg-background/95 px-2 py-3 shadow-2xl backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={restoreSlides}
+            className="flex items-center gap-3 rounded-xl px-1 py-1 text-left transition hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Restaurar editor de Slides em standby"
+          >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Presentation className="h-5 w-5" />
+          </span>
+          <span className="hidden min-w-0 sm:block">
+            <span className="block text-xs font-semibold text-foreground">Slides em standby</span>
+            <span className="block max-w-[180px] truncate text-[11px] text-muted-foreground">
+              {standbyLabel}
+              {selectedSlideIndex >= 0 ? ` · slide ${selectedSlideIndex + 1}` : ""}
+            </span>
+          </span>
+          <PanelRightOpen className="hidden h-4 w-4 text-muted-foreground sm:block" />
+          </button>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Encerrar standby de Slides"
+            onClick={closeStandbySlides}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
       {sendToSlideDialogEnabled && (
