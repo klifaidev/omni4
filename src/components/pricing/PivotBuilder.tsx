@@ -904,9 +904,9 @@ export function PivotBuilder({
       </div>
 
       {/* ═════════════════ MAIN GRID ═════════════════ */}
-      <div className={cn("grid grid-cols-1 gap-4", paletteOpen ? "lg:grid-cols-[260px_1fr]" : "lg:grid-cols-[44px_1fr]")}>
+      <div className={cn("grid min-w-0 grid-cols-1 gap-4", paletteOpen ? "lg:grid-cols-[260px_minmax(0,1fr)]" : "lg:grid-cols-[44px_minmax(0,1fr)]")}>
         {/* PALETTE */}
-        <aside className="surface-panel relative space-y-3 rounded-2xl border border-border/40 p-3 backdrop-blur-xl">
+        <aside className="surface-panel relative min-w-0 space-y-3 rounded-2xl border border-border/40 p-3 backdrop-blur-xl">
           <button
             onClick={() => setPaletteOpen((o) => !o)}
             className="absolute -right-3 top-3 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground hover:text-foreground"
@@ -991,8 +991,8 @@ export function PivotBuilder({
         </aside>
 
         {/* CONFIG ZONES + TABLE */}
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="min-w-0 max-w-full space-y-3 overflow-hidden">
+          <div className="grid min-w-0 w-full grid-cols-2 gap-2 lg:grid-cols-4">
             <DropZone
               label="Filtros"
               icon={<FilterIcon className="h-3.5 w-3.5" />}
@@ -1150,7 +1150,7 @@ export function PivotBuilder({
             </DropZone>
           </div>
 
-          <div ref={tableRef}>
+          <div ref={tableRef} className="min-w-0 max-w-full">
             <PivotTable
               pivot={pivot}
               measures={selectedMeasures}
@@ -1719,7 +1719,7 @@ function DropZone({
         onDrop();
       }}
       className={cn(
-        "surface-panel relative min-h-[78px] overflow-hidden rounded-xl border p-2.5 transition-all",
+        "surface-panel relative min-h-[78px] min-w-0 overflow-hidden rounded-xl border p-2.5 transition-all",
         "before:absolute before:left-0 before:top-0 before:h-full before:w-[3px] before:rounded-l-xl",
         accentRing,
         dragOver
@@ -1738,7 +1738,7 @@ function DropZone({
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-1">{children}</div>
+      <div className="flex min-w-0 flex-wrap gap-1">{children}</div>
     </div>
   );
 }
@@ -1895,15 +1895,15 @@ function PivotTable({
   }
 
   return (
-    <div className="surface-panel overflow-hidden rounded-2xl border border-border/40 backdrop-blur-xl">
+    <div className="surface-panel min-w-0 max-w-full overflow-hidden rounded-2xl border border-border/40 backdrop-blur-xl">
       <div
         ref={scrollRef}
-        className="relative max-h-[68vh] overflow-auto"
+        className="relative max-h-[68vh] min-w-0 max-w-full overflow-auto"
         onScroll={(e) => {
           if (shouldVirtualize) setScrollTop(e.currentTarget.scrollTop);
         }}
       >
-        <table className="w-full border-collapse text-xs">
+        <table className="min-w-full border-collapse text-xs">
           <thead className="sticky top-0 z-20">
             {hasCols && (
               <tr>
