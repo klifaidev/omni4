@@ -43,6 +43,16 @@ type MixSkuRankingItem = {
   marginBasePerKg: number | null;
   marginCompPerKg: number | null;
 };
+type MixTransferDirection = "comparison_to_reference" | "reference_to_comparison";
+type SkuMixStats = {
+  sku: string;
+  name: string;
+  volumeKg: number;
+  rol: number;
+  cost: number;
+  margin: number;
+  marginPerKg: number;
+};
 
 const FILTER_FIELDS: FilterField[] = [
   { key: "marca", label: "Marca" },
@@ -66,6 +76,10 @@ export default function Mix() {
   const [compPeriod, setCompPeriod] = useState<string | null>(null);
   const [evolutionDimension, setEvolutionDimension] = useState<EvolutionDimension>("categoria");
   const [selectedEvolutionSkus, setSelectedEvolutionSkus] = useState<string[]>([]);
+  const [referenceSku, setReferenceSku] = useState<string | null>(null);
+  const [comparisonSku, setComparisonSku] = useState<string | null>(null);
+  const [transferDirection, setTransferDirection] = useState<MixTransferDirection>("comparison_to_reference");
+  const [transferKg, setTransferKg] = useState(0);
   const lastAutoPairRef = useRef<{ mode: PeriodMode; base: string; comp: string } | null>(null);
 
   const periodOptions = useMemo(
@@ -205,6 +219,25 @@ export default function Mix() {
     () => buildEvolutionData(evolutionRows, months, evolutionDimension, evolutionDimension === "sku" ? selectedEvolutionSkus : undefined),
     [evolutionDimension, evolutionRows, months, selectedEvolutionSkus],
   );
+  const calculatorSkuOptions = useMemo(() => buildSkuOptions(comparisonRows), [comparisonRows]);
+  const calculatorStats = useMemo(() => buildSkuStatsBySku(comparisonRows), [comparisonRows]);
+  const referenceStats = referenceSku ? calculatorStats.get(referenceSku) ?? null : null;
+  const comparisonStats = comparisonSku ? calculatorStats.get(comparisonSku) ?? null : null;
+  const sourceStats = transferDirection === "comparison_to_reference" ? comparisonStats : referenceStats;
+  const targetStats = transferDirection === "comparison_to_reference" ? referenceStats : comparisonStats;
+  const maxTransferKg = Math.max(0, sourceStats?.volumeKg ?? 0);
+  const totalCurrentMargin = useMemo(
+    () => comparisonRows.reduce((sum, row) => sum + row.contribMarginal, 0),
+    [comparisonRows],
+  );
+  const transferImpact = sourceStats && targetStats
+    ? (targetStats.marginPerKg - sourceStats.marginPerKg) * transferKg
+    : 0;
+  const transferImpactPct = totalCurrentMargin !== 0 ? transferImpact / Math.abs(totalCurrentMargin) : 0;
+
+  useEffect(() => {
+    setTransferKg((current) => Math.min(current, maxTransferKg));
+  }, [maxTransferKg]);
 
   const activeFilterCount = FILTER_FIELDS.reduce((sum, field) => sum + (filters[field.key]?.length ?? 0), 0);
   const notEnough = (periodMode === "fy" && fyList.length < 2) || (periodMode === "month" && months.length < 2);
@@ -396,6 +429,24 @@ export default function Mix() {
               selectedSkus={selectedEvolutionSkus}
               onSelectedSkusChange={setSelectedEvolutionSkus}
               fiscalYear={evolutionFy}
+            />
+
+            <MixTransferCalculator
+              skuOptions={calculatorSkuOptions}
+              referenceSku={referenceSku}
+              comparisonSku={comparisonSku}
+              onReferenceSkuChange={setReferenceSku}
+              onComparisonSkuChange={setComparisonSku}
+              referenceStats={referenceStats}
+              comparisonStats={comparisonStats}
+              direction={transferDirection}
+              onDirectionChange={setTransferDirection}
+              transferKg={transferKg}
+              onTransferKgChange={setTransferKg}
+              maxTransferKg={maxTransferKg}
+              impact={transferImpact}
+              impactPct={transferImpactPct}
+              periodLabel={result.currentLabel}
             />
 
             <div className="grid gap-4 xl:grid-cols-2">
@@ -738,6 +789,333 @@ function MixEvolutionSection({
   );
 }
 
+function MixTransferCalculator({
+  skuOptions,
+  referenceSku,
+  comparisonSku,
+  onReferenceSkuChange,
+  onComparisonSkuChange,
+  referenceStats,
+  comparisonStats,
+  direction,
+  onDirectionChange,
+  transferKg,
+  onTransferKgChange,
+  maxTransferKg,
+  impact,
+  impactPct,
+  periodLabel,
+}: {
+  skuOptions: { value: string; label: string }[];
+  referenceSku: string | null;
+  comparisonSku: string | null;
+  onReferenceSkuChange: (sku: string | null) => void;
+  onComparisonSkuChange: (sku: string | null) => void;
+  referenceStats: SkuMixStats | null;
+  comparisonStats: SkuMixStats | null;
+  direction: MixTransferDirection;
+  onDirectionChange: (direction: MixTransferDirection) => void;
+  transferKg: number;
+  onTransferKgChange: (kg: number) => void;
+  maxTransferKg: number;
+  impact: number;
+  impactPct: number;
+  periodLabel: string;
+}) {
+  const source = direction === "comparison_to_reference" ? comparisonStats : referenceStats;
+  const target = direction === "comparison_to_reference" ? referenceStats : comparisonStats;
+  const canSimulate = !!source && !!target && source.sku !== target.sku && maxTransferKg > 0;
+  const transferStep = Math.max(1, Math.round(maxTransferKg / 200));
+  const tone = impact > 0 ? "positive" : impact < 0 ? "negative" : "neutral";
+  const beforeAfter = useMemo(
+    () => buildTransferBars(referenceStats, comparisonStats, direction, transferKg),
+    [comparisonStats, direction, referenceStats, transferKg],
+  );
+
+  return (
+    <GlassCard className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+            <ArrowRight className="h-3.5 w-3.5" />
+            Simulacao hipotetica
+          </div>
+          <h2 className="text-base font-semibold text-foreground">Calculadora de transferencia de mix entre SKUs</h2>
+          <p className="max-w-3xl text-xs text-muted-foreground">
+            Escolha dois SKUs de {periodLabel}, mova volume entre eles e veja o impacto estimado na margem. Nada aqui altera
+            a base real do aplicativo.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => onTransferKgChange(0)} disabled={transferKg === 0}>
+          Resetar simulacao
+        </Button>
+      </header>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(460px,1.05fr)]">
+        <section className="space-y-4 rounded-xl border border-border/40 bg-secondary/20 p-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <SkuPicker
+              label="SKU de referencia"
+              options={skuOptions}
+              value={referenceSku}
+              onChange={onReferenceSkuChange}
+              disabledValue={comparisonSku}
+            />
+            <SkuPicker
+              label="SKU de comparacao"
+              options={skuOptions}
+              value={comparisonSku}
+              onChange={onComparisonSkuChange}
+              disabledValue={referenceSku}
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <SkuStatCard label="Referencia" stats={referenceStats} />
+            <SkuStatCard label="Comparacao" stats={comparisonStats} />
+          </div>
+
+          <div className="rounded-xl border border-border/35 bg-background/30 p-4">
+            <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Direcao da transferencia
+            </div>
+            <ToggleGroup
+              type="single"
+              value={direction}
+              onValueChange={(value) => value && onDirectionChange(value as MixTransferDirection)}
+              className="inline-flex flex-wrap rounded-full border border-border/50 bg-secondary/30 p-1"
+            >
+              <ToggleGroupItem value="comparison_to_reference" className="h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary">
+                Comparacao → Referencia
+              </ToggleGroupItem>
+              <ToggleGroupItem value="reference_to_comparison" className="h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary">
+                Referencia → Comparacao
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div className={cn("rounded-xl border p-4", canSimulate ? "border-primary/25 bg-primary/5" : "border-border/35 bg-background/30")}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Volume deslocado
+                </div>
+                <div className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+                  {formatNum(transferKg / 1000, 1)} t
+                </div>
+              </div>
+              <div className="text-right text-xs text-muted-foreground">
+                Limite: {formatNum(maxTransferKg / 1000, 1)} t
+              </div>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, Math.round(maxTransferKg))}
+              step={transferStep}
+              value={Math.min(transferKg, maxTransferKg)}
+              onChange={(event) => onTransferKgChange(Number(event.currentTarget.value))}
+              disabled={!canSimulate}
+              className="h-2 w-full cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Volume deslocado entre SKUs"
+            />
+            {!canSimulate && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Selecione dois SKUs diferentes com volume no periodo para habilitar a simulacao.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <MetricPill
+              label="Impacto estimado"
+              value={`${impact > 0 ? "+" : ""}${formatBRL(impact, { compact: true })}`}
+              tone={tone}
+            />
+            <MetricPill
+              label="% da margem atual"
+              value={`${impactPct > 0 ? "+" : ""}${formatNum(impactPct * 100, 2)}%`}
+              tone={tone}
+            />
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-secondary/20 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Antes e depois da transferencia</h3>
+                <p className="text-xs text-muted-foreground">Distribuicao dos dois SKUs selecionados.</p>
+              </div>
+              <Badge variant="secondary" className={cn(
+                "h-6 px-2 text-[11px]",
+                tone === "positive" && "bg-success/15 text-success",
+                tone === "negative" && "bg-destructive/15 text-destructive",
+              )}>
+                {tone === "positive" ? "Ganho" : tone === "negative" ? "Pressao" : "Neutro"}
+              </Badge>
+            </div>
+            <div className="space-y-5">
+              <TransferBarGroup
+                title="Volume"
+                unit="t"
+                referenceLabel={referenceStats?.name ?? "Referencia"}
+                comparisonLabel={comparisonStats?.name ?? "Comparacao"}
+                beforeReference={beforeAfter.volume.beforeReference / 1000}
+                beforeComparison={beforeAfter.volume.beforeComparison / 1000}
+                afterReference={beforeAfter.volume.afterReference / 1000}
+                afterComparison={beforeAfter.volume.afterComparison / 1000}
+              />
+              <TransferBarGroup
+                title="Margem"
+                unit="brl"
+                referenceLabel={referenceStats?.name ?? "Referencia"}
+                comparisonLabel={comparisonStats?.name ?? "Comparacao"}
+                beforeReference={beforeAfter.margin.beforeReference}
+                beforeComparison={beforeAfter.margin.beforeComparison}
+                afterReference={beforeAfter.margin.afterReference}
+                afterComparison={beforeAfter.margin.afterComparison}
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </GlassCard>
+  );
+}
+
+function SkuPicker({
+  label,
+  options,
+  value,
+  onChange,
+  disabledValue,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string | null;
+  onChange: (sku: string | null) => void;
+  disabledValue?: string | null;
+}) {
+  const pickerOptions = useMemo(
+    () => options.filter((option) => option.value !== disabledValue),
+    [disabledValue, options],
+  );
+  return (
+    <div>
+      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <MultiSelectFilter
+        options={pickerOptions}
+        selected={value ? [value] : []}
+        onChange={(next) => onChange(next.length ? next[next.length - 1] : null)}
+        placeholder="Buscar SKU"
+        variant="sku"
+      />
+    </div>
+  );
+}
+
+function SkuStatCard({ label, stats }: { label: string; stats: SkuMixStats | null }) {
+  return (
+    <div className="rounded-xl border border-border/35 bg-background/30 p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+      {stats ? (
+        <div className="mt-2 space-y-2">
+          <div className="truncate text-sm font-semibold text-foreground" title={stats.name}>{stats.name}</div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <StatLine label="Volume" value={`${formatNum(stats.volumeKg / 1000, 1)} t`} />
+            <StatLine label="ROL" value={formatBRL(stats.rol, { compact: true })} />
+            <StatLine label="Custo" value={formatBRL(stats.cost, { compact: true })} />
+            <StatLine label="Margem/kg" value={formatBRL(stats.marginPerKg, { digits: 2 })} />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-dashed border-border/50 px-3 py-5 text-xs text-muted-foreground">
+          Escolha um SKU.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function TransferBarGroup({
+  title,
+  unit,
+  referenceLabel,
+  comparisonLabel,
+  beforeReference,
+  beforeComparison,
+  afterReference,
+  afterComparison,
+}: {
+  title: string;
+  unit: "t" | "brl";
+  referenceLabel: string;
+  comparisonLabel: string;
+  beforeReference: number;
+  beforeComparison: number;
+  afterReference: number;
+  afterComparison: number;
+}) {
+  const maxValue = Math.max(1, beforeReference, beforeComparison, afterReference, afterComparison);
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{title}</div>
+      <TransferBarRow label="Antes · referência" name={referenceLabel} value={beforeReference} max={maxValue} unit={unit} tone="reference" />
+      <TransferBarRow label="Antes · comparação" name={comparisonLabel} value={beforeComparison} max={maxValue} unit={unit} tone="comparison" />
+      <TransferBarRow label="Depois · referência" name={referenceLabel} value={afterReference} max={maxValue} unit={unit} tone="reference" strong />
+      <TransferBarRow label="Depois · comparação" name={comparisonLabel} value={afterComparison} max={maxValue} unit={unit} tone="comparison" strong />
+    </div>
+  );
+}
+
+function TransferBarRow({
+  label,
+  name,
+  value,
+  max,
+  unit,
+  tone,
+  strong = false,
+}: {
+  label: string;
+  name: string;
+  value: number;
+  max: number;
+  unit: "t" | "brl";
+  tone: "reference" | "comparison";
+  strong?: boolean;
+}) {
+  const width = `${Math.max(4, (Math.max(0, value) / max) * 100)}%`;
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate text-muted-foreground" title={`${label}: ${name}`}>{label}</span>
+        <span className={cn("shrink-0 tabular-nums", strong ? "font-semibold text-foreground" : "text-muted-foreground")}>
+          {unit === "brl" ? formatBRL(value, { compact: true }) : `${formatNum(value, 1)} t`}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted/60">
+        <div
+          className={cn("h-full rounded-full", tone === "reference" ? "bg-primary" : "bg-accent")}
+          style={{ width, opacity: strong ? 1 : 0.48 }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function EvolutionTooltip({
   active,
   payload,
@@ -869,6 +1247,84 @@ function buildSkuOptions(rows: PricingRow[]): { value: string; label: string }[]
   return Array.from(options, ([value, label]) => ({ value, label })).sort((a, b) =>
     a.value.localeCompare(b.value, "pt-BR"),
   );
+}
+
+function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
+  const map = new Map<string, SkuMixStats>();
+  for (const row of rows) {
+    const sku = row.sku?.trim();
+    if (!sku) continue;
+    const current = map.get(sku) ?? {
+      sku,
+      name: row.skuDesc?.trim() || sku,
+      volumeKg: 0,
+      rol: 0,
+      cost: 0,
+      margin: 0,
+      marginPerKg: 0,
+    };
+    current.volumeKg += row.volumeKg;
+    current.rol += row.rol;
+    current.cost += row.cogs;
+    current.margin += row.contribMarginal;
+    if (!current.name || current.name === sku) current.name = row.skuDesc?.trim() || sku;
+    map.set(sku, current);
+  }
+
+  for (const stats of map.values()) {
+    stats.marginPerKg = stats.volumeKg !== 0 ? stats.margin / stats.volumeKg : 0;
+  }
+  return map;
+}
+
+function buildTransferBars(
+  reference: SkuMixStats | null,
+  comparison: SkuMixStats | null,
+  direction: MixTransferDirection,
+  transferKg: number,
+) {
+  const referenceVolume = reference?.volumeKg ?? 0;
+  const comparisonVolume = comparison?.volumeKg ?? 0;
+  const referenceMargin = reference?.margin ?? 0;
+  const comparisonMargin = comparison?.margin ?? 0;
+  const referenceMarginPerKg = reference?.marginPerKg ?? 0;
+  const comparisonMarginPerKg = comparison?.marginPerKg ?? 0;
+  const boundedTransfer =
+    direction === "comparison_to_reference"
+      ? Math.min(Math.max(0, transferKg), comparisonVolume)
+      : Math.min(Math.max(0, transferKg), referenceVolume);
+
+  if (direction === "comparison_to_reference") {
+    return {
+      volume: {
+        beforeReference: referenceVolume,
+        beforeComparison: comparisonVolume,
+        afterReference: referenceVolume + boundedTransfer,
+        afterComparison: Math.max(0, comparisonVolume - boundedTransfer),
+      },
+      margin: {
+        beforeReference: referenceMargin,
+        beforeComparison: comparisonMargin,
+        afterReference: referenceMargin + referenceMarginPerKg * boundedTransfer,
+        afterComparison: comparisonMargin - comparisonMarginPerKg * boundedTransfer,
+      },
+    };
+  }
+
+  return {
+    volume: {
+      beforeReference: referenceVolume,
+      beforeComparison: comparisonVolume,
+      afterReference: Math.max(0, referenceVolume - boundedTransfer),
+      afterComparison: comparisonVolume + boundedTransfer,
+      },
+      margin: {
+      beforeReference: referenceMargin,
+      beforeComparison: comparisonMargin,
+      afterReference: referenceMargin - referenceMarginPerKg * boundedTransfer,
+      afterComparison: comparisonMargin + comparisonMarginPerKg * boundedTransfer,
+    },
+  };
 }
 
 function buildEvolutionData(
