@@ -9,6 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
@@ -20,6 +32,7 @@ import { cn } from "@/lib/utils";
 import type { FilterKey, PricingRow } from "@/lib/types";
 
 type PeriodMode = "fy" | "month";
+type EvolutionDimension = "categoria" | "canal" | "sku";
 type FilterField = { key: FilterKey; label: string; variant?: "sku" | "comercial" | "inovacao" };
 type MixSkuRankingItem = {
   sku: string;
@@ -38,6 +51,8 @@ const FILTER_FIELDS: FilterField[] = [
   { key: "regional", label: "Regional", variant: "comercial" },
 ];
 
+const EVOLUTION_COLORS = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b", "#0891b2", "#64748b"];
+
 export default function Mix() {
   usePageTitle("Mix");
   const rows = usePricing((state) => state.rows);
@@ -49,6 +64,8 @@ export default function Mix() {
   const [periodMode, setPeriodMode] = useState<PeriodMode>("month");
   const [basePeriod, setBasePeriod] = useState<string | null>(null);
   const [compPeriod, setCompPeriod] = useState<string | null>(null);
+  const [evolutionDimension, setEvolutionDimension] = useState<EvolutionDimension>("categoria");
+  const [selectedEvolutionSkus, setSelectedEvolutionSkus] = useState<string[]>([]);
   const lastAutoPairRef = useRef<{ mode: PeriodMode; base: string; comp: string } | null>(null);
 
   const periodOptions = useMemo(
@@ -163,6 +180,30 @@ export default function Mix() {
   const mixFortresses = useMemo(
     () => skuMixRanking.filter((item) => item.value > 0).sort((a, b) => b.value - a.value),
     [skuMixRanking],
+  );
+  const evolutionFy = useMemo(() => {
+    if (periodMode === "fy") return compPeriod;
+    return months.find((month) => month.periodo === compPeriod)?.fy ?? null;
+  }, [compPeriod, months, periodMode]);
+  const evolutionRows = useMemo(
+    () => filteredRows.filter((row) => row.fy === evolutionFy),
+    [evolutionFy, filteredRows],
+  );
+  const skuEvolutionOptions = useMemo(() => buildSkuOptions(evolutionRows), [evolutionRows]);
+  const defaultEvolutionSkus = useMemo(() => skuEvolutionOptions.slice(0, 3).map((option) => option.value), [skuEvolutionOptions]);
+
+  useEffect(() => {
+    if (evolutionDimension !== "sku") return;
+    setSelectedEvolutionSkus((current) => {
+      const available = new Set(skuEvolutionOptions.map((option) => option.value));
+      const kept = current.filter((sku) => available.has(sku));
+      return kept.length > 0 ? kept : defaultEvolutionSkus;
+    });
+  }, [defaultEvolutionSkus, evolutionDimension, skuEvolutionOptions]);
+
+  const evolutionData = useMemo(
+    () => buildEvolutionData(evolutionRows, months, evolutionDimension, evolutionDimension === "sku" ? selectedEvolutionSkus : undefined),
+    [evolutionDimension, evolutionRows, months, selectedEvolutionSkus],
   );
 
   const activeFilterCount = FILTER_FIELDS.reduce((sum, field) => sum + (filters[field.key]?.length ?? 0), 0);
@@ -347,6 +388,16 @@ export default function Mix() {
               />
             </div>
 
+            <MixEvolutionSection
+              dimension={evolutionDimension}
+              onDimensionChange={setEvolutionDimension}
+              data={evolutionData}
+              skuOptions={skuEvolutionOptions}
+              selectedSkus={selectedEvolutionSkus}
+              onSelectedSkusChange={setSelectedEvolutionSkus}
+              fiscalYear={evolutionFy}
+            />
+
             <div className="grid gap-4 xl:grid-cols-2">
               <DriverCard title="Categorias que explicam o mix" drivers={categoryDrivers} />
               <DriverCard title="Canais que explicam o mix" drivers={channelDrivers} />
@@ -430,7 +481,7 @@ function SkuMixRankingCard({
         <div>
           <div className={cn(
             "mb-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
-            tone === "positive" ? "bg-success/12 text-success" : "bg-destructive/12 text-destructive",
+            tone === "positive" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
           )}>
             <Icon className="h-3.5 w-3.5" />
             {tone === "positive" ? "Mix favorável" : "Mix desfavorável"}
@@ -521,6 +572,216 @@ function SkuMixRankingCard({
   );
 }
 
+type EvolutionSeries = {
+  key: string;
+  label: string;
+  color: string;
+  falling: boolean;
+};
+
+type EvolutionPoint = {
+  periodo: string;
+  label: string;
+  [key: string]: string | number;
+};
+
+type EvolutionData = {
+  series: EvolutionSeries[];
+  points: EvolutionPoint[];
+};
+
+function MixEvolutionSection({
+  dimension,
+  onDimensionChange,
+  data,
+  skuOptions,
+  selectedSkus,
+  onSelectedSkusChange,
+  fiscalYear,
+}: {
+  dimension: EvolutionDimension;
+  onDimensionChange: (dimension: EvolutionDimension) => void;
+  data: EvolutionData;
+  skuOptions: { value: string; label: string }[];
+  selectedSkus: string[];
+  onSelectedSkusChange: (skus: string[]) => void;
+  fiscalYear: string | null;
+}) {
+  const fallingSeries = data.series.filter((series) => series.falling);
+  const title =
+    dimension === "categoria"
+      ? "Evolucao da importancia por categoria"
+      : dimension === "canal"
+        ? "Evolucao da importancia por canal"
+        : "Evolucao da importancia por SKU";
+
+  return (
+    <GlassCard className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="max-w-3xl text-xs text-muted-foreground">
+            Participacao no volume total mes a mes dentro de {fiscalYear ?? "ano fiscal selecionado"}, com margem
+            contribuida no tooltip para apoiar a leitura do mix antes de virar um problema maior.
+          </p>
+        </div>
+        <ToggleGroup
+          type="single"
+          value={dimension}
+          onValueChange={(value) => value && onDimensionChange(value as EvolutionDimension)}
+          className="inline-flex rounded-full border border-border/50 bg-secondary/30 p-1"
+        >
+          <ToggleGroupItem value="categoria" className="h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary">
+            Categoria
+          </ToggleGroupItem>
+          <ToggleGroupItem value="canal" className="h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary">
+            Canal
+          </ToggleGroupItem>
+          <ToggleGroupItem value="sku" className="h-8 rounded-full px-3 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary">
+            SKU
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </header>
+
+      {dimension === "sku" && (
+        <div className="max-w-2xl rounded-xl border border-border/35 bg-secondary/20 p-4">
+          <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            SKUs para acompanhar
+          </label>
+          <MultiSelectFilter
+            options={skuOptions}
+            selected={selectedSkus}
+            onChange={onSelectedSkusChange}
+            placeholder="Buscar SKUs"
+            variant="sku"
+          />
+        </div>
+      )}
+
+      {fallingSeries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <TrendingDown className="h-4 w-4" />
+          <span className="font-semibold">Queda consistente:</span>
+          {fallingSeries.slice(0, 4).map((series) => (
+            <Badge key={series.key} variant="secondary" className="bg-destructive/15 text-destructive">
+              {series.label}
+            </Badge>
+          ))}
+          {fallingSeries.length > 4 && <span>+{fallingSeries.length - 4}</span>}
+        </div>
+      )}
+
+      {data.series.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 px-4 py-10 text-center text-sm text-muted-foreground">
+          Sem dados suficientes para montar a evolucao neste recorte.
+        </div>
+      ) : (
+        <div className="h-[360px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            {dimension === "sku" ? (
+              <LineChart data={data.points} margin={{ top: 12, right: 20, bottom: 12, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.45)" />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(value) => `${formatNum(Number(value), 0)}%`}
+                />
+                <RechartsTooltip content={<EvolutionTooltip series={data.series} />} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {data.series.map((series) => (
+                  <Line
+                    key={series.key}
+                    type="monotone"
+                    dataKey={series.key}
+                    name={series.label}
+                    stroke={series.falling ? "#dc2626" : series.color}
+                    strokeWidth={series.falling ? 3 : 2}
+                    dot={{ r: series.falling ? 3 : 2 }}
+                    activeDot={{ r: 5 }}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            ) : (
+              <AreaChart data={data.points} margin={{ top: 12, right: 20, bottom: 12, left: 0 }} stackOffset="expand">
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.45)" />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(value) => `${formatNum(Number(value) * 100, 0)}%`}
+                />
+                <RechartsTooltip content={<EvolutionTooltip series={data.series} stacked />} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {data.series.map((series) => (
+                  <Area
+                    key={series.key}
+                    type="monotone"
+                    dataKey={series.key}
+                    name={series.label}
+                    stackId="mix-share"
+                    stroke={series.falling ? "#dc2626" : series.color}
+                    fill={series.falling ? "#dc2626" : series.color}
+                    fillOpacity={series.falling ? 0.45 : 0.28}
+                    strokeWidth={series.falling ? 2.5 : 1.5}
+                  />
+                ))}
+              </AreaChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+function EvolutionTooltip({
+  active,
+  payload,
+  label,
+  series,
+  stacked = false,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string | number; value?: number; payload?: Record<string, unknown>; color?: string; name?: string }>;
+  label?: string;
+  series: EvolutionSeries[];
+  stacked?: boolean;
+}) {
+  if (!active || !payload?.length) return null;
+  const seriesByKey = new Map(series.map((item) => [item.key, item]));
+  return (
+    <div className="rounded-xl border border-border/60 bg-popover/95 p-3 text-xs shadow-xl backdrop-blur-xl">
+      <div className="mb-2 font-semibold text-foreground">{label}</div>
+      <div className="space-y-1.5">
+        {payload
+          .filter((item) => typeof item.dataKey === "string")
+          .map((item) => {
+            const key = String(item.dataKey);
+            const meta = seriesByKey.get(key);
+            if (!meta) return null;
+            const margin = Number(item.payload?.[`${key}Margin`] ?? 0);
+            const shareValue = Number(item.value ?? 0);
+            const share = stacked ? shareValue * 100 : shareValue;
+            return (
+              <div key={key} className="grid grid-cols-[10px_minmax(120px,1fr)_auto] items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: meta.falling ? "#dc2626" : meta.color }} />
+                <span className="truncate text-muted-foreground">{meta.label}</span>
+                <span className="font-semibold text-foreground">{formatNum(share, 1)}%</span>
+                <span />
+                <span className="text-muted-foreground">Margem</span>
+                <span className="text-right font-medium">{formatBRL(margin, { compact: true })}</span>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
 function DriverCard({ title, drivers }: { title: string; drivers: MixReadingDriver[] }) {
   const top = [...drivers].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 6);
   return (
@@ -595,4 +856,96 @@ function buildDimensionDrivers(
   }
 
   return Array.from(grouped, ([label, value]) => ({ label, value }));
+}
+
+function buildSkuOptions(rows: PricingRow[]): { value: string; label: string }[] {
+  const options = new Map<string, string>();
+  for (const row of rows) {
+    const sku = row.sku?.trim();
+    if (!sku || options.has(sku)) continue;
+    const desc = row.skuDesc?.trim();
+    options.set(sku, desc ? `${sku} - ${desc}` : sku);
+  }
+  return Array.from(options, ([value, label]) => ({ value, label })).sort((a, b) =>
+    a.value.localeCompare(b.value, "pt-BR"),
+  );
+}
+
+function buildEvolutionData(
+  rows: PricingRow[],
+  months: { periodo: string; label: string; fy: string; ano: number; mes: number }[],
+  dimension: EvolutionDimension,
+  selectedSkus: string[] = [],
+): EvolutionData {
+  const monthList = months
+    .filter((month) => rows.some((row) => row.periodo === month.periodo))
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+  if (monthList.length === 0) return { series: [], points: [] };
+
+  const dimensionOf = (row: PricingRow) => {
+    if (dimension === "categoria") return row.categoria?.trim() || "Sem categoria";
+    if (dimension === "canal") return row.canalAjustado?.trim() || row.canal?.trim() || "Sem canal";
+    return row.sku?.trim() || row.skuDesc?.trim() || "Sem SKU";
+  };
+
+  const selectedSkuSet = dimension === "sku" && selectedSkus.length > 0 ? new Set(selectedSkus) : null;
+  const totalVolumeByMonth = new Map<string, number>();
+  const grouped = new Map<string, Map<string, { volume: number; margin: number }>>();
+  const totalByDimension = new Map<string, number>();
+
+  for (const row of rows) {
+    const month = row.periodo;
+    totalVolumeByMonth.set(month, (totalVolumeByMonth.get(month) ?? 0) + row.volumeKg);
+    if (dimension === "sku" && selectedSkuSet && !selectedSkuSet.has(row.sku ?? "")) continue;
+    const key = dimensionOf(row);
+    totalByDimension.set(key, (totalByDimension.get(key) ?? 0) + row.volumeKg);
+    let byDimension = grouped.get(month);
+    if (!byDimension) {
+      byDimension = new Map();
+      grouped.set(month, byDimension);
+    }
+    const current = byDimension.get(key) ?? { volume: 0, margin: 0 };
+    current.volume += row.volumeKg;
+    current.margin += row.contribMarginal;
+    byDimension.set(key, current);
+  }
+
+  const keys =
+    dimension === "sku"
+      ? selectedSkus
+      : Array.from(totalByDimension.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([key]) => key);
+  if (keys.length === 0) return { series: [], points: [] };
+
+  const points = monthList.map((month) => {
+    const point: EvolutionPoint = { periodo: month.periodo, label: month.label };
+    const total = totalVolumeByMonth.get(month.periodo) ?? 0;
+    const byDimension = grouped.get(month.periodo);
+    keys.forEach((key, index) => {
+      const row = byDimension?.get(key);
+      const share = total > 0 ? (row?.volume ?? 0) / total : 0;
+      point[key] = dimension === "sku" ? share * 100 : share;
+      point[`${key}Margin`] = row?.margin ?? 0;
+      point[`${key}Color`] = EVOLUTION_COLORS[index % EVOLUTION_COLORS.length];
+    });
+    return point;
+  });
+
+  const series = keys.map((key, index) => ({
+    key,
+    label: key,
+    color: EVOLUTION_COLORS[index % EVOLUTION_COLORS.length],
+    falling: hasConsistentShareDrop(points.map((point) => Number(point[key] ?? 0))),
+  }));
+
+  return { series, points };
+}
+
+function hasConsistentShareDrop(values: number[]): boolean {
+  const material = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (material.length < 4) return false;
+  const recent = material.slice(-4);
+  return recent.every((value, index) => index === 0 || value < recent[index - 1]);
 }
