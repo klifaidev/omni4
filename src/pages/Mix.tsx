@@ -7,6 +7,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
@@ -20,6 +21,15 @@ import type { FilterKey, PricingRow } from "@/lib/types";
 
 type PeriodMode = "fy" | "month";
 type FilterField = { key: FilterKey; label: string; variant?: "sku" | "comercial" | "inovacao" };
+type MixSkuRankingItem = {
+  sku: string;
+  name: string;
+  value: number;
+  volumeBaseKg: number;
+  volumeCompKg: number;
+  marginBasePerKg: number | null;
+  marginCompPerKg: number | null;
+};
 
 const FILTER_FIELDS: FilterField[] = [
   { key: "marca", label: "Marca" },
@@ -128,6 +138,31 @@ export default function Mix() {
   const narrative = useMemo(
     () => (result ? buildMixReading(result, { categories: categoryDrivers, channels: channelDrivers, marginPp: mixMarginPp }) : []),
     [categoryDrivers, channelDrivers, mixMarginPp, result],
+  );
+  const skuMixRanking = useMemo<MixSkuRankingItem[]>(() => {
+    if (!result) return [];
+    return result.skuDetails
+      .map((detail) => {
+        const value = detail.mixResidualEffect ?? 0;
+        return {
+          sku: detail.sku,
+          name: detail.skuDesc?.trim() || detail.sku,
+          value,
+          volumeBaseKg: detail.volA,
+          volumeCompKg: detail.volB,
+          marginBasePerKg: detail.volA !== 0 ? detail.margemA / detail.volA : null,
+          marginCompPerKg: detail.volB !== 0 ? detail.margemB / detail.volB : null,
+        };
+      })
+      .filter((item) => Math.abs(item.value) >= 1);
+  }, [result]);
+  const mixOffenders = useMemo(
+    () => skuMixRanking.filter((item) => item.value < 0).sort((a, b) => a.value - b.value),
+    [skuMixRanking],
+  );
+  const mixFortresses = useMemo(
+    () => skuMixRanking.filter((item) => item.value > 0).sort((a, b) => b.value - a.value),
+    [skuMixRanking],
   );
 
   const activeFilterCount = FILTER_FIELDS.reduce((sum, field) => sum + (filters[field.key]?.length ?? 0), 0);
@@ -298,6 +333,21 @@ export default function Mix() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
+              <SkuMixRankingCard
+                title="Maiores Ofensores"
+                subtitle="SKUs comparáveis que mais prejudicaram a margem por mudança desfavorável de mix."
+                items={mixOffenders}
+                tone="negative"
+              />
+              <SkuMixRankingCard
+                title="Maiores Fortalezas"
+                subtitle="SKUs comparáveis que mais ajudaram a margem por mudança favorável de mix."
+                items={mixFortresses}
+                tone="positive"
+              />
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
               <DriverCard title="Categorias que explicam o mix" drivers={categoryDrivers} />
               <DriverCard title="Canais que explicam o mix" drivers={channelDrivers} />
             </div>
@@ -355,6 +405,119 @@ function MetricPill({ label, value, tone }: { label: string; value: string; tone
         {value}
       </div>
     </div>
+  );
+}
+
+function SkuMixRankingCard({
+  title,
+  subtitle,
+  items,
+  tone,
+}: {
+  title: string;
+  subtitle: string;
+  items: MixSkuRankingItem[];
+  tone: "positive" | "negative";
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? items : items.slice(0, 10);
+  const maxMagnitude = Math.max(1, ...visible.map((item) => Math.abs(item.value)));
+  const Icon = tone === "positive" ? TrendingUp : TrendingDown;
+
+  return (
+    <GlassCard className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className={cn(
+            "mb-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
+            tone === "positive" ? "bg-success/12 text-success" : "bg-destructive/12 text-destructive",
+          )}>
+            <Icon className="h-3.5 w-3.5" />
+            {tone === "positive" ? "Mix favorável" : "Mix desfavorável"}
+          </div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="max-w-xl text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+        <Badge variant="secondary" className="h-6 px-2 text-[11px]">
+          {items.length} SKU{items.length === 1 ? "" : "s"}
+        </Badge>
+      </header>
+
+      {visible.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 px-4 py-8 text-sm text-muted-foreground">
+          Sem SKUs com efeito de mix {tone === "positive" ? "positivo" : "negativo"} material neste recorte.
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {visible.map((item, index) => {
+            const width = `${Math.max(7, (Math.abs(item.value) / maxMagnitude) * 100)}%`;
+            return (
+              <Tooltip key={`${title}-${item.sku}`} delayDuration={120}>
+                <TooltipTrigger asChild>
+                  <div className="group rounded-xl border border-border/35 bg-secondary/20 px-3 py-2.5 transition-colors hover:bg-secondary/35">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          #{index + 1} · {item.sku}
+                        </div>
+                        <div className="truncate text-sm font-medium text-foreground" title={item.name}>
+                          {item.name}
+                        </div>
+                      </div>
+                      <div className={cn(
+                        "shrink-0 text-sm font-semibold tabular-nums",
+                        tone === "positive" ? "text-success" : "text-destructive",
+                      )}>
+                        {item.value > 0 ? "+" : ""}{formatBRL(item.value, { compact: true })}
+                      </div>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-muted/60">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-[width]",
+                          tone === "positive" ? "bg-success" : "bg-destructive",
+                        )}
+                        style={{ width }}
+                      />
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start" className="max-w-xs">
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <div className="font-semibold text-foreground">{item.name}</div>
+                      <div className="text-muted-foreground">{item.sku}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                      <span className="text-muted-foreground">Mix</span>
+                      <span className={cn("text-right font-semibold", tone === "positive" ? "text-success" : "text-destructive")}>
+                        {item.value > 0 ? "+" : ""}{formatBRL(item.value, { compact: true })}
+                      </span>
+                      <span className="text-muted-foreground">Volume base</span>
+                      <span className="text-right">{formatNum(item.volumeBaseKg / 1000, 1)} t</span>
+                      <span className="text-muted-foreground">Volume atual</span>
+                      <span className="text-right">{formatNum(item.volumeCompKg / 1000, 1)} t</span>
+                      <span className="text-muted-foreground">Margem/kg base</span>
+                      <span className="text-right">{item.marginBasePerKg === null ? "—" : formatBRL(item.marginBasePerKg, { digits: 2 })}</span>
+                      <span className="text-muted-foreground">Margem/kg atual</span>
+                      <span className="text-right">{item.marginCompPerKg === null ? "—" : formatBRL(item.marginCompPerKg, { digits: 2 })}</span>
+                    </div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+      )}
+
+      {items.length > 10 && (
+        <div className="pt-1">
+          <Button variant="outline" size="sm" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "Ver top 10" : `Ver todos (${items.length})`}
+          </Button>
+        </div>
+      )}
+    </GlassCard>
   );
 }
 
