@@ -24,7 +24,13 @@ import {
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
-import { applyFilters, calcPVM, type PVMSkuDetail } from "@/lib/analytics";
+import {
+  applyFilters,
+  calcPVM,
+  computePriceDecomposition,
+  type PriceDecompositionResult,
+  type PVMSkuDetail,
+} from "@/lib/analytics";
 import { computeAvailableOptionsPerDimension } from "@/lib/filterOptions";
 import { buildMixReading, getSkuMixEffect, type MixReadingDriver } from "@/lib/pvmReading";
 import { formatBRL, formatNum } from "@/lib/format";
@@ -32,6 +38,7 @@ import { cn } from "@/lib/utils";
 import type { FilterKey, PricingRow } from "@/lib/types";
 
 type PeriodMode = "fy" | "month";
+type MixLens = "margin" | "price";
 type EvolutionDimension = "categoria" | "canal" | "sku";
 type FilterField = { key: FilterKey; label: string; variant?: "sku" | "comercial" | "inovacao" };
 type MixSkuRankingItem = {
@@ -42,6 +49,8 @@ type MixSkuRankingItem = {
   volumeCompKg: number;
   marginBasePerKg: number | null;
   marginCompPerKg: number | null;
+  priceBasePerKg: number | null;
+  priceCompPerKg: number | null;
 };
 type MixTransferDirection = "comparison_to_reference" | "reference_to_comparison";
 type SkuMixStats = {
@@ -52,6 +61,7 @@ type SkuMixStats = {
   cost: number;
   margin: number;
   marginPerKg: number;
+  pricePerKg: number;
 };
 type MixConcentration = {
   score: number;
@@ -82,6 +92,7 @@ export default function Mix() {
   const setFilter = usePricing((state) => state.setFilter);
   const fyList = useFyList();
   const months = useMonthsInfo();
+  const [mixLens, setMixLens] = useState<MixLens>("margin");
   const [periodMode, setPeriodMode] = useState<PeriodMode>("month");
   const [basePeriod, setBasePeriod] = useState<string | null>(null);
   const [compPeriod, setCompPeriod] = useState<string | null>(null);
@@ -151,6 +162,18 @@ export default function Mix() {
     return calcPVM(filteredRows, metric, basePeriod, compPeriod, periodMode, labels);
   }, [basePeriod, compPeriod, filteredRows, metric, months, periodMode]);
 
+  const priceResult = useMemo(() => {
+    if (!basePeriod || !compPeriod || basePeriod === compPeriod) return null;
+    const labels =
+      periodMode === "month"
+        ? {
+            base: months.find((month) => month.periodo === basePeriod)?.label ?? basePeriod,
+            comp: months.find((month) => month.periodo === compPeriod)?.label ?? compPeriod,
+          }
+        : undefined;
+    return computePriceDecomposition(filteredRows, basePeriod, compPeriod, periodMode, labels);
+  }, [basePeriod, compPeriod, filteredRows, months, periodMode]);
+
   const comparisonRows = useMemo(
     () => filteredRows.filter((row) => (periodMode === "fy" ? row.fy : row.periodo) === compPeriod),
     [compPeriod, filteredRows, periodMode],
@@ -165,6 +188,10 @@ export default function Mix() {
     [comparisonRows],
   );
   const mixMarginPp = comparisonRol !== 0 ? (mixTotal / comparisonRol) * 100 : 0;
+  const priceMixTotal = priceResult?.efeitoMixRs ?? 0;
+  const primaryMixTotal = mixLens === "margin" ? mixTotal : priceMixTotal;
+  const secondaryMixTotal = mixLens === "margin" ? priceMixTotal : mixTotal;
+  const primaryMixTone = primaryMixTotal > 0 ? "positive" : primaryMixTotal < 0 ? "negative" : "neutral";
   const lowVolumeResidual = useMemo(
     () => result?.skuDetails.reduce((sum, detail) => sum + (detail.lowVolumeResidualEffect ?? 0), 0) ?? 0,
     [result],
@@ -179,8 +206,18 @@ export default function Mix() {
     [basePeriod, compPeriod, filteredRows, periodMode, result],
   );
   const narrative = useMemo(
-    () => (result ? buildMixReading(result, { categories: categoryDrivers, channels: channelDrivers, marginPp: mixMarginPp }) : []),
-    [categoryDrivers, channelDrivers, mixMarginPp, result],
+    () =>
+      result
+        ? buildLensNarrative({
+            lens: mixLens,
+            marginResult: result,
+            priceResult,
+            categories: categoryDrivers,
+            channels: channelDrivers,
+            marginPp: mixMarginPp,
+          })
+        : [],
+    [categoryDrivers, channelDrivers, mixLens, mixMarginPp, priceResult, result],
   );
   const skuMixRanking = useMemo<MixSkuRankingItem[]>(() => {
     if (!result) return [];
@@ -195,17 +232,37 @@ export default function Mix() {
           volumeCompKg: detail.volB,
           marginBasePerKg: detail.volA !== 0 ? detail.margemA / detail.volA : null,
           marginCompPerKg: detail.volB !== 0 ? detail.margemB / detail.volB : null,
+          priceBasePerKg: detail.volA !== 0 ? detail.rolA / detail.volA : null,
+          priceCompPerKg: detail.volB !== 0 ? detail.rolB / detail.volB : null,
         };
       })
       .filter((item) => Math.abs(item.value) >= 1);
   }, [result]);
+  const priceSkuMixRanking = useMemo<MixSkuRankingItem[]>(() => {
+    if (!priceResult) return [];
+    return priceResult.skus
+      .filter((detail) => detail.sku !== "__price_decomp_residual__")
+      .map((detail) => ({
+        sku: detail.sku,
+        name: detail.skuDesc?.trim() || detail.sku,
+        value: detail.efeitoMixRs,
+        volumeBaseKg: detail.volumeBase,
+        volumeCompKg: detail.volumeComp,
+        marginBasePerKg: null,
+        marginCompPerKg: null,
+        priceBasePerKg: detail.precoBase,
+        priceCompPerKg: detail.precoComp,
+      }))
+      .filter((item) => Math.abs(item.value) >= 1);
+  }, [priceResult]);
+  const activeSkuMixRanking = mixLens === "margin" ? skuMixRanking : priceSkuMixRanking;
   const mixOffenders = useMemo(
-    () => skuMixRanking.filter((item) => item.value < 0).sort((a, b) => a.value - b.value),
-    [skuMixRanking],
+    () => activeSkuMixRanking.filter((item) => item.value < 0).sort((a, b) => a.value - b.value),
+    [activeSkuMixRanking],
   );
   const mixFortresses = useMemo(
-    () => skuMixRanking.filter((item) => item.value > 0).sort((a, b) => b.value - a.value),
-    [skuMixRanking],
+    () => activeSkuMixRanking.filter((item) => item.value > 0).sort((a, b) => b.value - a.value),
+    [activeSkuMixRanking],
   );
   const evolutionFy = useMemo(() => {
     if (periodMode === "fy") return compPeriod;
@@ -228,8 +285,15 @@ export default function Mix() {
   }, [defaultEvolutionSkus, evolutionDimension, skuEvolutionOptions]);
 
   const evolutionData = useMemo(
-    () => buildEvolutionData(evolutionRows, months, evolutionDimension, evolutionDimension === "sku" ? selectedEvolutionSkus : undefined),
-    [evolutionDimension, evolutionRows, months, selectedEvolutionSkus],
+    () =>
+      buildEvolutionData(
+        evolutionRows,
+        months,
+        evolutionDimension,
+        evolutionDimension === "sku" ? selectedEvolutionSkus : undefined,
+        mixLens,
+      ),
+    [evolutionDimension, evolutionRows, mixLens, months, selectedEvolutionSkus],
   );
   const calculatorSkuOptions = useMemo(() => buildSkuOptions(comparisonRows), [comparisonRows]);
   const calculatorStats = useMemo(() => buildSkuStatsBySku(comparisonRows), [comparisonRows]);
@@ -242,10 +306,16 @@ export default function Mix() {
     () => comparisonRows.reduce((sum, row) => sum + row.contribMarginal, 0),
     [comparisonRows],
   );
+  const totalCurrentRevenue = useMemo(
+    () => comparisonRows.reduce((sum, row) => sum + row.rol, 0),
+    [comparisonRows],
+  );
   const transferImpact = sourceStats && targetStats
-    ? (targetStats.marginPerKg - sourceStats.marginPerKg) * transferKg
+    ? ((mixLens === "margin" ? targetStats.marginPerKg : targetStats.pricePerKg) -
+        (mixLens === "margin" ? sourceStats.marginPerKg : sourceStats.pricePerKg)) * transferKg
     : 0;
-  const transferImpactPct = totalCurrentMargin !== 0 ? transferImpact / Math.abs(totalCurrentMargin) : 0;
+  const transferImpactBase = mixLens === "margin" ? totalCurrentMargin : totalCurrentRevenue;
+  const transferImpactPct = transferImpactBase !== 0 ? transferImpact / Math.abs(transferImpactBase) : 0;
   const concentration = useMemo(() => buildMixConcentration(comparisonRows), [comparisonRows]);
   const adjustedMixMargin = result ? result.current - mixTotal : 0;
   const mixRiskAlerts = useMemo(() => buildMixRiskAlerts(evolutionRows, months), [evolutionRows, months]);
@@ -256,7 +326,7 @@ export default function Mix() {
 
   const activeFilterCount = FILTER_FIELDS.reduce((sum, field) => sum + (filters[field.key]?.length ?? 0), 0);
   const notEnough = (periodMode === "fy" && fyList.length < 2) || (periodMode === "month" && months.length < 2);
-  const mixTone = mixTotal > 0 ? "positive" : mixTotal < 0 ? "negative" : "neutral";
+  const mixTone = primaryMixTone;
 
   if (rows.length === 0) {
     return (
@@ -289,8 +359,8 @@ export default function Mix() {
                 Quanto a composicao do portfolio mudou a margem?
               </h1>
               <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                A leitura reaproveita o efeito residual de mix e SKUs nao comparaveis ja calculado na Bridge PVM,
-                agora com foco executivo para explorar categoria, canal e periodo.
+                Alterne entre mix de margem e mix de preco para separar resultado financeiro direto de sinais de
+                posicionamento comercial.
               </p>
             </div>
             {activeFilterCount > 0 && (
@@ -298,6 +368,34 @@ export default function Mix() {
                 {activeFilterCount} filtro{activeFilterCount === 1 ? "" : "s"} ativo{activeFilterCount === 1 ? "" : "s"}
               </Badge>
             )}
+          </div>
+
+          <div className="rounded-2xl border border-primary/25 bg-primary/5 p-2">
+            <ToggleGroup
+              type="single"
+              value={mixLens}
+              onValueChange={(value) => value && setMixLens(value as MixLens)}
+              className="grid w-full gap-2 sm:grid-cols-2"
+            >
+              <ToggleGroupItem
+                value="margin"
+                className="h-auto rounded-xl px-4 py-3 text-left data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              >
+                <div>
+                  <div className="text-sm font-semibold">Mix Margem</div>
+                  <div className="mt-0.5 text-[11px] opacity-80">Migração para SKUs de margem melhor ou pior.</div>
+                </div>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="price"
+                className="h-auto rounded-xl px-4 py-3 text-left data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              >
+                <div>
+                  <div className="text-sm font-semibold">Mix Preço</div>
+                  <div className="mt-0.5 text-[11px] opacity-80">Migração para SKUs de preço mais alto ou mais baixo.</div>
+                </div>
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.9fr)_minmax(420px,1.1fr)]">
@@ -373,7 +471,7 @@ export default function Mix() {
                 <div className="relative space-y-5">
                   <div>
                     <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                      Efeito de Mix Total
+                      {mixLens === "margin" ? "Efeito de Mix na Margem" : "Efeito de Mix no Preço"}
                     </span>
                     <div className={cn(
                       "mt-3 text-4xl font-light leading-none tabular-nums",
@@ -381,13 +479,25 @@ export default function Mix() {
                       mixTone === "negative" && "text-destructive",
                       mixTone === "neutral" && "text-primary",
                     )}>
-                      {mixTotal > 0 ? "+" : ""}{formatBRL(mixTotal, { compact: true })}
+                      {primaryMixTotal > 0 ? "+" : ""}{formatBRL(primaryMixTotal, { compact: true })}
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <MetricPill label="Impacto em margem" value={`${mixMarginPp > 0 ? "+" : ""}${formatNum(mixMarginPp, 1)} p.p.`} tone={mixTone} />
+                    <MetricPill
+                      label={mixLens === "margin" ? "Impacto em margem" : "Impacto em R$/kg"}
+                      value={
+                        mixLens === "margin"
+                          ? `${mixMarginPp > 0 ? "+" : ""}${formatNum(mixMarginPp, 1)} p.p.`
+                          : `${(priceResult?.efeitoMixRsKg ?? 0) > 0 ? "+" : ""}${formatBRL(priceResult?.efeitoMixRsKg ?? 0, { digits: 2 })}/kg`
+                      }
+                      tone={mixTone}
+                    />
+                    <MetricPill
+                      label={mixLens === "margin" ? "Mix preço" : "Mix margem"}
+                      value={`${secondaryMixTotal > 0 ? "+" : ""}${formatBRL(secondaryMixTotal, { compact: true })}`}
+                      tone={secondaryMixTotal > 0 ? "positive" : secondaryMixTotal < 0 ? "negative" : "neutral"}
+                    />
                     <MetricPill label="SKUs analisados" value={formatNum(result.skuDetails.length, 0)} tone="neutral" />
-                    <MetricPill label="Concentração" value={formatNum(concentration.score, 1)} tone={concentration.label === "Alta" ? "negative" : concentration.label === "Moderada" ? "neutral" : "positive"} />
                   </div>
                   <div className="rounded-xl border border-border/35 bg-secondary/25 px-3 py-2">
                     <div className="text-xs font-semibold text-foreground">Concentração {concentration.label.toLowerCase()}</div>
@@ -465,15 +575,25 @@ export default function Mix() {
             <div className="grid gap-4 xl:grid-cols-2">
               <SkuMixRankingCard
                 title="Maiores Ofensores"
-                subtitle="SKUs comparáveis que mais prejudicaram a margem por mudança desfavorável de mix."
+                subtitle={
+                  mixLens === "margin"
+                    ? "SKUs comparaveis que mais prejudicaram a margem por mudanca desfavoravel de mix."
+                    : "SKUs comparaveis que mais prejudicaram o preco medio por mudanca desfavoravel de mix."
+                }
                 items={mixOffenders}
                 tone="negative"
+                lens={mixLens}
               />
               <SkuMixRankingCard
                 title="Maiores Fortalezas"
-                subtitle="SKUs comparáveis que mais ajudaram a margem por mudança favorável de mix."
+                subtitle={
+                  mixLens === "margin"
+                    ? "SKUs comparaveis que mais ajudaram a margem por mudanca favoravel de mix."
+                    : "SKUs comparaveis que mais ajudaram o preco medio por mudanca favoravel de mix."
+                }
                 items={mixFortresses}
                 tone="positive"
+                lens={mixLens}
               />
             </div>
 
@@ -490,6 +610,7 @@ export default function Mix() {
                 dimension={evolutionDimension}
                 onDimensionChange={setEvolutionDimension}
                 data={evolutionData}
+                lens={mixLens}
                 skuOptions={skuEvolutionOptions}
                 selectedSkus={selectedEvolutionSkus}
                 onSelectedSkusChange={setSelectedEvolutionSkus}
@@ -512,6 +633,7 @@ export default function Mix() {
               maxTransferKg={maxTransferKg}
               impact={transferImpact}
               impactPct={transferImpactPct}
+              lens={mixLens}
               periodLabel={result.currentLabel}
             />
 
@@ -574,6 +696,102 @@ function MetricPill({ label, value, tone }: { label: string; value: string; tone
       </div>
     </div>
   );
+}
+
+function buildLensNarrative({
+  lens,
+  marginResult,
+  priceResult,
+  categories,
+  channels,
+  marginPp,
+}: {
+  lens: MixLens;
+  marginResult: NonNullable<ReturnType<typeof calcPVM>>;
+  priceResult: PriceDecompositionResult | null;
+  categories: MixReadingDriver[];
+  channels: MixReadingDriver[];
+  marginPp: number;
+}) {
+  const marginMixTotal = marginResult.skuDetails.reduce((sum, detail) => sum + getSkuMixEffect(detail), 0);
+  const secondarySentence = (
+    <>
+      A outra lente tambem fica visivel: mix de margem{" "}
+      <strong className={mixTotalClass(marginMixTotal)}>{marginMixTotal > 0 ? "+" : ""}{formatBRL(marginMixTotal, { compact: true })}</strong>
+      {priceResult ? (
+        <>
+          {" "}e mix de preco{" "}
+          <strong className={mixTotalClass(priceResult.efeitoMixRs)}>{priceResult.efeitoMixRs > 0 ? "+" : ""}{formatBRL(priceResult.efeitoMixRs, { compact: true })}</strong>.
+        </>
+      ) : "."}
+    </>
+  );
+
+  const diverges = priceResult && marginMixTotal * priceResult.efeitoMixRs < 0;
+  const divergenceSentence = diverges ? (
+    <>
+      As duas lentes apontam em direcoes opostas: isso normalmente indica migracao para SKUs que mudam o preco medio em
+      uma direcao, mas possuem margem por kg suficientemente diferente para gerar efeito financeiro contrario.
+    </>
+  ) : null;
+
+  if (lens === "margin") {
+    return [
+      ...buildMixReading(marginResult, { categories, channels, marginPp }),
+      secondarySentence,
+      ...(divergenceSentence ? [divergenceSentence] : []),
+    ];
+  }
+
+  if (!priceResult) {
+    return [
+      <>
+        Nao ha dados suficientes para calcular o mix de preco nos periodos selecionados.
+      </>,
+      secondarySentence,
+    ];
+  }
+
+  const topPositive = [...priceResult.skus]
+    .filter((sku) => sku.sku !== "__price_decomp_residual__" && sku.efeitoMixRs > 0)
+    .sort((a, b) => b.efeitoMixRs - a.efeitoMixRs)[0];
+  const topNegative = [...priceResult.skus]
+    .filter((sku) => sku.sku !== "__price_decomp_residual__" && sku.efeitoMixRs < 0)
+    .sort((a, b) => a.efeitoMixRs - b.efeitoMixRs)[0];
+
+  return [
+    <>
+      O mix de preco {priceResult.efeitoMixRs >= 0 ? "ajudou" : "pressionou"} o preco medio em{" "}
+      <strong className={mixTotalClass(priceResult.efeitoMixRs)}>
+        {priceResult.efeitoMixRs > 0 ? "+" : ""}{formatBRL(priceResult.efeitoMixRs, { compact: true })}
+      </strong>
+      , equivalente a{" "}
+      <strong className={mixTotalClass(priceResult.efeitoMixRsKg)}>
+        {priceResult.efeitoMixRsKg > 0 ? "+" : ""}{formatBRL(priceResult.efeitoMixRsKg, { digits: 2 })}/kg
+      </strong>
+      .
+    </>,
+    ...(topPositive ? [
+      <>
+        A maior fortaleza de preco foi <strong className="text-primary">{topPositive.skuDesc}</strong> com{" "}
+        <strong className="text-success">+{formatBRL(topPositive.efeitoMixRs, { compact: true })}</strong>.
+      </>,
+    ] : []),
+    ...(topNegative ? [
+      <>
+        A maior pressao de preco veio de <strong className="text-primary">{topNegative.skuDesc}</strong> com{" "}
+        <strong className="text-destructive">{formatBRL(topNegative.efeitoMixRs, { compact: true })}</strong>.
+      </>,
+    ] : []),
+    secondarySentence,
+    ...(divergenceSentence ? [divergenceSentence] : []),
+  ];
+}
+
+function mixTotalClass(value: number) {
+  if (value > 0) return "text-success";
+  if (value < 0) return "text-destructive";
+  return "text-primary";
 }
 
 function MixAdjustedMarginCard({
@@ -661,11 +879,13 @@ function SkuMixRankingCard({
   subtitle,
   items,
   tone,
+  lens,
 }: {
   title: string;
   subtitle: string;
   items: MixSkuRankingItem[];
   tone: "positive" | "negative";
+  lens: MixLens;
 }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, 10);
@@ -681,7 +901,7 @@ function SkuMixRankingCard({
             tone === "positive" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
           )}>
             <Icon className="h-3.5 w-3.5" />
-            {tone === "positive" ? "Mix favorável" : "Mix desfavorável"}
+            {tone === "positive" ? "Mix favorável" : "Mix desfavorável"} · {lens === "margin" ? "margem" : "preço"}
           </div>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <p className="max-w-xl text-xs text-muted-foreground">{subtitle}</p>
@@ -745,10 +965,18 @@ function SkuMixRankingCard({
                       <span className="text-right">{formatNum(item.volumeBaseKg / 1000, 1)} t</span>
                       <span className="text-muted-foreground">Volume atual</span>
                       <span className="text-right">{formatNum(item.volumeCompKg / 1000, 1)} t</span>
-                      <span className="text-muted-foreground">Margem/kg base</span>
-                      <span className="text-right">{item.marginBasePerKg === null ? "—" : formatBRL(item.marginBasePerKg, { digits: 2 })}</span>
-                      <span className="text-muted-foreground">Margem/kg atual</span>
-                      <span className="text-right">{item.marginCompPerKg === null ? "—" : formatBRL(item.marginCompPerKg, { digits: 2 })}</span>
+                      <span className="text-muted-foreground">{lens === "margin" ? "Margem/kg base" : "Preço/kg base"}</span>
+                      <span className="text-right">
+                        {lens === "margin"
+                          ? item.marginBasePerKg === null ? "—" : formatBRL(item.marginBasePerKg, { digits: 2 })
+                          : item.priceBasePerKg === null ? "—" : formatBRL(item.priceBasePerKg, { digits: 2 })}
+                      </span>
+                      <span className="text-muted-foreground">{lens === "margin" ? "Margem/kg atual" : "Preço/kg atual"}</span>
+                      <span className="text-right">
+                        {lens === "margin"
+                          ? item.marginCompPerKg === null ? "—" : formatBRL(item.marginCompPerKg, { digits: 2 })
+                          : item.priceCompPerKg === null ? "—" : formatBRL(item.priceCompPerKg, { digits: 2 })}
+                      </span>
                     </div>
                   </div>
                 </TooltipContent>
@@ -791,6 +1019,7 @@ function MixEvolutionSection({
   dimension,
   onDimensionChange,
   data,
+  lens,
   skuOptions,
   selectedSkus,
   onSelectedSkusChange,
@@ -799,6 +1028,7 @@ function MixEvolutionSection({
   dimension: EvolutionDimension;
   onDimensionChange: (dimension: EvolutionDimension) => void;
   data: EvolutionData;
+  lens: MixLens;
   skuOptions: { value: string; label: string }[];
   selectedSkus: string[];
   onSelectedSkusChange: (skus: string[]) => void;
@@ -818,8 +1048,8 @@ function MixEvolutionSection({
         <div>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <p className="max-w-3xl text-xs text-muted-foreground">
-            Participacao no volume total mes a mes dentro de {fiscalYear ?? "ano fiscal selecionado"}, com margem
-            contribuida no tooltip para apoiar a leitura do mix antes de virar um problema maior.
+            Participacao no volume total mes a mes dentro de {fiscalYear ?? "ano fiscal selecionado"}, com{" "}
+            {lens === "margin" ? "margem contribuida" : "receita contribuida"} no tooltip para apoiar a leitura.
           </p>
         </div>
         <ToggleGroup
@@ -885,7 +1115,7 @@ function MixEvolutionSection({
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                   tickFormatter={(value) => `${formatNum(Number(value), 0)}%`}
                 />
-                <RechartsTooltip content={<EvolutionTooltip series={data.series} />} />
+                <RechartsTooltip content={<EvolutionTooltip series={data.series} lens={lens} />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {data.series.map((series) => (
                   <Line
@@ -911,7 +1141,7 @@ function MixEvolutionSection({
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                   tickFormatter={(value) => `${formatNum(Number(value) * 100, 0)}%`}
                 />
-                <RechartsTooltip content={<EvolutionTooltip series={data.series} stacked />} />
+                <RechartsTooltip content={<EvolutionTooltip series={data.series} lens={lens} stacked />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {data.series.map((series) => (
                   <Area
@@ -950,6 +1180,7 @@ function MixTransferCalculator({
   maxTransferKg,
   impact,
   impactPct,
+  lens,
   periodLabel,
 }: {
   skuOptions: { value: string; label: string }[];
@@ -966,6 +1197,7 @@ function MixTransferCalculator({
   maxTransferKg: number;
   impact: number;
   impactPct: number;
+  lens: MixLens;
   periodLabel: string;
 }) {
   const source = direction === "comparison_to_reference" ? comparisonStats : referenceStats;
@@ -988,7 +1220,8 @@ function MixTransferCalculator({
           </div>
           <h2 className="text-base font-semibold text-foreground">Calculadora de transferencia de mix entre SKUs</h2>
           <p className="max-w-3xl text-xs text-muted-foreground">
-            Escolha dois SKUs de {periodLabel}, mova volume entre eles e veja o impacto estimado na margem. Nada aqui altera
+            Escolha dois SKUs de {periodLabel}, mova volume entre eles e veja o impacto estimado em{" "}
+            {lens === "margin" ? "margem" : "preço médio"}. Nada aqui altera
             a base real do aplicativo.
           </p>
         </div>
@@ -1081,7 +1314,7 @@ function MixTransferCalculator({
               tone={tone}
             />
             <MetricPill
-              label="% da margem atual"
+              label={lens === "margin" ? "% da margem atual" : "% da receita atual"}
               value={`${impactPct > 0 ? "+" : ""}${formatNum(impactPct * 100, 2)}%`}
               tone={tone}
             />
@@ -1175,6 +1408,7 @@ function SkuStatCard({ label, stats }: { label: string; stats: SkuMixStats | nul
             <StatLine label="ROL" value={formatBRL(stats.rol, { compact: true })} />
             <StatLine label="Custo" value={formatBRL(stats.cost, { compact: true })} />
             <StatLine label="Margem/kg" value={formatBRL(stats.marginPerKg, { digits: 2 })} />
+            <StatLine label="Preço/kg" value={formatBRL(stats.pricePerKg, { digits: 2 })} />
           </div>
         </div>
       ) : (
@@ -1267,12 +1501,14 @@ function EvolutionTooltip({
   payload,
   label,
   series,
+  lens,
   stacked = false,
 }: {
   active?: boolean;
   payload?: Array<{ dataKey?: string | number; value?: number; payload?: Record<string, unknown>; color?: string; name?: string }>;
   label?: string;
   series: EvolutionSeries[];
+  lens: MixLens;
   stacked?: boolean;
 }) {
   if (!active || !payload?.length) return null;
@@ -1287,7 +1523,7 @@ function EvolutionTooltip({
             const key = String(item.dataKey);
             const meta = seriesByKey.get(key);
             if (!meta) return null;
-            const margin = Number(item.payload?.[`${key}Margin`] ?? 0);
+            const contribution = Number(item.payload?.[`${key}Margin`] ?? 0);
             const shareValue = Number(item.value ?? 0);
             const share = stacked ? shareValue * 100 : shareValue;
             return (
@@ -1296,8 +1532,8 @@ function EvolutionTooltip({
                 <span className="truncate text-muted-foreground">{meta.label}</span>
                 <span className="font-semibold text-foreground">{formatNum(share, 1)}%</span>
                 <span />
-                <span className="text-muted-foreground">Margem</span>
-                <span className="text-right font-medium">{formatBRL(margin, { compact: true })}</span>
+                <span className="text-muted-foreground">{lens === "margin" ? "Margem" : "Receita"}</span>
+                <span className="text-right font-medium">{formatBRL(contribution, { compact: true })}</span>
               </div>
             );
           })}
@@ -1408,6 +1644,7 @@ function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
       cost: 0,
       margin: 0,
       marginPerKg: 0,
+      pricePerKg: 0,
     };
     current.volumeKg += row.volumeKg;
     current.rol += row.rol;
@@ -1419,6 +1656,7 @@ function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
 
   for (const stats of map.values()) {
     stats.marginPerKg = stats.volumeKg !== 0 ? stats.margin / stats.volumeKg : 0;
+    stats.pricePerKg = stats.volumeKg !== 0 ? stats.rol / stats.volumeKg : 0;
   }
   return map;
 }
@@ -1587,6 +1825,7 @@ function buildEvolutionData(
   months: { periodo: string; label: string; fy: string; ano: number; mes: number }[],
   dimension: EvolutionDimension,
   selectedSkus: string[] = [],
+  lens: MixLens = "margin",
 ): EvolutionData {
   const monthList = months
     .filter((month) => rows.some((row) => row.periodo === month.periodo))
@@ -1617,7 +1856,7 @@ function buildEvolutionData(
     }
     const current = byDimension.get(key) ?? { volume: 0, margin: 0 };
     current.volume += row.volumeKg;
-    current.margin += row.contribMarginal;
+    current.margin += lens === "margin" ? row.contribMarginal : row.rol;
     byDimension.set(key, current);
   }
 
