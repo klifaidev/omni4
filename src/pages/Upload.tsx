@@ -3,15 +3,24 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { MissingMappingsAlert } from "@/components/pricing/MissingMappingsAlert";
 import { UploadQueue } from "@/components/pricing/UploadQueue";
 import { ExportDeparasCard } from "@/components/pricing/ExportDeparasCard";
+import { CustomTableEditorDialog } from "@/components/pricing/CustomTableEditorDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
 import { useBudget, getBudgetMonthsInfo } from "@/store/budget";
 import { useForecast, getForecastCyclesInfo, getForecastMonthsInfo } from "@/store/forecast";
 import { useRolling, getRollingCyclesInfo, getRollingMonthsInfo } from "@/store/rolling";
+import {
+  CUSTOM_TABLES_FILE,
+  createCustomTableDraft,
+  parseCustomTablesPayload,
+  serializeCustomTables,
+  useCustomTables,
+  type CustomTable,
+} from "@/store/customTables";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { useMonthsInfo } from "@/store/selectors";
-import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, TrendingUp } from "lucide-react";
+import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, TrendingUp, Pencil, Plus } from "lucide-react";
 import { monthLabel } from "@/lib/format";
 import { getFreshness, type FreshnessStatus } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
@@ -159,6 +168,7 @@ const TIPO_LABELS: Record<TipoBase, string> = {
   forecast: "Forecast",
   rolling: "Rolling",
   demanda: "Demanda",
+  personalizado: "Personalizado",
   deparaInovacao: "De/Para Inovação",
 };
 
@@ -202,6 +212,11 @@ export default function Upload() {
   const rollingMonths = useMemo(() => getRollingMonthsInfo(rollingRows), [rollingRows]);
   const rollingCycles = useMemo(() => getRollingCyclesInfo(rollingRows), [rollingRows]);
 
+  const customTables = useCustomTables((s) => s.tables);
+  const setCustomTables = useCustomTables((s) => s.setTables);
+  const [customEditorOpen, setCustomEditorOpen] = useState(false);
+  const [editingCustomTable, setEditingCustomTable] = useState<CustomTable | null>(null);
+
   const setParsingStart = usePricing((s) => s.setParsingStart);
   const setParsingEnd = usePricing((s) => s.setParsingEnd);
   const setInovacaoDepara = useInovacaoDepara((s) => s.setDepara);
@@ -241,8 +256,29 @@ export default function Upload() {
       rolling: !!info.rolling,
       demanda: !!info.demanda,
       deparaInovacao: !!info.deparaInovacao,
+      personalizado: !!info.personalizado,
     });
   }, [basesLocais.isElectron, basesLocais.infoBasesSalvas]);
+
+  const persistCustomTables = useCallback(async (tables: CustomTable[], successMessage?: string) => {
+    setCustomTables(tables);
+    if (!basesLocais.isElectron) {
+      if (successMessage) toast.success(successMessage);
+      return;
+    }
+    const file = new File(
+      [serializeCustomTables(tables)],
+      CUSTOM_TABLES_FILE,
+      { type: "application/json", lastModified: Date.now() },
+    );
+    const result = await basesLocais.salvarBase("personalizado", file);
+    if (result.ok) {
+      if (successMessage) toast.success(successMessage);
+      await refreshInfoSalvas();
+    } else {
+      toast.error("Falha ao salvar tabelas personalizadas localmente.");
+    }
+  }, [basesLocais.isElectron, basesLocais.salvarBase, refreshInfoSalvas, setCustomTables]);
 
   useEffect(() => { refreshInfoSalvas(); }, [refreshInfoSalvas]);
 
@@ -262,6 +298,17 @@ export default function Upload() {
             }
           }
         } catch { toast.error("Erro ao carregar De/Para de Inovação salvo."); }
+      }
+      if (info.personalizado) {
+        try {
+          const savedFiles = await basesLocais.carregarBase("personalizado");
+          const libraryFile = savedFiles.find((file) => file.name === CUSTOM_TABLES_FILE) ?? savedFiles[savedFiles.length - 1];
+          if (libraryFile) {
+            setCustomTables(parseCustomTablesPayload(await libraryFile.text()));
+          }
+        } catch {
+          toast.error("Erro ao carregar tabelas personalizadas salvas.");
+        }
       }
       if (files.length === 0 && info.ke30) {
         toast.info("Carregando base KE30 salva...");
@@ -386,11 +433,14 @@ export default function Upload() {
   const handleDeleteBase = useCallback(
     async (tipo: TipoBase, nomeArquivo?: string) => {
       await basesLocais.deletarBase(tipo, nomeArquivo);
+      if (tipo === "personalizado" && (!nomeArquivo || nomeArquivo === CUSTOM_TABLES_FILE)) {
+        setCustomTables([]);
+      }
       toast.success(nomeArquivo ? `Arquivo "${nomeArquivo}" removido.` : "Base local removida.");
       setDeletePending(null);
       await refreshInfoSalvas();
     },
-    [basesLocais.deletarBase, refreshInfoSalvas],
+    [basesLocais.deletarBase, refreshInfoSalvas, setCustomTables],
   );
 
   const handleSaveFileFromQueue = useCallback(
@@ -423,6 +473,25 @@ export default function Upload() {
     () => new Set(Object.entries(basesSalvas).filter(([, v]) => v).map(([k]) => k)),
     [basesSalvas],
   );
+
+  const openCustomTable = useCallback((table?: CustomTable) => {
+    setEditingCustomTable(table ?? createCustomTableDraft());
+    setCustomEditorOpen(true);
+  }, []);
+
+  const handleSaveCustomTable = useCallback(async (table: CustomTable) => {
+    const exists = customTables.some((current) => current.id === table.id);
+    const next = exists
+      ? customTables.map((current) => (current.id === table.id ? table : current))
+      : [...customTables, table];
+    await persistCustomTables(next, exists ? "Tabela personalizada atualizada." : "Tabela personalizada criada.");
+  }, [customTables, persistCustomTables]);
+
+  const handleDeleteCustomTable = useCallback(async (id: string) => {
+    const table = customTables.find((current) => current.id === id);
+    const next = customTables.filter((current) => current.id !== id);
+    await persistCustomTables(next, table ? `Tabela "${table.name}" removida.` : "Tabela removida.");
+  }, [customTables, persistCustomTables]);
 
   const handleLoadDemo = () => {
     clearAll();
@@ -504,7 +573,7 @@ export default function Upload() {
 
   return (
     <>
-      <Topbar title="Upload / Bases" subtitle="Gerencie os arquivos de dados Real, Budget, Forecast e Rolling" />
+      <Topbar title="Upload / Bases" subtitle="Gerencie Real, Budget, Forecast, Rolling e tabelas personalizadas" />
       <div className="space-y-6 px-8 py-6">
         <MissingMappingsAlert />
 
@@ -627,6 +696,64 @@ export default function Upload() {
             <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/70 backdrop-blur-sm">
               <Loader2 className="h-7 w-7 animate-spin text-primary" />
               <span className="text-sm text-muted-foreground">Processando arquivo...</span>
+            </div>
+          )}
+        </GlassCard>
+
+        <GlassCard>
+          <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">Personalizado</h3>
+                <p className="max-w-2xl text-[11px] text-muted-foreground">
+                  Crie tabelas livres dentro do Omni4, colando dados do Excel ou digitando diretamente numa grade editável.
+                </p>
+              </div>
+            </div>
+            <Button className="gap-2" onClick={() => openCustomTable()}>
+              <Plus className="h-4 w-4" />
+              Inserir dados
+            </Button>
+          </header>
+
+          {customTables.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center">
+              <div className="text-sm font-medium">Nenhuma tabela personalizada ainda</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Use para metas, concorrentes, premissas ou qualquer base pequena que não venha de arquivo.
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+              {customTables.map((table) => {
+                const filledRows = table.rows.filter((row) => row.some((cell) => String(cell ?? "").trim() !== "")).length;
+                return (
+                  <div key={table.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold" title={table.name}>{table.name}</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {table.columns.length} coluna(s) · {filledRows} linha(s) preenchida(s)
+                        </div>
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          Atualizada em {new Date(table.updatedAt).toLocaleString("pt-BR")}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openCustomTable(table)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteCustomTable(table.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </GlassCard>
@@ -858,7 +985,7 @@ export default function Upload() {
               <h3 className="text-sm font-medium">Bases salvas localmente</h3>
             </header>
             <div className="space-y-2">
-              {(["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao"] as const).map((tipo) => {
+              {(["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"] as const).map((tipo) => {
                 const info = infoSalvas[tipo];
                 if (!info) return null;
                 return (
@@ -909,6 +1036,13 @@ export default function Upload() {
       </div>
 
       {/* Dialog: confirmar substituição de base salva (processa fila) */}
+      <CustomTableEditorDialog
+        open={customEditorOpen}
+        table={editingCustomTable}
+        onOpenChange={setCustomEditorOpen}
+        onSave={handleSaveCustomTable}
+      />
+
       <AlertDialog
         open={pendingSaveQueue.length > 0}
         onOpenChange={(open) => { if (!open) setPendingSaveQueue((prev) => prev.slice(1)); }}

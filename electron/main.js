@@ -447,7 +447,7 @@ ipcMain.handle("bases:info", async () => {
     const dir = getBasesDir();
     if (!fs.existsSync(dir)) return { ok: true, bases: {} };
     const bases = {};
-    for (const tipo of ["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao"]) {
+    for (const tipo of ["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"]) {
       const subDir = path.join(dir, tipo);
       if (!fs.existsSync(subDir)) continue;
       const arquivos = fs.readdirSync(subDir).sort((a, b) => {
