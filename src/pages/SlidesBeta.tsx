@@ -1010,7 +1010,7 @@ function CommentsThread({
 function FullscreenCustomEditor({
   open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
   currentUser, onCommentEvent, readOnly = false,
-  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {}, isStandby = false,
+  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {}, isStandby = false, onMinimize,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1025,6 +1025,7 @@ function FullscreenCustomEditor({
   getCollabYDoc?: (item: Extract<SlideItem, { kind: "custom" }>) => Y.Doc | null;
   textAwarenessBySlide?: Record<string, YjsTextAwarenessState[]>;
   isStandby?: boolean;
+  onMinimize?: () => void;
 }) {
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
@@ -1311,6 +1312,7 @@ function FullscreenCustomEditor({
                 collabYDoc={currentCustomYDoc}
                 textAwareness={textAwarenessBySlide[current.id] ?? []}
                 isStandby={isStandby}
+                onMinimize={onMinimize}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -3698,6 +3700,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         getCollabYDoc={ensureCustomYProvider}
         textAwarenessBySlide={textAwarenessBySlide}
         isStandby={isStandby}
+        onMinimize={onMinimize}
       />
 
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>

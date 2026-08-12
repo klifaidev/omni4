@@ -35,6 +35,7 @@ import {
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Loader2, MessageSquare, Minus, MoreHorizontal,
+  PanelRightClose,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -426,6 +427,7 @@ interface Props {
   textAwareness?: CustomTextAwareness[];
   /** True when the Slides workspace is kept alive but hidden in standby. */
   isStandby?: boolean;
+  onMinimize?: () => void;
 }
 
 function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
@@ -433,6 +435,7 @@ function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
     && prev.config === next.config
     && prev.readOnly === next.readOnly
     && prev.isStandby === next.isStandby
+    && prev.onMinimize === next.onMinimize
     && prev.collabYDoc === next.collabYDoc
     && prev.collaborators === next.collaborators
     && prev.textAwareness === next.textAwareness;
@@ -491,6 +494,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   collabYDoc,
   textAwareness = [],
   isStandby = false,
+  onMinimize,
 }: Props) {
   if (isSlidePerfEnabled()) recordSlideRender("CustomSlideEditor", slideId);
   // Bind the parent's config <-> internal Zustand+temporal store first so
@@ -3178,6 +3182,26 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             title="Apresentar (F5)">
             <Play className="h-3 w-3" /> Apresentar
           </Button>
+          {onMinimize && (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-5" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 transition-transform hover:-translate-x-0.5"
+                    onClick={onMinimize}
+                    title="Minimizar Slides"
+                    aria-label="Minimizar editor de Slides em standby"
+                  >
+                    <PanelRightClose className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Minimizar Slides e manter este canvas em standby</TooltipContent>
+              </Tooltip>
+            </>
+          )}
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button
             size="icon"
