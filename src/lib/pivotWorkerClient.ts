@@ -39,6 +39,7 @@ let rowsSequence = 0;
 const pending = new Map<number, Pending>();
 const rowsKeys = new WeakMap<Record<string, unknown>[], string>();
 const registeredRows = new Set<string>();
+let activeRowsKey: string | null = null;
 
 export function createEmptyPivotResult(): PivotResult {
   return {
@@ -120,6 +121,8 @@ function postToWorker(
   const instance = getWorker();
   if (!instance) return Promise.reject(new Error("Worker indisponível."));
   const rowsKey = getRowsKey(rows);
+  if (activeRowsKey && activeRowsKey !== rowsKey) releasePivotRows(activeRowsKey);
+  activeRowsKey = rowsKey;
   const id = ++requestId;
   return new Promise<PivotResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
@@ -132,6 +135,29 @@ function postToWorker(
   });
 }
 
+export function releasePivotRows(rowsKey?: string): void {
+  if (rowsKey) registeredRows.delete(rowsKey);
+  else registeredRows.clear();
+  if (rowsKey && activeRowsKey === rowsKey) activeRowsKey = null;
+  if (!rowsKey) activeRowsKey = null;
+  try {
+    worker?.postMessage({ type: "releaseRows", rowsKey });
+  } catch {
+    // Se o worker ja foi encerrado, a memoria dele tambem ja foi liberada.
+  }
+}
+
+export function disposePivotWorker(): void {
+  const error = new Error("Calculo da tabela dinamica cancelado porque a pagina foi fechada.");
+  error.name = "AbortError";
+  pending.forEach((entry) => entry.reject(error));
+  pending.clear();
+  registeredRows.clear();
+  activeRowsKey = null;
+  worker?.terminate();
+  worker = null;
+}
+
 export async function computePivotAsync(
   rows: Record<string, unknown>[],
   config: PivotConfig,
@@ -139,7 +165,8 @@ export async function computePivotAsync(
   if (!canUseWorker(config)) return computePivot(rows, config);
   try {
     return await postToWorker(rows, config);
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
     return computePivot(rows, config);
   }
 }

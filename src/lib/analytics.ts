@@ -8,9 +8,11 @@ type ApplyFiltersCacheEntry = {
   key: string;
   value: PricingRow[];
   usedAt: number;
+  rowCount: number;
 };
 
-const APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS = 80;
+const APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS = 12;
+const APPLY_FILTERS_CACHE_MAX_ROWS_PER_ROWS = 1_200_000;
 let applyFiltersTick = 0;
 let applyFiltersCacheHits = 0;
 let applyFiltersCacheMisses = 0;
@@ -30,10 +32,18 @@ function buildApplyFiltersCacheKey(filters: Filters, selectedPeriods: string[] |
 }
 
 function trimApplyFiltersCache(cache: Map<string, ApplyFiltersCacheEntry>): void {
-  if (cache.size <= APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS) return;
+  let cachedRows = 0;
+  for (const entry of cache.values()) cachedRows += entry.rowCount;
+  if (cache.size <= APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS && cachedRows <= APPLY_FILTERS_CACHE_MAX_ROWS_PER_ROWS) {
+    return;
+  }
+
   const entries = Array.from(cache.values()).sort((a, b) => a.usedAt - b.usedAt);
-  const removeCount = cache.size - APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS;
-  for (let i = 0; i < removeCount; i += 1) cache.delete(entries[i].key);
+  for (const entry of entries) {
+    if (cache.size <= APPLY_FILTERS_CACHE_MAX_ENTRIES_PER_ROWS && cachedRows <= APPLY_FILTERS_CACHE_MAX_ROWS_PER_ROWS) break;
+    cache.delete(entry.key);
+    cachedRows -= entry.rowCount;
+  }
 }
 
 export function applyFiltersUncached(
@@ -73,13 +83,18 @@ export function applyFilters(
 
   applyFiltersCacheMisses += 1;
   const value = applyFiltersUncached(rows, filters, selectedPeriods);
-  rowsCache.set(key, { key, value, usedAt: ++applyFiltersTick });
+  rowsCache.set(key, { key, value, usedAt: ++applyFiltersTick, rowCount: value.length });
   trimApplyFiltersCache(rowsCache);
   return value;
 }
 
-export function clearApplyFiltersCacheForTest(): void {
+export function clearApplyFiltersCache(): void {
   applyFiltersCache = new WeakMap<PricingRow[], Map<string, ApplyFiltersCacheEntry>>();
+  applyFiltersTick = 0;
+}
+
+export function clearApplyFiltersCacheForTest(): void {
+  clearApplyFiltersCache();
   applyFiltersTick = 0;
   applyFiltersCacheHits = 0;
   applyFiltersCacheMisses = 0;

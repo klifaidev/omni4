@@ -49,7 +49,7 @@ import {
   type PivotRowHeader,
   type PivotSizeEstimate,
 } from "@/lib/pivot";
-import { computePivotAsync, createEmptyPivotResult } from "@/lib/pivotWorkerClient";
+import { computePivotAsync, createEmptyPivotResult, disposePivotWorker } from "@/lib/pivotWorkerClient";
 import type { PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { Button } from "@/components/ui/button";
@@ -522,6 +522,12 @@ export function PivotBuilder({
     setFilterVals({});
     setSort(null);
   }, [mode]);
+
+  useEffect(() => {
+    return () => {
+      disposePivotWorker();
+    };
+  }, []);
 
   const measureCatalog = useMemo(() => measuresFor(mode), [mode]);
   const measureMap = useMemo(

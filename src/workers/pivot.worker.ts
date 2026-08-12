@@ -16,6 +16,11 @@ type PivotWorkerRequest = {
   config: PivotWorkerConfig;
 };
 
+type PivotWorkerReleaseRequest = {
+  type: "releaseRows";
+  rowsKey?: string;
+};
+
 const rowsByKey = new Map<string, Record<string, unknown>[]>();
 
 function rowsFor(request: PivotWorkerRequest): Record<string, unknown>[] {
@@ -91,8 +96,14 @@ function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
   };
 }
 
-self.onmessage = (event: MessageEvent<PivotWorkerRequest>) => {
+self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseRequest>) => {
   const request = event.data;
+  if ("type" in request && request.type === "releaseRows") {
+    if (request.rowsKey) rowsByKey.delete(request.rowsKey);
+    else rowsByKey.clear();
+    return;
+  }
+
   try {
     const rows = rowsFor(request);
     const result = computePivot(rows, hydrateConfig(request.config));

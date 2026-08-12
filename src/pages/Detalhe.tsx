@@ -6,7 +6,7 @@ import { PivotBuilder } from "@/components/pricing/PivotBuilder";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { applyFilters } from "@/lib/analytics";
+import { applyFilters, clearApplyFiltersCache } from "@/lib/analytics";
 import { applyBudgetFilters } from "@/lib/budget";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MoveHorizontal, FileSpreadsheet } from "lucide-react";
@@ -142,6 +142,10 @@ export default function Detalhe() {
     () => (fn: () => void) => setExportFn(() => fn),
     [],
   );
+
+  useEffect(() => {
+    return () => clearApplyFiltersCache();
+  }, []);
   const excelAction = exportFn ? (
     <Button
       size="sm"
