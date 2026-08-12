@@ -1285,6 +1285,7 @@ function RankingSection({
         );
       },
     },
+    { key: "cmCompPct", label: "CM %", align: "right", format: (v) => formatPct(Number(v)) },
     {
       key: "deltaPrecoRs",
       label: "Efeito Preço (R$)",

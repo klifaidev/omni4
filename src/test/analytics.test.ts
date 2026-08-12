@@ -325,4 +325,16 @@ describe("computePriceDecomposition", () => {
     expect(res!.efeitoPrecoRsKg + res!.efeitoMixRsKg).toBeCloseTo(res!.variacaoTotal, 10);
     expect(res!.skus.some((s) => s.sku === "__price_decomp_residual__")).toBe(true);
   });
+
+  it("calcula CM% do periodo comparado por SKU no ranking de preco", () => {
+    const rows = [
+      makeRow({ periodo: "004.2026", mes: 4, sku: "A", volumeKg: 100, rol: 1000, contribMarginal: 300 }),
+      makeRow({ periodo: "005.2026", mes: 5, sku: "A", volumeKg: 100, rol: 1200, contribMarginal: 420 }),
+    ];
+
+    const res = computePriceDecomposition(rows, "004.2026", "005.2026", "month");
+    const sku = res?.skus.find((item) => item.sku === "A");
+
+    expect(sku?.cmCompPct).toBeCloseTo(420 / 1200, 6);
+  });
 });

@@ -846,6 +846,7 @@ export interface PriceDecompositionSku {
   skuDesc: string;
   precoBase: number;
   precoComp: number;
+  cmCompPct: number;
   deltaPreco: number;
   deltaPrecoRs: number;
   shareBase: number;
@@ -882,7 +883,7 @@ export function computePriceDecomposition(
   if (!baseKey || !compKey || baseKey === compKey) return null;
   const keyOf = (r: PricingRow) => (periodMode === "fy" ? r.fy : r.periodo);
 
-  interface Agg { vol: number; rol: number; desc: string }
+  interface Agg { vol: number; rol: number; cm: number; desc: string }
   const aggBase = new Map<string, Agg>();
   const aggComp = new Map<string, Agg>();
   let volTotalBase = 0, volTotalComp = 0, rolTotalBase = 0, rolTotalComp = 0;
@@ -892,9 +893,10 @@ export function computePriceDecomposition(
     const skuKey = r.sku || r.skuDesc || "—";
     const target = k === baseKey ? aggBase : k === compKey ? aggComp : null;
     if (!target) continue;
-    const cur = target.get(skuKey) ?? { vol: 0, rol: 0, desc: r.skuDesc || skuKey };
+    const cur = target.get(skuKey) ?? { vol: 0, rol: 0, cm: 0, desc: r.skuDesc || skuKey };
     cur.vol += r.volumeKg;
     cur.rol += r.rol;
+    cur.cm += r.contribMarginal;
     if (r.skuDesc && !cur.desc) cur.desc = r.skuDesc;
     target.set(skuKey, cur);
     if (k === baseKey) { volTotalBase += r.volumeKg; rolTotalBase += r.rol; }
@@ -920,6 +922,7 @@ export function computePriceDecomposition(
     if (volumeBase === 0 && volumeComp === 0) continue;
     const precoBase = volumeBase !== 0 ? (a!.rol / volumeBase) : 0;
     const precoComp = volumeComp !== 0 ? (b!.rol / volumeComp) : 0;
+    const cmCompPct = b && b.rol !== 0 ? b.cm / b.rol : 0;
     const shareBase = volTotalBase > 0 ? volumeBase / volTotalBase : 0;
     const shareComp = volTotalComp > 0 ? volumeComp / volTotalComp : 0;
     const deltaMixShare = shareComp - shareBase;
@@ -940,6 +943,7 @@ export function computePriceDecomposition(
       skuDesc: (b?.desc || a?.desc || k),
       precoBase,
       precoComp,
+      cmCompPct,
       deltaPreco,
       deltaPrecoRs,
       shareBase,
@@ -960,6 +964,7 @@ export function computePriceDecomposition(
       skuDesc: "Ajustes sem volume / resíduo",
       precoBase: 0,
       precoComp: 0,
+      cmCompPct: 0,
       deltaPreco: 0,
       deltaPrecoRs: 0,
       shareBase: 0,
