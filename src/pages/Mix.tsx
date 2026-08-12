@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, BookOpen, Calendar, CalendarDays, Filter, Layers3, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, BookOpen, Calendar, CalendarDays, Filter, Layers3, TrendingDown, TrendingUp } from "lucide-react";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -53,6 +53,17 @@ type SkuMixStats = {
   margin: number;
   marginPerKg: number;
 };
+type MixConcentration = {
+  score: number;
+  label: "Baixa" | "Moderada" | "Alta";
+  description: string;
+};
+type MixRiskAlert = {
+  sku: string;
+  name: string;
+  marginPerKg: number;
+  shareDropPp: number;
+};
 
 const FILTER_FIELDS: FilterField[] = [
   { key: "marca", label: "Marca" },
@@ -80,6 +91,7 @@ export default function Mix() {
   const [comparisonSku, setComparisonSku] = useState<string | null>(null);
   const [transferDirection, setTransferDirection] = useState<MixTransferDirection>("comparison_to_reference");
   const [transferKg, setTransferKg] = useState(0);
+  const evolutionSectionRef = useRef<HTMLDivElement | null>(null);
   const lastAutoPairRef = useRef<{ mode: PeriodMode; base: string; comp: string } | null>(null);
 
   const periodOptions = useMemo(
@@ -234,6 +246,9 @@ export default function Mix() {
     ? (targetStats.marginPerKg - sourceStats.marginPerKg) * transferKg
     : 0;
   const transferImpactPct = totalCurrentMargin !== 0 ? transferImpact / Math.abs(totalCurrentMargin) : 0;
+  const concentration = useMemo(() => buildMixConcentration(comparisonRows), [comparisonRows]);
+  const adjustedMixMargin = result ? result.current - mixTotal : 0;
+  const mixRiskAlerts = useMemo(() => buildMixRiskAlerts(evolutionRows, months), [evolutionRows, months]);
 
   useEffect(() => {
     setTransferKg((current) => Math.min(current, maxTransferKg));
@@ -369,9 +384,14 @@ export default function Mix() {
                       {mixTotal > 0 ? "+" : ""}{formatBRL(mixTotal, { compact: true })}
                     </div>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <MetricPill label="Impacto em margem" value={`${mixMarginPp > 0 ? "+" : ""}${formatNum(mixMarginPp, 1)} p.p.`} tone={mixTone} />
                     <MetricPill label="SKUs analisados" value={formatNum(result.skuDetails.length, 0)} tone="neutral" />
+                    <MetricPill label="Concentração" value={formatNum(concentration.score, 1)} tone={concentration.label === "Alta" ? "negative" : concentration.label === "Moderada" ? "neutral" : "positive"} />
+                  </div>
+                  <div className="rounded-xl border border-border/35 bg-secondary/25 px-3 py-2">
+                    <div className="text-xs font-semibold text-foreground">Concentração {concentration.label.toLowerCase()}</div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{concentration.description}</p>
                   </div>
                   {Math.abs(lowVolumeResidual) >= 1 && (
                     <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -406,6 +426,42 @@ export default function Mix() {
               </GlassCard>
             </div>
 
+            {mixRiskAlerts.length > 0 && (
+              <GlassCard className="border-warning/35 bg-warning/5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold text-foreground">Risco proativo de mix</h2>
+                      <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                        SKUs de margem alta perderam participação por pelo menos três quedas consecutivas no ano fiscal.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {mixRiskAlerts.slice(0, 4).map((alert) => (
+                          <Badge key={alert.sku} variant="secondary" className="bg-warning/15 text-warning">
+                            {alert.name} · {formatNum(alert.shareDropPp, 1)} p.p.
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEvolutionDimension("sku");
+                      setSelectedEvolutionSkus(mixRiskAlerts.slice(0, 4).map((alert) => alert.sku));
+                      requestAnimationFrame(() => evolutionSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                    }}
+                  >
+                    Investigar na evolução
+                  </Button>
+                </div>
+              </GlassCard>
+            )}
+
             <div className="grid gap-4 xl:grid-cols-2">
               <SkuMixRankingCard
                 title="Maiores Ofensores"
@@ -421,15 +477,25 @@ export default function Mix() {
               />
             </div>
 
-            <MixEvolutionSection
-              dimension={evolutionDimension}
-              onDimensionChange={setEvolutionDimension}
-              data={evolutionData}
-              skuOptions={skuEvolutionOptions}
-              selectedSkus={selectedEvolutionSkus}
-              onSelectedSkusChange={setSelectedEvolutionSkus}
-              fiscalYear={evolutionFy}
+            <MixAdjustedMarginCard
+              actualMargin={result.current}
+              adjustedMargin={adjustedMixMargin}
+              mixEffect={mixTotal}
+              baseLabel={result.baseLabel}
+              currentLabel={result.currentLabel}
             />
+
+            <div ref={evolutionSectionRef}>
+              <MixEvolutionSection
+                dimension={evolutionDimension}
+                onDimensionChange={setEvolutionDimension}
+                data={evolutionData}
+                skuOptions={skuEvolutionOptions}
+                selectedSkus={selectedEvolutionSkus}
+                onSelectedSkusChange={setSelectedEvolutionSkus}
+                fiscalYear={evolutionFy}
+              />
+            </div>
 
             <MixTransferCalculator
               skuOptions={calculatorSkuOptions}
@@ -505,6 +571,86 @@ function MetricPill({ label, value, tone }: { label: string; value: string; tone
         tone === "neutral" && "text-foreground",
       )}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+function MixAdjustedMarginCard({
+  actualMargin,
+  adjustedMargin,
+  mixEffect,
+  baseLabel,
+  currentLabel,
+}: {
+  actualMargin: number;
+  adjustedMargin: number;
+  mixEffect: number;
+  baseLabel: string;
+  currentLabel: string;
+}) {
+  const maxMagnitude = Math.max(1, Math.abs(actualMargin), Math.abs(adjustedMargin), Math.abs(mixEffect));
+  const mixTone = mixEffect > 0 ? "positive" : mixEffect < 0 ? "negative" : "neutral";
+  return (
+    <GlassCard className="space-y-5">
+      <header>
+        <h2 className="text-base font-semibold text-foreground">Margem real vs. margem com mix ajustado</h2>
+        <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+          Leitura isolada do mix: a margem ajustada remove o efeito de mix calculado pela Bridge PVM entre {baseLabel} e {currentLabel},
+          mantendo o patamar real do período atual como referência.
+        </p>
+      </header>
+      <div className="grid gap-3 md:grid-cols-3">
+        <MetricPill label="Mix de referência" value={formatBRL(adjustedMargin, { compact: true })} tone="neutral" />
+        <MetricPill label="Efeito mix" value={`${mixEffect > 0 ? "+" : ""}${formatBRL(mixEffect, { compact: true })}`} tone={mixTone} />
+        <MetricPill label="Margem real" value={formatBRL(actualMargin, { compact: true })} tone={actualMargin >= adjustedMargin ? "positive" : "negative"} />
+      </div>
+      <div className="space-y-3 rounded-xl border border-border/35 bg-secondary/20 p-4">
+        <AdjustedMarginRow label="Margem com mix de referência" value={adjustedMargin} max={maxMagnitude} tone="neutral" />
+        <AdjustedMarginRow label="Diferença explicada por mix" value={mixEffect} max={maxMagnitude} tone={mixTone} />
+        <AdjustedMarginRow label="Margem real obtida" value={actualMargin} max={maxMagnitude} tone={actualMargin >= adjustedMargin ? "positive" : "negative"} strong />
+      </div>
+    </GlassCard>
+  );
+}
+
+function AdjustedMarginRow({
+  label,
+  value,
+  max,
+  tone,
+  strong = false,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  tone: "positive" | "negative" | "neutral";
+  strong?: boolean;
+}) {
+  const width = `${Math.max(4, (Math.abs(value) / max) * 100)}%`;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+        <span className={cn(strong ? "font-semibold text-foreground" : "text-muted-foreground")}>{label}</span>
+        <span className={cn(
+          "font-semibold tabular-nums",
+          tone === "positive" && "text-success",
+          tone === "negative" && "text-destructive",
+          tone === "neutral" && "text-foreground",
+        )}>
+          {value > 0 && label.includes("Diferen") ? "+" : ""}{formatBRL(value, { compact: true })}
+        </span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-muted/60">
+        <div
+          className={cn(
+            "h-full rounded-full",
+            tone === "positive" && "bg-success",
+            tone === "negative" && "bg-destructive",
+            tone === "neutral" && "bg-primary",
+          )}
+          style={{ width, opacity: strong ? 1 : 0.72 }}
+        />
       </div>
     </div>
   );
@@ -1275,6 +1421,115 @@ function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
     stats.marginPerKg = stats.volumeKg !== 0 ? stats.margin / stats.volumeKg : 0;
   }
   return map;
+}
+
+function buildMixConcentration(rows: PricingRow[]): MixConcentration {
+  const marginBySku = new Map<string, number>();
+  for (const row of rows) {
+    const sku = row.sku?.trim() || row.skuDesc?.trim();
+    if (!sku) continue;
+    marginBySku.set(sku, (marginBySku.get(sku) ?? 0) + row.contribMarginal);
+  }
+
+  const margins = Array.from(marginBySku.values()).map((value) => Math.abs(value)).filter((value) => value > 0);
+  const total = margins.reduce((sum, value) => sum + value, 0);
+  if (total === 0) {
+    return {
+      score: 0,
+      label: "Baixa",
+      description: "Sem margem material no recorte atual para medir concentração de mix.",
+    };
+  }
+
+  const score = margins.reduce((sum, value) => {
+    const share = value / total;
+    return sum + share * share;
+  }, 0) * 100;
+
+  if (score >= 18) {
+    return {
+      score,
+      label: "Alta",
+      description: "A margem depende de poucos SKUs relevantes. Pequenas perdas nesses itens podem pressionar o resultado rapidamente.",
+    };
+  }
+  if (score >= 8) {
+    return {
+      score,
+      label: "Moderada",
+      description: "A margem tem alguns SKUs âncora, mas ainda existe diversificação suficiente para amortecer parte do risco.",
+    };
+  }
+  return {
+    score,
+    label: "Baixa",
+    description: "A margem está bem distribuída entre muitos SKUs, reduzindo dependência de poucos itens de alto desempenho.",
+  };
+}
+
+function buildMixRiskAlerts(
+  rows: PricingRow[],
+  months: { periodo: string; label: string; fy: string; ano: number; mes: number }[],
+): MixRiskAlert[] {
+  const monthList = months
+    .filter((month) => rows.some((row) => row.periodo === month.periodo))
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+  if (monthList.length < 4) return [];
+
+  const totalVolumeByMonth = new Map<string, number>();
+  const skuMonthVolume = new Map<string, Map<string, number>>();
+  const skuStats = new Map<string, { name: string; volume: number; margin: number }>();
+  let totalVolume = 0;
+  let totalMargin = 0;
+
+  for (const row of rows) {
+    const sku = row.sku?.trim();
+    if (!sku) continue;
+    totalVolume += row.volumeKg;
+    totalMargin += row.contribMarginal;
+    totalVolumeByMonth.set(row.periodo, (totalVolumeByMonth.get(row.periodo) ?? 0) + row.volumeKg);
+
+    let byMonth = skuMonthVolume.get(sku);
+    if (!byMonth) {
+      byMonth = new Map();
+      skuMonthVolume.set(sku, byMonth);
+    }
+    byMonth.set(row.periodo, (byMonth.get(row.periodo) ?? 0) + row.volumeKg);
+
+    const current = skuStats.get(sku) ?? { name: row.skuDesc?.trim() || sku, volume: 0, margin: 0 };
+    current.volume += row.volumeKg;
+    current.margin += row.contribMarginal;
+    if (!current.name || current.name === sku) current.name = row.skuDesc?.trim() || sku;
+    skuStats.set(sku, current);
+  }
+
+  const avgMarginPerKg = totalVolume > 0 ? totalMargin / totalVolume : 0;
+  const highMarginThreshold = avgMarginPerKg * 1.2;
+  const alerts: MixRiskAlert[] = [];
+
+  for (const [sku, stats] of skuStats) {
+    if (stats.volume <= 0) continue;
+    const marginPerKg = stats.margin / stats.volume;
+    if (marginPerKg <= highMarginThreshold) continue;
+
+    const volumes = skuMonthVolume.get(sku);
+    const shares = monthList.map((month) => {
+      const total = totalVolumeByMonth.get(month.periodo) ?? 0;
+      return total > 0 ? ((volumes?.get(month.periodo) ?? 0) / total) * 100 : 0;
+    });
+    const recent = shares.slice(-4);
+    const falling = recent.length === 4 && recent.every((share, index) => index === 0 || share < recent[index - 1]);
+    if (!falling) continue;
+
+    alerts.push({
+      sku,
+      name: stats.name,
+      marginPerKg,
+      shareDropPp: recent[0] - recent[recent.length - 1],
+    });
+  }
+
+  return alerts.sort((a, b) => b.shareDropPp - a.shareDropPp).slice(0, 6);
 }
 
 function buildTransferBars(
