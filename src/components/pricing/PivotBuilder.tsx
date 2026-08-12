@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  AlertTriangle,
   Check,
   ChevronDown,
   ChevronRight,
@@ -40,11 +41,13 @@ import {
 } from "@/lib/pivotData";
 import {
   getDrillRowsForCell,
+  estimatePivotSize,
   type PivotColHeader,
   type PivotConfig,
   type PivotMeasure,
   type PivotResult,
   type PivotRowHeader,
+  type PivotSizeEstimate,
 } from "@/lib/pivot";
 import { computePivotAsync, createEmptyPivotResult } from "@/lib/pivotWorkerClient";
 import type { PricingRow } from "@/lib/types";
@@ -102,6 +105,49 @@ const ZONE_LABELS: Record<Zone, string> = {
 const PIVOT_VIRTUAL_ROW_THRESHOLD = 200;
 const PIVOT_VIRTUAL_ROW_HEIGHT = 28;
 const PIVOT_VIRTUAL_OVERSCAN = 12;
+const PIVOT_MAX_VISIBLE_VALUE_CELLS = 750_000;
+const PIVOT_MAX_OBSERVED_CELLS = 350_000;
+const PIVOT_MAX_ROW_HEADERS = 120_000;
+const PIVOT_MAX_COL_HEADERS = 3_000;
+const PIVOT_CLEAR_PREVIOUS_CELL_THRESHOLD = 200_000;
+
+type PivotSafety = {
+  estimate: PivotSizeEstimate;
+  blocked: boolean;
+  reason: string | null;
+};
+
+function buildPivotSafety(estimate: PivotSizeEstimate): PivotSafety {
+  if (estimate.rowHeaderCount > PIVOT_MAX_ROW_HEADERS) {
+    return {
+      estimate,
+      blocked: true,
+      reason: `linhas demais (${formatNum(estimate.rowHeaderCount, 0, true)})`,
+    };
+  }
+  if (estimate.colHeaderCount > PIVOT_MAX_COL_HEADERS) {
+    return {
+      estimate,
+      blocked: true,
+      reason: `colunas demais (${formatNum(estimate.colHeaderCount, 0, true)})`,
+    };
+  }
+  if (estimate.observedCellCount > PIVOT_MAX_OBSERVED_CELLS) {
+    return {
+      estimate,
+      blocked: true,
+      reason: `combinacoes demais (${formatNum(estimate.observedCellCount, 0, true)})`,
+    };
+  }
+  if (estimate.visibleValueCellCount > PIVOT_MAX_VISIBLE_VALUE_CELLS) {
+    return {
+      estimate,
+      blocked: true,
+      reason: `celulas demais (${formatNum(estimate.visibleValueCellCount, 0, true)})`,
+    };
+  }
+  return { estimate, blocked: false, reason: null };
+}
 
 const DIM_GROUPS = ["Tempo", "Produto", "Inovação", "Comercial"] as const;
 
@@ -552,13 +598,34 @@ export function PivotBuilder({
     }),
     [rowsDims, colsDims, selectedMeasures, measureCatalog, filterValsForEngine],
   );
+  const pivotSafety = useMemo(
+    () =>
+      buildPivotSafety(
+        estimatePivotSize(unified as unknown as Record<string, unknown>[], pivotConfig, {
+          observedCellCap: PIVOT_MAX_OBSERVED_CELLS,
+        }),
+      ),
+    [pivotConfig, unified],
+  );
   const [pivot, setPivot] = useState<PivotResult>(() => createEmptyPivotResult());
   const [pivotLoading, setPivotLoading] = useState(false);
 
   useEffect(() => {
     const requestId = ++pivotRequestRef.current;
     let cancelled = false;
+
+    if (pivotSafety.blocked) {
+      setPivot(createEmptyPivotResult());
+      setPivotLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setPivotLoading(true);
+    if (pivotSafety.estimate.visibleValueCellCount > PIVOT_CLEAR_PREVIOUS_CELL_THRESHOLD) {
+      setPivot(createEmptyPivotResult());
+    }
 
     computePivotAsync(unified as unknown as Record<string, unknown>[], pivotConfig)
       .then((result) => {
@@ -578,7 +645,7 @@ export function PivotBuilder({
     return () => {
       cancelled = true;
     };
-  }, [unified, pivotConfig]);
+  }, [unified, pivotConfig, pivotSafety]);
 
   useEffect(() => {
     const groupKeys = pivot.rowHeaders.filter((row) => !row.isLeaf).map((row) => row.key);
@@ -1149,6 +1216,38 @@ export function PivotBuilder({
               })}
             </DropZone>
           </div>
+
+          {pivotSafety.blocked && (
+            <div className="rounded-2xl border border-warning/35 bg-warning/10 p-4 text-warning">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning/15">
+                  <AlertTriangle className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 space-y-2">
+                  <div className="text-sm font-semibold text-foreground">Tabela grande demais para recalcular com seguranca</div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    A configuracao atual geraria {pivotSafety.reason}. Para evitar travamento do aplicativo, o calculo
+                    foi pausado antes de processar a base completa. Adicione filtros, reduza linhas/colunas ou remova
+                    medidas ate a tabela ficar mais enxuta.
+                  </p>
+                  <div className="flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-full border border-warning/25 bg-background/40 px-2 py-1">
+                      {formatNum(pivotSafety.estimate.filteredRowCount, 0, true)} registros filtrados
+                    </span>
+                    <span className="rounded-full border border-warning/25 bg-background/40 px-2 py-1">
+                      {formatNum(pivotSafety.estimate.rowHeaderCount, 0, true)} linhas
+                    </span>
+                    <span className="rounded-full border border-warning/25 bg-background/40 px-2 py-1">
+                      {formatNum(pivotSafety.estimate.colHeaderCount, 0, true)} colunas
+                    </span>
+                    <span className="rounded-full border border-warning/25 bg-background/40 px-2 py-1">
+                      {formatNum(pivotSafety.estimate.visibleValueCellCount, 0, true)} celulas de valor
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div ref={tableRef} className="min-w-0 max-w-full">
             <PivotTable

@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { computePivot, getDrillRowsForCell, type PivotConfig } from "./pivot";
+import { computePivot, estimatePivotSize, getDrillRowsForCell, type PivotConfig } from "./pivot";
 
 describe("computePivot weighted ratio measures", () => {
+  it("estimates pivot result size before materializing the full aggregation", () => {
+    const rows = [
+      { categoria: "A", sku: "1", mes: "Jan", canal: "Direto", valor: 10 },
+      { categoria: "A", sku: "2", mes: "Jan", canal: "Direto", valor: 20 },
+      { categoria: "B", sku: "3", mes: "Fev", canal: "Direto", valor: 30 },
+      { categoria: "C", sku: "4", mes: "Mar", canal: "Online", valor: 40 },
+    ];
+
+    const estimate = estimatePivotSize(rows, {
+      rows: ["categoria", "sku"],
+      cols: ["mes"],
+      filters: { canal: ["Direto"] },
+      values: [
+        { id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" },
+        { id: "count", label: "Count", field: "valor", agg: "count", format: "number" },
+      ],
+    });
+
+    expect(estimate.filteredRowCount).toBe(3);
+    expect(estimate.leafRowCount).toBe(3);
+    expect(estimate.rowHeaderCount).toBe(5);
+    expect(estimate.colHeaderCount).toBe(2);
+    expect(estimate.observedCellCount).toBe(3);
+    expect(estimate.visibleValueCellCount).toBe(20);
+  });
+
   it("resolves original row indexes for cell drill-through lazily", () => {
     const rows = [
       { categoria: "A", mes: "Jan", valor: 10, canal: "Direto" },

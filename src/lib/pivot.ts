@@ -61,6 +61,16 @@ export interface PivotResult {
   grandTotal: Record<string, number | null>;
 }
 
+export interface PivotSizeEstimate {
+  filteredRowCount: number;
+  rowHeaderCount: number;
+  leafRowCount: number;
+  colHeaderCount: number;
+  observedCellCount: number;
+  visibleValueCellCount: number;
+  measureCount: number;
+}
+
 export interface PivotRowHeader {
   key: string;          // chave única da linha (concat dos values)
   values: string[];     // valor por dimensão
@@ -236,6 +246,55 @@ function buildRowHeaders(
     leafHeaders: headers.filter((header) => header.isLeaf),
     keyOf: flat.keyOf,
     groupKeyOf: (r) => dimVal(r, dims[0]),
+  };
+}
+
+export function estimatePivotSize(
+  rows: Record<string, unknown>[],
+  config: Pick<PivotConfig, "rows" | "cols" | "values" | "filters">,
+  options: { observedCellCap?: number } = {},
+): PivotSizeEstimate {
+  const activeFilters = Object.entries(config.filters).filter(([, allowed]) => allowed && allowed.length > 0);
+  const rowKeys = new Set<string>();
+  const rowGroups = new Set<string>();
+  const colKeys = new Set<string>();
+  const observedCells = new Set<string>();
+  const observedCellCap = options.observedCellCap ?? Number.POSITIVE_INFINITY;
+  let filteredRowCount = 0;
+
+  for (const row of rows) {
+    let matches = true;
+    for (const [dim, allowed] of activeFilters) {
+      if (!allowed.includes(dimVal(row, dim))) {
+        matches = false;
+        break;
+      }
+    }
+    if (!matches) continue;
+
+    filteredRowCount += 1;
+    const rowValues = config.rows.map((dim) => dimVal(row, dim));
+    const rowKey = config.rows.length === 0 ? "__all__" : rowValues.join(SEP);
+    const colKey = config.cols.length === 0 ? "__all__" : config.cols.map((dim) => dimVal(row, dim)).join(SEP);
+    rowKeys.add(rowKey);
+    if (config.rows.length > 1) rowGroups.add(rowValues[0] ?? EMPTY);
+    colKeys.add(colKey);
+    if (observedCells.size <= observedCellCap) observedCells.add(`${rowKey}${SEP}${colKey}`);
+  }
+
+  const leafRowCount = config.rows.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : rowKeys.size;
+  const rowHeaderCount = config.rows.length > 1 ? leafRowCount + rowGroups.size : leafRowCount;
+  const colHeaderCount = config.cols.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : colKeys.size;
+  const measureCount = Math.max(1, config.values.length);
+
+  return {
+    filteredRowCount,
+    rowHeaderCount,
+    leafRowCount,
+    colHeaderCount,
+    observedCellCount: observedCells.size,
+    visibleValueCellCount: rowHeaderCount * Math.max(1, colHeaderCount) * measureCount,
+    measureCount,
   };
 }
 

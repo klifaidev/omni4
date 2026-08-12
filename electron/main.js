@@ -3,6 +3,7 @@ const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
+const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 // Configurar electron-log
@@ -20,6 +21,50 @@ autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = "info";
 
 let mainWindow;
+
+function getAppEntryUrl() {
+  if (isDev) return "http://localhost:8080";
+  return pathToFileURL(path.join(__dirname, "../dist/index.html")).toString();
+}
+
+function rendererRecoveryHtml(details) {
+  const reason = details?.reason || "unknown";
+  const exitCode = details?.exitCode ?? "unknown";
+  const appUrl = getAppEntryUrl();
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Omni4 - Recuperacao</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, Arial, sans-serif; background: #0A0D1C; color: #F8FAFC; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, rgba(59,130,246,.20), transparent 34%), #0A0D1C; }
+    main { width: min(560px, calc(100vw - 48px)); border: 1px solid rgba(148,163,184,.28); border-radius: 22px; padding: 28px; background: rgba(15,23,42,.78); box-shadow: 0 24px 80px rgba(0,0,0,.42); }
+    .eyebrow { color: #93C5FD; font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 10px 0 10px; font-size: 24px; line-height: 1.18; }
+    p { margin: 0; color: #CBD5E1; font-size: 14px; line-height: 1.65; }
+    .meta { margin-top: 16px; padding: 12px; border-radius: 14px; background: rgba(15,23,42,.74); color: #94A3B8; font-size: 12px; }
+    button { margin-top: 22px; height: 42px; border: 0; border-radius: 12px; padding: 0 18px; cursor: pointer; color: #08111F; background: #F8FAFC; font-weight: 700; }
+    button:hover { background: #DBEAFE; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Recuperacao do aplicativo</div>
+    <h1>O Omni4 precisou reiniciar a area visual.</h1>
+    <p>Isso normalmente acontece quando uma operacao fica pesada demais para a memoria disponivel. O evento foi registrado no log tecnico para diagnostico.</p>
+    <div class="meta">Motivo reportado pelo Electron: <strong>${reason}</strong><br />Codigo de saida: <strong>${exitCode}</strong></div>
+    <button type="button" onclick="window.location.href = ${JSON.stringify(appUrl)}">Reabrir Omni4</button>
+  </main>
+</body>
+</html>`;
+}
+
+function showRendererRecovery(details) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(rendererRecoveryHtml(details))}`);
+}
 
 function createWindow() {
   const iconPath = path.join(__dirname, "assets", "icon.ico");
@@ -47,12 +92,22 @@ function createWindow() {
 
   // Carregar o app
   if (isDev) {
-    // Porta 8080 conforme vite.config.ts
-    mainWindow.loadURL("http://localhost:8080");
+    mainWindow.loadURL(getAppEntryUrl());
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    mainWindow.loadURL(getAppEntryUrl());
   }
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    const payload = details || {};
+    log.error("=== RENDER PROCESS GONE ===");
+    log.error("Reason:", payload.reason || "unknown");
+    log.error("Exit code:", payload.exitCode ?? "unknown");
+    log.error("URL:", mainWindow?.webContents?.getURL?.() || "unknown");
+    log.error("Timestamp:", new Date().toISOString());
+    log.error("=== FIM RENDER PROCESS GONE ===");
+    if (payload.reason !== "clean-exit") showRendererRecovery(payload);
+  });
 
   // Mostrar quando estiver pronto para evitar flash branco
   mainWindow.once("ready-to-show", () => {
