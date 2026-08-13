@@ -1,6 +1,6 @@
 // Slides Flow store — itens em construção + presets persistidos em localStorage.
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
 import type { CollabEvent } from "@/lib/collaboration";
@@ -167,22 +167,87 @@ function persistedSlidesStateHasContent(raw: string): boolean {
   }
 }
 
-export function backupSlidesFlowRawState(storage: Storage | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {
+function pushSlidesFlowBackupRaw(raw: string, storage: Pick<Storage, "getItem" | "setItem">) {
+  if (!persistedSlidesStateHasContent(raw)) return;
+  const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
+  const existing = existingRaw ? JSON.parse(existingRaw) : [];
+  const backups = Array.isArray(existing) ? existing : [];
+  if (backups[0]?.value === raw) return;
+  const next = [{ createdAt: Date.now(), value: raw }, ...backups]
+    .filter((entry) => entry && typeof entry.value === "string" && persistedSlidesStateHasContent(entry.value))
+    .slice(0, SLIDES_FLOW_BACKUP_LIMIT);
+  storage.setItem(SLIDES_FLOW_BACKUP_KEY, JSON.stringify(next));
+}
+
+export function getLatestSlidesFlowBackupRaw(storage: Pick<Storage, "getItem"> | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {
+  if (!storage) return null;
+  try {
+    const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    if (!Array.isArray(existing)) return null;
+    const backup = existing.find((entry) => entry && typeof entry.value === "string" && persistedSlidesStateHasContent(entry.value));
+    return backup?.value ?? null;
+  } catch (error) {
+    console.warn("[slidesFlow] Falha ao ler backup da esteira.", error);
+    return null;
+  }
+}
+
+export function backupSlidesFlowRawState(storage: Pick<Storage, "getItem" | "setItem"> | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {
   if (!storage) return;
   try {
     const raw = storage.getItem(SLIDES_FLOW_STORAGE_KEY);
     if (!raw || !persistedSlidesStateHasContent(raw)) return;
-    const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
-    const existing = existingRaw ? JSON.parse(existingRaw) : [];
-    const backups = Array.isArray(existing) ? existing : [];
-    if (backups[0]?.value === raw) return;
-    const next = [{ createdAt: Date.now(), value: raw }, ...backups]
-      .filter((entry) => entry && typeof entry.value === "string")
-      .slice(0, SLIDES_FLOW_BACKUP_LIMIT);
-    storage.setItem(SLIDES_FLOW_BACKUP_KEY, JSON.stringify(next));
+    pushSlidesFlowBackupRaw(raw, storage);
   } catch (error) {
     console.warn("[slidesFlow] Falha ao criar backup preventivo da esteira.", error);
   }
+}
+
+export function restoreSlidesFlowRawStateFromBackup(storage: Pick<Storage, "getItem" | "setItem"> | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {
+  if (!storage) return null;
+  try {
+    const backup = getLatestSlidesFlowBackupRaw(storage);
+    if (!backup) return null;
+    storage.setItem(SLIDES_FLOW_STORAGE_KEY, backup);
+    return backup;
+  } catch (error) {
+    console.warn("[slidesFlow] Falha ao restaurar backup da esteira.", error);
+    return null;
+  }
+}
+
+export function createSlidesFlowStorage(storage: Storage | undefined = typeof localStorage !== "undefined" ? localStorage : undefined): StateStorage {
+  return {
+    getItem: (name) => {
+      if (!storage) return null;
+      const raw = storage.getItem(name);
+      if (name !== SLIDES_FLOW_STORAGE_KEY) return raw;
+      if (raw && persistedSlidesStateHasContent(raw)) return raw;
+      const restored = restoreSlidesFlowRawStateFromBackup(storage);
+      if (restored) console.warn("[slidesFlow] Esteira vazia detectada; backup local restaurado automaticamente.");
+      return restored ?? raw;
+    },
+    setItem: (name, value) => {
+      if (!storage) return;
+      if (name === SLIDES_FLOW_STORAGE_KEY) {
+        const previous = storage.getItem(name);
+        if (previous && persistedSlidesStateHasContent(previous)) {
+          pushSlidesFlowBackupRaw(previous, storage);
+          if (!persistedSlidesStateHasContent(value)) {
+            console.warn("[slidesFlow] Gravacao vazia bloqueada para preservar a esteira salva.");
+            return;
+          }
+        }
+      }
+      storage.setItem(name, value);
+    },
+    removeItem: (name) => {
+      if (!storage) return;
+      if (name === SLIDES_FLOW_STORAGE_KEY) backupSlidesFlowRawState(storage);
+      storage.removeItem(name);
+    },
+  };
 }
 
 export const useSlidesFlow = create<SlidesFlowState>()(
@@ -480,7 +545,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
     }),
     {
       name: SLIDES_FLOW_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createSlidesFlowStorage()),
       partialize: (s) => ({ items: s.items, presets: s.presets, transition: s.transition }),
       onRehydrateStorage: () => {
         backupSlidesFlowRawState();

@@ -1256,8 +1256,8 @@ function RankingSection({
         .map((s) => ({
           ...s,
           skuLabel: s.skuDesc || s.sku,
-          volBaseT: s.volumeBase / 1000,
-          volCompT: s.volumeComp / 1000,
+          volBaseKg: s.volumeBase,
+          volCompKg: s.volumeComp,
           mixBasePct: s.shareBase * 100,
           mixCompPct: s.shareComp * 100,
         })),
@@ -1267,8 +1267,8 @@ function RankingSection({
   type Row = (typeof tableRows)[number];
   const columns: DataTableColumn<Row>[] = [
     { key: "skuLabel", label: "SKU", align: "left" },
-    { key: "volBaseT", label: "Vol Base (t)", align: "right", format: (v) => formatNum(Number(v), 1) },
-    { key: "volCompT", label: "Vol Comp (t)", align: "right", format: (v) => formatNum(Number(v), 1) },
+    { key: "volBaseKg", label: "Vol Base (kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
+    { key: "volCompKg", label: "Vol Comp (kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
     { key: "precoBase", label: "Preço Base", align: "right", format: (v) => fmtRsKg(Number(v)) },
     { key: "precoComp", label: "Preço Comp", align: "right", format: (v) => fmtRsKg(Number(v)) },
     {

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { CustomSlideConfig } from "@/lib/customSlide";
-import { backupSlidesFlowRawState, migrateSlidesFlowItemsDataSources, sanitizeSlidesFlowItems } from "./slidesFlow";
+import {
+  backupSlidesFlowRawState,
+  createSlidesFlowStorage,
+  getLatestSlidesFlowBackupRaw,
+  migrateSlidesFlowItemsDataSources,
+  restoreSlidesFlowRawStateFromBackup,
+  sanitizeSlidesFlowItems,
+} from "./slidesFlow";
 
 function customItem(id: string, config: CustomSlideConfig): Extract<SlideItem, { kind: "custom" }> {
   return {
@@ -87,18 +94,20 @@ describe("backupSlidesFlowRawState", () => {
   }
 
   it("creates a preventive backup only when the persisted slide flow has content", () => {
+    const raw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
+      version: 0,
+    });
     const storage = memoryStorage({
-      "pricing.slidesFlow.v1": JSON.stringify({
-        state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
-        version: 0,
-      }),
+      "pricing.slidesFlow.v1": raw,
     });
 
     backupSlidesFlowRawState(storage);
 
     const backups = JSON.parse(storage.getItem("pricing.slidesFlow.v1.backup") ?? "[]") as Array<{ value: string }>;
     expect(backups).toHaveLength(1);
-    expect(backups[0].value).toContain("slide-1");
+    expect(backups[0].value).toBe(raw);
+    expect(getLatestSlidesFlowBackupRaw(storage)).toBe(raw);
   });
 
   it("does not back up an already-empty slide flow", () => {
@@ -112,5 +121,45 @@ describe("backupSlidesFlowRawState", () => {
     backupSlidesFlowRawState(storage);
 
     expect(storage.getItem("pricing.slidesFlow.v1.backup")).toBeNull();
+  });
+
+  it("restores the persisted slide flow from backup when the current value is empty", () => {
+    const emptyRaw = JSON.stringify({
+      state: { items: [], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const backupRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }], presets: [{ id: "preset-1", items: [] }], transition: "none" },
+      version: 0,
+    });
+    const storage = memoryStorage({
+      "pricing.slidesFlow.v1": emptyRaw,
+      "pricing.slidesFlow.v1.backup": JSON.stringify([{ createdAt: 1, value: backupRaw }]),
+    });
+
+    const restored = restoreSlidesFlowRawStateFromBackup(storage);
+
+    expect(restored).toBe(backupRaw);
+    expect(storage.getItem("pricing.slidesFlow.v1")).toBe(backupRaw);
+  });
+
+  it("blocks accidental empty writes when slide flow content already exists", () => {
+    const currentRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const emptyRaw = JSON.stringify({
+      state: { items: [], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const storage = memoryStorage({
+      "pricing.slidesFlow.v1": currentRaw,
+    });
+    const guarded = createSlidesFlowStorage(storage);
+
+    guarded.setItem("pricing.slidesFlow.v1", emptyRaw);
+
+    expect(storage.getItem("pricing.slidesFlow.v1")).toBe(currentRaw);
+    expect(getLatestSlidesFlowBackupRaw(storage)).toBe(currentRaw);
   });
 });
