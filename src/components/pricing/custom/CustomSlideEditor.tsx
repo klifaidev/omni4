@@ -71,7 +71,7 @@ import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
 import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField } from "./chart/Inspector";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
-import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "./BlockRenderer";
+import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS, TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
 import { cn } from "@/lib/utils";
@@ -2641,6 +2641,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         position={{ x: blk.x, y: blk.y }}
                         bounds="parent"
                         scale={scale}
+                        cancel={TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR}
                         lockAspectRatio={shapeLockAspect || aspectResizeIds.has(blk.id)}
                         disableDragging={shapeDisableDrag}
                         enableResizing={shapeResize}

@@ -999,6 +999,9 @@ function buildTableGapValues(
   return result;
 }
 
+const TABLE_COLUMN_RESIZE_HANDLE_CLASS = "custom-table-column-resize-handle";
+export const TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR = `.${TABLE_COLUMN_RESIZE_HANDLE_CLASS}`;
+
 function TableColumnResizeHandle({
   onPointerDown,
   placement = "edge",
@@ -1008,9 +1011,13 @@ function TableColumnResizeHandle({
 }) {
   return (
     <div
+      className={TABLE_COLUMN_RESIZE_HANDLE_CLASS}
+      data-table-column-resize-handle="true"
       data-export-hide="true"
       title="Arrastar para ajustar largura"
       onPointerDown={onPointerDown}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
       style={{
         position: "absolute",
         top: 0,
@@ -1019,7 +1026,9 @@ function TableColumnResizeHandle({
         height: "100%",
         cursor: "col-resize",
         zIndex: 20,
+        pointerEvents: "auto",
         touchAction: "none",
+        userSelect: "none",
       }}
     >
       <div
