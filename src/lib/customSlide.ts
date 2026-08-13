@@ -325,6 +325,10 @@ export interface TableBlock extends BaseBlock {
   showLastColumnVariation?: boolean;
   /** Larguras relativas das colunas renderizadas, em percentual da largura total da tabela. */
   columnWidths?: Record<string, number>;
+  /** Quebra texto nas células da primeira coluna de linhas/dimensões. Default: false */
+  wrapRowText?: boolean;
+  /** Quebra texto nos cabeçalhos de colunas/medidas. Default: false */
+  wrapColumnText?: boolean;
   /** Colunas adicionais de gap do KPI contra uma referÃªncia de perÃ­odo. */
   gapColumns?: TableGapColumn[];
   /** Coluna de gap usada quando sortMode="gap". */
@@ -763,6 +767,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         measures: ["rol_real", "cm_real"],
         rowDims: ["marca"], colDim: "periodo", filters: {},
         autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false,
+        wrapRowText: false, wrapColumnText: false,
         sortMode: "kpi", sortDirection: "desc", manualRowOrder: [] };
     case "chart":
       return {

@@ -1267,8 +1267,8 @@ function RankingSection({
   type Row = (typeof tableRows)[number];
   const columns: DataTableColumn<Row>[] = [
     { key: "skuLabel", label: "SKU", align: "left" },
-    { key: "volBaseKg", label: "Vol Base (kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
-    { key: "volCompKg", label: "Vol Comp (kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
+    { key: "volBaseKg", label: "Vol Base (Kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
+    { key: "volCompKg", label: "Vol Comp (Kg)", align: "right", format: (v) => formatNum(Number(v), 0, true) },
     { key: "precoBase", label: "Preço Base", align: "right", format: (v) => fmtRsKg(Number(v)) },
     { key: "precoComp", label: "Preço Comp", align: "right", format: (v) => fmtRsKg(Number(v)) },
     {

@@ -4596,6 +4596,24 @@ function TableBlockEditor({ block, onChange }: {
         </p>
       </div>
 
+      <Section title="Quebra de texto">
+        <div className="space-y-2">
+          <ToggleRow
+            label="Quebrar texto das linhas"
+            value={!!block.wrapRowText}
+            onChange={(v) => onChange({ wrapRowText: v } as never)}
+          />
+          <ToggleRow
+            label="Quebrar texto das colunas"
+            value={!!block.wrapColumnText}
+            onChange={(v) => onChange({ wrapColumnText: v } as never)}
+          />
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Use quando nomes longos estiverem sendo cortados. A tabela preserva o tamanho do bloco e distribui o texto dentro da célula.
+          </p>
+        </div>
+      </Section>
+
       <Section title="Colunas de gap">
         <div className="space-y-2">
           {gapColumns.length === 0 ? (

@@ -200,7 +200,7 @@ function exportCellStyle(style: React.CSSProperties): React.CSSProperties {
 
 function exportCellContent(
   content: React.ReactNode,
-  opts: { padding: React.CSSProperties["padding"]; align?: React.CSSProperties["textAlign"] },
+  opts: { padding: React.CSSProperties["padding"]; align?: React.CSSProperties["textAlign"]; wrap?: boolean },
 ) {
   const align = String(opts.align ?? "center");
   return (
@@ -214,6 +214,10 @@ function exportCellContent(
       padding: opts.padding,
       lineHeight: 1.15,
       textAlign: opts.align,
+      whiteSpace: opts.wrap ? "normal" : "nowrap",
+      overflow: "hidden",
+      overflowWrap: opts.wrap ? "anywhere" : undefined,
+      wordBreak: opts.wrap ? "break-word" : undefined,
     }}>
       {content}
     </div>
@@ -239,6 +243,30 @@ function ExportPositionedCell({
 }) {
   const align = style.textAlign ?? "center";
   const fontSize = typeof style.fontSize === "number" ? style.fontSize : 12;
+  const shouldWrap = style.whiteSpace === "normal" || style.whiteSpace === "pre-wrap";
+  if (shouldWrap) {
+    return (
+      <div style={{
+        ...style,
+        position: "absolute",
+        left: `${left}%`,
+        top: `${top}%`,
+        width: `${width}%`,
+        height: `${height}%`,
+        boxSizing: "border-box",
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: textAlignToJustify[String(align)] ?? "center",
+        padding: `0 ${padX}px`,
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word",
+      }}>
+        {children}
+      </div>
+    );
+  }
   const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
   const textX = align === "left" ? "0%" : align === "right" ? "100%" : "50%";
   const dx = align === "left" ? padX : align === "right" ? -padX : 0;
@@ -1214,8 +1242,28 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         height: "100%",
       }
     : {};
-  const renderCellHead: React.CSSProperties = { ...cellHead, ...compactTableCell };
-  const renderCellLabel: React.CSSProperties = { ...cellLabel, ...compactTableCell };
+  const wrappedTextStyle: React.CSSProperties = {
+    whiteSpace: "normal",
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+    textOverflow: undefined,
+  };
+  const clippedTextStyle: React.CSSProperties = {
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+  const renderCellHead: React.CSSProperties = {
+    ...cellHead,
+    ...compactTableCell,
+    ...(b.wrapColumnText ? wrappedTextStyle : clippedTextStyle),
+  };
+  const renderCellLabel: React.CSSProperties = {
+    ...cellLabel,
+    ...compactTableCell,
+    ...(b.wrapRowText ? wrappedTextStyle : clippedTextStyle),
+  };
   const renderCellVal: React.CSSProperties = { ...cellVal, ...compactTableCell };
 
   // ---------- Formatação condicional ----------
@@ -1232,7 +1280,11 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         ? <th key={key} style={style}>{content}</th>
         : <td key={key} style={style}>{content}</td>;
     }
-    const inner = exportCellContent(content, { padding: style.padding, align: style.textAlign });
+    const inner = exportCellContent(content, {
+      padding: style.padding,
+      align: style.textAlign,
+      wrap: style.whiteSpace === "normal" || style.whiteSpace === "pre-wrap",
+    });
     const cellStyle = exportCellStyle(style);
     return tag === "th"
       ? <th key={key} style={cellStyle}>{inner}</th>
@@ -1650,8 +1702,10 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
       }}>
         <span style={{
           overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          textOverflow: b.wrapColumnText ? undefined : "ellipsis",
+          whiteSpace: b.wrapColumnText ? "normal" : "nowrap",
+          overflowWrap: b.wrapColumnText ? "anywhere" : undefined,
+          wordBreak: b.wrapColumnText ? "break-word" : undefined,
           maxWidth: "100%",
         }}>
           {content}
