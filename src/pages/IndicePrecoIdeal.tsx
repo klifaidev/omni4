@@ -55,6 +55,7 @@ type CategoryPriceConfig = {
 
 type StoredConfig = {
   selectedCategory?: string;
+  selectedChannel?: string;
   categories: Record<string, CategoryPriceConfig>;
   legacyMatrices?: MatrixSettings;
   loadFailed?: boolean;
@@ -64,6 +65,7 @@ type SkuPriceSuggestion = {
   sku: string;
   name: string;
   category: string;
+  channel: string;
   sabor: string;
   faixaPeso: string;
   formato: string;
@@ -101,6 +103,10 @@ type GuardrailViolation = {
 };
 
 const STORAGE_KEY = "omni:indice-preco-ideal:v1";
+const COMBO_KEY_SEPARATOR = "\u001f";
+const AGGREGATE_CHANNEL = "__categoria_inteira__";
+const AGGREGATE_CHANNEL_LABEL = "Categoria inteira";
+const PREFERRED_CHANNEL = "Especializado";
 
 const DEFAULT_GUARDRAILS: GuardrailConfig = {
   minMarginPct: 0.25,
@@ -163,14 +169,16 @@ function loadStoredConfig(): StoredConfig {
     if (isLegacyMatrixSettings(parsed)) {
       return { categories: {}, legacyMatrices: parsed };
     }
+    const selectedChannel = (parsed as Partial<StoredConfig>).selectedChannel;
     const categories = Object.fromEntries(
-      Object.entries((parsed as Partial<StoredConfig>).categories ?? {}).map(([category, config]) => [
-        category,
+      Object.entries((parsed as Partial<StoredConfig>).categories ?? {}).map(([key, config]) => [
+        key.includes(COMBO_KEY_SEPARATOR) ? key : comboKey(key, AGGREGATE_CHANNEL),
         normalizeCategoryConfig(config),
       ]),
     );
     return {
       selectedCategory: (parsed as Partial<StoredConfig>).selectedCategory,
+      selectedChannel,
       categories,
       legacyMatrices: (parsed as Partial<StoredConfig>).legacyMatrices,
     };
@@ -188,6 +196,15 @@ function valueFor(row: PricingRow, dimension: PriceIndexDimension): string {
 function categoryFor(row: PricingRow): string {
   const value = String(row.categoria ?? "").trim();
   return value || "Sem categoria";
+}
+
+function channelFor(row: PricingRow): string {
+  const value = String(row.canalAjustado ?? row.canal ?? "").trim();
+  return value || "Sem canal ajustado";
+}
+
+function comboKey(category: string, channel: string): string {
+  return `${category}${COMBO_KEY_SEPARATOR}${channel}`;
 }
 
 function referenceByVolume(rows: PricingRow[], dimension: PriceIndexDimension): string | undefined {
@@ -329,7 +346,8 @@ function buildSkuSuggestions(
       return {
         sku,
         name: skuName(sample),
-        category: String(sample.categoria || "Sem categoria").trim() || "Sem categoria",
+        category: categoryFor(sample),
+        channel: channelFor(sample),
         sabor: valueFor(sample, "sabor"),
         faixaPeso: valueFor(sample, "faixaPeso"),
         formato: valueFor(sample, "formato"),
@@ -474,6 +492,7 @@ function buildSuggestedPricesExportRows(
     descricao: row.name,
     skuAncora: row.sku === anchorSku ? "Sim" : "Não",
     categoria: row.category,
+    canalAjustado: row.channel,
     sabor: row.sabor,
     faixaPeso: row.faixaPeso,
     formato: row.formato,
@@ -503,6 +522,7 @@ function exportSuggestedPricesCsv(
       { key: "descricao", label: "Descrição" },
       { key: "skuAncora", label: "SKU âncora" },
       { key: "categoria", label: "Categoria" },
+      { key: "canalAjustado", label: "Canal ajustado" },
       { key: "sabor", label: "Sabor" },
       { key: "faixaPeso", label: "Faixa de peso" },
       { key: "formato", label: "Formato" },
@@ -571,6 +591,7 @@ export default function IndicePrecoIdeal() {
   const [storedConfig, setStoredConfig] = useState<StoredConfig>(() => loadStoredConfig());
   const [targetSettings, setTargetSettings] = useState<TargetSettings>(() => loadMarginTargetSettings());
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedChannel, setSelectedChannel] = useState("");
   const [skuSearch, setSkuSearch] = useState("");
   const [showOnlyViolations, setShowOnlyViolations] = useState(false);
   const [isExportingImage, setIsExportingImage] = useState(false);
@@ -594,9 +615,25 @@ export default function IndicePrecoIdeal() {
     () => scopedRows.filter((row) => categoryFor(row) === selectedCategory),
     [scopedRows, selectedCategory],
   );
+  const availableChannels = useMemo(
+    () => Array.from(new Set(selectedCategoryRows.map(channelFor))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [selectedCategoryRows],
+  );
+  const selectedAnalysisRows = useMemo(
+    () =>
+      selectedChannel === AGGREGATE_CHANNEL
+        ? selectedCategoryRows
+        : selectedCategoryRows.filter((row) => channelFor(row) === selectedChannel),
+    [selectedCategoryRows, selectedChannel],
+  );
   const selectedCategoryHistoryRows = useMemo(
-    () => historyRows.filter((row) => categoryFor(row) === selectedCategory),
-    [historyRows, selectedCategory],
+    () =>
+      historyRows.filter(
+        (row) =>
+          categoryFor(row) === selectedCategory &&
+          (selectedChannel === AGGREGATE_CHANNEL || channelFor(row) === selectedChannel),
+      ),
+    [historyRows, selectedCategory, selectedChannel],
   );
   const budgetRows = useMemo(() => budgetRowsAsPricingFiltered(budgetRowsRaw, "budget"), [budgetRowsRaw]);
   const latestBudgetFyNum = useMemo(
@@ -604,30 +641,43 @@ export default function IndicePrecoIdeal() {
     [budgetRows],
   );
   const budgetFiscalRows = useMemo(
-    () => (latestBudgetFyNum ? budgetRows.filter((row) => row.fyNum === latestBudgetFyNum && categoryFor(row) === selectedCategory) : []),
-    [budgetRows, latestBudgetFyNum, selectedCategory],
+    () =>
+      latestBudgetFyNum
+        ? budgetRows.filter(
+            (row) =>
+              row.fyNum === latestBudgetFyNum &&
+              categoryFor(row) === selectedCategory &&
+              (selectedChannel === AGGREGATE_CHANNEL || channelFor(row) === selectedChannel),
+          )
+        : [],
+    [budgetRows, latestBudgetFyNum, selectedCategory, selectedChannel],
   );
-  const categoryConfig = storedConfig.categories[selectedCategory] ?? EMPTY_CATEGORY_CONFIG;
+  const selectedConfigKey = selectedCategory && selectedChannel ? comboKey(selectedCategory, selectedChannel) : "";
+  const categoryConfig = storedConfig.categories[selectedConfigKey] ?? EMPTY_CATEGORY_CONFIG;
   const matrixConfig = categoryConfig.matrices;
   const anchorSku = categoryConfig.anchorSku;
   const anchorSkuSearch = categoryConfig.anchorSkuSearch;
   const anchorSuggestedPriceInput = categoryConfig.anchorSuggestedPriceInput;
   const guardrailConfig = categoryConfig.guardrailConfig;
-  const skuOptions = useMemo(() => aggregateSkuOptions(selectedCategoryRows), [selectedCategoryRows]);
+  const skuOptions = useMemo(() => aggregateSkuOptions(selectedAnalysisRows), [selectedAnalysisRows]);
   const anchorOption = skuOptions.find((option) => option.sku === anchorSku);
+  const sampleSkuCount = skuOptions.length;
+  const sampleVolumeKg = useMemo(() => selectedAnalysisRows.reduce((sum, row) => sum + Math.max(0, row.volumeKg || 0), 0), [selectedAnalysisRows]);
+  const hasSmallChannelSample = selectedChannel !== AGGREGATE_CHANNEL && (sampleSkuCount < 5 || sampleVolumeKg < 1000);
 
   const updateCategoryConfig = (updater: (current: CategoryPriceConfig) => CategoryPriceConfig) => {
-    if (!selectedCategory) return;
+    if (!selectedConfigKey) return;
     setStoredConfig((current) => {
-      const previous = current.categories[selectedCategory] ?? normalizeCategoryConfig({
-        matrices: current.legacyMatrices,
+      const previous = current.categories[selectedConfigKey] ?? normalizeCategoryConfig({
+        matrices: current.categories[comboKey(selectedCategory, AGGREGATE_CHANNEL)]?.matrices ?? current.legacyMatrices,
       });
       return {
         ...current,
         selectedCategory,
+        selectedChannel,
         categories: {
           ...current.categories,
-          [selectedCategory]: normalizeCategoryConfig(updater(previous)),
+          [selectedConfigKey]: normalizeCategoryConfig(updater(previous)),
         },
       };
     });
@@ -651,9 +701,9 @@ export default function IndicePrecoIdeal() {
   const matrixData = useMemo(() => {
     return Object.fromEntries(
       DIMENSIONS.map((dimension) => {
-        const fallbackReference = referenceByVolume(selectedCategoryRows, dimension.key);
+        const fallbackReference = referenceByVolume(selectedAnalysisRows, dimension.key);
         const reference = matrixConfig[dimension.key]?.referenceValue ?? fallbackReference;
-        const calibration = reference ? calibratePriceIndices(selectedCategoryRows, dimension.key, reference) : [];
+        const calibration = reference ? calibratePriceIndices(selectedAnalysisRows, dimension.key, reference) : [];
         return [dimension.key, { reference, fallbackReference, calibration }];
       }),
     ) as Record<PriceIndexDimension, {
@@ -661,22 +711,22 @@ export default function IndicePrecoIdeal() {
       fallbackReference?: string;
       calibration: CalibratedPriceIndex[];
     }>;
-  }, [matrixConfig, selectedCategoryRows]);
+  }, [matrixConfig, selectedAnalysisRows]);
 
   const effectiveIndices = useMemo(() => buildEffectiveIndices(matrixData, matrixConfig), [matrixConfig, matrixData]);
   const anchorSuggestedPrice = parseDecimal(anchorSuggestedPriceInput);
 
   const rawSkuSuggestions = useMemo(
-    () => buildSkuSuggestions(selectedCategoryRows, anchorSuggestedPrice, effectiveIndices),
-    [anchorSuggestedPrice, effectiveIndices, selectedCategoryRows],
+    () => buildSkuSuggestions(selectedAnalysisRows, anchorSuggestedPrice, effectiveIndices),
+    [anchorSuggestedPrice, effectiveIndices, selectedAnalysisRows],
   );
   const skuSuggestions = useMemo(
     () => applyGuardrails(rawSkuSuggestions, guardrailConfig, anchorSuggestedPrice),
     [anchorSuggestedPrice, guardrailConfig, rawSkuSuggestions],
   );
   const targetBySku = useMemo(
-    () => buildSkuTargetMap(selectedCategoryRows, selectedCategoryHistoryRows, budgetFiscalRows, targetSettings),
-    [budgetFiscalRows, selectedCategoryHistoryRows, selectedCategoryRows, targetSettings],
+    () => buildSkuTargetMap(selectedAnalysisRows, selectedCategoryHistoryRows, budgetFiscalRows, targetSettings),
+    [budgetFiscalRows, selectedAnalysisRows, selectedCategoryHistoryRows, targetSettings],
   );
   const skuSuggestionsWithTarget = useMemo(
     () => attachTargetMargins(skuSuggestions, targetBySku),
@@ -700,11 +750,11 @@ export default function IndicePrecoIdeal() {
   }, [anchorSku, filteredSuggestionsForExport, skuSuggestionsWithTarget]);
 
   const residuals = useMemo(
-    () => calculatePricePredictionResiduals(selectedCategoryRows, {
+    () => calculatePricePredictionResiduals(selectedAnalysisRows, {
       anchorSuggestedPrice,
       indices: effectiveIndices,
     }),
-    [anchorSuggestedPrice, effectiveIndices, selectedCategoryRows],
+    [anchorSuggestedPrice, effectiveIndices, selectedAnalysisRows],
   );
   const residualSummary = useMemo(() => summarizeResiduals(residuals), [residuals]);
   const targetCoverageCount = useMemo(
@@ -752,27 +802,48 @@ export default function IndicePrecoIdeal() {
 
   useEffect(() => {
     if (!selectedCategory) return;
+    const channelOptions = [AGGREGATE_CHANNEL, ...availableChannels];
+    setSelectedChannel((current) => {
+      if (current && channelOptions.includes(current)) return current;
+      const saved = storedConfig.selectedChannel;
+      if (saved && channelOptions.includes(saved)) return saved;
+      if (availableChannels.includes(PREFERRED_CHANNEL)) return PREFERRED_CHANNEL;
+      return availableChannels[0] ?? AGGREGATE_CHANNEL;
+    });
+  }, [availableChannels, selectedCategory, storedConfig.selectedChannel]);
+
+  useEffect(() => {
+    if (!selectedConfigKey) return;
     setStoredConfig((current) => {
-      const existing = current.categories[selectedCategory];
+      const existing = current.categories[selectedConfigKey];
       if (existing) {
-        return current.selectedCategory === selectedCategory ? current : { ...current, selectedCategory };
+        return current.selectedCategory === selectedCategory && current.selectedChannel === selectedChannel
+          ? current
+          : { ...current, selectedCategory, selectedChannel };
       }
       return {
         ...current,
         selectedCategory,
+        selectedChannel,
         categories: {
           ...current.categories,
-          [selectedCategory]: normalizeCategoryConfig({ matrices: current.legacyMatrices }),
+          [selectedConfigKey]: normalizeCategoryConfig({
+            matrices: current.categories[comboKey(selectedCategory, AGGREGATE_CHANNEL)]?.matrices ?? current.legacyMatrices,
+          }),
         },
       };
     });
-  }, [selectedCategory]);
+  }, [selectedCategory, selectedChannel, selectedConfigKey]);
 
   useEffect(() => {
-    if (!selectedCategory || selectedCategoryRows.length === 0) return;
+    if (!selectedConfigKey || selectedAnalysisRows.length === 0) return;
     setStoredConfig((current) => {
       let changed = false;
-      const currentCategory = normalizeCategoryConfig(current.categories[selectedCategory] ?? { matrices: current.legacyMatrices });
+      const currentCategory = normalizeCategoryConfig(
+        current.categories[selectedConfigKey] ?? {
+          matrices: current.categories[comboKey(selectedCategory, AGGREGATE_CHANNEL)]?.matrices ?? current.legacyMatrices,
+        },
+      );
       const nextMatrices: MatrixSettings = { ...currentCategory.matrices };
       for (const dimension of DIMENSIONS) {
         const { fallbackReference, calibration } = matrixData[dimension.key];
@@ -790,19 +861,20 @@ export default function IndicePrecoIdeal() {
       return {
         ...current,
         selectedCategory,
+        selectedChannel,
         categories: {
           ...current.categories,
-          [selectedCategory]: {
+          [selectedConfigKey]: {
             ...currentCategory,
             matrices: nextMatrices,
           },
         },
       };
     });
-  }, [matrixData, selectedCategory, selectedCategoryRows.length]);
+  }, [matrixData, selectedAnalysisRows.length, selectedCategory, selectedChannel, selectedConfigKey]);
 
   useEffect(() => {
-    if (!selectedCategory || anchorSku || skuOptions.length === 0) return;
+    if (!selectedConfigKey || anchorSku || skuOptions.length === 0) return;
     const first = skuOptions[0];
     updateCategoryConfig((current) => ({
       ...current,
@@ -817,7 +889,7 @@ export default function IndicePrecoIdeal() {
             })
           : ""),
     }));
-  }, [anchorSku, selectedCategory, skuOptions]);
+  }, [anchorSku, selectedConfigKey, skuOptions]);
 
   if (rows.length === 0) {
     return (
@@ -844,13 +916,25 @@ export default function IndicePrecoIdeal() {
         <CategorySelectorCard
           categories={availableCategories}
           selectedCategory={selectedCategory}
+          channels={availableChannels}
+          selectedChannel={selectedChannel}
           onCategoryChange={(category) => {
             setSelectedCategory(category);
+            setSelectedChannel("");
             setSkuSearch("");
             setShowOnlyViolations(false);
             setStoredConfig((current) => ({ ...current, selectedCategory: category }));
           }}
-          rowCount={selectedCategoryRows.length}
+          onChannelChange={(channel) => {
+            setSelectedChannel(channel);
+            setSkuSearch("");
+            setShowOnlyViolations(false);
+            setStoredConfig((current) => ({ ...current, selectedCategory, selectedChannel: channel }));
+          }}
+          rowCount={selectedAnalysisRows.length}
+          skuCount={sampleSkuCount}
+          volumeKg={sampleVolumeKg}
+          isSmallSample={hasSmallChannelSample}
         />
 
         <ExecutiveSummary
@@ -932,6 +1016,7 @@ export default function IndicePrecoIdeal() {
             search={skuSearch}
             onSearchChange={setSkuSearch}
             selectedCategory={selectedCategory}
+            selectedChannel={selectedChannel === AGGREGATE_CHANNEL ? AGGREGATE_CHANNEL_LABEL : selectedChannel}
           />
         </div>
 
@@ -1025,48 +1110,94 @@ function SectionHeader({
 function CategorySelectorCard({
   categories,
   selectedCategory,
+  channels,
+  selectedChannel,
   onCategoryChange,
+  onChannelChange,
   rowCount,
+  skuCount,
+  volumeKg,
+  isSmallSample,
 }: {
   categories: string[];
   selectedCategory: string;
+  channels: string[];
+  selectedChannel: string;
   onCategoryChange: (value: string) => void;
+  onChannelChange: (value: string) => void;
   rowCount: number;
+  skuCount: number;
+  volumeKg: number;
+  isSmallSample: boolean;
 }) {
   return (
     <GlassCard surface="raised" className="overflow-hidden p-0 shadow-[var(--shadow-elevated)]">
-      <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-0 lg:grid-cols-[1fr_460px]">
         <div className="space-y-2 p-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
             <Gauge className="h-3.5 w-3.5" />
-            Categoria ativa
+            Recorte ativo
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-            Cada categoria com sua própria régua de preço
+            Cada categoria e canal com sua própria régua de preço
           </h2>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            Troque entre categorias sem perder âncora, preço sugerido, ajustes de índice ou guardrails já configurados.
+            Troque categoria e canal ajustado sem perder âncora, preço sugerido, ajustes de índice ou guardrails já configurados.
           </p>
+          {isSmallSample ? (
+            <div className="mt-4 rounded-xl border border-warning/35 bg-warning/10 px-4 py-3 text-sm text-warning">
+              Esta combinação tem amostra pequena ({formatNum(skuCount, 0)} SKUs e {formatNum(volumeKg, 0)} kg).
+              Considere comparar com {AGGREGATE_CHANNEL_LABEL.toLowerCase()} para uma calibração mais robusta.
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-col justify-center gap-3 border-t border-border/40 bg-background/35 p-6 lg:border-l lg:border-t-0">
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</span>
-            <Select value={selectedCategory} onValueChange={onCategoryChange} disabled={categories.length === 0}>
-              <SelectTrigger className="h-11">
-                <SelectValue placeholder="Escolha uma categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <div className="rounded-xl border border-border/40 bg-background/35 px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Base usada nesta leitura</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{formatNum(rowCount, 0)} registros</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</span>
+              <Select value={selectedCategory} onValueChange={onCategoryChange} disabled={categories.length === 0}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Escolha uma categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Canal ajustado</span>
+              <Select value={selectedChannel} onValueChange={onChannelChange} disabled={!selectedCategory}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Escolha um canal" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AGGREGATE_CHANNEL}>{AGGREGATE_CHANNEL_LABEL}</SelectItem>
+                  {channels.map((channel) => (
+                    <SelectItem key={channel} value={channel}>
+                      {channel}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+          <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-border/40 bg-background/35">
+            <div className="border-r border-border/35 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Registros</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">{formatNum(rowCount, 0)}</p>
+            </div>
+            <div className="border-r border-border/35 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">SKUs</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">{formatNum(skuCount, 0)}</p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Volume</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">{formatNum(volumeKg, 0)} kg</p>
+            </div>
           </div>
         </div>
       </div>
@@ -1426,6 +1557,7 @@ function SuggestedPricesCard({
   search,
   onSearchChange,
   selectedCategory,
+  selectedChannel,
 }: {
   rows: SkuPriceSuggestion[];
   exportRows: SkuPriceSuggestion[];
@@ -1438,6 +1570,7 @@ function SuggestedPricesCard({
   search: string;
   onSearchChange: (value: string) => void;
   selectedCategory: string;
+  selectedChannel: string;
 }) {
   return (
     <GlassCard className="flex min-h-[520px] flex-col overflow-hidden p-0 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
@@ -1445,7 +1578,9 @@ function SuggestedPricesCard({
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Catálogo sugerido</p>
           <h2 className="mt-1 text-lg font-semibold text-foreground">Preço ideal por SKU</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Categoria: {selectedCategory || "sem categoria selecionada"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Categoria: {selectedCategory || "sem categoria selecionada"} · Canal: {selectedChannel || "sem canal selecionado"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
