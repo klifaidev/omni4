@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { CustomSlideConfig } from "@/lib/customSlide";
-import { sanitizeSlidesFlowItems } from "./slidesFlow";
+import { backupSlidesFlowRawState, migrateSlidesFlowItemsDataSources, sanitizeSlidesFlowItems } from "./slidesFlow";
 
 function customItem(id: string, config: CustomSlideConfig): Extract<SlideItem, { kind: "custom" }> {
   return {
@@ -53,5 +53,64 @@ describe("sanitizeSlidesFlowItems", () => {
     expect(blockIds[1]).not.toBe("block-1");
     expect(custom.config.groups?.[0]?.memberIds).toEqual(blockIds);
   });
+
+  it("preserves legacy custom slides without a blocks array instead of throwing during migration", () => {
+    const legacy = {
+      id: "legacy-slide",
+      kind: "custom",
+      label: "Slide antigo",
+      config: {},
+    } as unknown as SlideItem;
+
+    expect(() => sanitizeSlidesFlowItems([legacy])).not.toThrow();
+    const sanitized = sanitizeSlidesFlowItems([legacy]);
+
+    expect(sanitized).toHaveLength(1);
+    expect(sanitized[0]).toMatchObject({ id: "legacy-slide", kind: "custom" });
+    expect(() => migrateSlidesFlowItemsDataSources(sanitized)).not.toThrow();
+  });
 });
 
+describe("backupSlidesFlowRawState", () => {
+  function memoryStorage(initial: Record<string, string> = {}): Storage {
+    const data = new Map(Object.entries(initial));
+    return {
+      get length() {
+        return data.size;
+      },
+      clear: () => data.clear(),
+      getItem: (key: string) => data.get(key) ?? null,
+      key: (index: number) => Array.from(data.keys())[index] ?? null,
+      removeItem: (key: string) => void data.delete(key),
+      setItem: (key: string, value: string) => void data.set(key, value),
+    };
+  }
+
+  it("creates a preventive backup only when the persisted slide flow has content", () => {
+    const storage = memoryStorage({
+      "pricing.slidesFlow.v1": JSON.stringify({
+        state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
+        version: 0,
+      }),
+    });
+
+    backupSlidesFlowRawState(storage);
+
+    const backups = JSON.parse(storage.getItem("pricing.slidesFlow.v1.backup") ?? "[]") as Array<{ value: string }>;
+    expect(backups).toHaveLength(1);
+    expect(backups[0].value).toContain("slide-1");
+  });
+
+  it("does not back up an already-empty slide flow", () => {
+    const storage = memoryStorage({
+      "pricing.slidesFlow.v1": JSON.stringify({
+        state: { items: [], presets: [], transition: "fade" },
+        version: 0,
+      }),
+    });
+
+    backupSlidesFlowRawState(storage);
+
+    expect(storage.getItem("pricing.slidesFlow.v1.backup")).toBeNull();
+  });
+});

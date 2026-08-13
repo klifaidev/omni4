@@ -1694,6 +1694,29 @@ function exportPresetModel(preset: SlidesPreset) {
   URL.revokeObjectURL(url);
 }
 
+async function readPresetModelFile(file: File): Promise<SlidesPreset> {
+  const text = await file.text();
+  const payload = JSON.parse(text) as {
+    schema?: string;
+    preset?: Partial<SlidesPreset>;
+  };
+  if (payload.schema !== "omni4.slidesPresetExport.v1") {
+    throw new Error("Arquivo de modelo invalido.");
+  }
+  if (!payload.preset || !Array.isArray(payload.preset.items)) {
+    throw new Error("O arquivo nao contem os slides do modelo.");
+  }
+  const now = Date.now();
+  return {
+    id: typeof payload.preset.id === "string" ? payload.preset.id : `${now}`,
+    name: typeof payload.preset.name === "string" ? payload.preset.name : file.name.replace(/\.omni4-modelo\.json$/i, ""),
+    description: typeof payload.preset.description === "string" ? payload.preset.description : undefined,
+    items: payload.preset.items,
+    createdAt: typeof payload.preset.createdAt === "number" ? payload.preset.createdAt : now,
+    updatedAt: typeof payload.preset.updatedAt === "number" ? payload.preset.updatedAt : now,
+  } as SlidesPreset;
+}
+
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -1833,17 +1856,58 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
   const loadPreset = useSlidesFlow((s) => s.loadPreset);
   const deletePreset = useSlidesFlow((s) => s.deletePreset);
   const overwritePreset = useSlidesFlow((s) => s.overwritePreset);
+  const importPreset = useSlidesFlow((s) => s.importPreset);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
+
+  const handleImportPresetFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    try {
+      const preset = await readPresetModelFile(file);
+      const imported = importPreset(preset);
+      toast.success(`Modelo "${imported.name}" importado.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel importar o modelo.");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
+  const importControl = (
+    <>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".omni4-modelo.json,application/json"
+        className="hidden"
+        onChange={(event) => void handleImportPresetFile(event.target.files?.[0])}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1.5 text-xs"
+        onClick={() => importInputRef.current?.click()}
+      >
+        <Upload className="h-3.5 w-3.5" />
+        Importar modelo
+      </Button>
+    </>
+  );
 
   if (presets.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border/50 bg-secondary/10 px-4 py-6 text-center text-xs text-muted-foreground">
+        <div className="mb-3">{importControl}</div>
         Nenhuma pré-definição salva ainda.
       </div>
     );
   }
   return (
     <>
+    <div className="mb-2 flex justify-end">
+      {importControl}
+    </div>
     <div className="space-y-1.5">
       {presets
         .slice()

@@ -6,6 +6,10 @@ import { defaultItem, newId } from "@/lib/slidesFlow";
 import type { CollabEvent } from "@/lib/collaboration";
 import { migrateDataSource } from "@/lib/customSlide";
 
+const SLIDES_FLOW_STORAGE_KEY = "pricing.slidesFlow.v1";
+const SLIDES_FLOW_BACKUP_KEY = "pricing.slidesFlow.v1.backup";
+const SLIDES_FLOW_BACKUP_LIMIT = 3;
+
 export interface SlidesPreset {
   id: string;
   name: string;
@@ -56,6 +60,7 @@ interface SlidesFlowState {
 
   // Presets
   savePreset: (name: string, description?: string) => SlidesPreset;
+  importPreset: (preset: SlidesPreset) => SlidesPreset;
   overwritePreset: (id: string) => void;
   loadPreset: (id: string) => void;
   deletePreset: (id: string) => void;
@@ -70,6 +75,7 @@ function uniqueId(existing: Set<string>, candidate?: string): string {
 }
 
 function sanitizeCustomSlideItem(item: Extract<SlideItem, { kind: "custom" }>): Extract<SlideItem, { kind: "custom" }> {
+  if (!item.config || !Array.isArray(item.config.blocks)) return item;
   const blockIds = new Set<string>();
   const groupIds = new Set<string>();
   const blockReplacements = new Map<string, string[]>();
@@ -123,6 +129,7 @@ function sanitizeCustomSlideItem(item: Extract<SlideItem, { kind: "custom" }>): 
 
 export function sanitizeSlidesFlowItems(items: SlideItem[]): SlideItem[] {
   const slideIds = new Set<string>();
+  if (!Array.isArray(items)) return [];
   return items.map((item) => {
     const id = uniqueId(slideIds, item.id);
     const withUniqueSlideId = id === item.id ? item : ({ ...item, id } as SlideItem);
@@ -130,6 +137,52 @@ export function sanitizeSlidesFlowItems(items: SlideItem[]): SlideItem[] {
       ? sanitizeCustomSlideItem(withUniqueSlideId)
       : withUniqueSlideId;
   });
+}
+
+export function migrateSlidesFlowItemsDataSources(items: SlideItem[]): SlideItem[] {
+  if (!Array.isArray(items)) return [];
+  for (const item of items) {
+    try {
+      if (item.kind !== "custom") continue;
+      if (!item.config || !Array.isArray(item.config.blocks)) continue;
+      for (const blk of item.config.blocks) {
+        const b = blk as { dataSource?: string };
+        b.dataSource = migrateDataSource(b.dataSource);
+      }
+    } catch (error) {
+      console.warn("[slidesFlow] Falha ao migrar item; preservando dados originais.", error);
+    }
+  }
+  return items;
+}
+
+function persistedSlidesStateHasContent(raw: string): boolean {
+  try {
+    const parsed = JSON.parse(raw) as { state?: { items?: unknown[]; presets?: unknown[] } };
+    const items = Array.isArray(parsed.state?.items) ? parsed.state.items.length : 0;
+    const presets = Array.isArray(parsed.state?.presets) ? parsed.state.presets.length : 0;
+    return items > 0 || presets > 0;
+  } catch {
+    return raw.trim().length > 0;
+  }
+}
+
+export function backupSlidesFlowRawState(storage: Storage | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {
+  if (!storage) return;
+  try {
+    const raw = storage.getItem(SLIDES_FLOW_STORAGE_KEY);
+    if (!raw || !persistedSlidesStateHasContent(raw)) return;
+    const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    const backups = Array.isArray(existing) ? existing : [];
+    if (backups[0]?.value === raw) return;
+    const next = [{ createdAt: Date.now(), value: raw }, ...backups]
+      .filter((entry) => entry && typeof entry.value === "string")
+      .slice(0, SLIDES_FLOW_BACKUP_LIMIT);
+    storage.setItem(SLIDES_FLOW_BACKUP_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.warn("[slidesFlow] Falha ao criar backup preventivo da esteira.", error);
+  }
 }
 
 export const useSlidesFlow = create<SlidesFlowState>()(
@@ -366,6 +419,23 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         return preset;
       },
 
+      importPreset: (preset) => {
+        const now = Date.now();
+        const safeItems = migrateSlidesFlowItemsDataSources(sanitizeSlidesFlowItems(
+          JSON.parse(JSON.stringify(preset.items ?? [])) as SlideItem[],
+        ));
+        const imported: SlidesPreset = {
+          id: preset.id && !get().presets.some((p) => p.id === preset.id) ? preset.id : newId(),
+          name: preset.name?.trim() || "Modelo importado",
+          description: preset.description?.trim(),
+          items: safeItems,
+          createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : now,
+          updatedAt: now,
+        };
+        set((s) => ({ presets: [...s.presets, imported] }));
+        return imported;
+      },
+
       overwritePreset: (id) =>
         set((s) => ({
           presets: s.presets.map((p) =>
@@ -409,26 +479,42 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         })),
     }),
     {
-      name: "pricing.slidesFlow.v1",
+      name: SLIDES_FLOW_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ items: s.items, presets: s.presets, transition: s.transition }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        const migrateItems = (items: SlideItem[]) => {
-          for (const item of items) {
-            if (item.kind !== "custom") continue;
-            for (const blk of item.config.blocks) {
-              const b = blk as { dataSource?: string };
-              b.dataSource = migrateDataSource(b.dataSource);
+      onRehydrateStorage: () => {
+        backupSlidesFlowRawState();
+        return (state, error) => {
+          if (error) {
+            console.error("[slidesFlow] Falha ao reidratar esteira de slides.", error);
+            return;
+          }
+          if (!state) return;
+          try {
+            const safeItems = sanitizeSlidesFlowItems(Array.isArray(state.items) ? state.items : []);
+            state.items = migrateSlidesFlowItemsDataSources(safeItems);
+          } catch (migrationError) {
+            console.error("[slidesFlow] Falha ao migrar items; preservando estado reidratado.", migrationError);
+            if (!Array.isArray(state.items)) state.items = [];
+          }
+          try {
+            if (!Array.isArray(state.presets)) {
+              state.presets = [];
+            } else {
+              for (const preset of state.presets) {
+                try {
+                  preset.items = migrateSlidesFlowItemsDataSources(sanitizeSlidesFlowItems(
+                    Array.isArray(preset.items) ? preset.items : [],
+                  ));
+                } catch (presetError) {
+                  console.error(`[slidesFlow] Falha ao migrar preset "${preset.name}"; preservando items originais.`, presetError);
+                }
+              }
             }
+          } catch (presetMigrationError) {
+            console.error("[slidesFlow] Falha ao migrar presets; preservando estado reidratado.", presetMigrationError);
           }
         };
-        state.items = sanitizeSlidesFlowItems(state.items);
-        migrateItems(state.items);
-        for (const preset of state.presets) {
-          preset.items = sanitizeSlidesFlowItems(preset.items);
-          migrateItems(preset.items);
-        }
       },
     },
   ),
