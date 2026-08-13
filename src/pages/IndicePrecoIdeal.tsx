@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, BadgeCheck, BarChart3, Gauge, RotateCcw, Search, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import html2canvas from "html2canvas";
+import { AlertTriangle, ArrowRightLeft, BadgeCheck, BarChart3, Camera, Gauge, RotateCcw, Search, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -160,6 +161,14 @@ function formatDeltaPct(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${(value * 100).toLocaleString("pt-BR", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
+  })}%`;
+}
+
+function formatPctPlain(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${(value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   })}%`;
 }
 
@@ -437,6 +446,7 @@ function renormalizeOverrides(
 
 export default function IndicePrecoIdeal() {
   usePageTitle("Índice de Preço Ideal");
+  const reportRef = useRef<HTMLElement | null>(null);
   const rows = usePricing((state) => state.rows);
   const filters = usePricing((state) => state.filters);
   const selectedPeriods = usePricing((state) => state.selectedPeriods);
@@ -450,6 +460,7 @@ export default function IndicePrecoIdeal() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [showOnlyViolations, setShowOnlyViolations] = useState(false);
   const [guardrailConfig, setGuardrailConfig] = useState<GuardrailConfig>(DEFAULT_GUARDRAILS);
+  const [isExportingImage, setIsExportingImage] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
@@ -545,6 +556,38 @@ export default function IndicePrecoIdeal() {
     [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
   );
   const residualSummary = useMemo(() => summarizeResiduals(residuals), [residuals]);
+  const targetCoverageCount = useMemo(
+    () => skuSuggestionsWithTarget.filter((item) => item.targetMarginPct !== null).length,
+    [skuSuggestionsWithTarget],
+  );
+  const avgTargetGapAbs = useMemo(() => {
+    const rowsWithGap = skuSuggestionsWithTarget.filter((item) => item.targetGapPp !== null);
+    if (rowsWithGap.length === 0) return null;
+    return rowsWithGap.reduce((sum, item) => sum + Math.abs(item.targetGapPp ?? 0), 0) / rowsWithGap.length;
+  }, [skuSuggestionsWithTarget]);
+  const manualOverrideCount = useMemo(
+    () => DIMENSIONS.reduce((sum, dimension) => sum + Object.keys(config[dimension.key]?.manualOverrides ?? {}).length, 0),
+    [config],
+  );
+
+  const handleExportImage = async () => {
+    if (!reportRef.current || isExportingImage) return;
+    setIsExportingImage(true);
+    try {
+      const canvas = await html2canvas(reportRef.current, {
+        backgroundColor: "#ffffff",
+        logging: false,
+        scale: Math.min(2, window.devicePixelRatio || 1.5),
+        useCORS: true,
+      });
+      const link = document.createElement("a");
+      link.download = `indice-preco-ideal-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } finally {
+      setIsExportingImage(false);
+    }
+  };
 
   useEffect(() => {
     setConfig((current) => {
@@ -592,8 +635,19 @@ export default function IndicePrecoIdeal() {
         title="Índice de Preço Ideal"
         subtitle="Matrizes calibradas por preço médio real, prontas para virar premissas de posicionamento."
       />
-      <main className="space-y-6 p-4 md:p-8">
-        <GlassCard surface="raised" className="overflow-hidden p-0">
+      <main ref={reportRef} className="space-y-8 p-4 md:p-8">
+        <ExecutiveSummary
+          skuCount={skuSuggestionsWithTarget.length}
+          violationCount={guardrailViolationCount}
+          residualSummary={residualSummary}
+          avgTargetGapAbs={avgTargetGapAbs}
+          targetCoverageCount={targetCoverageCount}
+          manualOverrideCount={manualOverrideCount}
+          onExportImage={handleExportImage}
+          isExportingImage={isExportingImage}
+        />
+
+        <GlassCard surface="raised" className="overflow-hidden p-0 shadow-[var(--shadow-elevated)]">
           <div className="grid gap-0 md:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-3 p-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -610,7 +664,7 @@ export default function IndicePrecoIdeal() {
             </div>
             <div className="grid grid-cols-3 border-t border-border/40 bg-background/30 md:border-l md:border-t-0">
               {DIMENSIONS.map((dimension) => (
-                <div key={dimension.key} className="border-r border-border/30 p-4 last:border-r-0">
+                <div key={dimension.key} className="border-r border-border/30 p-4 transition-colors duration-200 hover:bg-background/40 last:border-r-0">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{dimension.title}</p>
                   <p className="mt-1 text-2xl font-semibold text-foreground">
                     {matrixData[dimension.key].calibration.length}
@@ -621,6 +675,12 @@ export default function IndicePrecoIdeal() {
             </div>
           </div>
         </GlassCard>
+
+        <SectionHeader
+          eyebrow="Premissas"
+          title="Configure a âncora e os limites antes de olhar a recomendação"
+          description="A lista de SKUs responde automaticamente a estas decisões, preservando a leitura histórica como evidência."
+        />
 
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
           <div className="space-y-5">
@@ -655,7 +715,19 @@ export default function IndicePrecoIdeal() {
           />
         </div>
 
+        <SectionHeader
+          eyebrow="Qualidade"
+          title="Confira onde o modelo explica bem a realidade"
+          description="Os maiores resíduos mostram combinações onde sabor, peso e formato talvez precisem de leitura comercial adicional."
+        />
+
         <FitQualityCard residuals={residuals.slice(0, 12)} summary={residualSummary} />
+
+        <SectionHeader
+          eyebrow="Matrizes"
+          title="Ajuste os índices sem perder o rastro da evidência"
+          description="Cada matriz nasce calibrada pelo histórico real. Valores manuais ficam destacados e podem voltar ao observado em um clique."
+        />
 
         <div className="grid gap-5 xl:grid-cols-3">
           {DIMENSIONS.map((dimension) => (
@@ -706,6 +778,150 @@ export default function IndicePrecoIdeal() {
   );
 }
 
+function SectionHeader({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 pt-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function ExecutiveSummary({
+  skuCount,
+  violationCount,
+  residualSummary,
+  avgTargetGapAbs,
+  targetCoverageCount,
+  manualOverrideCount,
+  onExportImage,
+  isExportingImage,
+}: {
+  skuCount: number;
+  violationCount: number;
+  residualSummary: ReturnType<typeof summarizeResiduals>;
+  avgTargetGapAbs: number | null;
+  targetCoverageCount: number;
+  manualOverrideCount: number;
+  onExportImage: () => void;
+  isExportingImage: boolean;
+}) {
+  const violationRate = skuCount > 0 ? violationCount / skuCount : 0;
+  const attentionTone = violationRate <= 0.08 ? "text-success" : violationRate <= 0.2 ? "text-warning" : "text-destructive";
+  const targetCoverage = skuCount > 0 ? targetCoverageCount / skuCount : null;
+
+  return (
+    <GlassCard surface="raised" className="overflow-hidden p-0 shadow-[var(--shadow-elevated)]">
+      <div className="grid gap-0 xl:grid-cols-[1fr_1.35fr]">
+        <div className="space-y-5 border-b border-border/40 p-6 xl:border-b-0 xl:border-r">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Resumo executivo
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2 transition-all duration-200 hover:-translate-y-0.5"
+              onClick={onExportImage}
+              disabled={isExportingImage}
+            >
+              <Camera className="h-4 w-4" />
+              {isExportingImage ? "Gerando..." : "Exportar PNG"}
+            </Button>
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+              Índice de preço pronto para decisão
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              O modelo combina preço real, SKU âncora, guardrails comerciais e margem target para separar o que é
+              evidência histórica do que precisa de decisão humana antes de ir para a liderança.
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/40 bg-background/35 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Leitura rápida</p>
+            <p className="mt-2 text-sm leading-6 text-foreground">
+              {formatNum(skuCount, 0)} SKUs analisados, {formatNum(violationCount, 0)} com algum ponto de atenção
+              e ajuste do modelo classificado como <span className="font-semibold text-primary">{residualSummary.label.toLowerCase()}</span>.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4">
+          <ExecutiveMetric
+            label="SKUs analisados"
+            value={formatNum(skuCount, 0)}
+            detail={`${formatPctPlain(targetCoverage)} com target conectado`}
+            tone="primary"
+          />
+          <ExecutiveMetric
+            label="Guardrails"
+            value={formatNum(violationCount, 0)}
+            detail={`${formatPctPlain(violationRate)} do catálogo precisa revisar`}
+            tone={attentionTone}
+          />
+          <ExecutiveMetric
+            label="Ajuste do modelo"
+            value={residualSummary.label}
+            detail={`${formatMoneyPerKg(residualSummary.avgAbsResidual)} por kg de erro médio`}
+            tone="warning"
+          />
+          <ExecutiveMetric
+            label="Gap médio vs target"
+            value={avgTargetGapAbs === null ? "-" : formatSignedPp(avgTargetGapAbs)}
+            detail={`${formatNum(manualOverrideCount, 0)} índices ajustados à mão`}
+            tone={avgTargetGapAbs !== null && avgTargetGapAbs <= 0.02 ? "success" : "warning"}
+          />
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
+function ExecutiveMetric({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "primary" | "success" | "warning" | "destructive" | string;
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-success"
+      : tone === "warning"
+        ? "text-warning"
+        : tone === "destructive" || tone === "text-destructive"
+          ? "text-destructive"
+          : tone === "text-warning"
+            ? "text-warning"
+            : tone === "text-success"
+              ? "text-success"
+              : "text-primary";
+
+  return (
+    <div className="min-h-[150px] border-b border-r border-border/30 p-5 transition-colors duration-200 hover:bg-background/35 sm:[&:nth-child(even)]:border-r-0 xl:border-b-0 xl:[&:nth-child(even)]:border-r xl:last:border-r-0">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-3 text-2xl font-semibold tracking-tight", toneClass)}>{value}</p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 function AnchorSetupCard({
   skuOptions,
   anchorSku,
@@ -728,7 +944,7 @@ function AnchorSetupCard({
   anchorOption?: SkuOption;
 }) {
   return (
-    <GlassCard surface="raised" className="space-y-5">
+    <GlassCard surface="raised" className="space-y-5 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div>
         <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success">
           <Star className="h-3.5 w-3.5" />
@@ -814,7 +1030,7 @@ function GuardrailConfigCard({
   };
 
   return (
-    <GlassCard className="space-y-4">
+    <GlassCard className="space-y-4 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
@@ -927,7 +1143,7 @@ function SuggestedPricesCard({
   categoryOptions: string[];
 }) {
   return (
-    <GlassCard className="flex min-h-[430px] flex-col p-0">
+    <GlassCard className="flex min-h-[520px] flex-col overflow-hidden p-0 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 p-5">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Catálogo sugerido</p>
@@ -998,7 +1214,7 @@ function SuggestedPricesCard({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.sku} className="border-b border-border/25 hover:bg-muted/25">
+              <tr key={row.sku} className="border-b border-border/25 transition-colors duration-150 hover:bg-muted/25">
                 <td className="max-w-[260px] px-4 py-3">
                   <p className="truncate font-medium text-foreground" title={row.name}>{row.name}</p>
                   <p className="text-xs text-muted-foreground">{row.category} · {formatNum(row.volumeKg, 0)} kg</p>
@@ -1009,13 +1225,13 @@ function SuggestedPricesCard({
                 <td className="px-3 py-3 text-right font-medium">{formatMoneyPerKg(row.actualPrice)}</td>
                 <td className="px-3 py-3 text-right font-semibold text-primary">{formatMoneyPerKg(row.suggestedPrice)}</td>
                 <td className="px-3 py-3 text-right font-semibold">
-                  {row.suggestedMarginPct === null ? "-" : formatDeltaPct(row.suggestedMarginPct).replace("+", "")}
+                  {formatPctPlain(row.suggestedMarginPct)}
                 </td>
                 <td className="px-3 py-3 text-right">
                   {row.targetMarginPct === null ? (
                     <span className="text-muted-foreground">-</span>
                   ) : (
-                    <span className="font-medium">{formatDeltaPct(row.targetMarginPct).replace("+", "")}</span>
+                    <span className="font-medium">{formatPctPlain(row.targetMarginPct)}</span>
                   )}
                 </td>
                 <td className="px-3 py-3 text-right">
@@ -1070,7 +1286,7 @@ function FitQualityCard({
 }) {
   const maxResidual = Math.max(1, ...residuals.map((item) => Math.abs(item.residual ?? 0)));
   return (
-    <GlassCard className="p-0">
+    <GlassCard className="overflow-hidden p-0 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div className="grid gap-0 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="space-y-4 border-b border-border/40 p-5 lg:border-b-0 lg:border-r">
           <div className="inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
@@ -1081,7 +1297,7 @@ function FitQualityCard({
             <h2 className="text-lg font-semibold text-foreground">{summary.label}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               O erro médio ponderado é de {formatMoneyPerKg(summary.avgAbsResidual)} por kg,
-              equivalente a {formatDeltaPct(summary.avgAbsResidualPct).replace("+", "")} do preço real.
+              equivalente a {formatPctPlain(summary.avgAbsResidualPct)} do preço real.
             </p>
           </div>
           {summary.worst && (
@@ -1112,7 +1328,7 @@ function FitQualityCard({
                 const magnitude = Math.min(100, (Math.abs(item.residual ?? 0) / maxResidual) * 100);
                 const negative = (item.residual ?? 0) < 0;
                 return (
-                  <tr key={`${item.sabor}-${item.faixaPeso}-${item.formato}`} className="border-b border-border/20">
+                  <tr key={`${item.sabor}-${item.faixaPeso}-${item.formato}`} className="border-b border-border/20 transition-colors duration-150 hover:bg-muted/25">
                     <td className="max-w-[320px] py-3 pr-3">
                       <p className="truncate font-medium text-foreground">
                         {item.sabor} · {item.faixaPeso} · {item.formato}
@@ -1165,7 +1381,7 @@ function IndexMatrix({
   const maxVolume = Math.max(0, ...calibration.map((item) => item.volumeKg));
 
   return (
-    <GlassCard className="flex min-h-[560px] flex-col p-0">
+    <GlassCard className="flex min-h-[560px] flex-col overflow-hidden p-0 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div className="border-b border-border/40 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -1206,7 +1422,7 @@ function IndexMatrix({
                   <tr
                     key={`${dimension}-${item.value}`}
                     className={cn(
-                      "border-b border-border/25 transition-colors hover:bg-muted/25",
+                      "border-b border-border/25 transition-colors duration-150 hover:bg-muted/25",
                       isReference && "bg-primary/5",
                     )}
                   >
@@ -1224,7 +1440,7 @@ function IndexMatrix({
                         value={effectiveIndex === null ? "" : String(Number(effectiveIndex.toFixed(3))).replace(".", ",")}
                         inputMode="decimal"
                         className={cn(
-                          "h-8 text-right text-xs font-semibold",
+                          "h-8 text-right text-xs font-semibold transition-all duration-150",
                           hasManual && "border-primary/60 bg-primary/10 text-primary",
                         )}
                         onChange={(event) => {
@@ -1270,7 +1486,7 @@ function IndexMatrix({
                         type="button"
                         size="sm"
                         variant={isReference ? "secondary" : "ghost"}
-                        className="h-8 gap-1.5 text-xs"
+                        className="h-8 gap-1.5 text-xs transition-all duration-150 hover:-translate-y-0.5"
                         disabled={isReference}
                         onClick={() => onReferenceChange(item.value)}
                       >
