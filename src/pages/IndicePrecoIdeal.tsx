@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, BadgeCheck, BarChart3, RotateCcw, Sparkles, Star } from "lucide-react";
+import { ArrowRightLeft, BadgeCheck, BarChart3, Gauge, RotateCcw, Search, Sparkles, Star } from "lucide-react";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -7,14 +7,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
 import { applyFilters } from "@/lib/analytics";
-import { formatNum } from "@/lib/format";
+import { formatBRL, formatNum } from "@/lib/format";
 import {
+  calculatePricePredictionResiduals,
   calibratePriceIndices,
+  predictIdealPrice,
   type CalibratedPriceIndex,
   type PriceIndexDimension,
+  type PriceIndexValues,
+  type PricePredictionResidual,
 } from "@/lib/priceIndexModel";
 import type { PricingRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -25,6 +30,28 @@ type MatrixConfig = {
 };
 
 type StoredConfig = Partial<Record<PriceIndexDimension, MatrixConfig>>;
+
+type SkuPriceSuggestion = {
+  sku: string;
+  name: string;
+  category: string;
+  sabor: string;
+  faixaPeso: string;
+  formato: string;
+  volumeKg: number;
+  rol: number;
+  actualPrice: number | null;
+  suggestedPrice: number;
+  delta: number | null;
+  deltaPct: number | null;
+};
+
+type SkuOption = {
+  sku: string;
+  label: string;
+  volumeKg: number;
+  actualPrice: number | null;
+};
 
 const STORAGE_KEY = "omni:indice-preco-ideal:v1";
 
@@ -80,6 +107,135 @@ function formatIndex(value: number | null | undefined): string {
   return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}x`;
 }
 
+function parseDecimal(value: string): number {
+  const normalized = value.replace(/\./g, "").replace(",", ".").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatMoneyPerKg(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return formatBRL(value, { digits: 2 });
+}
+
+function formatDeltaPct(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return `${value >= 0 ? "+" : ""}${(value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+function skuKey(row: PricingRow): string {
+  return String(row.sku || row.skuDesc || "Sem SKU").trim() || "Sem SKU";
+}
+
+function skuName(row: PricingRow): string {
+  const sku = String(row.sku || "").trim();
+  const desc = String(row.skuDesc || "").trim();
+  if (sku && desc && sku !== desc) return `${sku} - ${desc}`;
+  return desc || sku || "Sem SKU";
+}
+
+function aggregateSkuOptions(rows: PricingRow[]): SkuOption[] {
+  const map = new Map<string, { label: string; volumeKg: number; rol: number }>();
+  for (const row of rows) {
+    const sku = skuKey(row);
+    const current = map.get(sku) ?? { label: skuName(row), volumeKg: 0, rol: 0 };
+    current.volumeKg += row.volumeKg || 0;
+    current.rol += row.rol || 0;
+    map.set(sku, current);
+  }
+  return Array.from(map.entries())
+    .map(([sku, value]) => ({
+      sku,
+      label: value.label,
+      volumeKg: value.volumeKg,
+      actualPrice: value.volumeKg > 0 ? value.rol / value.volumeKg : null,
+    }))
+    .sort((a, b) => b.volumeKg - a.volumeKg);
+}
+
+function buildEffectiveIndices(
+  matrixData: Record<PriceIndexDimension, { calibration: CalibratedPriceIndex[] }>,
+  config: StoredConfig,
+): PriceIndexValues {
+  return Object.fromEntries(
+    DIMENSIONS.map((dimension) => {
+      const overrides = config[dimension.key]?.manualOverrides ?? {};
+      const values = Object.fromEntries(
+        matrixData[dimension.key].calibration.map((item) => [
+          item.value,
+          Number.isFinite(overrides[item.value]) ? overrides[item.value] : item.index ?? 1,
+        ]),
+      );
+      return [dimension.key, values];
+    }),
+  ) as PriceIndexValues;
+}
+
+function buildSkuSuggestions(
+  rows: PricingRow[],
+  competitorReferencePrice: number,
+  anchorPositioningIndex: number,
+  indices: PriceIndexValues,
+): SkuPriceSuggestion[] {
+  const groups = new Map<string, PricingRow[]>();
+  for (const row of rows) {
+    const sku = skuKey(row);
+    const bucket = groups.get(sku) ?? [];
+    bucket.push(row);
+    groups.set(sku, bucket);
+  }
+
+  return Array.from(groups.entries())
+    .map(([sku, bucket]) => {
+      const sample = bucket.reduce((best, row) => (row.volumeKg > best.volumeKg ? row : best), bucket[0]);
+      const rol = bucket.reduce((sum, row) => sum + (row.rol || 0), 0);
+      const volumeKg = bucket.reduce((sum, row) => sum + (row.volumeKg || 0), 0);
+      const actualPrice = volumeKg > 0 ? rol / volumeKg : null;
+      const suggestedPrice = predictIdealPrice({
+        competitorReferencePrice,
+        anchorPositioningIndex,
+        sabor: valueFor(sample, "sabor"),
+        faixaPeso: valueFor(sample, "faixaPeso"),
+        formato: valueFor(sample, "formato"),
+        indices,
+      });
+      const delta = actualPrice !== null ? suggestedPrice - actualPrice : null;
+
+      return {
+        sku,
+        name: skuName(sample),
+        category: String(sample.categoria || "Sem categoria").trim() || "Sem categoria",
+        sabor: valueFor(sample, "sabor"),
+        faixaPeso: valueFor(sample, "faixaPeso"),
+        formato: valueFor(sample, "formato"),
+        volumeKg,
+        rol,
+        actualPrice,
+        suggestedPrice,
+        delta,
+        deltaPct: delta !== null && actualPrice > 0 ? delta / actualPrice : null,
+      };
+    })
+    .sort((a, b) => b.volumeKg - a.volumeKg);
+}
+
+function summarizeResiduals(residuals: PricePredictionResidual[]): {
+  avgAbsResidual: number;
+  avgAbsResidualPct: number;
+  label: string;
+  worst?: PricePredictionResidual;
+} {
+  const valid = residuals.filter((item) => item.actualPrice !== null && item.volumeKg > 0);
+  const totalVolume = valid.reduce((sum, item) => sum + item.volumeKg, 0) || 1;
+  const avgAbsResidual = valid.reduce((sum, item) => sum + Math.abs(item.residual ?? 0) * item.volumeKg, 0) / totalVolume;
+  const avgAbsResidualPct = valid.reduce((sum, item) => sum + Math.abs(item.residualPct ?? 0) * item.volumeKg, 0) / totalVolume;
+  const label = avgAbsResidualPct <= 0.08 ? "Ajuste bom" : avgAbsResidualPct <= 0.18 ? "Ajuste moderado" : "Ajuste sensível";
+  return { avgAbsResidual, avgAbsResidualPct, label, worst: valid[0] };
+}
+
 function confidenceOf(item: CalibratedPriceIndex, maxVolume: number): {
   label: string;
   className: string;
@@ -113,12 +269,19 @@ export default function IndicePrecoIdeal() {
   const filters = usePricing((state) => state.filters);
   const selectedPeriods = usePricing((state) => state.selectedPeriods);
   const [config, setConfig] = useState<StoredConfig>(() => loadStoredConfig());
+  const [anchorSku, setAnchorSku] = useState("");
+  const [competitorPrice, setCompetitorPrice] = useState("");
+  const [anchorPositioning, setAnchorPositioning] = useState("1,10");
+  const [skuSearch, setSkuSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   }, [config]);
 
   const scopedRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [filters, rows, selectedPeriods]);
+  const skuOptions = useMemo(() => aggregateSkuOptions(scopedRows), [scopedRows]);
+  const anchorOption = skuOptions.find((option) => option.sku === anchorSku);
 
   const matrixData = useMemo(() => {
     return Object.fromEntries(
@@ -134,6 +297,36 @@ export default function IndicePrecoIdeal() {
       calibration: CalibratedPriceIndex[];
     }>;
   }, [config, scopedRows]);
+
+  const effectiveIndices = useMemo(() => buildEffectiveIndices(matrixData, config), [config, matrixData]);
+  const competitorReferencePrice = parseDecimal(competitorPrice) || anchorOption?.actualPrice || 0;
+  const anchorPositioningIndex = parseDecimal(anchorPositioning) || 1;
+
+  const skuSuggestions = useMemo(
+    () => buildSkuSuggestions(scopedRows, competitorReferencePrice, anchorPositioningIndex, effectiveIndices),
+    [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
+  );
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(skuSuggestions.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [skuSuggestions],
+  );
+  const filteredSuggestions = useMemo(() => {
+    const q = skuSearch.trim().toLowerCase();
+    return skuSuggestions
+      .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
+      .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q))
+      .slice(0, 80);
+  }, [categoryFilter, skuSearch, skuSuggestions]);
+
+  const residuals = useMemo(
+    () => calculatePricePredictionResiduals(scopedRows, {
+      competitorReferencePrice,
+      anchorPositioningIndex,
+      indices: effectiveIndices,
+    }),
+    [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
+  );
+  const residualSummary = useMemo(() => summarizeResiduals(residuals), [residuals]);
 
   useEffect(() => {
     setConfig((current) => {
@@ -154,6 +347,11 @@ export default function IndicePrecoIdeal() {
       return changed ? next : current;
     });
   }, [matrixData]);
+
+  useEffect(() => {
+    if (anchorSku && skuOptions.some((option) => option.sku === anchorSku)) return;
+    setAnchorSku(skuOptions[0]?.sku ?? "");
+  }, [anchorSku, skuOptions]);
 
   if (rows.length === 0) {
     return (
@@ -206,6 +404,31 @@ export default function IndicePrecoIdeal() {
           </div>
         </GlassCard>
 
+        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
+          <AnchorSetupCard
+            skuOptions={skuOptions}
+            anchorSku={anchorSku}
+            onAnchorSkuChange={setAnchorSku}
+            competitorPrice={competitorPrice}
+            onCompetitorPriceChange={setCompetitorPrice}
+            anchorPositioning={anchorPositioning}
+            onAnchorPositioningChange={setAnchorPositioning}
+            effectiveCompetitorPrice={competitorReferencePrice}
+            anchorOption={anchorOption}
+          />
+          <SuggestedPricesCard
+            rows={filteredSuggestions}
+            totalRows={skuSuggestions.length}
+            search={skuSearch}
+            onSearchChange={setSkuSearch}
+            categoryFilter={categoryFilter}
+            onCategoryFilterChange={setCategoryFilter}
+            categoryOptions={categoryOptions}
+          />
+        </div>
+
+        <FitQualityCard residuals={residuals.slice(0, 12)} summary={residualSummary} />
+
         <div className="grid gap-5 xl:grid-cols-3">
           {DIMENSIONS.map((dimension) => (
             <IndexMatrix
@@ -252,6 +475,272 @@ export default function IndicePrecoIdeal() {
         </div>
       </main>
     </div>
+  );
+}
+
+function AnchorSetupCard({
+  skuOptions,
+  anchorSku,
+  onAnchorSkuChange,
+  competitorPrice,
+  onCompetitorPriceChange,
+  anchorPositioning,
+  onAnchorPositioningChange,
+  effectiveCompetitorPrice,
+  anchorOption,
+}: {
+  skuOptions: SkuOption[];
+  anchorSku: string;
+  onAnchorSkuChange: (value: string) => void;
+  competitorPrice: string;
+  onCompetitorPriceChange: (value: string) => void;
+  anchorPositioning: string;
+  onAnchorPositioningChange: (value: string) => void;
+  effectiveCompetitorPrice: number;
+  anchorOption?: SkuOption;
+}) {
+  return (
+    <GlassCard surface="raised" className="space-y-5">
+      <div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+          <Star className="h-3.5 w-3.5" />
+          SKU âncora
+        </div>
+        <h2 className="mt-3 text-lg font-semibold text-foreground">Ponto de partida estratégico</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Escolha um SKU referência, informe o preço do concorrente e defina o posicionamento desejado da âncora.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SKU âncora</span>
+          <Input
+            list="ideal-price-anchor-skus"
+            value={anchorSku}
+            onChange={(event) => onAnchorSkuChange(event.target.value)}
+            placeholder="Buscar SKU"
+            className="h-10"
+          />
+          <datalist id="ideal-price-anchor-skus">
+            {skuOptions.slice(0, 500).map((option) => (
+              <option key={option.sku} value={option.sku}>
+                {option.label}
+              </option>
+            ))}
+          </datalist>
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preço concorrente</span>
+            <Input
+              value={competitorPrice}
+              inputMode="decimal"
+              onChange={(event) => onCompetitorPriceChange(event.target.value)}
+              placeholder={anchorOption?.actualPrice ? formatMoneyPerKg(anchorOption.actualPrice) : "R$/kg"}
+              className="h-10 text-right font-semibold"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Posicionamento</span>
+            <Input
+              value={anchorPositioning}
+              inputMode="decimal"
+              onChange={(event) => onAnchorPositioningChange(event.target.value)}
+              className="h-10 text-right font-semibold"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/40 bg-background/35">
+        <div className="border-r border-border/35 p-4">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Preço usado</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{formatMoneyPerKg(effectiveCompetitorPrice)}</p>
+          <p className="text-xs text-muted-foreground">referência concorrente</p>
+        </div>
+        <div className="p-4">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Âncora atual</p>
+          <p className="mt-1 truncate text-sm font-semibold text-foreground" title={anchorOption?.label}>
+            {anchorOption?.label ?? "Sem SKU"}
+          </p>
+          <p className="text-xs text-muted-foreground">{formatNum(anchorOption?.volumeKg ?? 0, 0)} kg no recorte</p>
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
+function SuggestedPricesCard({
+  rows,
+  totalRows,
+  search,
+  onSearchChange,
+  categoryFilter,
+  onCategoryFilterChange,
+  categoryOptions,
+}: {
+  rows: SkuPriceSuggestion[];
+  totalRows: number;
+  search: string;
+  onSearchChange: (value: string) => void;
+  categoryFilter: string;
+  onCategoryFilterChange: (value: string) => void;
+  categoryOptions: string[];
+}) {
+  return (
+    <GlassCard className="flex min-h-[430px] flex-col p-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 p-5">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Catálogo sugerido</p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">Preço ideal por SKU</h2>
+        </div>
+        <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
+          {formatNum(totalRows, 0)} SKUs calculados
+        </Badge>
+      </div>
+      <div className="grid gap-3 border-b border-border/30 p-4 md:grid-cols-[1fr_220px]">
+        <label className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Buscar por SKU, descrição ou categoria"
+            className="h-10 pl-9"
+          />
+        </label>
+        <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
+          <SelectTrigger className="h-10">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as categorias</SelectItem>
+            {categoryOptions.map((category) => (
+              <SelectItem key={category} value={category}>{category}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur">
+            <tr className="border-b border-border/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+              <th className="px-4 py-3 font-medium">SKU</th>
+              <th className="px-3 py-3 font-medium">Dimensões</th>
+              <th className="px-3 py-3 text-right font-medium">Atual</th>
+              <th className="px-3 py-3 text-right font-medium">Sugerido</th>
+              <th className="px-4 py-3 text-right font-medium">Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.sku} className="border-b border-border/25 hover:bg-muted/25">
+                <td className="max-w-[260px] px-4 py-3">
+                  <p className="truncate font-medium text-foreground" title={row.name}>{row.name}</p>
+                  <p className="text-xs text-muted-foreground">{row.category} · {formatNum(row.volumeKg, 0)} kg</p>
+                </td>
+                <td className="px-3 py-3 text-xs text-muted-foreground">
+                  {row.sabor} · {row.faixaPeso} · {row.formato}
+                </td>
+                <td className="px-3 py-3 text-right font-medium">{formatMoneyPerKg(row.actualPrice)}</td>
+                <td className="px-3 py-3 text-right font-semibold text-primary">{formatMoneyPerKg(row.suggestedPrice)}</td>
+                <td className={cn(
+                  "px-4 py-3 text-right font-semibold",
+                  (row.delta ?? 0) >= 0 ? "text-success" : "text-destructive",
+                )}>
+                  {row.delta === null ? "-" : `${row.delta >= 0 ? "+" : ""}${formatMoneyPerKg(row.delta)}`}
+                  <div className="text-[11px] font-normal text-muted-foreground">{formatDeltaPct(row.deltaPct)}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </GlassCard>
+  );
+}
+
+function FitQualityCard({
+  residuals,
+  summary,
+}: {
+  residuals: PricePredictionResidual[];
+  summary: ReturnType<typeof summarizeResiduals>;
+}) {
+  const maxResidual = Math.max(1, ...residuals.map((item) => Math.abs(item.residual ?? 0)));
+  return (
+    <GlassCard className="p-0">
+      <div className="grid gap-0 lg:grid-cols-[0.85fr_1.15fr]">
+        <div className="space-y-4 border-b border-border/40 p-5 lg:border-b-0 lg:border-r">
+          <div className="inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
+            <Gauge className="h-3.5 w-3.5" />
+            Qualidade do ajuste
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">{summary.label}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              O erro médio ponderado é de {formatMoneyPerKg(summary.avgAbsResidual)} por kg,
+              equivalente a {formatDeltaPct(summary.avgAbsResidualPct).replace("+", "")} do preço real.
+            </p>
+          </div>
+          {summary.worst && (
+            <div className="rounded-xl border border-border/40 bg-background/35 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Maior desajuste</p>
+              <p className="mt-1 font-semibold text-foreground">
+                {summary.worst.sabor} · {summary.worst.faixaPeso} · {summary.worst.formato}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Modelo: {formatMoneyPerKg(summary.worst.predictedPrice)} · Real: {formatMoneyPerKg(summary.worst.actualPrice)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-auto p-5">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="pb-3 font-medium">Combinação</th>
+                <th className="pb-3 text-right font-medium">Previsto</th>
+                <th className="pb-3 text-right font-medium">Real</th>
+                <th className="pb-3 text-right font-medium">Resíduo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {residuals.map((item) => {
+                const magnitude = Math.min(100, (Math.abs(item.residual ?? 0) / maxResidual) * 100);
+                const negative = (item.residual ?? 0) < 0;
+                return (
+                  <tr key={`${item.sabor}-${item.faixaPeso}-${item.formato}`} className="border-b border-border/20">
+                    <td className="max-w-[320px] py-3 pr-3">
+                      <p className="truncate font-medium text-foreground">
+                        {item.sabor} · {item.faixaPeso} · {item.formato}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatNum(item.volumeKg, 0)} kg · {item.skuCount} SKUs</p>
+                    </td>
+                    <td className="px-3 py-3 text-right">{formatMoneyPerKg(item.predictedPrice)}</td>
+                    <td className="px-3 py-3 text-right">{formatMoneyPerKg(item.actualPrice)}</td>
+                    <td className="min-w-[150px] py-3 pl-3 text-right">
+                      <div className={cn("font-semibold", negative ? "text-destructive" : "text-success")}>
+                        {item.residual === null ? "-" : `${item.residual >= 0 ? "+" : ""}${formatMoneyPerKg(item.residual)}`}
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
+                        <div
+                          className={cn("h-full rounded-full", negative ? "bg-destructive" : "bg-success")}
+                          style={{ width: `${magnitude}%` }}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 
