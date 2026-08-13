@@ -169,14 +169,26 @@ function persistedSlidesStateHasContent(raw: string): boolean {
 
 function pushSlidesFlowBackupRaw(raw: string, storage: Pick<Storage, "getItem" | "setItem">) {
   if (!persistedSlidesStateHasContent(raw)) return;
-  const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
-  const existing = existingRaw ? JSON.parse(existingRaw) : [];
-  const backups = Array.isArray(existing) ? existing : [];
-  if (backups[0]?.value === raw) return;
-  const next = [{ createdAt: Date.now(), value: raw }, ...backups]
-    .filter((entry) => entry && typeof entry.value === "string" && persistedSlidesStateHasContent(entry.value))
-    .slice(0, SLIDES_FLOW_BACKUP_LIMIT);
-  storage.setItem(SLIDES_FLOW_BACKUP_KEY, JSON.stringify(next));
+  try {
+    const existingRaw = storage.getItem(SLIDES_FLOW_BACKUP_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : [];
+    const backups = Array.isArray(existing) ? existing : [];
+    if (backups[0]?.value === raw) return;
+    const next = [{ createdAt: Date.now(), value: raw }, ...backups]
+      .filter((entry) => entry && typeof entry.value === "string" && persistedSlidesStateHasContent(entry.value))
+      .slice(0, SLIDES_FLOW_BACKUP_LIMIT);
+
+    for (let keep = next.length; keep > 0; keep -= 1) {
+      try {
+        storage.setItem(SLIDES_FLOW_BACKUP_KEY, JSON.stringify(next.slice(0, keep)));
+        return;
+      } catch (error) {
+        if (keep === 1) throw error;
+      }
+    }
+  } catch (error) {
+    console.warn("[slidesFlow] Backup local excedeu o limite de armazenamento; esteira principal preservada.", error);
+  }
 }
 
 export function getLatestSlidesFlowBackupRaw(storage: Pick<Storage, "getItem"> | undefined = typeof localStorage !== "undefined" ? localStorage : undefined) {

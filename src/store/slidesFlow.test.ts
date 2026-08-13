@@ -162,4 +162,30 @@ describe("backupSlidesFlowRawState", () => {
     expect(storage.getItem("pricing.slidesFlow.v1")).toBe(currentRaw);
     expect(getLatestSlidesFlowBackupRaw(storage)).toBe(currentRaw);
   });
+
+  it("does not crash when the preventive backup exceeds localStorage quota", () => {
+    const currentRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const nextRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }, { id: "slide-2" }], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const storage = memoryStorage({
+      "pricing.slidesFlow.v1": currentRaw,
+    });
+    const originalSetItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === "pricing.slidesFlow.v1.backup") {
+        throw new DOMException("quota", "QuotaExceededError");
+      }
+      originalSetItem(key, value);
+    };
+    const guarded = createSlidesFlowStorage(storage);
+
+    expect(() => guarded.setItem("pricing.slidesFlow.v1", nextRaw)).not.toThrow();
+
+    expect(storage.getItem("pricing.slidesFlow.v1")).toBe(nextRaw);
+  });
 });
