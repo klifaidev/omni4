@@ -387,13 +387,19 @@ class BlockErrorBoundary extends React.Component<
   }
 }
 
-type BlockRendererProps = { block: CustomBlock; readOnly?: boolean; isEditing?: boolean; cacheSlideId?: string };
+type BlockRendererProps = {
+  block: CustomBlock;
+  readOnly?: boolean;
+  isEditing?: boolean;
+  cacheSlideId?: string;
+  onPatch?: (patch: Partial<CustomBlock>) => void;
+};
 
-export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing, cacheSlideId }: BlockRendererProps) {
+export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
   if (isSlidePerfEnabled()) recordSlideRender("BlockRenderer", block.id);
   return (
     <BlockErrorBoundary block={block}>
-      <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} cacheSlideId={cacheSlideId} />
+      <BlockRendererInner block={block} readOnly={readOnly} isEditing={isEditing} cacheSlideId={cacheSlideId} onPatch={onPatch} />
     </BlockErrorBoundary>
   );
 }, (prev, next) => (
@@ -403,7 +409,7 @@ export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly
   && prev.cacheSlideId === next.cacheSlideId
 ));
 
-function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId }: BlockRendererProps) {
+function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
   switch (block.kind) {
     case "title":  return <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />;
     case "text":   return <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />;
@@ -411,7 +417,7 @@ function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId }: BlockR
     case "image":  return <ImageRender block={block} />;
     case "shape":  return <ShapeRender block={block} />;
     case "bridge": return <BridgeRender block={block} cacheSlideId={cacheSlideId} />;
-    case "table":  return <TableRender block={block} readOnly={readOnly} />;
+    case "table":  return <TableRender block={block} readOnly={readOnly} onPatch={onPatch} />;
     case "chart":  return <ChartRender block={block} cacheSlideId={cacheSlideId} />;
     case "topSku": return <TopSkuRender block={block} />;
     case "dre":    return <DreRender block={block} readOnly={readOnly} />;
@@ -767,7 +773,124 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
   );
 }
 
-function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boolean }) {
+const TABLE_MIN_COL_WIDTH_PCT = 6;
+const TABLE_ROW_COL_KEY = "__row__";
+
+type TableColumnLayout = {
+  key: string;
+  left: number;
+  width: number;
+};
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeTableColumnWidths(
+  columnKeys: string[],
+  saved: Record<string, number> | undefined,
+  defaultWeights: number[],
+) {
+  if (columnKeys.length === 0) return [];
+  const raw = columnKeys.map((key, index) => {
+    const savedValue = saved?.[key];
+    return Number.isFinite(savedValue) && savedValue > 0
+      ? savedValue
+      : Math.max(0.1, defaultWeights[index] ?? 1);
+  });
+  const minWidth = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / columnKeys.length);
+  const sum = raw.reduce((acc, value) => acc + value, 0) || columnKeys.length;
+  const normalized = raw.map((value) => (value / sum) * 100);
+  const fixed = normalized.map((value) => Math.max(minWidth, value));
+  const overflow = fixed.reduce((acc, value) => acc + value, 0) - 100;
+  if (overflow <= 0.0001) {
+    const total = fixed.reduce((acc, value) => acc + value, 0) || 100;
+    return fixed.map((value) => (value / total) * 100);
+  }
+  const flexible = fixed.map((value) => Math.max(0, value - minWidth));
+  const flexTotal = flexible.reduce((acc, value) => acc + value, 0);
+  if (flexTotal <= 0.0001) return columnKeys.map(() => 100 / columnKeys.length);
+  return fixed.map((value, index) => value - overflow * (flexible[index] / flexTotal));
+}
+
+function resizeTableColumnWidths(widths: number[], index: number, deltaPct: number) {
+  if (widths.length <= 1) return widths;
+  const minWidth = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / widths.length);
+  const maxWidth = 100 - minWidth * (widths.length - 1);
+  const next = [...widths];
+  const resized = clampNumber(widths[index] + deltaPct, minWidth, maxWidth);
+  const diff = resized - widths[index];
+  if (Math.abs(diff) < 0.0001) return next;
+
+  const otherIndexes = widths.map((_, i) => i).filter((i) => i !== index);
+  if (diff > 0) {
+    const shrinkCapacity = otherIndexes.reduce((acc, i) => acc + Math.max(0, widths[i] - minWidth), 0);
+    if (shrinkCapacity <= 0.0001) return next;
+    const actualDiff = Math.min(diff, shrinkCapacity);
+    next[index] = widths[index] + actualDiff;
+    for (const i of otherIndexes) {
+      const capacity = Math.max(0, widths[i] - minWidth);
+      next[i] = widths[i] - actualDiff * (capacity / shrinkCapacity);
+    }
+    return next;
+  }
+
+  const growTotal = otherIndexes.reduce((acc, i) => acc + Math.max(0.0001, widths[i]), 0);
+  next[index] = resized;
+  for (const i of otherIndexes) {
+    next[i] = widths[i] + Math.abs(diff) * (Math.max(0.0001, widths[i]) / growTotal);
+  }
+  return next;
+}
+
+function buildTableColumnLayout(columnKeys: string[], widths: number[]): TableColumnLayout[] {
+  let left = 0;
+  return columnKeys.map((key, index) => {
+    const layout = { key, left, width: widths[index] ?? 0 };
+    left += layout.width;
+    return layout;
+  });
+}
+
+function columnWidthsToRecord(columnKeys: string[], widths: number[]) {
+  return Object.fromEntries(columnKeys.map((key, index) => [key, Number((widths[index] ?? 0).toFixed(4))]));
+}
+
+function TableColumnResizeHandle({
+  onPointerDown,
+}: {
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      data-export-hide="true"
+      title="Arrastar para ajustar largura"
+      onPointerDown={onPointerDown}
+      style={{
+        position: "absolute",
+        top: 0,
+        right: -4,
+        width: 8,
+        height: "100%",
+        cursor: "col-resize",
+        zIndex: 5,
+        touchAction: "none",
+      }}
+    >
+      <div
+        style={{
+          width: 2,
+          height: "100%",
+          margin: "0 auto",
+          background: "rgba(17, 24, 39, 0.18)",
+          opacity: 0.75,
+        }}
+      />
+    </div>
+  );
+}
+
+function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readOnly?: boolean; onPatch?: (patch: Partial<CustomBlock>) => void }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const forecast = useForecast((s) => s.rows);
@@ -816,6 +939,63 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
     });
     return { result, measures, sortedHeaders };
   }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure, b.sortMode, b.sortDirection, b.manualRowOrder]);
+
+  const tableColumnKeys = useMemo(() => {
+    if (!data) return [];
+    const cols = data.result.colHeaders;
+    const showCols = cols.length > 0 && cols[0].values.length > 0;
+    const showLastColumnVariation = !!b.showLastColumnVariation && showCols && cols.length >= 2;
+    const valueKeys = showCols
+      ? [
+          ...cols.flatMap((c) => data.measures.map((m) => `${c.key}::${m.id}`)),
+          ...(showLastColumnVariation ? data.measures.map((m) => `var::${m.id}`) : []),
+        ]
+      : data.measures.map((m) => m.id);
+    return [TABLE_ROW_COL_KEY, ...valueKeys];
+  }, [data, b.showLastColumnVariation]);
+  const defaultColumnWeights = useMemo(
+    () => tableColumnKeys.map((_, index) => (index === 0 ? 1.7 : 1)),
+    [tableColumnKeys],
+  );
+  const [draftColumnWidths, setDraftColumnWidths] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    setDraftColumnWidths(null);
+  }, [b.id, b.columnWidths, tableColumnKeys.join("|")]);
+  const activeColumnWidths = useMemo(
+    () => normalizeTableColumnWidths(tableColumnKeys, draftColumnWidths ?? b.columnWidths, defaultColumnWeights),
+    [tableColumnKeys, draftColumnWidths, b.columnWidths, defaultColumnWeights],
+  );
+  const columnLayouts = useMemo(
+    () => buildTableColumnLayout(tableColumnKeys, activeColumnWidths),
+    [tableColumnKeys, activeColumnWidths],
+  );
+  const tableResizeRef = useRef<HTMLDivElement | null>(null);
+  const startTableColumnResize = (index: number, event: React.PointerEvent<HTMLDivElement>) => {
+    if (readOnly || !onPatch || tableColumnKeys.length <= 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = tableResizeRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const startX = event.clientX;
+    const startWidths = [...activeColumnWidths];
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const deltaPct = ((moveEvent.clientX - startX) / rect.width) * 100;
+      const next = resizeTableColumnWidths(startWidths, index, deltaPct);
+      setDraftColumnWidths(columnWidthsToRecord(tableColumnKeys, next));
+    };
+    const handleUp = (upEvent: PointerEvent) => {
+      const deltaPct = ((upEvent.clientX - startX) / rect.width) * 100;
+      const next = resizeTableColumnWidths(startWidths, index, deltaPct);
+      const columnWidths = columnWidthsToRecord(tableColumnKeys, next);
+      setDraftColumnWidths(columnWidths);
+      onPatch({ columnWidths } as Partial<CustomBlock>);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp, { once: true });
+  };
 
   if (missingData) return <MissingLocalData label={missingData} />;
   if (!data || data.sortedHeaders.length === 0) {
@@ -1058,16 +1238,13 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
   };
 
   if (readOnly || b.autoFit === false) {
-    const variationCols = showLastColumnVariation ? measures.length : 0;
-    const valueCols = showCols ? cols.length * measures.length + variationCols : measures.length;
     const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
     const rowH = 100 / rowCount;
-    const firstColW = 100 * 1.7 / (1.7 + valueCols);
-    const valueColW = (100 - firstColW) / Math.max(1, valueCols);
-    const leftForValue = (idx: number) => firstColW + idx * valueColW;
+    const firstCol = columnLayouts[0] ?? { key: TABLE_ROW_COL_KEY, left: 0, width: 100 };
+    const valueCol = (idx: number) => columnLayouts[idx + 1] ?? { key: `missing-${idx}`, left: firstCol.width, width: 0 };
 
     const headerCells = [
-      <ExportPositionedCell key="row-head" style={renderCellHead} left={0} top={0} width={firstColW} height={rowH} padX={8}>
+      <ExportPositionedCell key="row-head" style={renderCellHead} left={firstCol.left} top={0} width={firstCol.width} height={rowH} padX={8}>
         {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
@@ -1076,9 +1253,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               <ExportPositionedCell
                 key={`${c.key}-${m.id}`}
                 style={renderCellHead}
-                left={leftForValue(ci * measures.length + mi)}
+                left={valueCol(ci * measures.length + mi).left}
                 top={0}
-                width={valueColW}
+                width={valueCol(ci * measures.length + mi).width}
                 height={rowH}
                 padX={8}
               >
@@ -1090,9 +1267,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                   <ExportPositionedCell
                     key={`var-${m.id}`}
                     style={renderCellHead}
-                    left={leftForValue(cols.length * measures.length + mi)}
+                    left={valueCol(cols.length * measures.length + mi).left}
                     top={0}
-                    width={valueColW}
+                    width={valueCol(cols.length * measures.length + mi).width}
                     height={rowH}
                     padX={8}
                   >
@@ -1102,14 +1279,14 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               : []),
           ]
         : measures.map((m, mi) => (
-            <ExportPositionedCell key={m.id} style={renderCellHead} left={leftForValue(mi)} top={0} width={valueColW} height={rowH} padX={8}>
+            <ExportPositionedCell key={m.id} style={renderCellHead} left={valueCol(mi).left} top={0} width={valueCol(mi).width} height={rowH} padX={8}>
               {m.label}
             </ExportPositionedCell>
           ))),
     ];
 
     const bodyCells = visibleHeaders.flatMap((rh, ri) => [
-      <ExportPositionedCell key={`${rh.key}-label`} style={renderCellLabel} left={0} top={(ri + 1) * rowH} width={firstColW} height={rowH} padX={8}>
+      <ExportPositionedCell key={`${rh.key}-label`} style={renderCellLabel} left={firstCol.left} top={(ri + 1) * rowH} width={firstCol.width} height={rowH} padX={8}>
         {rh.values.join(" / ") || "Total"}
       </ExportPositionedCell>,
       ...(showCols
@@ -1120,9 +1297,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                 <ExportPositionedCell
                   key={`${rh.key}-${c.key}-${m.id}`}
                   style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }}
-                  left={leftForValue(ci * measures.length + mi)}
+                  left={valueCol(ci * measures.length + mi).left}
                   top={(ri + 1) * rowH}
-                  width={valueColW}
+                  width={valueCol(ci * measures.length + mi).width}
                   height={rowH}
                   padX={8}
                 >
@@ -1137,9 +1314,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                     <ExportPositionedCell
                       key={`${rh.key}-var-${m.id}`}
                       style={{ ...cellValDyn, ...variationStyle(v) }}
-                      left={leftForValue(cols.length * measures.length + mi)}
+                      left={valueCol(cols.length * measures.length + mi).left}
                       top={(ri + 1) * rowH}
-                      width={valueColW}
+                      width={valueCol(cols.length * measures.length + mi).width}
                       height={rowH}
                       padX={8}
                     >
@@ -1155,9 +1332,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               <ExportPositionedCell
                 key={`${rh.key}-${m.id}`}
                 style={{ ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }}
-                left={leftForValue(mi)}
+                left={valueCol(mi).left}
                 top={(ri + 1) * rowH}
-                width={valueColW}
+                width={valueCol(mi).width}
                 height={rowH}
                 padX={8}
               >
@@ -1172,9 +1349,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
           <ExportPositionedCell
             key="others-label"
             style={{ ...renderCellLabel, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
-            left={0}
+            left={firstCol.left}
             top={(rowCount - 1) * rowH}
-            width={firstColW}
+            width={firstCol.width}
             height={rowH}
             padX={8}
           >
@@ -1186,9 +1363,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                   <ExportPositionedCell
                     key={`oth-${c.key}-${m.id}`}
                     style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
-                    left={leftForValue(ci * measures.length + mi)}
+                    left={valueCol(ci * measures.length + mi).left}
                     top={(rowCount - 1) * rowH}
-                    width={valueColW}
+                    width={valueCol(ci * measures.length + mi).width}
                     height={rowH}
                     padX={8}
                   >
@@ -1202,9 +1379,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                         <ExportPositionedCell
                           key={`oth-var-${m.id}`}
                           style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft, ...variationStyle(v) }}
-                          left={leftForValue(cols.length * measures.length + mi)}
+                          left={valueCol(cols.length * measures.length + mi).left}
                           top={(rowCount - 1) * rowH}
-                          width={valueColW}
+                          width={valueCol(cols.length * measures.length + mi).width}
                           height={rowH}
                           padX={8}
                         >
@@ -1218,9 +1395,9 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
                 <ExportPositionedCell
                   key={`oth-${m.id}`}
                   style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft }}
-                  left={leftForValue(mi)}
+                  left={valueCol(mi).left}
                   top={(rowCount - 1) * rowH}
-                  width={valueColW}
+                  width={valueCol(mi).width}
                   height={rowH}
                   padX={8}
                 >
@@ -1229,11 +1406,28 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
               ))),
         ]
       : [];
+    const resizeHandles = !readOnly && onPatch
+      ? columnLayouts.slice(0, -1).map((layout, index) => (
+          <div
+            key={`resize-${layout.key}`}
+            style={{
+              position: "absolute",
+              left: `${layout.left + layout.width}%`,
+              top: 0,
+              width: 0,
+              height: `${rowH}%`,
+              zIndex: 30,
+            }}
+          >
+            <TableColumnResizeHandle onPointerDown={(event) => startTableColumnResize(index, event)} />
+          </div>
+        ))
+      : null;
 
     return (
       <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
         {tableTitleEl}
-        <div style={{
+        <div ref={tableResizeRef} style={{
           width: "100%",
           height: `calc(100% - ${tableTitleGap}px)`,
           position: "relative",
@@ -1241,36 +1435,71 @@ function TableRender({ block: b, readOnly }: { block: TableBlock; readOnly?: boo
           {headerCells}
           {bodyCells}
           {othersCells}
+          {resizeHandles}
         </div>
       </div>
     );
   }
 
+  const htmlHeaderCell = (index: number, content: React.ReactNode, key?: React.Key) => (
+    tableCell("th", (
+      <div style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        minHeight: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "6px 8px",
+        boxSizing: "border-box",
+        overflow: "hidden",
+      }}>
+        <span style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: "100%",
+        }}>
+          {content}
+        </span>
+        {index < columnLayouts.length - 1 && onPatch && (
+          <TableColumnResizeHandle onPointerDown={(event) => startTableColumnResize(index, event)} />
+        )}
+      </div>
+    ), { ...renderCellHead, padding: 0, position: "relative" }, key)
+  );
+
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
       {tableTitleEl}
-      <div style={{ height: `calc(100% - ${tableTitleGap}px)`, overflow: "hidden" }}>
+      <div ref={tableResizeRef} style={{ height: `calc(100% - ${tableTitleGap}px)`, overflow: "hidden" }}>
       <table style={{
         width: "100%",
         height: b.autoFit === false ? "100%" : undefined,
         borderCollapse: "collapse",
         tableLayout: "fixed",
       }}>
+        <colgroup>
+          {columnLayouts.map((layout) => (
+            <col key={layout.key} style={{ width: `${layout.width}%` }} />
+          ))}
+        </colgroup>
         <thead>
           <tr style={htmlRowStyle}>
-            {tableCell("th", b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", renderCellHead)}
+            {htmlHeaderCell(0, b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", "row-head")}
             {showCols
               ? (
                   <>
-                    {cols.flatMap((c) => measures.map((m) => (
-                      <th key={`${c.key}-${m.id}`} style={renderCellHead}>{tableHeaderLabel(c.values.join(" / "), m.label)}</th>
+                    {cols.flatMap((c, ci) => measures.map((m, mi) => (
+                      htmlHeaderCell(1 + ci * measures.length + mi, tableHeaderLabel(c.values.join(" / "), m.label), `${c.key}-${m.id}`)
                     )))}
-                    {showLastColumnVariation && measures.map((m) => (
-                      <th key={`var-${m.id}`} style={renderCellHead}>{variationHeaderLabel(m.label)}</th>
+                    {showLastColumnVariation && measures.map((m, mi) => (
+                      htmlHeaderCell(1 + cols.length * measures.length + mi, variationHeaderLabel(m.label), `var-${m.id}`)
                     ))}
                   </>
                 )
-              : measures.map((m) => <th key={m.id} style={renderCellHead}>{m.label}</th>)}
+              : measures.map((m, mi) => htmlHeaderCell(1 + mi, m.label, m.id))}
           </tr>
         </thead>
         <tbody>

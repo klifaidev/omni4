@@ -323,6 +323,8 @@ export interface TableBlock extends BaseBlock {
   exportNote?: boolean;
   /** Adiciona uma coluna final com variação % da última coluna vs. penúltima. Default: false */
   showLastColumnVariation?: boolean;
+  /** Larguras relativas das colunas renderizadas, em percentual da largura total da tabela. */
+  columnWidths?: Record<string, number>;
   /** Row sorting mode. Default "kpi". */
   sortMode?: "kpi" | "az" | "za" | "manual";
   /** Measure used when sortMode="kpi". Default: first selected measure. */

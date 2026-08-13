@@ -2574,10 +2574,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                       >
                         <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
-                          pointerEvents: "none",
+                          pointerEvents: blk.kind === "table" ? "auto" : "none",
                           visibility: blk.hidden ? "hidden" : "visible",
                         }}>
-                          <BlockRenderer block={blk} isEditing={isEditing} cacheSlideId={slideId} />
+                          <BlockRenderer
+                            block={blk}
+                            isEditing={isEditing}
+                            cacheSlideId={slideId}
+                            onPatch={(patch) => updateBlock(blk.id, patch)}
+                          />
                         </div>
                         {isEditing && (
                           <InlineTextEditor
@@ -2795,10 +2800,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                       >
                         <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
-                          pointerEvents: blk.kind === "chart" ? "auto" : "none",
+                          pointerEvents: blk.kind === "chart" || blk.kind === "table" ? "auto" : "none",
                           visibility: blk.hidden ? "hidden" : "visible",
                         }}>
-                          <BlockRenderer block={blk} isEditing={isEditing} cacheSlideId={slideId} />
+                          <BlockRenderer
+                            block={blk}
+                            isEditing={isEditing}
+                            cacheSlideId={slideId}
+                            onPatch={(patch) => updateBlock(blk.id, patch)}
+                          />
                         </div>
                         {isEditing && (
                           <InlineTextEditor
