@@ -51,8 +51,7 @@ describe("price index model", () => {
 
   it("predicts an ideal price from anchor and calibrated indices", () => {
     const predicted = predictIdealPrice({
-      competitorReferencePrice: 10,
-      anchorPositioningIndex: 1.1,
+      anchorSuggestedPrice: 11,
       sabor: "Morango",
       faixaPeso: "200g",
       formato: "Barra",
@@ -75,8 +74,7 @@ describe("price index model", () => {
     const sabor = calibratedIndicesToValues(calibratePriceIndices(rows, "sabor", "Chocolate"));
 
     const residuals = calculatePricePredictionResiduals(rows, {
-      competitorReferencePrice: 10,
-      anchorPositioningIndex: 1,
+      anchorSuggestedPrice: 10,
       indices: {
         sabor,
         faixaPeso: { "100g": 1, "200g": 2 },

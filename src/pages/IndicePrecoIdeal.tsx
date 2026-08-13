@@ -237,8 +237,7 @@ function buildEffectiveIndices(
 
 function buildSkuSuggestions(
   rows: PricingRow[],
-  competitorReferencePrice: number,
-  anchorPositioningIndex: number,
+  anchorSuggestedPrice: number,
   indices: PriceIndexValues,
 ): SkuPriceSuggestion[] {
   const groups = new Map<string, PricingRow[]>();
@@ -259,8 +258,7 @@ function buildSkuSuggestions(
       const actualPrice = volumeKg > 0 ? rol / volumeKg : null;
       const costPerKg = volumeKg > 0 ? totalCost / volumeKg : null;
       const suggestedPrice = predictIdealPrice({
-        competitorReferencePrice,
-        anchorPositioningIndex,
+        anchorSuggestedPrice,
         sabor: valueFor(sample, "sabor"),
         faixaPeso: valueFor(sample, "faixaPeso"),
         formato: valueFor(sample, "formato"),
@@ -349,7 +347,7 @@ function median(values: number[]): number | null {
 function applyGuardrails(
   rows: SkuPriceSuggestion[],
   config: GuardrailConfig,
-  competitorReferencePrice: number,
+  anchorSuggestedPrice: number,
 ): SkuPriceSuggestion[] {
   const categoryMedian = new Map<string, number | null>();
   for (const category of new Set(rows.map((row) => row.category))) {
@@ -387,8 +385,8 @@ function applyGuardrails(
       }
     }
 
-    if (competitorReferencePrice > 0) {
-      const competitiveIndex = row.suggestedPrice / competitorReferencePrice;
+    if (anchorSuggestedPrice > 0) {
+      const competitiveIndex = row.suggestedPrice / anchorSuggestedPrice;
       if (competitiveIndex < config.competitiveMinIndex || competitiveIndex > config.competitiveMaxIndex) {
         const boundary = competitiveIndex < config.competitiveMinIndex ? config.competitiveMinIndex : config.competitiveMaxIndex;
         guardrailViolations.push({
@@ -454,8 +452,9 @@ export default function IndicePrecoIdeal() {
   const [config, setConfig] = useState<StoredConfig>(() => loadStoredConfig());
   const [targetSettings, setTargetSettings] = useState<TargetSettings>(() => loadMarginTargetSettings());
   const [anchorSku, setAnchorSku] = useState("");
-  const [competitorPrice, setCompetitorPrice] = useState("");
-  const [anchorPositioning, setAnchorPositioning] = useState("1,10");
+  const [anchorSkuSearch, setAnchorSkuSearch] = useState("");
+  const anchorInitializedRef = useRef(false);
+  const [anchorSuggestedPriceInput, setAnchorSuggestedPriceInput] = useState("");
   const [skuSearch, setSkuSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [showOnlyViolations, setShowOnlyViolations] = useState(false);
@@ -511,16 +510,15 @@ export default function IndicePrecoIdeal() {
   }, [config, scopedRows]);
 
   const effectiveIndices = useMemo(() => buildEffectiveIndices(matrixData, config), [config, matrixData]);
-  const competitorReferencePrice = parseDecimal(competitorPrice) || anchorOption?.actualPrice || 0;
-  const anchorPositioningIndex = parseDecimal(anchorPositioning) || 1;
+  const anchorSuggestedPrice = parseDecimal(anchorSuggestedPriceInput);
 
   const rawSkuSuggestions = useMemo(
-    () => buildSkuSuggestions(scopedRows, competitorReferencePrice, anchorPositioningIndex, effectiveIndices),
-    [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
+    () => buildSkuSuggestions(scopedRows, anchorSuggestedPrice, effectiveIndices),
+    [anchorSuggestedPrice, effectiveIndices, scopedRows],
   );
   const skuSuggestions = useMemo(
-    () => applyGuardrails(rawSkuSuggestions, guardrailConfig, competitorReferencePrice),
-    [competitorReferencePrice, guardrailConfig, rawSkuSuggestions],
+    () => applyGuardrails(rawSkuSuggestions, guardrailConfig, anchorSuggestedPrice),
+    [anchorSuggestedPrice, guardrailConfig, rawSkuSuggestions],
   );
   const targetBySku = useMemo(
     () => buildSkuTargetMap(scopedRows, historyRows, budgetFiscalRows, targetSettings),
@@ -549,11 +547,10 @@ export default function IndicePrecoIdeal() {
 
   const residuals = useMemo(
     () => calculatePricePredictionResiduals(scopedRows, {
-      competitorReferencePrice,
-      anchorPositioningIndex,
+      anchorSuggestedPrice,
       indices: effectiveIndices,
     }),
-    [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
+    [anchorSuggestedPrice, effectiveIndices, scopedRows],
   );
   const residualSummary = useMemo(() => summarizeResiduals(residuals), [residuals]);
   const targetCoverageCount = useMemo(
@@ -610,9 +607,18 @@ export default function IndicePrecoIdeal() {
   }, [matrixData]);
 
   useEffect(() => {
-    if (anchorSku && skuOptions.some((option) => option.sku === anchorSku)) return;
-    setAnchorSku(skuOptions[0]?.sku ?? "");
-  }, [anchorSku, skuOptions]);
+    if (anchorInitializedRef.current || skuOptions.length === 0) return;
+    const first = skuOptions[0];
+    anchorInitializedRef.current = true;
+    setAnchorSku(first.sku);
+    setAnchorSkuSearch(first.sku);
+    if (!anchorSuggestedPriceInput && first.actualPrice !== null) {
+      setAnchorSuggestedPriceInput(first.actualPrice.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }));
+    }
+  }, [anchorSuggestedPriceInput, skuOptions]);
 
   if (rows.length === 0) {
     return (
@@ -687,12 +693,12 @@ export default function IndicePrecoIdeal() {
             <AnchorSetupCard
               skuOptions={skuOptions}
               anchorSku={anchorSku}
+              anchorSkuSearch={anchorSkuSearch}
               onAnchorSkuChange={setAnchorSku}
-              competitorPrice={competitorPrice}
-              onCompetitorPriceChange={setCompetitorPrice}
-              anchorPositioning={anchorPositioning}
-              onAnchorPositioningChange={setAnchorPositioning}
-              effectiveCompetitorPrice={competitorReferencePrice}
+              onAnchorSkuSearchChange={setAnchorSkuSearch}
+              anchorSuggestedPriceInput={anchorSuggestedPriceInput}
+              onAnchorSuggestedPriceChange={setAnchorSuggestedPriceInput}
+              effectiveAnchorPrice={anchorSuggestedPrice}
               anchorOption={anchorOption}
             />
             <GuardrailConfigCard
@@ -925,24 +931,50 @@ function ExecutiveMetric({
 function AnchorSetupCard({
   skuOptions,
   anchorSku,
+  anchorSkuSearch,
   onAnchorSkuChange,
-  competitorPrice,
-  onCompetitorPriceChange,
-  anchorPositioning,
-  onAnchorPositioningChange,
-  effectiveCompetitorPrice,
+  onAnchorSkuSearchChange,
+  anchorSuggestedPriceInput,
+  onAnchorSuggestedPriceChange,
+  effectiveAnchorPrice,
   anchorOption,
 }: {
   skuOptions: SkuOption[];
   anchorSku: string;
+  anchorSkuSearch: string;
   onAnchorSkuChange: (value: string) => void;
-  competitorPrice: string;
-  onCompetitorPriceChange: (value: string) => void;
-  anchorPositioning: string;
-  onAnchorPositioningChange: (value: string) => void;
-  effectiveCompetitorPrice: number;
+  onAnchorSkuSearchChange: (value: string) => void;
+  anchorSuggestedPriceInput: string;
+  onAnchorSuggestedPriceChange: (value: string) => void;
+  effectiveAnchorPrice: number;
   anchorOption?: SkuOption;
 }) {
+  const handleSkuSearchChange = (value: string) => {
+    onAnchorSkuSearchChange(value);
+    const normalized = value.trim().toLowerCase();
+
+    if (!normalized) {
+      onAnchorSkuChange("");
+      return;
+    }
+
+    const exact = skuOptions.find(
+      (option) => option.sku.toLowerCase() === normalized || option.label.toLowerCase() === normalized,
+    );
+
+    if (exact) {
+      onAnchorSkuChange(exact.sku);
+      if (exact.sku !== anchorSku && exact.actualPrice !== null) {
+        onAnchorSuggestedPriceChange(
+          exact.actualPrice.toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+        );
+      }
+    }
+  };
+
   return (
     <GlassCard surface="raised" className="space-y-5 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
       <div>
@@ -952,7 +984,7 @@ function AnchorSetupCard({
         </div>
         <h2 className="mt-3 text-lg font-semibold text-foreground">Ponto de partida estratégico</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Escolha um SKU referência, informe o preço do concorrente e defina o posicionamento desejado da âncora.
+          Escolha o SKU referência e informe diretamente o preço médio sugerido da âncora em R$/kg.
         </p>
       </div>
 
@@ -961,8 +993,8 @@ function AnchorSetupCard({
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SKU âncora</span>
           <Input
             list="ideal-price-anchor-skus"
-            value={anchorSku}
-            onChange={(event) => onAnchorSkuChange(event.target.value)}
+            value={anchorSkuSearch}
+            onChange={(event) => handleSkuSearchChange(event.target.value)}
             placeholder="Buscar SKU"
             className="h-10"
           />
@@ -975,39 +1007,30 @@ function AnchorSetupCard({
           </datalist>
         </label>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preço concorrente</span>
-            <Input
-              value={competitorPrice}
-              inputMode="decimal"
-              onChange={(event) => onCompetitorPriceChange(event.target.value)}
-              placeholder={anchorOption?.actualPrice ? formatMoneyPerKg(anchorOption.actualPrice) : "R$/kg"}
-              className="h-10 text-right font-semibold"
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Posicionamento</span>
-            <Input
-              value={anchorPositioning}
-              inputMode="decimal"
-              onChange={(event) => onAnchorPositioningChange(event.target.value)}
-              className="h-10 text-right font-semibold"
-            />
-          </label>
-        </div>
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Preço médio sugerido da âncora
+          </span>
+          <Input
+            value={anchorSuggestedPriceInput}
+            inputMode="decimal"
+            onChange={(event) => onAnchorSuggestedPriceChange(event.target.value)}
+            placeholder={anchorOption?.actualPrice ? `${formatMoneyPerKg(anchorOption.actualPrice)} por kg` : "R$/kg"}
+            className="h-10 text-right font-semibold"
+          />
+        </label>
       </div>
 
       <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/40 bg-background/35">
         <div className="border-r border-border/35 p-4">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Preço usado</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{formatMoneyPerKg(effectiveCompetitorPrice)}</p>
-          <p className="text-xs text-muted-foreground">referência concorrente</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Preço âncora usado</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{formatMoneyPerKg(effectiveAnchorPrice)}</p>
+          <p className="text-xs text-muted-foreground">base direta do modelo</p>
         </div>
         <div className="p-4">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Âncora atual</p>
           <p className="mt-1 truncate text-sm font-semibold text-foreground" title={anchorOption?.label}>
-            {anchorOption?.label ?? "Sem SKU"}
+            {anchorSku && anchorOption ? anchorOption.label : "Nenhum SKU selecionado"}
           </p>
           <p className="text-xs text-muted-foreground">{formatNum(anchorOption?.volumeKg ?? 0, 0)} kg no recorte</p>
         </div>

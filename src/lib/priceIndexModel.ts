@@ -20,8 +20,7 @@ export interface CalibratedPriceIndex extends PriceIndexAggregate {
 export type PriceIndexValues = Partial<Record<PriceIndexDimension, Record<string, number>>>;
 
 export interface PredictIdealPriceInput {
-  competitorReferencePrice: number;
-  anchorPositioningIndex: number;
+  anchorSuggestedPrice: number;
   sabor?: string;
   faixaPeso?: string;
   formato?: string;
@@ -126,11 +125,9 @@ function lookupIndex(
 }
 
 export function predictIdealPrice(input: PredictIdealPriceInput): number {
-  const basePrice = Math.max(0, input.competitorReferencePrice);
-  const anchor = Number.isFinite(input.anchorPositioningIndex) ? input.anchorPositioningIndex : 1;
+  const basePrice = Math.max(0, input.anchorSuggestedPrice);
   return (
     basePrice *
-    anchor *
     lookupIndex(input.indices, "sabor", input.sabor) *
     lookupIndex(input.indices, "faixaPeso", input.faixaPeso) *
     lookupIndex(input.indices, "formato", input.formato)
