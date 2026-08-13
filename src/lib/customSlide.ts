@@ -325,8 +325,12 @@ export interface TableBlock extends BaseBlock {
   showLastColumnVariation?: boolean;
   /** Larguras relativas das colunas renderizadas, em percentual da largura total da tabela. */
   columnWidths?: Record<string, number>;
+  /** Colunas adicionais de gap do KPI contra uma referÃªncia de perÃ­odo. */
+  gapColumns?: TableGapColumn[];
+  /** Coluna de gap usada quando sortMode="gap". */
+  sortGapColumnId?: string;
   /** Row sorting mode. Default "kpi". */
-  sortMode?: "kpi" | "az" | "za" | "manual";
+  sortMode?: "kpi" | "gap" | "az" | "za" | "manual";
   /** Measure used when sortMode="kpi". Default: first selected measure. */
   sortMeasure?: string;
   /** Direction used when sortMode="kpi". Default "desc". */
@@ -337,6 +341,16 @@ export interface TableBlock extends BaseBlock {
   valueAlign?: "left" | "center" | "right";
   /** Formatação condicional por medida. Chave = id da medida. */
   conditionalFormats?: Record<string, ConditionalFormatRule>;
+}
+
+export type TableGapComparisonMode = "prev-month" | "prev-year-month" | "bench" | "manual";
+
+export interface TableGapColumn {
+  id: string;
+  measureId: string;
+  comparisonMode: TableGapComparisonMode;
+  manualPeriod?: string;
+  benchMeasureId?: string;
 }
 
 export type ConditionalFormatMode = "none" | "heatmap" | "above_avg" | "data_bar";

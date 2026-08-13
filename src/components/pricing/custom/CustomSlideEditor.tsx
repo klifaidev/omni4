@@ -57,7 +57,7 @@ import {
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
   isLineFamily,
-  type ConditionalFormatMode, type ConditionalFormatRule,
+  type ConditionalFormatMode, type ConditionalFormatRule, type TableGapColumn, type TableGapComparisonMode,
   type OmniBaseBlock,
   type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
   type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock,
@@ -3906,6 +3906,15 @@ function FilteredInspector({
         if (tb.sortMeasure && unavailable.includes(tb.sortMeasure)) {
           (patch as Partial<typeof tb>).sortMeasure = filtered[0] ?? undefined;
         }
+        const nextMeasures = new Set(fallback);
+        const nextGapColumns = (tb.gapColumns ?? []).filter((gap) => nextMeasures.has(gap.measureId));
+        if (nextGapColumns.length !== (tb.gapColumns ?? []).length) {
+          (patch as Partial<typeof tb>).gapColumns = nextGapColumns;
+          if (tb.sortMode === "gap" && !nextGapColumns.some((gap) => gap.id === tb.sortGapColumnId)) {
+            (patch as Partial<typeof tb>).sortGapColumnId = nextGapColumns[0]?.id;
+            (patch as Partial<typeof tb>).sortMode = nextGapColumns.length ? "gap" : "kpi";
+          }
+        }
       }
     }
     setRecalculating(true);
@@ -4413,6 +4422,12 @@ function TableBlockEditor({ block, onChange }: {
     if (ds === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
   }, [block.dataSource, pricing, budget, forecast, rolling]);
+  const periodOptions = useMemo(() => (
+    Array.from(new Map(sourceRows.map((row) => [row.periodo, row])).values())
+      .filter((row) => row.periodo && row.mes && row.ano)
+      .sort((a, b) => a.ano - b.ano || a.mes - b.mes)
+      .map((row) => ({ value: row.periodo, label: `${String(row.mes).padStart(2, "0")}/${row.ano}` }))
+  ), [sourceRows]);
   const tablePreview = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
     if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
@@ -4444,6 +4459,31 @@ function TableBlockEditor({ block, onChange }: {
       ? block.rowDims.filter((d) => d !== id)
       : [...block.rowDims, id];
     onChange({ rowDims: next } as never);
+  };
+  const selectedMeasures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
+  const gapColumns = block.gapColumns ?? [];
+  const addGapColumn = () => {
+    const measureId = selectedMeasures[0]?.id ?? block.measures[0] ?? CUSTOM_TABLE_MEASURES[0]?.id;
+    if (!measureId) return;
+    const gap: TableGapColumn = {
+      id: `gap_${newId()}`,
+      measureId,
+      comparisonMode: "prev-month",
+      benchMeasureId: measureId,
+    };
+    onChange({ gapColumns: [...gapColumns, gap] } as never);
+  };
+  const patchGapColumn = (id: string, patch: Partial<TableGapColumn>) => {
+    const next = gapColumns.map((gap) => gap.id === id ? { ...gap, ...patch } : gap);
+    onChange({ gapColumns: next } as never);
+  };
+  const removeGapColumn = (id: string) => {
+    const next = gapColumns.filter((gap) => gap.id !== id);
+    onChange({
+      gapColumns: next,
+      sortGapColumnId: block.sortGapColumnId === id ? next[0]?.id : block.sortGapColumnId,
+      sortMode: block.sortMode === "gap" && next.length === 0 ? "kpi" : block.sortMode,
+    } as never);
   };
 
   // Quando o usuário liga "Outros" e a tabela está truncada,
@@ -4556,6 +4596,88 @@ function TableBlockEditor({ block, onChange }: {
         </p>
       </div>
 
+      <Section title="Colunas de gap">
+        <div className="space-y-2">
+          {gapColumns.length === 0 ? (
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              Adicione colunas para comparar o KPI do mes mais recente contra M-1, Bench, LY ou um mes manual.
+            </p>
+          ) : gapColumns.map((gap, index) => {
+            const mode = gap.comparisonMode;
+            return (
+              <div key={gap.id} className="space-y-2 rounded-md border border-border/50 bg-background/40 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold">Gap {index + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeGapColumn(gap.id)}
+                    title="Remover coluna de gap"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Row label="KPI">
+                  <Select value={gap.measureId} onValueChange={(v) => patchGapColumn(gap.id, {
+                    measureId: v,
+                    benchMeasureId: gap.benchMeasureId ?? v,
+                  })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {selectedMeasures.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Row>
+                <Row label="Referencia">
+                  <Select value={mode} onValueChange={(v) => patchGapColumn(gap.id, { comparisonMode: v as TableGapComparisonMode })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="prev-month">M-1</SelectItem>
+                      <SelectItem value="bench">Bench</SelectItem>
+                      <SelectItem value="prev-year-month">LY</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Row>
+                {mode === "bench" && selectedMeasures.length > 1 && (
+                  <Row label="Bench por">
+                    <Select value={gap.benchMeasureId ?? gap.measureId} onValueChange={(v) => patchGapColumn(gap.id, { benchMeasureId: v })}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {selectedMeasures.map((m) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                )}
+                {mode === "manual" && (
+                  <Row label="Mes base">
+                    <Select value={gap.manualPeriod ?? periodOptions[0]?.value ?? ""} onValueChange={(v) => patchGapColumn(gap.id, { manualPeriod: v })}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                      <SelectContent>
+                        {periodOptions.map((period) => <SelectItem key={period.value} value={period.value}>{period.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                )}
+              </div>
+            );
+          })}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-full justify-center gap-1 text-xs"
+            onClick={addGapColumn}
+            disabled={selectedMeasures.length === 0}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Adicionar gap
+          </Button>
+        </div>
+      </Section>
+
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">Medidas</Label>
         <div className="space-y-1">
@@ -4595,6 +4717,7 @@ function TableBlockEditor({ block, onChange }: {
               onChange={(v) => onChange({ sortMode: v as TableBlock["sortMode"] } as never)}
               options={[
                 { value: "kpi", label: "KPI" },
+                { value: "gap", label: "Gap" },
                 { value: "az", label: "A-Z" },
                 { value: "za", label: "Z-A" },
                 { value: "manual", label: "Manual" },
@@ -4624,6 +4747,50 @@ function TableBlockEditor({ block, onChange }: {
                   ]}
                 />
               </Row>
+            </>
+          )}
+
+          {(block.sortMode ?? "kpi") === "gap" && (
+            <>
+              <Row label="Coluna">
+                <Select value={block.sortGapColumnId ?? gapColumns[0]?.id ?? "__none__"}
+                  onValueChange={(v) => onChange({ sortGapColumnId: v } as never)}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {gapColumns.length === 0 && <SelectItem value="__none__">Nenhum gap configurado</SelectItem>}
+                    {gapColumns.map((gap, index) => {
+                      const measure = selectedMeasures.find((m) => m.id === gap.measureId);
+                      const modeLabel = gap.comparisonMode === "prev-month"
+                        ? "M-1"
+                        : gap.comparisonMode === "prev-year-month"
+                        ? "LY"
+                        : gap.comparisonMode === "bench"
+                        ? "Bench"
+                        : "Manual";
+                      return (
+                        <SelectItem key={gap.id} value={gap.id}>
+                          {measure?.label ?? `Gap ${index + 1}`} vs {modeLabel}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </Row>
+              <Row label="Direcao">
+                <Segmented
+                  value={block.sortDirection ?? "desc"}
+                  onChange={(v) => onChange({ sortDirection: v as TableBlock["sortDirection"] } as never)}
+                  options={[
+                    { value: "desc", label: "Maior" },
+                    { value: "asc", label: "Menor" },
+                  ]}
+                />
+              </Row>
+              {gapColumns.length === 0 && (
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Adicione uma coluna de gap para ordenar por ela.
+                </p>
+              )}
             </>
           )}
 

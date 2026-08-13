@@ -5,6 +5,7 @@ import type {
   CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
   ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
   BlockDataSource,
+  TableGapColumn,
   OmniBaseBlock,
   OmniEvolucaoMensalBlock, OmniHeatmapSazonalidadeBlock, OmniHeroisOfensoresBlock,
   OmniCanalTrendBlock, OmniCanalMixBlock, OmniCustoEvolucaoBlock, OmniCustoComposicaoBlock,
@@ -775,6 +776,8 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
 
 const TABLE_MIN_COL_WIDTH_PCT = 6;
 const TABLE_ROW_COL_KEY = "__row__";
+const TABLE_PIVOT_SEP = "\u001F";
+const TABLE_EMPTY = "—";
 
 type TableColumnLayout = {
   key: string;
@@ -856,6 +859,118 @@ function columnWidthsToRecord(columnKeys: string[], widths: number[]) {
   return Object.fromEntries(columnKeys.map((key, index) => [key, Number((widths[index] ?? 0).toFixed(4))]));
 }
 
+function tableDimValue(row: Record<string, unknown>, dim: string) {
+  const value = row[dim];
+  if (value == null || value === "") return TABLE_EMPTY;
+  return String(value);
+}
+
+function tableRowKey(row: Record<string, unknown>, dims: string[]) {
+  if (dims.length === 0) return "__all__";
+  return dims.map((dim) => tableDimValue(row, dim)).join(TABLE_PIVOT_SEP);
+}
+
+function tableMatchesFilters(row: Record<string, unknown>, filters: Record<string, string[]>) {
+  for (const [dim, allowed] of Object.entries(filters)) {
+    if (!allowed || allowed.length === 0) continue;
+    if (!allowed.includes(tableDimValue(row, dim))) return false;
+  }
+  return true;
+}
+
+function tablePeriods(rows: Record<string, unknown>[]) {
+  return Array.from(new Map(rows.map((row) => {
+    const periodo = String(row.periodo ?? "");
+    return [periodo, { periodo, mes: Number(row.mes ?? 0), ano: Number(row.ano ?? 0) }];
+  })).values())
+    .filter((period) => period.periodo && period.mes > 0 && period.ano > 0)
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+}
+
+function measureValue(row: Record<string, unknown>, measure: PivotMeasure) {
+  const value = Number(row[measure.field]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function resolveTableGapReferencePeriod(
+  gap: TableGapColumn,
+  rows: Record<string, unknown>[],
+  measures: PivotMeasure[],
+) {
+  const periods = tablePeriods(rows);
+  if (periods.length === 0) return null;
+  const latest = periods[periods.length - 1];
+  if (gap.comparisonMode === "prev-month") {
+    return periods.length >= 2 ? periods[periods.length - 2].periodo : null;
+  }
+  if (gap.comparisonMode === "prev-year-month") {
+    const found = periods.find((period) => period.mes === latest.mes && period.ano === latest.ano - 1);
+    return found?.periodo ?? null;
+  }
+  if (gap.comparisonMode === "manual") {
+    return gap.manualPeriod && periods.some((period) => period.periodo === gap.manualPeriod)
+      ? gap.manualPeriod
+      : null;
+  }
+  const benchMeasure = measures.find((measure) => measure.id === (gap.benchMeasureId || gap.measureId))
+    ?? measures.find((measure) => measure.id === gap.measureId)
+    ?? measures[0];
+  if (!benchMeasure) return null;
+  const candidates = periods.slice(-25, -1);
+  let best: { periodo: string; value: number } | null = null;
+  for (const period of candidates) {
+    const value = rows
+      .filter((row) => row.periodo === period.periodo)
+      .reduce((sum, row) => sum + measureValue(row, benchMeasure), 0);
+    if (!best || value > best.value) best = { periodo: period.periodo, value };
+  }
+  return best?.periodo ?? null;
+}
+
+function tableGapLabel(gap: TableGapColumn, measure: PivotMeasure | undefined) {
+  const prefix = measure?.label ?? "KPI";
+  if (gap.comparisonMode === "prev-month") return `${prefix} vs M-1`;
+  if (gap.comparisonMode === "prev-year-month") return `${prefix} vs LY`;
+  if (gap.comparisonMode === "bench") return `${prefix} vs Bench`;
+  return `${prefix} vs Manual`;
+}
+
+function buildTableGapValues(
+  rows: Record<string, unknown>[],
+  rowDims: string[],
+  filters: Record<string, string[]>,
+  measures: PivotMeasure[],
+  gapColumns: TableGapColumn[],
+) {
+  const filtered = rows.filter((row) => tableMatchesFilters(row, filters));
+  const periods = tablePeriods(filtered);
+  const latest = periods[periods.length - 1]?.periodo ?? null;
+  const measureById = new Map(measures.map((measure) => [measure.id, measure]));
+  const result = new Map<string, Record<string, number | null>>();
+  if (!latest || gapColumns.length === 0) return result;
+
+  for (const gap of gapColumns) {
+    const measure = measureById.get(gap.measureId);
+    const reference = resolveTableGapReferencePeriod(gap, filtered, measures);
+    if (!measure || !reference || reference === latest) continue;
+    const latestByRow = new Map<string, number>();
+    const referenceByRow = new Map<string, number>();
+    for (const row of filtered) {
+      if (row.periodo !== latest && row.periodo !== reference) continue;
+      const key = tableRowKey(row, rowDims);
+      const target = row.periodo === latest ? latestByRow : referenceByRow;
+      target.set(key, (target.get(key) ?? 0) + measureValue(row, measure));
+    }
+    const keys = new Set([...latestByRow.keys(), ...referenceByRow.keys()]);
+    for (const key of keys) {
+      const record = result.get(key) ?? {};
+      record[gap.id] = (latestByRow.get(key) ?? 0) - (referenceByRow.get(key) ?? 0);
+      result.set(key, record);
+    }
+  }
+  return result;
+}
+
 function TableColumnResizeHandle({
   onPointerDown,
 }: {
@@ -907,11 +1022,20 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     const unified = buildUnifiedRows(sourceRows, [], "real");
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
+    const filters = Object.fromEntries(Object.entries(b.filters).map(([k, v]) => [k, v ?? []]));
+    const gapColumns = (b.gapColumns ?? []).filter((gap) => measures.some((measure) => measure.id === gap.measureId));
+    const gapValues = buildTableGapValues(
+      unified as unknown as Record<string, unknown>[],
+      b.rowDims,
+      filters,
+      measures,
+      gapColumns,
+    );
     const cfg: PivotConfig = {
       rows: b.rowDims,
       cols: b.colDim ? [b.colDim] : [],
       values: measures,
-      filters: Object.fromEntries(Object.entries(b.filters).map(([k, v]) => [k, v ?? []])),
+      filters,
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
 
@@ -933,12 +1057,19 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         const cmp = rowLabel(a).localeCompare(rowLabel(z), "pt-BR", { sensitivity: "base", numeric: true });
         return b.sortMode === "az" ? cmp : -cmp;
       }
+      if (b.sortMode === "gap") {
+        const gapSortKey = b.sortGapColumnId ?? gapColumns[0]?.id;
+        if (!gapSortKey) return 0;
+        const va = gapValues.get(a.key)?.[gapSortKey] ?? 0;
+        const vz = gapValues.get(z.key)?.[gapSortKey] ?? 0;
+        return (b.sortDirection ?? "desc") === "asc" ? va - vz : vz - va;
+      }
       const va = result.rowTotals.get(a.key)?.[sortKey] ?? 0;
       const vz = result.rowTotals.get(z.key)?.[sortKey] ?? 0;
       return (b.sortDirection ?? "desc") === "asc" ? va - vz : vz - va;
     });
-    return { result, measures, sortedHeaders };
-  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.sortMeasure, b.sortMode, b.sortDirection, b.manualRowOrder]);
+    return { result, measures, sortedHeaders, gapColumns, gapValues };
+  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.gapColumns, b.sortMeasure, b.sortMode, b.sortGapColumnId, b.sortDirection, b.manualRowOrder]);
 
   const tableColumnKeys = useMemo(() => {
     if (!data) return [];
@@ -951,7 +1082,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
           ...(showLastColumnVariation ? data.measures.map((m) => `var::${m.id}`) : []),
         ]
       : data.measures.map((m) => m.id);
-    return [TABLE_ROW_COL_KEY, ...valueKeys];
+    return [TABLE_ROW_COL_KEY, ...valueKeys, ...data.gapColumns.map((gap) => `gap::${gap.id}`)];
   }, [data, b.showLastColumnVariation]);
   const defaultColumnWeights = useMemo(
     () => tableColumnKeys.map((_, index) => (index === 0 ? 1.7 : 1)),
@@ -1011,7 +1142,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     );
   }
 
-  const { result, measures, sortedHeaders } = data;
+  const { result, measures, sortedHeaders, gapColumns, gapValues } = data;
   const tableTitle = (b.title ?? "").trim();
   const tableTitleSize = Math.max(12, b.titleSize ?? 18);
   const tableTitleColor = b.titleColor
@@ -1039,6 +1170,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     </div>
   ) : null;
   const hasSingleMeasure = measures.length === 1;
+  const measureById = new Map(measures.map((measure) => [measure.id, measure]));
   const tableHeaderLabel = (colLabel: string, measureLabel: string) =>
     hasSingleMeasure ? colLabel : `${colLabel} - ${measureLabel}`;
   const fit = resolveTableFit(b, sortedHeaders.length);
@@ -1050,6 +1182,8 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   const showLastColumnVariation = !!b.showLastColumnVariation && showCols && cols.length >= 2;
   const previousCol = showLastColumnVariation ? cols[cols.length - 2] : null;
   const lastCol = showLastColumnVariation ? cols[cols.length - 1] : null;
+  const gapStartIndex = (showCols ? cols.length * measures.length : measures.length)
+    + (showLastColumnVariation ? measures.length : 0);
 
   // Agrega "Outros" cell-by-cell
   const othersRow: Record<string, Record<string, number>> | null = showOthers ? (() => {
@@ -1127,6 +1261,21 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     if (value < 0) return { color: SLIDE_HEX.dangerDark, fontWeight: 700 };
     return { color: SLIDE_HEX.slate500, fontWeight: 700 };
   };
+  const gapCellStyle = (value: number | null): React.CSSProperties => {
+    if (value === null) return { color: SLIDE_HEX.slate400 };
+    if (value > 0) return { color: SLIDE_HEX.successDark, fontWeight: 700 };
+    if (value < 0) return { color: SLIDE_HEX.dangerDark, fontWeight: 700 };
+    return { color: SLIDE_HEX.slate500, fontWeight: 700 };
+  };
+  const fmtGap = (gap: TableGapColumn, value: number | null | undefined): string => {
+    if (value == null) return "—";
+    const measure = measureById.get(gap.measureId);
+    if (!measure) return "—";
+    const formatted = fmtMeasure(measure, Math.abs(value));
+    if (value > 0) return `+${formatted}`;
+    if (value < 0) return `-${formatted}`;
+    return formatted;
+  };
   const variationHeaderLabel = (measureLabel: string) =>
     measures.length === 1 ? "Var. % vs mês ant." : `Var. % ${measureLabel}`;
   const getRowVariation = (rhKey: string, mId: string): number | null => {
@@ -1141,6 +1290,8 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     const current = othersRow[lastCol.key]?.[mId] ?? 0;
     return variationPct(current, previous);
   };
+  const getOthersGap = (gapId: string) =>
+    hiddenHeaders.reduce((sum, rh) => sum + (gapValues.get(rh.key)?.[gapId] ?? 0), 0);
   const htmlRowStyle: React.CSSProperties =
     b.autoFit === false ? { height: `${100 / Math.max(1, renderedRowCount)}%`, minHeight: 0 } : {};
 
@@ -1283,6 +1434,14 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
               {m.label}
             </ExportPositionedCell>
           ))),
+      ...gapColumns.map((gap, gi) => {
+        const col = valueCol(gapStartIndex + gi);
+        return (
+          <ExportPositionedCell key={`gap-${gap.id}`} style={renderCellHead} left={col.left} top={0} width={col.width} height={rowH} padX={8}>
+            {tableGapLabel(gap, measureById.get(gap.measureId))}
+          </ExportPositionedCell>
+        );
+      }),
     ];
 
     const bodyCells = visibleHeaders.flatMap((rh, ri) => [
@@ -1342,6 +1501,23 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
               </ExportPositionedCell>
             );
           })),
+      ...gapColumns.map((gap, gi) => {
+        const value = gapValues.get(rh.key)?.[gap.id] ?? null;
+        const col = valueCol(gapStartIndex + gi);
+        return (
+          <ExportPositionedCell
+            key={`${rh.key}-gap-${gap.id}`}
+            style={{ ...cellValDyn, ...gapCellStyle(value) }}
+            left={col.left}
+            top={(ri + 1) * rowH}
+            width={col.width}
+            height={rowH}
+            padX={8}
+          >
+            {fmtGap(gap, value)}
+          </ExportPositionedCell>
+        );
+      }),
     ]);
 
     const othersCells = othersRow
@@ -1404,6 +1580,23 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
                   {fmtMeasure(m, othersRow.__row__[m.id])}
                 </ExportPositionedCell>
               ))),
+          ...gapColumns.map((gap, gi) => {
+            const value = getOthersGap(gap.id);
+            const col = valueCol(gapStartIndex + gi);
+            return (
+              <ExportPositionedCell
+                key={`oth-gap-${gap.id}`}
+                style={{ ...cellValDyn, fontStyle: "italic", background: SLIDE_HEX.gridSoft, ...gapCellStyle(value) }}
+                left={col.left}
+                top={(rowCount - 1) * rowH}
+                width={col.width}
+                height={rowH}
+                padX={8}
+              >
+                {fmtGap(gap, value)}
+              </ExportPositionedCell>
+            );
+          }),
         ]
       : [];
     const resizeHandles = !readOnly && onPatch
@@ -1497,9 +1690,19 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
                     {showLastColumnVariation && measures.map((m, mi) => (
                       htmlHeaderCell(1 + cols.length * measures.length + mi, variationHeaderLabel(m.label), `var-${m.id}`)
                     ))}
+                    {gapColumns.map((gap, gi) => (
+                      htmlHeaderCell(1 + gapStartIndex + gi, tableGapLabel(gap, measureById.get(gap.measureId)), `gap-${gap.id}`)
+                    ))}
                   </>
                 )
-              : measures.map((m, mi) => htmlHeaderCell(1 + mi, m.label, m.id))}
+              : (
+                  <>
+                    {measures.map((m, mi) => htmlHeaderCell(1 + mi, m.label, m.id))}
+                    {gapColumns.map((gap, gi) => (
+                      htmlHeaderCell(1 + gapStartIndex + gi, tableGapLabel(gap, measureById.get(gap.measureId)), `gap-${gap.id}`)
+                    ))}
+                  </>
+                )}
           </tr>
         </thead>
         <tbody>
@@ -1517,12 +1720,20 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
                         const v = getRowVariation(rh.key, m.id);
                         return tableCell("td", fmtVariation(v), { ...cellValDyn, ...variationStyle(v) }, `var-${m.id}`);
                       })}
+                      {gapColumns.map((gap) => {
+                        const value = gapValues.get(rh.key)?.[gap.id] ?? null;
+                        return tableCell("td", fmtGap(gap, value), { ...cellValDyn, ...gapCellStyle(value) }, `gap-${gap.id}`);
+                      })}
                     </>
                   )
                 : measures.map((m) => {
                     const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
                     return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }, m.id);
                   })}
+              {!showCols && gapColumns.map((gap) => {
+                const value = gapValues.get(rh.key)?.[gap.id] ?? null;
+                return tableCell("td", fmtGap(gap, value), { ...cellValDyn, ...gapCellStyle(value) }, `gap-${gap.id}`);
+              })}
             </tr>
           ))}
           {othersRow && (
@@ -1538,11 +1749,19 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
                         const v = getOthersVariation(m.id);
                         return tableCell("td", fmtVariation(v), { ...cellValDyn, fontStyle: "italic", ...variationStyle(v) }, `oth-var-${m.id}`);
                       })}
+                      {gapColumns.map((gap) => {
+                        const value = getOthersGap(gap.id);
+                        return tableCell("td", fmtGap(gap, value), { ...cellValDyn, fontStyle: "italic", ...gapCellStyle(value) }, `oth-gap-${gap.id}`);
+                      })}
                     </>
                   )
                 : measures.map((m) => (
                     tableCell("td", fmtMeasure(m, othersRow.__row__[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${m.id}`)
                   ))}
+              {!showCols && gapColumns.map((gap) => {
+                const value = getOthersGap(gap.id);
+                return tableCell("td", fmtGap(gap, value), { ...cellValDyn, fontStyle: "italic", ...gapCellStyle(value) }, `oth-gap-${gap.id}`);
+              })}
             </tr>
           )}
         </tbody>
