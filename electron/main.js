@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+const AUTO_UPDATE_ENABLED = false;
 
 // Configurar electron-log
 log.transports.file.resolvePath = () => {
@@ -121,6 +122,11 @@ function createWindow() {
 
 // Auto-update
 function checkForUpdates() {
+  if (!AUTO_UPDATE_ENABLED) {
+    log.info("=== AUTO-UPDATE TEMPORARIAMENTE DESATIVADO ===");
+    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
+    return;
+  }
   try {
     log.info("=== INICIANDO CHECK FOR UPDATES ===");
     log.info("Versão atual:", app.getVersion());
@@ -174,6 +180,11 @@ autoUpdater.on("error", (err) => {
 
 // IPC: instalar atualização ao comando do usuário
 ipcMain.on("install-update", () => {
+  if (!AUTO_UPDATE_ENABLED) {
+    log.info("Install update ignorado: auto-update temporariamente desativado.");
+    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
+    return;
+  }
   autoUpdater.quitAndInstall(false, true);
 });
 
