@@ -10,8 +10,20 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { usePricing } from "@/store/pricing";
+import { useBudget } from "@/store/budget";
 import { applyFilters } from "@/lib/analytics";
+import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { formatBRL, formatNum } from "@/lib/format";
+import {
+  STORAGE_KEY as MARGIN_TARGET_STORAGE_KEY,
+  buildCategoryTargets,
+  buildSkuTargetsForCategory,
+  getPeriodOptions,
+  loadSettings as loadMarginTargetSettings,
+  resolvePremise,
+  rowsForPath,
+  type TargetSettings,
+} from "@/lib/marginTarget";
 import {
   calculatePricePredictionResiduals,
   calibratePriceIndices,
@@ -43,6 +55,8 @@ type SkuPriceSuggestion = {
   actualPrice: number | null;
   costPerKg: number | null;
   suggestedMarginPct: number | null;
+  targetMarginPct: number | null;
+  targetGapPp: number | null;
   suggestedPrice: number;
   delta: number | null;
   deltaPct: number | null;
@@ -156,6 +170,14 @@ function formatSignedPp(value: number): string {
   })}pp`;
 }
 
+function targetGapClass(value: number | null): string {
+  if (value === null) return "border-muted-foreground/25 bg-muted/20 text-muted-foreground";
+  const abs = Math.abs(value);
+  if (abs <= 0.01) return "border-success/35 bg-success/10 text-success";
+  if (abs <= 0.03) return "border-warning/35 bg-warning/10 text-warning";
+  return "border-destructive/35 bg-destructive/10 text-destructive";
+}
+
 function skuKey(row: PricingRow): string {
   return String(row.sku || row.skuDesc || "Sem SKU").trim() || "Sem SKU";
 }
@@ -250,6 +272,8 @@ function buildSkuSuggestions(
         actualPrice,
         costPerKg,
         suggestedMarginPct,
+        targetMarginPct: null,
+        targetGapPp: null,
         suggestedPrice,
         delta,
         deltaPct: delta !== null && actualPrice > 0 ? delta / actualPrice : null,
@@ -257,6 +281,53 @@ function buildSkuSuggestions(
       };
     })
     .sort((a, b) => b.volumeKg - a.volumeKg);
+}
+
+function buildSkuTargetMap(
+  currentRows: PricingRow[],
+  historyRows: PricingRow[],
+  budgetRows: PricingRow[],
+  settings: TargetSettings,
+): Map<string, number> {
+  const periodOptions = getPeriodOptions(historyRows);
+  const categoryTargets = buildCategoryTargets(currentRows, historyRows, budgetRows, settings, periodOptions);
+  const targetBySku = new Map<string, number>();
+
+  for (const category of categoryTargets) {
+    const premise = resolvePremise(settings, category.key, periodOptions);
+    const skuTargets = buildSkuTargetsForCategory({
+      categoryRows: rowsForPath(currentRows, category.key),
+      categoryTargetPct: category.baseTargetPct ?? category.targetPct,
+      preservation: premise.preservation,
+      periodOptions,
+      recentStart: premise.recentStart,
+      recentEnd: premise.recentEnd,
+      overrides: settings.categories[category.key]?.skuOverrides,
+    });
+
+    for (const skuTarget of skuTargets) {
+      targetBySku.set(skuTarget.key, skuTarget.targetPct);
+      if (skuTarget.skuCode) targetBySku.set(skuTarget.skuCode, skuTarget.targetPct);
+    }
+  }
+
+  return targetBySku;
+}
+
+function attachTargetMargins(
+  rows: SkuPriceSuggestion[],
+  targetBySku: Map<string, number>,
+): SkuPriceSuggestion[] {
+  return rows.map((row) => {
+    const targetMarginPct = targetBySku.get(row.sku) ?? targetBySku.get(row.name) ?? null;
+    return {
+      ...row,
+      targetMarginPct,
+      targetGapPp: targetMarginPct !== null && row.suggestedMarginPct !== null
+        ? row.suggestedMarginPct - targetMarginPct
+        : null,
+    };
+  });
 }
 
 function median(values: number[]): number | null {
@@ -369,7 +440,9 @@ export default function IndicePrecoIdeal() {
   const rows = usePricing((state) => state.rows);
   const filters = usePricing((state) => state.filters);
   const selectedPeriods = usePricing((state) => state.selectedPeriods);
+  const budgetRowsRaw = useBudget((state) => state.rows);
   const [config, setConfig] = useState<StoredConfig>(() => loadStoredConfig());
+  const [targetSettings, setTargetSettings] = useState<TargetSettings>(() => loadMarginTargetSettings());
   const [anchorSku, setAnchorSku] = useState("");
   const [competitorPrice, setCompetitorPrice] = useState("");
   const [anchorPositioning, setAnchorPositioning] = useState("1,10");
@@ -383,8 +456,33 @@ export default function IndicePrecoIdeal() {
   }, [config]);
 
   const scopedRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [filters, rows, selectedPeriods]);
+  const historyRows = useMemo(() => applyFilters(rows, filters, null), [filters, rows]);
+  const budgetRows = useMemo(() => budgetRowsAsPricingFiltered(budgetRowsRaw, "budget"), [budgetRowsRaw]);
+  const latestBudgetFyNum = useMemo(
+    () => budgetRows.reduce((latest, row) => Math.max(latest, row.fyNum || 0), 0),
+    [budgetRows],
+  );
+  const budgetFiscalRows = useMemo(
+    () => (latestBudgetFyNum ? budgetRows.filter((row) => row.fyNum === latestBudgetFyNum) : []),
+    [budgetRows, latestBudgetFyNum],
+  );
   const skuOptions = useMemo(() => aggregateSkuOptions(scopedRows), [scopedRows]);
   const anchorOption = skuOptions.find((option) => option.sku === anchorSku);
+
+  useEffect(() => {
+    const refreshTargetSettings = () => setTargetSettings(loadMarginTargetSettings());
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === MARGIN_TARGET_STORAGE_KEY) refreshTargetSettings();
+    };
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", refreshTargetSettings);
+    window.addEventListener("omni:margem-target:changed", refreshTargetSettings);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", refreshTargetSettings);
+      window.removeEventListener("omni:margem-target:changed", refreshTargetSettings);
+    };
+  }, []);
 
   const matrixData = useMemo(() => {
     return Object.fromEntries(
@@ -413,22 +511,30 @@ export default function IndicePrecoIdeal() {
     () => applyGuardrails(rawSkuSuggestions, guardrailConfig, competitorReferencePrice),
     [competitorReferencePrice, guardrailConfig, rawSkuSuggestions],
   );
+  const targetBySku = useMemo(
+    () => buildSkuTargetMap(scopedRows, historyRows, budgetFiscalRows, targetSettings),
+    [budgetFiscalRows, historyRows, scopedRows, targetSettings],
+  );
+  const skuSuggestionsWithTarget = useMemo(
+    () => attachTargetMargins(skuSuggestions, targetBySku),
+    [skuSuggestions, targetBySku],
+  );
   const guardrailViolationCount = useMemo(
-    () => skuSuggestions.filter((item) => item.guardrailViolations.length > 0).length,
-    [skuSuggestions],
+    () => skuSuggestionsWithTarget.filter((item) => item.guardrailViolations.length > 0).length,
+    [skuSuggestionsWithTarget],
   );
   const categoryOptions = useMemo(
-    () => Array.from(new Set(skuSuggestions.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
-    [skuSuggestions],
+    () => Array.from(new Set(skuSuggestionsWithTarget.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [skuSuggestionsWithTarget],
   );
   const filteredSuggestions = useMemo(() => {
     const q = skuSearch.trim().toLowerCase();
-    return skuSuggestions
+    return skuSuggestionsWithTarget
       .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
       .filter((item) => !showOnlyViolations || item.guardrailViolations.length > 0)
       .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q))
       .slice(0, 80);
-  }, [categoryFilter, showOnlyViolations, skuSearch, skuSuggestions]);
+  }, [categoryFilter, showOnlyViolations, skuSearch, skuSuggestionsWithTarget]);
 
   const residuals = useMemo(
     () => calculatePricePredictionResiduals(scopedRows, {
@@ -883,6 +989,9 @@ function SuggestedPricesCard({
               <th className="px-3 py-3 font-medium">Dimensões</th>
               <th className="px-3 py-3 text-right font-medium">Atual</th>
               <th className="px-3 py-3 text-right font-medium">Sugerido</th>
+              <th className="px-3 py-3 text-right font-medium">CM sugerida</th>
+              <th className="px-3 py-3 text-right font-medium">Target</th>
+              <th className="px-3 py-3 text-right font-medium">Gap target</th>
               <th className="px-4 py-3 text-right font-medium">Gap</th>
               <th className="px-4 py-3 font-medium">Guardrail</th>
             </tr>
@@ -899,6 +1008,21 @@ function SuggestedPricesCard({
                 </td>
                 <td className="px-3 py-3 text-right font-medium">{formatMoneyPerKg(row.actualPrice)}</td>
                 <td className="px-3 py-3 text-right font-semibold text-primary">{formatMoneyPerKg(row.suggestedPrice)}</td>
+                <td className="px-3 py-3 text-right font-semibold">
+                  {row.suggestedMarginPct === null ? "-" : formatDeltaPct(row.suggestedMarginPct).replace("+", "")}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  {row.targetMarginPct === null ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    <span className="font-medium">{formatDeltaPct(row.targetMarginPct).replace("+", "")}</span>
+                  )}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <Badge variant="outline" className={cn("justify-end", targetGapClass(row.targetGapPp))}>
+                    {row.targetGapPp === null ? "sem target" : formatSignedPp(row.targetGapPp)}
+                  </Badge>
+                </td>
                 <td className={cn(
                   "px-4 py-3 text-right font-semibold",
                   (row.delta ?? 0) >= 0 ? "text-success" : "text-destructive",

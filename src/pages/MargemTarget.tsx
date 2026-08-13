@@ -293,6 +293,7 @@ export default function MargemTarget() {
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    window.dispatchEvent(new Event("omni:margem-target:changed"));
   }, [settings]);
 
   const currentRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [rows, filters, selectedPeriods]);
