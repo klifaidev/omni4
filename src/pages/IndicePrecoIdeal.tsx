@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, BadgeCheck, BarChart3, Gauge, RotateCcw, Search, Sparkles, Star } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, BadgeCheck, BarChart3, Gauge, RotateCcw, Search, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -41,9 +41,12 @@ type SkuPriceSuggestion = {
   volumeKg: number;
   rol: number;
   actualPrice: number | null;
+  costPerKg: number | null;
+  suggestedMarginPct: number | null;
   suggestedPrice: number;
   delta: number | null;
   deltaPct: number | null;
+  guardrailViolations: GuardrailViolation[];
 };
 
 type SkuOption = {
@@ -53,7 +56,27 @@ type SkuOption = {
   actualPrice: number | null;
 };
 
+type GuardrailConfig = {
+  minMarginPct: number;
+  priceCoherenceTolerancePct: number;
+  competitiveMinIndex: number;
+  competitiveMaxIndex: number;
+};
+
+type GuardrailViolation = {
+  key: "margin" | "cost" | "coherence" | "competitive";
+  label: string;
+  detail: string;
+};
+
 const STORAGE_KEY = "omni:indice-preco-ideal:v1";
+
+const DEFAULT_GUARDRAILS: GuardrailConfig = {
+  minMarginPct: 0.25,
+  priceCoherenceTolerancePct: 0.35,
+  competitiveMinIndex: 0.85,
+  competitiveMaxIndex: 1.35,
+};
 
 const DIMENSIONS: Array<{
   key: PriceIndexDimension;
@@ -126,6 +149,13 @@ function formatDeltaPct(value: number | null): string {
   })}%`;
 }
 
+function formatSignedPp(value: number): string {
+  return `${value >= 0 ? "+" : ""}${(value * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}pp`;
+}
+
 function skuKey(row: PricingRow): string {
   return String(row.sku || row.skuDesc || "Sem SKU").trim() || "Sem SKU";
 }
@@ -193,7 +223,10 @@ function buildSkuSuggestions(
       const sample = bucket.reduce((best, row) => (row.volumeKg > best.volumeKg ? row : best), bucket[0]);
       const rol = bucket.reduce((sum, row) => sum + (row.rol || 0), 0);
       const volumeKg = bucket.reduce((sum, row) => sum + (row.volumeKg || 0), 0);
+      const margin = bucket.reduce((sum, row) => sum + (row.contribMarginal || 0), 0);
+      const totalCost = rol - margin;
       const actualPrice = volumeKg > 0 ? rol / volumeKg : null;
+      const costPerKg = volumeKg > 0 ? totalCost / volumeKg : null;
       const suggestedPrice = predictIdealPrice({
         competitorReferencePrice,
         anchorPositioningIndex,
@@ -203,6 +236,7 @@ function buildSkuSuggestions(
         indices,
       });
       const delta = actualPrice !== null ? suggestedPrice - actualPrice : null;
+      const suggestedMarginPct = costPerKg !== null && suggestedPrice > 0 ? (suggestedPrice - costPerKg) / suggestedPrice : null;
 
       return {
         sku,
@@ -214,12 +248,79 @@ function buildSkuSuggestions(
         volumeKg,
         rol,
         actualPrice,
+        costPerKg,
+        suggestedMarginPct,
         suggestedPrice,
         delta,
         deltaPct: delta !== null && actualPrice > 0 ? delta / actualPrice : null,
+        guardrailViolations: [],
       };
     })
     .sort((a, b) => b.volumeKg - a.volumeKg);
+}
+
+function median(values: number[]): number | null {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function applyGuardrails(
+  rows: SkuPriceSuggestion[],
+  config: GuardrailConfig,
+  competitorReferencePrice: number,
+): SkuPriceSuggestion[] {
+  const categoryMedian = new Map<string, number | null>();
+  for (const category of new Set(rows.map((row) => row.category))) {
+    categoryMedian.set(category, median(rows.filter((row) => row.category === category).map((row) => row.suggestedPrice)));
+  }
+
+  return rows.map((row) => {
+    const guardrailViolations: GuardrailViolation[] = [];
+
+    if (row.suggestedMarginPct !== null && row.suggestedMarginPct < config.minMarginPct) {
+      guardrailViolations.push({
+        key: "margin",
+        label: "Margem mínima",
+        detail: `margem sugerida ${formatSignedPp(row.suggestedMarginPct - config.minMarginPct)} abaixo do mínimo`,
+      });
+    }
+
+    if (row.costPerKg !== null && row.suggestedPrice < row.costPerKg) {
+      guardrailViolations.push({
+        key: "cost",
+        label: "Abaixo do custo",
+        detail: `${formatMoneyPerKg(row.costPerKg - row.suggestedPrice)} por kg abaixo do custo total`,
+      });
+    }
+
+    const categoryReference = categoryMedian.get(row.category);
+    if (categoryReference && categoryReference > 0) {
+      const distance = row.suggestedPrice / categoryReference - 1;
+      if (Math.abs(distance) > config.priceCoherenceTolerancePct) {
+        guardrailViolations.push({
+          key: "coherence",
+          label: "Coerência R$/kg",
+          detail: `${formatDeltaPct(distance)} vs mediana da categoria`,
+        });
+      }
+    }
+
+    if (competitorReferencePrice > 0) {
+      const competitiveIndex = row.suggestedPrice / competitorReferencePrice;
+      if (competitiveIndex < config.competitiveMinIndex || competitiveIndex > config.competitiveMaxIndex) {
+        const boundary = competitiveIndex < config.competitiveMinIndex ? config.competitiveMinIndex : config.competitiveMaxIndex;
+        guardrailViolations.push({
+          key: "competitive",
+          label: "Posicionamento competitivo",
+          detail: `índice ${formatIndex(competitiveIndex)} fora do limite por ${formatIndex(Math.abs(competitiveIndex - boundary))}`,
+        });
+      }
+    }
+
+    return { ...row, guardrailViolations };
+  });
 }
 
 function summarizeResiduals(residuals: PricePredictionResidual[]): {
@@ -274,6 +375,8 @@ export default function IndicePrecoIdeal() {
   const [anchorPositioning, setAnchorPositioning] = useState("1,10");
   const [skuSearch, setSkuSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [showOnlyViolations, setShowOnlyViolations] = useState(false);
+  const [guardrailConfig, setGuardrailConfig] = useState<GuardrailConfig>(DEFAULT_GUARDRAILS);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
@@ -302,9 +405,17 @@ export default function IndicePrecoIdeal() {
   const competitorReferencePrice = parseDecimal(competitorPrice) || anchorOption?.actualPrice || 0;
   const anchorPositioningIndex = parseDecimal(anchorPositioning) || 1;
 
-  const skuSuggestions = useMemo(
+  const rawSkuSuggestions = useMemo(
     () => buildSkuSuggestions(scopedRows, competitorReferencePrice, anchorPositioningIndex, effectiveIndices),
     [anchorPositioningIndex, competitorReferencePrice, effectiveIndices, scopedRows],
+  );
+  const skuSuggestions = useMemo(
+    () => applyGuardrails(rawSkuSuggestions, guardrailConfig, competitorReferencePrice),
+    [competitorReferencePrice, guardrailConfig, rawSkuSuggestions],
+  );
+  const guardrailViolationCount = useMemo(
+    () => skuSuggestions.filter((item) => item.guardrailViolations.length > 0).length,
+    [skuSuggestions],
   );
   const categoryOptions = useMemo(
     () => Array.from(new Set(skuSuggestions.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
@@ -314,9 +425,10 @@ export default function IndicePrecoIdeal() {
     const q = skuSearch.trim().toLowerCase();
     return skuSuggestions
       .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
+      .filter((item) => !showOnlyViolations || item.guardrailViolations.length > 0)
       .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q))
       .slice(0, 80);
-  }, [categoryFilter, skuSearch, skuSuggestions]);
+  }, [categoryFilter, showOnlyViolations, skuSearch, skuSuggestions]);
 
   const residuals = useMemo(
     () => calculatePricePredictionResiduals(scopedRows, {
@@ -405,20 +517,30 @@ export default function IndicePrecoIdeal() {
         </GlassCard>
 
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.4fr]">
-          <AnchorSetupCard
-            skuOptions={skuOptions}
-            anchorSku={anchorSku}
-            onAnchorSkuChange={setAnchorSku}
-            competitorPrice={competitorPrice}
-            onCompetitorPriceChange={setCompetitorPrice}
-            anchorPositioning={anchorPositioning}
-            onAnchorPositioningChange={setAnchorPositioning}
-            effectiveCompetitorPrice={competitorReferencePrice}
-            anchorOption={anchorOption}
-          />
+          <div className="space-y-5">
+            <AnchorSetupCard
+              skuOptions={skuOptions}
+              anchorSku={anchorSku}
+              onAnchorSkuChange={setAnchorSku}
+              competitorPrice={competitorPrice}
+              onCompetitorPriceChange={setCompetitorPrice}
+              anchorPositioning={anchorPositioning}
+              onAnchorPositioningChange={setAnchorPositioning}
+              effectiveCompetitorPrice={competitorReferencePrice}
+              anchorOption={anchorOption}
+            />
+            <GuardrailConfigCard
+              config={guardrailConfig}
+              onChange={setGuardrailConfig}
+              violationCount={guardrailViolationCount}
+            />
+          </div>
           <SuggestedPricesCard
             rows={filteredSuggestions}
             totalRows={skuSuggestions.length}
+            violationCount={guardrailViolationCount}
+            showOnlyViolations={showOnlyViolations}
+            onShowOnlyViolationsChange={setShowOnlyViolations}
             search={skuSearch}
             onSearchChange={setSkuSearch}
             categoryFilter={categoryFilter}
@@ -572,9 +694,115 @@ function AnchorSetupCard({
   );
 }
 
+function GuardrailConfigCard({
+  config,
+  onChange,
+  violationCount,
+}: {
+  config: GuardrailConfig;
+  onChange: (next: GuardrailConfig) => void;
+  violationCount: number;
+}) {
+  const update = (key: keyof GuardrailConfig, value: number) => {
+    onChange({ ...config, [key]: Math.max(0, value) });
+  };
+
+  return (
+    <GlassCard className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Guardrails
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-foreground">Limites de revisão comercial</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Os limites não corrigem o preço automaticamente. Eles só sinalizam onde o modelo precisa de revisão.
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            "shrink-0",
+            violationCount > 0
+              ? "border-warning/40 bg-warning/10 text-warning"
+              : "border-success/35 bg-success/10 text-success",
+          )}
+        >
+          {violationCount} atenção
+        </Badge>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <GuardrailInput
+          label="Margem mínima"
+          value={config.minMarginPct}
+          suffix="%"
+          onChange={(value) => update("minMarginPct", parseDecimal(value) / 100)}
+          displayValue={(config.minMarginPct * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+        />
+        <GuardrailInput
+          label="Tolerância R$/kg"
+          value={config.priceCoherenceTolerancePct}
+          suffix="%"
+          onChange={(value) => update("priceCoherenceTolerancePct", parseDecimal(value) / 100)}
+          displayValue={(config.priceCoherenceTolerancePct * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+        />
+        <GuardrailInput
+          label="Pos. mínimo"
+          value={config.competitiveMinIndex}
+          suffix="x"
+          onChange={(value) => update("competitiveMinIndex", parseDecimal(value))}
+          displayValue={config.competitiveMinIndex.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        />
+        <GuardrailInput
+          label="Pos. máximo"
+          value={config.competitiveMaxIndex}
+          suffix="x"
+          onChange={(value) => update("competitiveMaxIndex", parseDecimal(value))}
+          displayValue={config.competitiveMaxIndex.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        />
+      </div>
+    </GlassCard>
+  );
+}
+
+function GuardrailInput({
+  label,
+  suffix,
+  displayValue,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  suffix: string;
+  displayValue: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="space-y-1.5">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <div className="relative">
+        <Input
+          value={displayValue}
+          inputMode="decimal"
+          onChange={(event) => onChange(event.target.value)}
+          className="h-9 pr-8 text-right text-sm font-semibold"
+        />
+        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+          {suffix}
+        </span>
+      </div>
+    </label>
+  );
+}
+
 function SuggestedPricesCard({
   rows,
   totalRows,
+  violationCount,
+  showOnlyViolations,
+  onShowOnlyViolationsChange,
   search,
   onSearchChange,
   categoryFilter,
@@ -583,6 +811,9 @@ function SuggestedPricesCard({
 }: {
   rows: SkuPriceSuggestion[];
   totalRows: number;
+  violationCount: number;
+  showOnlyViolations: boolean;
+  onShowOnlyViolationsChange: (value: boolean) => void;
   search: string;
   onSearchChange: (value: string) => void;
   categoryFilter: string;
@@ -596,11 +827,23 @@ function SuggestedPricesCard({
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Catálogo sugerido</p>
           <h2 className="mt-1 text-lg font-semibold text-foreground">Preço ideal por SKU</h2>
         </div>
-        <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
-          {formatNum(totalRows, 0)} SKUs calculados
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
+            {formatNum(totalRows, 0)} SKUs calculados
+          </Badge>
+          <Badge
+            variant="outline"
+            className={cn(
+              violationCount > 0
+                ? "border-warning/40 bg-warning/10 text-warning"
+                : "border-success/35 bg-success/10 text-success",
+            )}
+          >
+            {formatNum(violationCount, 0)} com guardrail
+          </Badge>
+        </div>
       </div>
-      <div className="grid gap-3 border-b border-border/30 p-4 md:grid-cols-[1fr_220px]">
+      <div className="grid gap-3 border-b border-border/30 p-4 lg:grid-cols-[1fr_220px_auto]">
         <label className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -621,6 +864,15 @@ function SuggestedPricesCard({
             ))}
           </SelectContent>
         </Select>
+        <Button
+          type="button"
+          variant={showOnlyViolations ? "default" : "outline"}
+          className="h-10 gap-2"
+          onClick={() => onShowOnlyViolationsChange(!showOnlyViolations)}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          Só revisar
+        </Button>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -632,6 +884,7 @@ function SuggestedPricesCard({
               <th className="px-3 py-3 text-right font-medium">Atual</th>
               <th className="px-3 py-3 text-right font-medium">Sugerido</th>
               <th className="px-4 py-3 text-right font-medium">Gap</th>
+              <th className="px-4 py-3 font-medium">Guardrail</th>
             </tr>
           </thead>
           <tbody>
@@ -652,6 +905,28 @@ function SuggestedPricesCard({
                 )}>
                   {row.delta === null ? "-" : `${row.delta >= 0 ? "+" : ""}${formatMoneyPerKg(row.delta)}`}
                   <div className="text-[11px] font-normal text-muted-foreground">{formatDeltaPct(row.deltaPct)}</div>
+                </td>
+                <td className="min-w-[220px] px-4 py-3">
+                  {row.guardrailViolations.length === 0 ? (
+                    <Badge variant="outline" className="border-success/30 bg-success/10 text-success">
+                      OK
+                    </Badge>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {row.guardrailViolations.map((violation) => (
+                        <div
+                          key={`${row.sku}-${violation.key}`}
+                          className="rounded-lg border border-warning/35 bg-warning/10 px-2 py-1.5"
+                        >
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-warning">
+                            <AlertTriangle className="h-3 w-3" />
+                            {violation.label}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">{violation.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
