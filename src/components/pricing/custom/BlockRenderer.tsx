@@ -1001,8 +1001,10 @@ function buildTableGapValues(
 
 function TableColumnResizeHandle({
   onPointerDown,
+  placement = "edge",
 }: {
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+  placement?: "edge" | "inside";
 }) {
   return (
     <div
@@ -1012,11 +1014,11 @@ function TableColumnResizeHandle({
       style={{
         position: "absolute",
         top: 0,
-        right: -4,
-        width: 8,
+        right: placement === "inside" ? 0 : -4,
+        width: placement === "inside" ? 12 : 8,
         height: "100%",
         cursor: "col-resize",
-        zIndex: 5,
+        zIndex: 20,
         touchAction: "none",
       }}
     >
@@ -1024,7 +1026,7 @@ function TableColumnResizeHandle({
         style={{
           width: 2,
           height: "100%",
-          margin: "0 auto",
+          margin: placement === "inside" ? "0 0 0 auto" : "0 auto",
           background: "rgba(17, 24, 39, 0.18)",
           opacity: 0.75,
         }}
@@ -1711,7 +1713,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
           {content}
         </span>
         {index < columnLayouts.length - 1 && onPatch && (
-          <TableColumnResizeHandle onPointerDown={(event) => startTableColumnResize(index, event)} />
+          <TableColumnResizeHandle placement="inside" onPointerDown={(event) => startTableColumnResize(index, event)} />
         )}
       </div>
     ), { ...renderCellHead, padding: 0, position: "relative" }, key)
