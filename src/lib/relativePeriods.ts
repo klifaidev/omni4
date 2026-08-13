@@ -13,6 +13,14 @@ export type RelativePeriodPreset =
   | "latest_fy_minus_1"
   | "latest_fy_minus_2";
 
+export type RelativeMonthRangePreset = "last_3_months" | "last_6_months" | "last_12_months";
+
+export interface MonthRangeSelection {
+  mode: PeriodSelectionMode;
+  periods?: string[] | null;
+  relativeRange?: RelativeMonthRangePreset;
+}
+
 export const RELATIVE_MONTH_PRESETS: { value: RelativePeriodPreset; label: string }[] = [
   { value: "latest_month", label: "Mês mais recente" },
   { value: "latest_month_minus_1", label: "Mês mais recente - 1" },
@@ -27,8 +35,15 @@ export const RELATIVE_FY_PRESETS: { value: RelativePeriodPreset; label: string }
   { value: "latest_fy_minus_2", label: "Ano mais recente - 2" },
 ];
 
+export const RELATIVE_MONTH_RANGE_PRESETS: { value: RelativeMonthRangePreset; label: string; months: number }[] = [
+  { value: "last_3_months", label: "Ultimos 3 meses", months: 3 },
+  { value: "last_6_months", label: "Ultimos 6 meses", months: 6 },
+  { value: "last_12_months", label: "Ultimos 12 meses", months: 12 },
+];
+
 export const DEFAULT_RELATIVE_MONTH_PRESET: RelativePeriodPreset = "latest_month_minus_1";
 export const DEFAULT_BASE_RELATIVE_MONTH_PRESET: RelativePeriodPreset = "latest_month_minus_2";
+export const DEFAULT_RELATIVE_MONTH_RANGE_PRESET: RelativeMonthRangePreset = "last_6_months";
 
 function monthOffset(preset: RelativePeriodPreset): number {
   switch (preset) {
@@ -120,4 +135,29 @@ export function resolvePeriodValues(
     return value ? [value] : null;
   }
   return fixedValues ?? null;
+}
+
+function monthRangeCount(preset: RelativeMonthRangePreset | undefined): number {
+  return RELATIVE_MONTH_RANGE_PRESETS.find((item) => item.value === preset)?.months ?? 6;
+}
+
+export function resolveRelativeMonthRange(
+  rows: readonly PricingRow[],
+  preset: RelativeMonthRangePreset | undefined,
+): string[] {
+  const months = getSortedMonthPeriods(rows);
+  if (months.length === 0) return [];
+  const count = monthRangeCount(preset ?? DEFAULT_RELATIVE_MONTH_RANGE_PRESET);
+  return months.slice(Math.max(0, months.length - count)).map((month) => month.value);
+}
+
+export function resolveMonthRangeSelection(
+  rows: readonly PricingRow[],
+  selection: MonthRangeSelection | null | undefined,
+): string[] | null {
+  if (!selection) return null;
+  if (selection.mode === "relative") {
+    return resolveRelativeMonthRange(rows, selection.relativeRange ?? DEFAULT_RELATIVE_MONTH_RANGE_PRESET);
+  }
+  return selection.periods?.length ? selection.periods : null;
 }

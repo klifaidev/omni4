@@ -15,7 +15,7 @@ import type {
   OmniAbcCurvaBlock, OmniPortfolioMatrixBlock, OmniAbcBarsBlock,
   OmniMetric,
 } from "@/lib/customSlide";
-import type { PricingRow } from "@/lib/types";
+import type { Filters, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { aggregate, LINES, fmt } from "../DreTable";
 import { useMonthsInfo } from "@/store/selectors";
@@ -58,7 +58,7 @@ import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
-import { resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
+import { resolveMonthRangeSelection, resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
 import { buildPositivacaoSeries } from "@/lib/positivacao";
 import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
@@ -222,6 +222,18 @@ function exportCellContent(
       {content}
     </div>
   );
+}
+
+function pricingDimValue(row: PricingRow, dim: string): string {
+  const value = (row as unknown as Record<string, unknown>)[dim];
+  if (value == null || value === "") return "—";
+  return String(value);
+}
+
+function applyTableDimensionFilters(rows: PricingRow[], filters: Filters | undefined): PricingRow[] {
+  const activeFilters = Object.entries(filters ?? {}).filter(([, allowed]) => allowed && allowed.length > 0);
+  if (activeFilters.length === 0) return rows;
+  return rows.filter((row) => activeFilters.every(([dim, allowed]) => allowed!.includes(pricingDimValue(row, dim))));
 }
 
 function ExportPositionedCell({
@@ -1058,10 +1070,16 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
 
   const data = useMemo(() => {
-    const unified = buildUnifiedRows(sourceRows, [], "real");
+    const dimensionFilteredRows = applyTableDimensionFilters(sourceRows, b.filters);
+    const resolvedMonths = resolveMonthRangeSelection(dimensionFilteredRows, b.monthFilter);
+    const monthSet = resolvedMonths?.length ? new Set(resolvedMonths) : null;
+    const tableRows = monthSet
+      ? dimensionFilteredRows.filter((row) => monthSet.has(row.periodo))
+      : dimensionFilteredRows;
+    const unified = buildUnifiedRows(tableRows, [], "real");
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
-    const filters = Object.fromEntries(Object.entries(b.filters).map(([k, v]) => [k, v ?? []]));
+    const filters = {};
     const gapColumns = (b.gapColumns ?? []).filter((gap) => measures.some((measure) => measure.id === gap.measureId));
     const gapValues = buildTableGapValues(
       unified as unknown as Record<string, unknown>[],
@@ -1108,7 +1126,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
       return (b.sortDirection ?? "desc") === "asc" ? va - vz : vz - va;
     });
     return { result, measures, sortedHeaders, gapColumns, gapValues };
-  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.gapColumns, b.sortMeasure, b.sortMode, b.sortGapColumnId, b.sortDirection, b.manualRowOrder]);
+  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.monthFilter, b.gapColumns, b.sortMeasure, b.sortMode, b.sortGapColumnId, b.sortDirection, b.manualRowOrder]);
 
   const tableColumnKeys = useMemo(() => {
     if (!data) return [];

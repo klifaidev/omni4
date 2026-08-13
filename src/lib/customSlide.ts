@@ -4,7 +4,7 @@
 
 import type { Filters } from "./types";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
-import type { PeriodSelectionMode, RelativePeriodPreset } from "./relativePeriods";
+import type { MonthRangeSelection, PeriodSelectionMode, RelativePeriodPreset } from "./relativePeriods";
 import type { SlideSourceFooterConfig } from "./customSlideSourceFooter";
 
 export const CANVAS_W = 1333;
@@ -313,6 +313,8 @@ export interface TableBlock extends BaseBlock {
   rowDims: string[];
   colDim: string | null;
   filters: Filters;
+  /** Filtro de meses da tabela. Undefined/null mantém todos os meses. */
+  monthFilter?: MonthRangeSelection | null;
   /** Se true, calcula N de linhas a partir da altura. Default: true */
   autoFit?: boolean;
   /** Limite manual de linhas quando autoFit=false. */

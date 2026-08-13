@@ -99,7 +99,7 @@ import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
 import { getCachedRowsSignature } from "@/lib/slideCalcCache";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
-import type { Filters } from "@/lib/types";
+import type { Filters, PricingRow } from "@/lib/types";
 import { BlockFilters } from "./BlockFilters";
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
@@ -130,9 +130,14 @@ import {
 import {
   DEFAULT_BASE_RELATIVE_MONTH_PRESET,
   DEFAULT_RELATIVE_MONTH_PRESET,
+  DEFAULT_RELATIVE_MONTH_RANGE_PRESET,
   RELATIVE_FY_PRESETS,
+  RELATIVE_MONTH_RANGE_PRESETS,
   RELATIVE_MONTH_PRESETS,
+  resolveMonthRangeSelection,
+  type MonthRangeSelection,
   type PeriodSelectionMode,
+  type RelativeMonthRangePreset,
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
 import {
@@ -4406,6 +4411,18 @@ function BridgeBlockEditor({ block, onChange }: {
   );
 }
 
+function tableEditorDimValue(row: PricingRow, dim: string): string {
+  const value = (row as unknown as Record<string, unknown>)[dim];
+  if (value == null || value === "") return "—";
+  return String(value);
+}
+
+function applyTableEditorDimensionFilters(rows: PricingRow[], filters: Filters | undefined): PricingRow[] {
+  const activeFilters = Object.entries(filters ?? {}).filter(([, allowed]) => allowed && allowed.length > 0);
+  if (activeFilters.length === 0) return rows;
+  return rows.filter((row) => activeFilters.every(([dim, allowed]) => allowed!.includes(tableEditorDimValue(row, dim))));
+}
+
 function TableBlockEditor({ block, onChange }: {
   block: Extract<CustomBlock, { kind: "table" }>;
   onChange: (p: Partial<CustomBlock>) => void;
@@ -4429,14 +4446,47 @@ function TableBlockEditor({ block, onChange }: {
       .sort((a, b) => a.ano - b.ano || a.mes - b.mes)
       .map((row) => ({ value: row.periodo, label: `${String(row.mes).padStart(2, "0")}/${row.ano}` }))
   ), [sourceRows]);
+  const monthFilterMode: "all" | PeriodSelectionMode = block.monthFilter
+    ? block.monthFilter.mode
+    : "all";
+  const patchMonthFilterMode = (mode: "all" | PeriodSelectionMode) => {
+    if (mode === "all") {
+      onChange({ monthFilter: null } as never);
+      return;
+    }
+    const current = block.monthFilter;
+    const next: MonthRangeSelection = mode === "relative"
+      ? {
+          mode: "relative",
+          relativeRange: current?.relativeRange ?? DEFAULT_RELATIVE_MONTH_RANGE_PRESET,
+        }
+      : {
+          mode: "fixed",
+          periods: current?.periods ?? [],
+          relativeRange: current?.relativeRange,
+        };
+    onChange({ monthFilter: next } as never);
+  };
+  const patchRelativeMonthRange = (relativeRange: RelativeMonthRangePreset) => {
+    onChange({ monthFilter: { mode: "relative", relativeRange } } as never);
+  };
+  const patchManualMonthSelection = (periods: string[]) => {
+    onChange({ monthFilter: { mode: "fixed", periods: periods.length ? periods : null } } as never);
+  };
   const tablePreview = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
     if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
-    const unified = buildUnifiedRows(sourceRows, [], "real");
+    const dimensionFilteredRows = applyTableEditorDimensionFilters(sourceRows, block.filters);
+    const resolvedMonths = resolveMonthRangeSelection(dimensionFilteredRows, block.monthFilter);
+    const monthSet = resolvedMonths?.length ? new Set(resolvedMonths) : null;
+    const tableRows = monthSet
+      ? dimensionFilteredRows.filter((row) => monthSet.has(row.periodo))
+      : dimensionFilteredRows;
+    const unified = buildUnifiedRows(tableRows, [], "real");
     const cfg: PivotConfig = {
       rows: block.rowDims, cols: block.colDim ? [block.colDim] : [],
       values: measures,
-      filters: Object.fromEntries(Object.entries(block.filters).map(([k, v]) => [k, v ?? []])),
+      filters: {},
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
     return {
@@ -4446,7 +4496,7 @@ function TableBlockEditor({ block, onChange }: {
         label: row.values.join(" / ") || "Total",
       })),
     };
-  }, [sourceRows, block.rowDims, block.colDim, block.measures, block.filters]);
+  }, [sourceRows, block.rowDims, block.colDim, block.measures, block.filters, block.monthFilter]);
   const totalRows = tablePreview.totalRows;
   const fit = resolveTableFit(block, totalRows);
   const toggleMeasure = (id: string) => {
@@ -4585,6 +4635,52 @@ function TableBlockEditor({ block, onChange }: {
           </SelectContent>
         </Select>
       </div>
+
+      <Section title="Periodos da tabela">
+        <div className="space-y-2">
+          <Row label="Modo">
+            <Segmented
+              value={monthFilterMode}
+              onChange={(v) => patchMonthFilterMode(v as "all" | PeriodSelectionMode)}
+              options={[
+                { value: "all", label: "Todos" },
+                { value: "relative", label: "Rapido" },
+                { value: "fixed", label: "Manual" },
+              ]}
+            />
+          </Row>
+          {monthFilterMode === "relative" && (
+            <div className="grid grid-cols-3 gap-1">
+              {RELATIVE_MONTH_RANGE_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => patchRelativeMonthRange(preset.value)}
+                  className={cn(
+                    "rounded-md border px-2 py-1.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                    (block.monthFilter?.relativeRange ?? DEFAULT_RELATIVE_MONTH_RANGE_PRESET) === preset.value
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : "border-border/50 bg-background/50 text-muted-foreground hover:bg-secondary",
+                  )}
+                >
+                  {preset.months} meses
+                </button>
+              ))}
+            </div>
+          )}
+          {monthFilterMode === "fixed" && (
+            <MultiSelectFilter
+              options={periodOptions}
+              selected={block.monthFilter?.periods ?? []}
+              onChange={patchManualMonthSelection}
+              placeholder="Selecionar meses"
+            />
+          )}
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Os atalhos usam o mes mais recente disponivel depois dos filtros da tabela.
+          </p>
+        </div>
+      </Section>
 
       <div className="rounded-md border border-border/40 bg-muted/20 p-2">
         <ToggleRow
