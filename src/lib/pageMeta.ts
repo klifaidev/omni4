@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BadgeCheck,
   BellRing,
   Coins,
   FileSpreadsheet,
@@ -30,6 +31,7 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/visao-geral": { label: "Visão Geral", icon: BarChart3 },
   "/bridge-pvm": { label: "Bridge PVM", icon: TrendingUp },
   "/mix": { label: "Mix", icon: Layers3 },
+  "/indice-preco-ideal": { label: "Índice de Preço Ideal", icon: BadgeCheck },
   "/dre": { label: "DRE", icon: FileSpreadsheet },
   "/canais": { label: "Canais", icon: Network },
   "/custos": { label: "Custos", icon: Coins },

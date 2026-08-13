@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useHasActiveFilters } from "./ActiveFiltersBar";
 import {
   AlertTriangle,
+  BadgeCheck,
   BarChart3,
   BellRing,
   ChevronDown,
@@ -57,6 +58,7 @@ const dashItems = [
   { to: "/bridge-pvm", label: "Bridge PVM", icon: TrendingUp },
   { to: "/mix", label: "Mix", icon: Layers3 },
   { to: "/preco", label: "Análise de Preço", icon: DollarSign },
+  { to: "/indice-preco-ideal", label: "Índice de Preço Ideal", icon: BadgeCheck },
   { to: "/farol", label: "Farol de Cadastro", icon: Radar },
   { to: "/dre", label: "DRE", icon: FileSpreadsheet },
   { to: "/canais", label: "Canais", icon: Network },
