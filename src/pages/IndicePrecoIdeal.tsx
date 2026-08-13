@@ -43,7 +43,22 @@ type MatrixConfig = {
   manualOverrides: Record<string, number>;
 };
 
-type StoredConfig = Partial<Record<PriceIndexDimension, MatrixConfig>>;
+type MatrixSettings = Partial<Record<PriceIndexDimension, MatrixConfig>>;
+
+type CategoryPriceConfig = {
+  matrices: MatrixSettings;
+  anchorSku: string;
+  anchorSkuSearch: string;
+  anchorSuggestedPriceInput: string;
+  guardrailConfig: GuardrailConfig;
+};
+
+type StoredConfig = {
+  selectedCategory?: string;
+  categories: Record<string, CategoryPriceConfig>;
+  legacyMatrices?: MatrixSettings;
+  loadFailed?: boolean;
+};
 
 type SkuPriceSuggestion = {
   sku: string;
@@ -94,6 +109,14 @@ const DEFAULT_GUARDRAILS: GuardrailConfig = {
   competitiveMaxIndex: 1.35,
 };
 
+const EMPTY_CATEGORY_CONFIG: CategoryPriceConfig = {
+  matrices: {},
+  anchorSku: "",
+  anchorSkuSearch: "",
+  anchorSuggestedPriceInput: "",
+  guardrailConfig: DEFAULT_GUARDRAILS,
+};
+
 const DIMENSIONS: Array<{
   key: PriceIndexDimension;
   title: string;
@@ -116,20 +139,55 @@ const DIMENSIONS: Array<{
   },
 ];
 
+function isLegacyMatrixSettings(value: unknown): value is MatrixSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return DIMENSIONS.some((dimension) => Object.prototype.hasOwnProperty.call(value, dimension.key));
+}
+
+function normalizeCategoryConfig(value: Partial<CategoryPriceConfig> | undefined): CategoryPriceConfig {
+  return {
+    matrices: value?.matrices ?? {},
+    anchorSku: value?.anchorSku ?? "",
+    anchorSkuSearch: value?.anchorSkuSearch ?? value?.anchorSku ?? "",
+    anchorSuggestedPriceInput: value?.anchorSuggestedPriceInput ?? "",
+    guardrailConfig: { ...DEFAULT_GUARDRAILS, ...(value?.guardrailConfig ?? {}) },
+  };
+}
+
 function loadStoredConfig(): StoredConfig {
-  if (typeof window === "undefined") return {};
+  if (typeof window === "undefined") return { categories: {} };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as StoredConfig;
-  } catch {
-    return {};
+    if (!raw) return { categories: {} };
+    const parsed = JSON.parse(raw) as Partial<StoredConfig> | MatrixSettings;
+    if (isLegacyMatrixSettings(parsed)) {
+      return { categories: {}, legacyMatrices: parsed };
+    }
+    const categories = Object.fromEntries(
+      Object.entries((parsed as Partial<StoredConfig>).categories ?? {}).map(([category, config]) => [
+        category,
+        normalizeCategoryConfig(config),
+      ]),
+    );
+    return {
+      selectedCategory: (parsed as Partial<StoredConfig>).selectedCategory,
+      categories,
+      legacyMatrices: (parsed as Partial<StoredConfig>).legacyMatrices,
+    };
+  } catch (error) {
+    console.warn("[indice-preco-ideal] Não foi possível carregar a configuração salva.", error);
+    return { categories: {}, loadFailed: true };
   }
 }
 
 function valueFor(row: PricingRow, dimension: PriceIndexDimension): string {
   const value = String(row[dimension] ?? "").trim();
   return value || "Sem informação";
+}
+
+function categoryFor(row: PricingRow): string {
+  const value = String(row.categoria ?? "").trim();
+  return value || "Sem categoria";
 }
 
 function referenceByVolume(rows: PricingRow[], dimension: PriceIndexDimension): string | undefined {
@@ -220,7 +278,7 @@ function aggregateSkuOptions(rows: PricingRow[]): SkuOption[] {
 
 function buildEffectiveIndices(
   matrixData: Record<PriceIndexDimension, { calibration: CalibratedPriceIndex[] }>,
-  config: StoredConfig,
+  config: MatrixSettings,
 ): PriceIndexValues {
   return Object.fromEntries(
     DIMENSIONS.map((dimension) => {
@@ -510,35 +568,70 @@ export default function IndicePrecoIdeal() {
   const filters = usePricing((state) => state.filters);
   const selectedPeriods = usePricing((state) => state.selectedPeriods);
   const budgetRowsRaw = useBudget((state) => state.rows);
-  const [config, setConfig] = useState<StoredConfig>(() => loadStoredConfig());
+  const [storedConfig, setStoredConfig] = useState<StoredConfig>(() => loadStoredConfig());
   const [targetSettings, setTargetSettings] = useState<TargetSettings>(() => loadMarginTargetSettings());
-  const [anchorSku, setAnchorSku] = useState("");
-  const [anchorSkuSearch, setAnchorSkuSearch] = useState("");
-  const anchorInitializedRef = useRef(false);
-  const [anchorSuggestedPriceInput, setAnchorSuggestedPriceInput] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [skuSearch, setSkuSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
   const [showOnlyViolations, setShowOnlyViolations] = useState(false);
-  const [guardrailConfig, setGuardrailConfig] = useState<GuardrailConfig>(DEFAULT_GUARDRAILS);
   const [isExportingImage, setIsExportingImage] = useState(false);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  }, [config]);
+    if (storedConfig.loadFailed) return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedConfig));
+    } catch (error) {
+      console.warn("[indice-preco-ideal] Não foi possível salvar a configuração por categoria.", error);
+    }
+  }, [storedConfig]);
 
   const scopedRows = useMemo(() => applyFilters(rows, filters, selectedPeriods), [filters, rows, selectedPeriods]);
   const historyRows = useMemo(() => applyFilters(rows, filters, null), [filters, rows]);
+  const availableCategories = useMemo(
+    () => Array.from(new Set(scopedRows.map(categoryFor))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [scopedRows],
+  );
+  const selectedCategoryRows = useMemo(
+    () => scopedRows.filter((row) => categoryFor(row) === selectedCategory),
+    [scopedRows, selectedCategory],
+  );
+  const selectedCategoryHistoryRows = useMemo(
+    () => historyRows.filter((row) => categoryFor(row) === selectedCategory),
+    [historyRows, selectedCategory],
+  );
   const budgetRows = useMemo(() => budgetRowsAsPricingFiltered(budgetRowsRaw, "budget"), [budgetRowsRaw]);
   const latestBudgetFyNum = useMemo(
     () => budgetRows.reduce((latest, row) => Math.max(latest, row.fyNum || 0), 0),
     [budgetRows],
   );
   const budgetFiscalRows = useMemo(
-    () => (latestBudgetFyNum ? budgetRows.filter((row) => row.fyNum === latestBudgetFyNum) : []),
-    [budgetRows, latestBudgetFyNum],
+    () => (latestBudgetFyNum ? budgetRows.filter((row) => row.fyNum === latestBudgetFyNum && categoryFor(row) === selectedCategory) : []),
+    [budgetRows, latestBudgetFyNum, selectedCategory],
   );
-  const skuOptions = useMemo(() => aggregateSkuOptions(scopedRows), [scopedRows]);
+  const categoryConfig = storedConfig.categories[selectedCategory] ?? EMPTY_CATEGORY_CONFIG;
+  const matrixConfig = categoryConfig.matrices;
+  const anchorSku = categoryConfig.anchorSku;
+  const anchorSkuSearch = categoryConfig.anchorSkuSearch;
+  const anchorSuggestedPriceInput = categoryConfig.anchorSuggestedPriceInput;
+  const guardrailConfig = categoryConfig.guardrailConfig;
+  const skuOptions = useMemo(() => aggregateSkuOptions(selectedCategoryRows), [selectedCategoryRows]);
   const anchorOption = skuOptions.find((option) => option.sku === anchorSku);
+
+  const updateCategoryConfig = (updater: (current: CategoryPriceConfig) => CategoryPriceConfig) => {
+    if (!selectedCategory) return;
+    setStoredConfig((current) => {
+      const previous = current.categories[selectedCategory] ?? normalizeCategoryConfig({
+        matrices: current.legacyMatrices,
+      });
+      return {
+        ...current,
+        selectedCategory,
+        categories: {
+          ...current.categories,
+          [selectedCategory]: normalizeCategoryConfig(updater(previous)),
+        },
+      };
+    });
+  };
 
   useEffect(() => {
     const refreshTargetSettings = () => setTargetSettings(loadMarginTargetSettings());
@@ -558,9 +651,9 @@ export default function IndicePrecoIdeal() {
   const matrixData = useMemo(() => {
     return Object.fromEntries(
       DIMENSIONS.map((dimension) => {
-        const fallbackReference = referenceByVolume(scopedRows, dimension.key);
-        const reference = config[dimension.key]?.referenceValue ?? fallbackReference;
-        const calibration = reference ? calibratePriceIndices(scopedRows, dimension.key, reference) : [];
+        const fallbackReference = referenceByVolume(selectedCategoryRows, dimension.key);
+        const reference = matrixConfig[dimension.key]?.referenceValue ?? fallbackReference;
+        const calibration = reference ? calibratePriceIndices(selectedCategoryRows, dimension.key, reference) : [];
         return [dimension.key, { reference, fallbackReference, calibration }];
       }),
     ) as Record<PriceIndexDimension, {
@@ -568,22 +661,22 @@ export default function IndicePrecoIdeal() {
       fallbackReference?: string;
       calibration: CalibratedPriceIndex[];
     }>;
-  }, [config, scopedRows]);
+  }, [matrixConfig, selectedCategoryRows]);
 
-  const effectiveIndices = useMemo(() => buildEffectiveIndices(matrixData, config), [config, matrixData]);
+  const effectiveIndices = useMemo(() => buildEffectiveIndices(matrixData, matrixConfig), [matrixConfig, matrixData]);
   const anchorSuggestedPrice = parseDecimal(anchorSuggestedPriceInput);
 
   const rawSkuSuggestions = useMemo(
-    () => buildSkuSuggestions(scopedRows, anchorSuggestedPrice, effectiveIndices),
-    [anchorSuggestedPrice, effectiveIndices, scopedRows],
+    () => buildSkuSuggestions(selectedCategoryRows, anchorSuggestedPrice, effectiveIndices),
+    [anchorSuggestedPrice, effectiveIndices, selectedCategoryRows],
   );
   const skuSuggestions = useMemo(
     () => applyGuardrails(rawSkuSuggestions, guardrailConfig, anchorSuggestedPrice),
     [anchorSuggestedPrice, guardrailConfig, rawSkuSuggestions],
   );
   const targetBySku = useMemo(
-    () => buildSkuTargetMap(scopedRows, historyRows, budgetFiscalRows, targetSettings),
-    [budgetFiscalRows, historyRows, scopedRows, targetSettings],
+    () => buildSkuTargetMap(selectedCategoryRows, selectedCategoryHistoryRows, budgetFiscalRows, targetSettings),
+    [budgetFiscalRows, selectedCategoryHistoryRows, selectedCategoryRows, targetSettings],
   );
   const skuSuggestionsWithTarget = useMemo(
     () => attachTargetMargins(skuSuggestions, targetBySku),
@@ -593,17 +686,12 @@ export default function IndicePrecoIdeal() {
     () => skuSuggestionsWithTarget.filter((item) => item.guardrailViolations.length > 0).length,
     [skuSuggestionsWithTarget],
   );
-  const categoryOptions = useMemo(
-    () => Array.from(new Set(skuSuggestionsWithTarget.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
-    [skuSuggestionsWithTarget],
-  );
   const filteredSuggestionsForExport = useMemo(() => {
     const q = skuSearch.trim().toLowerCase();
     return skuSuggestionsWithTarget
-      .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
       .filter((item) => !showOnlyViolations || item.guardrailViolations.length > 0)
       .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q));
-  }, [categoryFilter, showOnlyViolations, skuSearch, skuSuggestionsWithTarget]);
+  }, [showOnlyViolations, skuSearch, skuSuggestionsWithTarget]);
   const filteredSuggestions = useMemo(() => filteredSuggestionsForExport.slice(0, 80), [filteredSuggestionsForExport]);
   const exportSuggestions = useMemo(() => {
     if (!anchorSku || filteredSuggestionsForExport.some((item) => item.sku === anchorSku)) return filteredSuggestionsForExport;
@@ -612,11 +700,11 @@ export default function IndicePrecoIdeal() {
   }, [anchorSku, filteredSuggestionsForExport, skuSuggestionsWithTarget]);
 
   const residuals = useMemo(
-    () => calculatePricePredictionResiduals(scopedRows, {
+    () => calculatePricePredictionResiduals(selectedCategoryRows, {
       anchorSuggestedPrice,
       indices: effectiveIndices,
     }),
-    [anchorSuggestedPrice, effectiveIndices, scopedRows],
+    [anchorSuggestedPrice, effectiveIndices, selectedCategoryRows],
   );
   const residualSummary = useMemo(() => summarizeResiduals(residuals), [residuals]);
   const targetCoverageCount = useMemo(
@@ -629,8 +717,8 @@ export default function IndicePrecoIdeal() {
     return rowsWithGap.reduce((sum, item) => sum + Math.abs(item.targetGapPp ?? 0), 0) / rowsWithGap.length;
   }, [skuSuggestionsWithTarget]);
   const manualOverrideCount = useMemo(
-    () => DIMENSIONS.reduce((sum, dimension) => sum + Object.keys(config[dimension.key]?.manualOverrides ?? {}).length, 0),
-    [config],
+    () => DIMENSIONS.reduce((sum, dimension) => sum + Object.keys(matrixConfig[dimension.key]?.manualOverrides ?? {}).length, 0),
+    [matrixConfig],
   );
 
   const handleExportImage = async () => {
@@ -653,38 +741,83 @@ export default function IndicePrecoIdeal() {
   };
 
   useEffect(() => {
-    setConfig((current) => {
+    if (availableCategories.length === 0) return;
+    setSelectedCategory((current) => {
+      if (current && availableCategories.includes(current)) return current;
+      const saved = storedConfig.selectedCategory;
+      if (saved && availableCategories.includes(saved)) return saved;
+      return availableCategories[0] ?? "";
+    });
+  }, [availableCategories, storedConfig.selectedCategory]);
+
+  useEffect(() => {
+    if (!selectedCategory) return;
+    setStoredConfig((current) => {
+      const existing = current.categories[selectedCategory];
+      if (existing) {
+        return current.selectedCategory === selectedCategory ? current : { ...current, selectedCategory };
+      }
+      return {
+        ...current,
+        selectedCategory,
+        categories: {
+          ...current.categories,
+          [selectedCategory]: normalizeCategoryConfig({ matrices: current.legacyMatrices }),
+        },
+      };
+    });
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    if (!selectedCategory || selectedCategoryRows.length === 0) return;
+    setStoredConfig((current) => {
       let changed = false;
-      const next: StoredConfig = { ...current };
+      const currentCategory = normalizeCategoryConfig(current.categories[selectedCategory] ?? { matrices: current.legacyMatrices });
+      const nextMatrices: MatrixSettings = { ...currentCategory.matrices };
       for (const dimension of DIMENSIONS) {
         const { fallbackReference, calibration } = matrixData[dimension.key];
-        const currentReference = current[dimension.key]?.referenceValue;
+        const currentReference = currentCategory.matrices[dimension.key]?.referenceValue;
         const currentStillExists = Boolean(currentReference && calibration.some((item) => item.value === currentReference));
         if (!currentStillExists && fallbackReference) {
-          next[dimension.key] = {
+          nextMatrices[dimension.key] = {
             referenceValue: fallbackReference,
-            manualOverrides: current[dimension.key]?.manualOverrides ?? {},
+            manualOverrides: currentCategory.matrices[dimension.key]?.manualOverrides ?? {},
           };
           changed = true;
         }
       }
-      return changed ? next : current;
+      if (!changed) return current;
+      return {
+        ...current,
+        selectedCategory,
+        categories: {
+          ...current.categories,
+          [selectedCategory]: {
+            ...currentCategory,
+            matrices: nextMatrices,
+          },
+        },
+      };
     });
-  }, [matrixData]);
+  }, [matrixData, selectedCategory, selectedCategoryRows.length]);
 
   useEffect(() => {
-    if (anchorInitializedRef.current || skuOptions.length === 0) return;
+    if (!selectedCategory || anchorSku || skuOptions.length === 0) return;
     const first = skuOptions[0];
-    anchorInitializedRef.current = true;
-    setAnchorSku(first.sku);
-    setAnchorSkuSearch(first.sku);
-    if (!anchorSuggestedPriceInput && first.actualPrice !== null) {
-      setAnchorSuggestedPriceInput(first.actualPrice.toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }));
-    }
-  }, [anchorSuggestedPriceInput, skuOptions]);
+    updateCategoryConfig((current) => ({
+      ...current,
+      anchorSku: first.sku,
+      anchorSkuSearch: first.sku,
+      anchorSuggestedPriceInput:
+        current.anchorSuggestedPriceInput ||
+        (first.actualPrice !== null
+          ? first.actualPrice.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : ""),
+    }));
+  }, [anchorSku, selectedCategory, skuOptions]);
 
   if (rows.length === 0) {
     return (
@@ -708,6 +841,18 @@ export default function IndicePrecoIdeal() {
         subtitle="Matrizes calibradas por preço médio real, prontas para virar premissas de posicionamento."
       />
       <main ref={reportRef} className="space-y-8 p-4 md:p-8">
+        <CategorySelectorCard
+          categories={availableCategories}
+          selectedCategory={selectedCategory}
+          onCategoryChange={(category) => {
+            setSelectedCategory(category);
+            setSkuSearch("");
+            setShowOnlyViolations(false);
+            setStoredConfig((current) => ({ ...current, selectedCategory: category }));
+          }}
+          rowCount={selectedCategoryRows.length}
+        />
+
         <ExecutiveSummary
           skuCount={skuSuggestionsWithTarget.length}
           violationCount={guardrailViolationCount}
@@ -760,16 +905,18 @@ export default function IndicePrecoIdeal() {
               skuOptions={skuOptions}
               anchorSku={anchorSku}
               anchorSkuSearch={anchorSkuSearch}
-              onAnchorSkuChange={setAnchorSku}
-              onAnchorSkuSearchChange={setAnchorSkuSearch}
+              onAnchorSkuChange={(value) => updateCategoryConfig((current) => ({ ...current, anchorSku: value }))}
+              onAnchorSkuSearchChange={(value) => updateCategoryConfig((current) => ({ ...current, anchorSkuSearch: value }))}
               anchorSuggestedPriceInput={anchorSuggestedPriceInput}
-              onAnchorSuggestedPriceChange={setAnchorSuggestedPriceInput}
+              onAnchorSuggestedPriceChange={(value) =>
+                updateCategoryConfig((current) => ({ ...current, anchorSuggestedPriceInput: value }))
+              }
               effectiveAnchorPrice={anchorSuggestedPrice}
               anchorOption={anchorOption}
             />
             <GuardrailConfigCard
               config={guardrailConfig}
-              onChange={setGuardrailConfig}
+              onChange={(nextGuardrails) => updateCategoryConfig((current) => ({ ...current, guardrailConfig: nextGuardrails }))}
               violationCount={guardrailViolationCount}
             />
           </div>
@@ -784,9 +931,7 @@ export default function IndicePrecoIdeal() {
             onShowOnlyViolationsChange={setShowOnlyViolations}
             search={skuSearch}
             onSearchChange={setSkuSearch}
-            categoryFilter={categoryFilter}
-            onCategoryFilterChange={setCategoryFilter}
-            categoryOptions={categoryOptions}
+            selectedCategory={selectedCategory}
           />
         </div>
 
@@ -813,34 +958,40 @@ export default function IndicePrecoIdeal() {
               dimension={dimension.key}
               calibration={matrixData[dimension.key].calibration}
               referenceValue={matrixData[dimension.key].reference}
-              manualOverrides={config[dimension.key]?.manualOverrides ?? {}}
+              manualOverrides={matrixConfig[dimension.key]?.manualOverrides ?? {}}
               onReferenceChange={(nextReference) => {
-                setConfig((current) => {
-                  const currentDimension = current[dimension.key] ?? { manualOverrides: {} };
+                updateCategoryConfig((current) => {
+                  const currentDimension = current.matrices[dimension.key] ?? { manualOverrides: {} };
                   return {
                     ...current,
-                    [dimension.key]: {
-                      referenceValue: nextReference,
-                      manualOverrides: renormalizeOverrides(
-                        currentDimension.manualOverrides,
-                        matrixData[dimension.key].calibration,
-                        nextReference,
-                      ),
+                    matrices: {
+                      ...current.matrices,
+                      [dimension.key]: {
+                        referenceValue: nextReference,
+                        manualOverrides: renormalizeOverrides(
+                          currentDimension.manualOverrides,
+                          matrixData[dimension.key].calibration,
+                          nextReference,
+                        ),
+                      },
                     },
                   };
                 });
               }}
               onOverrideChange={(value, nextIndex) => {
-                setConfig((current) => {
-                  const currentDimension = current[dimension.key] ?? { manualOverrides: {} };
+                updateCategoryConfig((current) => {
+                  const currentDimension = current.matrices[dimension.key] ?? { manualOverrides: {} };
                   const manualOverrides = { ...currentDimension.manualOverrides };
                   if (nextIndex === null) delete manualOverrides[value];
                   else manualOverrides[value] = nextIndex;
                   return {
                     ...current,
-                    [dimension.key]: {
-                      referenceValue: currentDimension.referenceValue ?? matrixData[dimension.key].reference,
-                      manualOverrides,
+                    matrices: {
+                      ...current.matrices,
+                      [dimension.key]: {
+                        referenceValue: currentDimension.referenceValue ?? matrixData[dimension.key].reference,
+                        manualOverrides,
+                      },
                     },
                   };
                 });
@@ -868,6 +1019,58 @@ function SectionHeader({
       <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
       <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
     </div>
+  );
+}
+
+function CategorySelectorCard({
+  categories,
+  selectedCategory,
+  onCategoryChange,
+  rowCount,
+}: {
+  categories: string[];
+  selectedCategory: string;
+  onCategoryChange: (value: string) => void;
+  rowCount: number;
+}) {
+  return (
+    <GlassCard surface="raised" className="overflow-hidden p-0 shadow-[var(--shadow-elevated)]">
+      <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-2 p-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+            <Gauge className="h-3.5 w-3.5" />
+            Categoria ativa
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+            Cada categoria com sua própria régua de preço
+          </h2>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            Troque entre categorias sem perder âncora, preço sugerido, ajustes de índice ou guardrails já configurados.
+          </p>
+        </div>
+        <div className="flex flex-col justify-center gap-3 border-t border-border/40 bg-background/35 p-6 lg:border-l lg:border-t-0">
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Categoria</span>
+            <Select value={selectedCategory} onValueChange={onCategoryChange} disabled={categories.length === 0}>
+              <SelectTrigger className="h-11">
+                <SelectValue placeholder="Escolha uma categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <div className="rounded-xl border border-border/40 bg-background/35 px-4 py-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Base usada nesta leitura</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{formatNum(rowCount, 0)} registros</p>
+          </div>
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -1222,9 +1425,7 @@ function SuggestedPricesCard({
   onShowOnlyViolationsChange,
   search,
   onSearchChange,
-  categoryFilter,
-  onCategoryFilterChange,
-  categoryOptions,
+  selectedCategory,
 }: {
   rows: SkuPriceSuggestion[];
   exportRows: SkuPriceSuggestion[];
@@ -1236,9 +1437,7 @@ function SuggestedPricesCard({
   onShowOnlyViolationsChange: (value: boolean) => void;
   search: string;
   onSearchChange: (value: string) => void;
-  categoryFilter: string;
-  onCategoryFilterChange: (value: string) => void;
-  categoryOptions: string[];
+  selectedCategory: string;
 }) {
   return (
     <GlassCard className="flex min-h-[520px] flex-col overflow-hidden p-0 transition-all duration-200 hover:shadow-[var(--shadow-elevated)]">
@@ -1246,6 +1445,7 @@ function SuggestedPricesCard({
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Catálogo sugerido</p>
           <h2 className="mt-1 text-lg font-semibold text-foreground">Preço ideal por SKU</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Categoria: {selectedCategory || "sem categoria selecionada"}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">
@@ -1274,7 +1474,7 @@ function SuggestedPricesCard({
           </Button>
         </div>
       </div>
-      <div className="grid gap-3 border-b border-border/30 p-4 lg:grid-cols-[1fr_220px_auto]">
+      <div className="grid gap-3 border-b border-border/30 p-4 lg:grid-cols-[1fr_auto]">
         <label className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -1284,17 +1484,6 @@ function SuggestedPricesCard({
             className="h-10 pl-9"
           />
         </label>
-        <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
-          <SelectTrigger className="h-10">
-            <SelectValue placeholder="Categoria" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as categorias</SelectItem>
-            {categoryOptions.map((category) => (
-              <SelectItem key={category} value={category}>{category}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Button
           type="button"
           variant={showOnlyViolations ? "default" : "outline"}
