@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
-import { AlertTriangle, ArrowRightLeft, BadgeCheck, BarChart3, Camera, Gauge, RotateCcw, Search, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, BadgeCheck, BarChart3, Camera, Download, Gauge, RotateCcw, Search, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -15,6 +15,7 @@ import { useBudget } from "@/store/budget";
 import { applyFilters } from "@/lib/analytics";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { formatBRL, formatNum } from "@/lib/format";
+import { exportTableCsv } from "@/lib/exportCsv";
 import {
   STORAGE_KEY as MARGIN_TARGET_STORAGE_KEY,
   buildCategoryTargets,
@@ -401,6 +402,66 @@ function applyGuardrails(
   });
 }
 
+function priceIndexFor(indices: PriceIndexValues, dimension: PriceIndexDimension, value: string): number {
+  return indices[dimension]?.[value] ?? 1;
+}
+
+function buildSuggestedPricesExportRows(
+  rows: SkuPriceSuggestion[],
+  anchorSku: string,
+  indices: PriceIndexValues,
+): Record<string, unknown>[] {
+  return rows.map((row) => ({
+    sku: row.sku,
+    descricao: row.name,
+    skuAncora: row.sku === anchorSku ? "Sim" : "Não",
+    categoria: row.category,
+    sabor: row.sabor,
+    faixaPeso: row.faixaPeso,
+    formato: row.formato,
+    indiceSabor: priceIndexFor(indices, "sabor", row.sabor),
+    indiceFaixaPeso: priceIndexFor(indices, "faixaPeso", row.faixaPeso),
+    indiceFormato: priceIndexFor(indices, "formato", row.formato),
+    precoSugerido: row.suggestedPrice,
+    precoAtual: row.actualPrice,
+    cmSugeridaPct: row.suggestedMarginPct === null ? null : row.suggestedMarginPct * 100,
+    margemTargetPct: row.targetMarginPct === null ? null : row.targetMarginPct * 100,
+    gapTargetPp: row.targetGapPp === null ? null : row.targetGapPp * 100,
+    guardrails: row.guardrailViolations.length
+      ? row.guardrailViolations.map((violation) => `${violation.label}: ${violation.detail}`).join(" | ")
+      : "OK",
+  }));
+}
+
+function exportSuggestedPricesCsv(
+  rows: SkuPriceSuggestion[],
+  anchorSku: string,
+  indices: PriceIndexValues,
+): void {
+  exportTableCsv(
+    buildSuggestedPricesExportRows(rows, anchorSku, indices),
+    [
+      { key: "sku", label: "SKU" },
+      { key: "descricao", label: "Descrição" },
+      { key: "skuAncora", label: "SKU âncora" },
+      { key: "categoria", label: "Categoria" },
+      { key: "sabor", label: "Sabor" },
+      { key: "faixaPeso", label: "Faixa de peso" },
+      { key: "formato", label: "Formato" },
+      { key: "indiceSabor", label: "Índice sabor" },
+      { key: "indiceFaixaPeso", label: "Índice faixa de peso" },
+      { key: "indiceFormato", label: "Índice formato" },
+      { key: "precoSugerido", label: "Preço sugerido (R$/kg)" },
+      { key: "precoAtual", label: "Preço praticado atual (R$/kg)" },
+      { key: "cmSugeridaPct", label: "CM sugerida (%)" },
+      { key: "margemTargetPct", label: "Margem target (%)" },
+      { key: "gapTargetPp", label: "Gap vs target (p.p.)" },
+      { key: "guardrails", label: "Guardrails violados" },
+    ],
+    `indice_preco_ideal_precos_sugeridos_${new Date().toISOString().slice(0, 10)}`,
+  );
+}
+
 function summarizeResiduals(residuals: PricePredictionResidual[]): {
   avgAbsResidual: number;
   avgAbsResidualPct: number;
@@ -536,14 +597,19 @@ export default function IndicePrecoIdeal() {
     () => Array.from(new Set(skuSuggestionsWithTarget.map((item) => item.category))).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [skuSuggestionsWithTarget],
   );
-  const filteredSuggestions = useMemo(() => {
+  const filteredSuggestionsForExport = useMemo(() => {
     const q = skuSearch.trim().toLowerCase();
     return skuSuggestionsWithTarget
       .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
       .filter((item) => !showOnlyViolations || item.guardrailViolations.length > 0)
-      .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q))
-      .slice(0, 80);
+      .filter((item) => !q || `${item.sku} ${item.name} ${item.category}`.toLowerCase().includes(q));
   }, [categoryFilter, showOnlyViolations, skuSearch, skuSuggestionsWithTarget]);
+  const filteredSuggestions = useMemo(() => filteredSuggestionsForExport.slice(0, 80), [filteredSuggestionsForExport]);
+  const exportSuggestions = useMemo(() => {
+    if (!anchorSku || filteredSuggestionsForExport.some((item) => item.sku === anchorSku)) return filteredSuggestionsForExport;
+    const anchorRow = skuSuggestionsWithTarget.find((item) => item.sku === anchorSku);
+    return anchorRow ? [anchorRow, ...filteredSuggestionsForExport] : filteredSuggestionsForExport;
+  }, [anchorSku, filteredSuggestionsForExport, skuSuggestionsWithTarget]);
 
   const residuals = useMemo(
     () => calculatePricePredictionResiduals(scopedRows, {
@@ -709,8 +775,11 @@ export default function IndicePrecoIdeal() {
           </div>
           <SuggestedPricesCard
             rows={filteredSuggestions}
+            exportRows={exportSuggestions}
             totalRows={skuSuggestions.length}
             violationCount={guardrailViolationCount}
+            anchorSku={anchorSku}
+            indices={effectiveIndices}
             showOnlyViolations={showOnlyViolations}
             onShowOnlyViolationsChange={setShowOnlyViolations}
             search={skuSearch}
@@ -1144,8 +1213,11 @@ function GuardrailInput({
 
 function SuggestedPricesCard({
   rows,
+  exportRows,
   totalRows,
   violationCount,
+  anchorSku,
+  indices,
   showOnlyViolations,
   onShowOnlyViolationsChange,
   search,
@@ -1155,8 +1227,11 @@ function SuggestedPricesCard({
   categoryOptions,
 }: {
   rows: SkuPriceSuggestion[];
+  exportRows: SkuPriceSuggestion[];
   totalRows: number;
   violationCount: number;
+  anchorSku: string;
+  indices: PriceIndexValues;
   showOnlyViolations: boolean;
   onShowOnlyViolationsChange: (value: boolean) => void;
   search: string;
@@ -1186,6 +1261,17 @@ function SuggestedPricesCard({
           >
             {formatNum(violationCount, 0)} com guardrail
           </Badge>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={() => exportSuggestedPricesCsv(exportRows, anchorSku, indices)}
+            disabled={exportRows.length === 0}
+          >
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </Button>
         </div>
       </div>
       <div className="grid gap-3 border-b border-border/30 p-4 lg:grid-cols-[1fr_220px_auto]">
