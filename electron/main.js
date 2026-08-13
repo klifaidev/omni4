@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
-const AUTO_UPDATE_ENABLED = false;
+const AUTO_UPDATE_ENABLED = true;
 
 // Configurar electron-log
 log.transports.file.resolvePath = () => {
