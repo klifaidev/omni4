@@ -1146,6 +1146,15 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     event.stopPropagation();
     const rect = tableResizeRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return;
+    const handleEl = event.currentTarget;
+    const ownerDocument = handleEl.ownerDocument ?? document;
+    if (handleEl.setPointerCapture) {
+      try {
+        handleEl.setPointerCapture(event.pointerId);
+      } catch {
+        // Some embedded webviews can reject capture after pointer cancellation.
+      }
+    }
     const startX = event.clientX;
     const startWidths = [...activeColumnWidths];
     const handleMove = (moveEvent: PointerEvent) => {
@@ -1154,17 +1163,32 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
       const next = resizeTableColumnWidths(startWidths, index, deltaPct);
       setDraftColumnWidths(columnWidthsToRecord(tableColumnKeys, next));
     };
+    const stopTracking = () => {
+      ownerDocument.removeEventListener("pointermove", handleMove);
+      ownerDocument.removeEventListener("pointerup", handleUp);
+      ownerDocument.removeEventListener("pointercancel", handleCancel);
+      if (handleEl.releasePointerCapture && handleEl.hasPointerCapture?.(event.pointerId)) {
+        try {
+          handleEl.releasePointerCapture(event.pointerId);
+        } catch {
+          // Capture may already be released by the browser.
+        }
+      }
+    };
     const handleUp = (upEvent: PointerEvent) => {
       const deltaPct = ((upEvent.clientX - startX) / rect.width) * 100;
       const next = resizeTableColumnWidths(startWidths, index, deltaPct);
       const columnWidths = columnWidthsToRecord(tableColumnKeys, next);
       setDraftColumnWidths(columnWidths);
       onPatch({ columnWidths } as Partial<CustomBlock>);
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
+      stopTracking();
     };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp, { once: true });
+    const handleCancel = () => {
+      stopTracking();
+    };
+    ownerDocument.addEventListener("pointermove", handleMove);
+    ownerDocument.addEventListener("pointerup", handleUp, { once: true });
+    ownerDocument.addEventListener("pointercancel", handleCancel, { once: true });
   };
 
   if (missingData) return <MissingLocalData label={missingData} />;
