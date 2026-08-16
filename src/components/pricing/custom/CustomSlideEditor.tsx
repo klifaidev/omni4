@@ -3348,6 +3348,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               </div>
 
               <PositionInputs block={selected} onChange={(p) => updateBlock(selected.id, p)} />
+              <BlockAppearanceControls block={selected} onChange={(p) => updateBlock(selected.id, p)} />
               <Separator />
               <div
                 ref={inspectorStyleRef}
@@ -3716,6 +3717,24 @@ function PositionInputs({ block, onChange }: {
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+function BlockAppearanceControls({ block, onChange }: {
+  block: CustomBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+}) {
+  return (
+    <div className="rounded-md border border-border/40 bg-secondary/20 p-2">
+      <Label className="mb-1 block text-[10px] uppercase text-muted-foreground">Opacidade do bloco</Label>
+      <SliderWithInput
+        value={block.opacity ?? 100}
+        min={0}
+        max={100}
+        unit="%"
+        onChange={(v) => onChange({ opacity: v })}
+      />
     </div>
   );
 }
@@ -5431,10 +5450,6 @@ function TextTitleInspector({ block, onChange }: {
       </Section>
 
       <Section title="Aparência" defaultOpen={false}>
-        <Row label="Opacidade">
-          <SliderWithInput value={block.opacity ?? 100} min={10} max={100} unit="%"
-            onChange={(v) => onChange({ opacity: v })} />
-        </Row>
         <Row label="Sombra texto">
           <DraftInput className="h-7 text-xs" placeholder="2px 2px 4px #000000"
             value={block.textShadow ?? ""}

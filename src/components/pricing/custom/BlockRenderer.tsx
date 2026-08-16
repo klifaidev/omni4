@@ -451,35 +451,42 @@ export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly
 ));
 
 function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
+  let content: React.ReactNode;
   switch (block.kind) {
-    case "title":  return <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />;
-    case "text":   return <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />;
-    case "kpi":    return <KpiRender block={block} readOnly={readOnly} />;
-    case "image":  return <ImageRender block={block} />;
-    case "shape":  return <ShapeRender block={block} />;
-    case "bridge": return <BridgeRender block={block} cacheSlideId={cacheSlideId} />;
-    case "table":  return <TableRender block={block} readOnly={readOnly} onPatch={onPatch} />;
-    case "chart":  return <ChartRender block={block} cacheSlideId={cacheSlideId} />;
-    case "topSku": return <TopSkuRender block={block} />;
-    case "dre":    return <DreRender block={block} readOnly={readOnly} />;
+    case "title":  content = <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />; break;
+    case "text":   content = <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />; break;
+    case "kpi":    content = <KpiRender block={block} readOnly={readOnly} />; break;
+    case "image":  content = <ImageRender block={block} />; break;
+    case "shape":  content = <ShapeRender block={block} />; break;
+    case "bridge": content = <BridgeRender block={block} cacheSlideId={cacheSlideId} />; break;
+    case "table":  content = <TableRender block={block} readOnly={readOnly} onPatch={onPatch} />; break;
+    case "chart":  content = <ChartRender block={block} cacheSlideId={cacheSlideId} />; break;
+    case "topSku": content = <TopSkuRender block={block} />; break;
+    case "dre":    content = <DreRender block={block} readOnly={readOnly} />; break;
     // Omni Analytics
-    case "omni_evolucao_mensal":      return <OmniEvolucaoMensalRender block={block} />;
-    case "omni_heatmap_sazonalidade": return <OmniHeatmapSazonalidadeRender block={block} />;
-    case "omni_herois_ofensores":     return <OmniHeroisOfensoresRender block={block} />;
-    case "omni_canal_trend":          return <OmniCanalTrendRender block={block} />;
-    case "omni_canal_mix":            return <OmniCanalMixRender block={block} />;
-    case "omni_custo_evolucao":       return <OmniCustoEvolucaoRender block={block} />;
-    case "omni_custo_composicao":     return <OmniCustoComposicaoRender block={block} />;
-    case "omni_custo_pressao":        return <OmniCustoPressaoRender block={block} />;
-    case "omni_positivacao":          return <OmniPositivacaoRender block={block} />;
-    case "omni_uf_map":               return <OmniUfMapRender block={block} />;
-    case "omni_price_decomp":         return <OmniPriceDecompRender block={block} />;
-    case "omni_bridge_pvm":           return <OmniBridgePvmRender block={block} />;
-    case "omni_farol":                return <OmniFarolRender block={block} />;
-    case "omni_abc_curva":            return <OmniAbcCurvaRender block={block} />;
-    case "omni_portfolio_matrix":     return <OmniPortfolioMatrixRender block={block} />;
-    case "omni_abc_bars":             return <OmniAbcBarsRender block={block} />;
+    case "omni_evolucao_mensal":      content = <OmniEvolucaoMensalRender block={block} />; break;
+    case "omni_heatmap_sazonalidade": content = <OmniHeatmapSazonalidadeRender block={block} />; break;
+    case "omni_herois_ofensores":     content = <OmniHeroisOfensoresRender block={block} />; break;
+    case "omni_canal_trend":          content = <OmniCanalTrendRender block={block} />; break;
+    case "omni_canal_mix":            content = <OmniCanalMixRender block={block} />; break;
+    case "omni_custo_evolucao":       content = <OmniCustoEvolucaoRender block={block} />; break;
+    case "omni_custo_composicao":     content = <OmniCustoComposicaoRender block={block} />; break;
+    case "omni_custo_pressao":        content = <OmniCustoPressaoRender block={block} />; break;
+    case "omni_positivacao":          content = <OmniPositivacaoRender block={block} />; break;
+    case "omni_uf_map":               content = <OmniUfMapRender block={block} />; break;
+    case "omni_price_decomp":         content = <OmniPriceDecompRender block={block} />; break;
+    case "omni_bridge_pvm":           content = <OmniBridgePvmRender block={block} />; break;
+    case "omni_farol":                content = <OmniFarolRender block={block} />; break;
+    case "omni_abc_curva":            content = <OmniAbcCurvaRender block={block} />; break;
+    case "omni_portfolio_matrix":     content = <OmniPortfolioMatrixRender block={block} />; break;
+    case "omni_abc_bars":             content = <OmniAbcBarsRender block={block} />; break;
   }
+  const opacity = block.opacity == null ? 100 : Math.max(0, Math.min(100, block.opacity));
+  return (
+    <div style={{ width: "100%", height: "100%", opacity: opacity === 100 ? undefined : opacity / 100 }}>
+      {content}
+    </div>
+  );
 }
 
 function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isEditing?: boolean; readOnly?: boolean }) {
@@ -500,7 +507,6 @@ function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isE
       textAlign: b.align,
       letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
       textShadow: b.textShadow || undefined,
-      opacity: b.opacity != null ? b.opacity / 100 : undefined,
       textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
       padding,
       backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
@@ -532,7 +538,6 @@ function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEdi
       lineHeight,
       letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
       textShadow: b.textShadow || undefined,
-      opacity: b.opacity != null ? b.opacity / 100 : undefined,
       textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
       padding,
       backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"

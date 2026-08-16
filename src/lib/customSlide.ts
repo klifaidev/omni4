@@ -48,6 +48,8 @@ export interface BaseBlock {
   kind: CustomBlockKind;
   x: number; y: number; w: number; h: number;
   z: number;
+  /** Opacidade do bloco inteiro, em percentual 0..100. Default 100. */
+  opacity?: number;
   /** Posição/tamanho bloqueados (move/resize desabilitados). Default false. */
   locked?: boolean;
   /** Group ID — when set the block belongs to a group and moves/resizes with siblings. */
