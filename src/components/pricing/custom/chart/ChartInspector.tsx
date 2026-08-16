@@ -19,7 +19,6 @@ import {
   Segmented, Slider,
 } from "./Inspector";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ChartTypePicker } from "./ChartTypePicker";
@@ -42,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useSlideFilters } from "../SlideFilterContext";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX } from "@/lib/slideDesignTokens";
+import { DraftInput, DraftNumberInput } from "../DraftInput";
 
 type Patch = Partial<ChartBlock>;
 
@@ -483,9 +483,9 @@ export function ChartInspector({
               return (
                 <div key={series.id} className="space-y-2 rounded-md border border-border/40 bg-background/70 p-2">
                   <div className="flex items-center gap-2">
-                    <Input
+                    <DraftInput
                       value={series.name}
-                      onChange={(e) => patchComboSeries(series.id, { name: e.target.value })}
+                      onCommit={(value) => patchComboSeries(series.id, { name: value })}
                       className="h-8 min-w-0 text-[12px]"
                     />
                     <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0"
@@ -1160,11 +1160,10 @@ export function ChartInspector({
               onChange={(v) => updPath("histogram", { bins: v })} />
           </Row>
           <Row label="Largura bin">
-            <Input type="number" className="h-8 text-[13px]"
-              value={style.histogram.binWidth ?? ""} placeholder="auto"
-              onChange={(e) => updPath("histogram", {
-                binWidth: e.target.value === "" ? null : parseFloat(e.target.value),
-              })} />
+            <DraftNumberInput className="h-8 text-[13px]"
+              value={style.histogram.binWidth ?? null} placeholder="auto"
+              fallback={null}
+              onCommit={(value) => updPath("histogram", { binWidth: value })} />
           </Row>
           <Row label="Cor barra">
             <ColorField value={style.histogram.barColor}
@@ -1380,8 +1379,8 @@ export function ChartInspector({
       <Section title="Geral" onReset={() => resetPath("general")}>
         <div>
           <Label className="text-[12px] font-normal text-muted-foreground">Título</Label>
-          <Input className="mt-1 h-8 text-[13px]" value={block.title ?? ""}
-            onChange={(e) => onChange({ title: e.target.value })} />
+          <DraftInput className="mt-1 h-8 text-[13px]" value={block.title ?? ""}
+            onCommit={(value) => onChange({ title: value })} />
         </div>
         <ToggleField label="Mostrar título" value={style.general.titleShow}
           onChange={(v) => updPath("general", { titleShow: v })} />
@@ -1556,12 +1555,13 @@ function AnalyticsSection({ analytics, onChange }: {
               </button>
             </div>
             <Row label="Valor Y">
-              <Input type="number" className="h-8 text-[13px]" value={rl.value}
-                onChange={(e) => updRef(i, { value: parseFloat(e.target.value) || 0 })} />
+              <DraftNumberInput className="h-8 text-[13px]" value={rl.value}
+                fallback={0}
+                onCommit={(value) => updRef(i, { value: value ?? 0 })} />
             </Row>
             <Row label="Rótulo">
-              <Input className="h-8 text-[13px]" value={rl.label}
-                onChange={(e) => updRef(i, { label: e.target.value })} />
+              <DraftInput className="h-8 text-[13px]" value={rl.label}
+                onCommit={(value) => updRef(i, { label: value })} />
             </Row>
             <Row label="Cor"><ColorField value={rl.color} onChange={(c) => updRef(i, { color: c })} /></Row>
             <Row label="Estilo">
@@ -1694,13 +1694,15 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
               ]} />
           </Row>
           <Row label="Valor">
-            <Input type="number" className="h-8 text-[13px]" value={r.threshold}
-              onChange={(e) => upd(i, { threshold: parseFloat(e.target.value) || 0 })} />
+            <DraftNumberInput className="h-8 text-[13px]" value={r.threshold}
+              fallback={0}
+              onCommit={(value) => upd(i, { threshold: value ?? 0 })} />
           </Row>
           {r.op === "between" && (
             <Row label="Valor 2">
-              <Input type="number" className="h-8 text-[13px]" value={r.threshold2 ?? 0}
-                onChange={(e) => upd(i, { threshold2: parseFloat(e.target.value) || 0 })} />
+              <DraftNumberInput className="h-8 text-[13px]" value={r.threshold2 ?? 0}
+                fallback={0}
+                onCommit={(value) => upd(i, { threshold2: value ?? 0 })} />
             </Row>
           )}
           <Row label="Cor"><ColorField value={r.color} onChange={(c) => upd(i, { color: c })} /></Row>
@@ -1817,8 +1819,8 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
             </div>
           </div>
           <Row label="Rótulo">
-            <Input className="h-8 text-[13px]" value={c.label}
-              onChange={(e) => upd(i, { label: e.target.value })} />
+            <DraftInput className="h-8 text-[13px]" value={c.label}
+              onCommit={(value) => upd(i, { label: value })} />
           </Row>
           <Row label="Tipo">
             <SelectField value={c.type} onChange={(v) => upd(i, { type: v as never })}
@@ -1842,8 +1844,9 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
           </Row>
           {c.measure == null && (
             <Row label="Valor">
-              <Input type="number" className="h-8 text-[13px]" value={c.manualValue ?? 0}
-                onChange={(e) => upd(i, { manualValue: parseFloat(e.target.value) || 0 })} />
+              <DraftNumberInput className="h-8 text-[13px]" value={c.manualValue ?? 0}
+                fallback={0}
+                onCommit={(value) => upd(i, { manualValue: value ?? 0 })} />
             </Row>
           )}
           <Row label="Filtrar dim.">
@@ -1859,8 +1862,8 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
           </Row>
           {c.filterDim && (
             <Row label="Valor filtro">
-              <Input className="h-8 text-[13px]" value={c.filterValue ?? ""}
-                onChange={(e) => upd(i, { filterValue: e.target.value })} />
+              <DraftInput className="h-8 text-[13px]" value={c.filterValue ?? ""}
+                onCommit={(value) => upd(i, { filterValue: value })} />
             </Row>
           )}
         </div>
@@ -1885,8 +1888,8 @@ function AxisSection({ title, axis, onChange, onReset }: {
         onChange={(v) => onChange({ show: v })} />
       <div className="space-y-1">
         <Label className="text-[12px] font-medium text-muted-foreground">Título do eixo</Label>
-        <Input className="h-8 text-[13px]" value={axis.titleText}
-          onChange={(e) => onChange({ titleText: e.target.value })} />
+        <DraftInput className="h-8 text-[13px]" value={axis.titleText}
+          onCommit={(value) => onChange({ titleText: value })} />
       </div>
       <Row label="Tam. título">
         <NumberStepper value={axis.titleSize} min={6} max={24}
@@ -1911,22 +1914,16 @@ function AxisSection({ title, axis, onChange, onReset }: {
       <ToggleField label="Marcações" value={axis.ticks}
         onChange={(v) => onChange({ ticks: v })} />
       <Row label="Mín">
-        <Input type="number" className="h-8 text-[13px]"
-          value={axis.min ?? ""} placeholder="auto"
-          onChange={(e) => {
-            if (e.target.value === "") { onChange({ min: null }); return; }
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v)) onChange({ min: v });
-          }} />
+        <DraftNumberInput className="h-8 text-[13px]"
+          value={axis.min ?? null} placeholder="auto"
+          fallback={null}
+          onCommit={(value) => onChange({ min: value })} />
       </Row>
       <Row label="Máx">
-        <Input type="number" className="h-8 text-[13px]"
-          value={axis.max ?? ""} placeholder="auto"
-          onChange={(e) => {
-            if (e.target.value === "") { onChange({ max: null }); return; }
-            const v = parseFloat(e.target.value);
-            if (!isNaN(v)) onChange({ max: v });
-          }} />
+        <DraftNumberInput className="h-8 text-[13px]"
+          value={axis.max ?? null} placeholder="auto"
+          fallback={null}
+          onCommit={(value) => onChange({ max: value })} />
       </Row>
       <Row label="Formato">
         <SelectField value={axis.format}

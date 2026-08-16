@@ -4,7 +4,6 @@
 import { useState } from "react";
 import { ChevronDown, Minus, Plus, RotateCcw } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { BRAND_COLORS } from "./types";
+import { DraftInput, DraftNumberInput } from "../DraftInput";
 
 export function Section({
   title, defaultOpen = false, children, onReset,
@@ -81,9 +81,15 @@ export function NumberStepper({
         onClick={() => onChange(clamp(value - step))}>
         <Minus className="h-3 w-3" />
       </button>
-      <input type="number" value={value}
-        onChange={(e) => onChange(clamp(parseFloat(e.target.value) || 0))}
-        className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-[13px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+      <DraftNumberInput
+        value={value}
+        min={min}
+        max={max}
+        fallback={0}
+        commitDelayMs={250}
+        onCommit={(next) => onChange(clamp(next ?? 0))}
+        className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-[13px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+      />
       {suffix && <span className="px-1 text-[11px] font-normal text-muted-foreground/70">{suffix}</span>}
       <button type="button" className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
         onClick={() => onChange(clamp(value + step))}>
@@ -138,7 +144,9 @@ export function ColorField({ value, onChange, allowTransparent = false }:
         <PopoverContent side="left" align="start" className="w-[220px] p-3">
           <HexColorPicker color={v.slice(0, 7)} onChange={onChange} style={{ width: "100%" }} />
           <div className="mt-2 flex items-center gap-2">
-            <Input value={v} onChange={(e) => onChange(e.target.value)}
+            <DraftInput value={v}
+              normalize={(next) => next.startsWith("#") ? next : `#${next}`}
+              onCommit={onChange}
               className="h-8 px-2 text-[12px]" />
           </div>
           <div className="mt-2 grid grid-cols-8 gap-1">

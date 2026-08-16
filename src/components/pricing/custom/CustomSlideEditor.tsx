@@ -266,9 +266,9 @@ function SlideSourceFooterEditor({
         {mode === "manual" ? (
           <div className="space-y-1.5">
             <Label className="text-xs">Texto manual</Label>
-            <Input
+            <DraftInput
               value={manualText}
-              onChange={(event) => setSourceFooterAction({ mode: "manual", manualText: event.target.value })}
+              onCommit={(value) => setSourceFooterAction({ mode: "manual", manualText: value })}
               placeholder="Ex.: Fonte: KE30 - Abr/25 a Mar/26"
             />
           </div>
@@ -308,6 +308,7 @@ import { getTheme, type SlideTheme } from "@/lib/slideThemes";
 import { computeSnap, boundsOf, groupBounds, type EqualSpacingGuide } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
+import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
 import { AssetLibrary } from "./AssetLibrary";
 import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
 import {
@@ -3707,11 +3708,11 @@ function PositionInputs({ block, onChange }: {
       {(["x", "y", "w", "h"] as const).map((k) => (
         <div key={k}>
           <Label className="text-[9px] uppercase text-muted-foreground">{k}</Label>
-          <Input
-            type="number"
+          <DraftNumberInput
             className="h-7 px-1.5 text-[11px]"
             value={block[k]}
-            onChange={(e) => onChange({ [k]: parseInt(e.target.value, 10) || 0 } as never)}
+            fallback={0}
+            onCommit={(next) => onChange({ [k]: next ?? 0 } as never)}
           />
         </div>
       ))}
@@ -4081,22 +4082,25 @@ function Field({
   value,
   onChange,
   yText,
+  normalize,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   yText?: Y.Text | null;
+  normalize?: (v: string) => string;
 }) {
   const currentValue = useYTextValue(yText, value);
   return (
     <div>
       <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <Input
+      <DraftInput
         className="h-7 text-xs"
         value={currentValue}
-        onChange={(e) => {
-          if (yText) setYTextValue(yText, e.target.value);
-          else onChange(e.target.value);
+        normalize={normalize}
+        onCommit={(next) => {
+          if (yText) setYTextValue(yText, next);
+          else onChange(next);
         }}
       />
     </div>
@@ -4106,8 +4110,12 @@ function NumField({ label, value, onChange }: { label: string; value: number; on
   return (
     <div>
       <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <Input type="number" className="h-7 text-xs" value={value}
-        onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)} />
+      <DraftNumberInput
+        className="h-7 text-xs"
+        value={value}
+        fallback={0}
+        onCommit={(next) => onChange(next ?? 0)}
+      />
     </div>
   );
 }
@@ -4142,8 +4150,13 @@ function BgField({ label, value, onChange }: {
           onChange={(e) => onChange(e.target.value.replace("#", ""))}
           className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent disabled:cursor-not-allowed"
           style={isT ? CHECKER_BG : undefined} />
-        <Input className="h-7 text-xs font-mono" value={v} disabled={isT}
-          onChange={(e) => onChange(e.target.value.replace("#", ""))} />
+        <DraftInput
+          className="h-7 text-xs font-mono"
+          value={v}
+          disabled={isT}
+          normalize={(next) => next.replace("#", "").toUpperCase()}
+          onCommit={onChange}
+        />
       </div>
     </div>
   );
@@ -4306,7 +4319,8 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
         <NumField label="Tamanho do valor" value={block.valueSize}
           onChange={(v) => onChange({ valueSize: v } as never)} />
         <Field label="Cor (hex)" value={block.color}
-          onChange={(v) => onChange({ color: v.replace("#", "") } as never)} />
+          normalize={(v) => v.replace("#", "").toUpperCase()}
+          onChange={(v) => onChange({ color: v } as never)} />
       </div>
       <BgField label="Fundo do card"
         value={block.cardBg ?? "F8FAFC"}
@@ -4623,9 +4637,9 @@ function TableBlockEditor({ block, onChange }: {
 
       <Section title="Titulo da tabela" defaultOpen>
         <Row label="Texto">
-          <Input
+          <DraftInput
             value={block.title ?? ""}
-            onChange={(e) => onChange({ title: e.target.value } as never)}
+            onCommit={(value) => onChange({ title: value } as never)}
             placeholder="Ex.: Tabela executiva"
             className="h-7 text-xs"
           />
@@ -5341,10 +5355,10 @@ function TextTitleInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <Section title="Conteúdo" defaultOpen>
-        <Textarea
+        <DraftTextarea
           rows={isTitle ? 2 : 4}
           value={block.text}
-          onChange={(e) => onChange({ text: e.target.value })}
+          onCommit={(value) => onChange({ text: value })}
           className="text-xs"
         />
       </Section>
@@ -5422,18 +5436,19 @@ function TextTitleInspector({ block, onChange }: {
             onChange={(v) => onChange({ opacity: v })} />
         </Row>
         <Row label="Sombra texto">
-          <Input className="h-7 text-xs" placeholder="2px 2px 4px #000000"
+          <DraftInput className="h-7 text-xs" placeholder="2px 2px 4px #000000"
             value={block.textShadow ?? ""}
-            onChange={(e) => onChange({ textShadow: e.target.value })} />
+            onCommit={(value) => onChange({ textShadow: value })} />
         </Row>
         <Row label="Padding (px)">
           <SliderWithInput value={block.padding ?? 0} min={0} max={60} unit="px"
             onChange={(v) => onChange({ padding: v })} />
         </Row>
         <Row label="Fundo (hex)">
-          <Input className="h-7 text-xs" placeholder="transparent"
+          <DraftInput className="h-7 text-xs" placeholder="transparent"
             value={block.backgroundColor ?? ""}
-            onChange={(e) => onChange({ backgroundColor: e.target.value.replace("#", "") || undefined })} />
+            normalize={(value) => value.replace("#", "").toUpperCase()}
+            onCommit={(value) => onChange({ backgroundColor: value || undefined })} />
         </Row>
         <Row label="Borda arred.">
           <SliderWithInput value={block.borderRadius ?? 0} min={0} max={40} unit="px"
@@ -6520,10 +6535,10 @@ function SpeakerNotesBar({
       </button>
       {open && (
         <div className="relative px-3 pb-2">
-          <Textarea
+          <DraftTextarea
             value={trimmed}
-            onChange={(e) => {
-              const next = e.target.value.slice(0, MAX);
+            normalize={(next) => next.slice(0, MAX)}
+            onCommit={(next) => {
               if (yText) setYTextValue(yText, next);
               else onChange(next);
             }}
@@ -6692,10 +6707,11 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
       </Row>
       {showTitle && (
         <Row label="Texto">
-          <input
+          <DraftInput
             className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs"
-            value={title ?? defaultTitle}
-            onChange={(e) => onChange({ title: e.target.value })}
+            value={title ?? ""}
+            placeholder={defaultTitle}
+            onCommit={(value) => onChange({ title: value || undefined })}
           />
         </Row>
       )}
@@ -7122,12 +7138,13 @@ function FarolSkuField({
 }) {
   return (
     <>
-      <Input
+      <DraftInput
         className="h-7 px-2 text-xs"
         list={id}
         placeholder="auto"
         value={value ?? ""}
-        onChange={(e) => onChange(e.target.value.trim() || null)}
+        normalize={(next) => next.trim()}
+        onCommit={(next) => onChange(next || null)}
       />
       <datalist id={id}>
         {options.slice(0, 600).map((o) => (
