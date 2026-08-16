@@ -1,11 +1,10 @@
 // CustomSlideEditor ? canvas WYSIWYG para o slide "Personalizado".
-// Drag + resize via react-rnd. Snap-to-grid de 10px com guias de alinhamento
+// Drag + resize unificado com suporte a rotação. Snap-to-grid de 10px com guias de alinhamento
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import type * as Y from "yjs";
-import { Rnd } from "react-rnd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1905,8 +1904,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, [canEdit, insertImageDataUrl, pasteFromClipboard, readFileAsDataUrl]);
 
   // Smart guides ? compute lines + snap target for the dragging block.
-  // Snap is applied by react-rnd via onDrag's returned coords; we mutate
-  // d.x / d.y directly which Rnd respects on next frame.
+  // Snap is applied by returning adjusted coordinates to the unified block frame.
   const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
     const excl = new Set(activeIds);
     const others = boundsOf(config.blocks, excl);
@@ -2393,7 +2391,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           onMouseDown={(e) => {
             if (spacePanActive) return;
             // Marquee selection ? only if mousedown is on the wrapper itself
-            // (i.e. canvas background, not a block / Rnd handle / inspector).
+            // (i.e. canvas background, not a block handle / inspector).
             if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset?.canvasBg) return;
             const isChartElement = (el: Element | null): boolean => {
               while (el && el !== e.currentTarget) {
@@ -2621,9 +2619,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
-                const useRotatableBlock = isRotatable && rotation !== 0;
                 const blockAriaLabel = `${isSelected ? "Selecionado: " : ""}${BLOCK_LABELS[blk.kind]}`;
-                // Shape-specific Rnd config ? contextual handles override.
+                // Shape-specific resize config; contextual overlays own special geometry handles.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked && !readOnly;
                 let shapeDisableDrag = !!blk.locked || readOnly;
                 let shapeLockAspect = false;
@@ -2657,8 +2654,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 return (
                 <ContextMenu key={blk.id}>
                   <ContextMenuTrigger asChild>
-                    {useRotatableBlock ? (
-                      /* ---- bloco com rotação: RotatableBlock (sem Rnd) ---- */
+
                       <RotatableBlock
                         x={blk.x} y={blk.y} w={blk.w} h={blk.h}
                         rotation={rotation}
@@ -2667,120 +2663,17 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         isLocked={!!blk.locked || readOnly || spacePanActive}
                         isEditing={isEditing}
                         showResizeHandles={selectedIds.length <= 1}
-                        onMove={(nx, ny) => updateBlock(blk.id, { x: nx, y: ny })}
-                        onResize={(nx, ny, nw, nh) =>
-                          updateBlock(blk.id, { x: nx, y: ny, w: nw, h: nh })
-                        }
-                        onSelect={(additive) => {
-                          selectBlock(blk.id, { additive: !!additive });
-                          if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
-                        }}
-                        onDoubleClick={isInlineEditable ? () => {
-                          setInlineEditId(blk.id);
-                          selectBlock(blk.id);
-                        } : undefined}
-                        style={{ zIndex: blk.z }}
-                        tabIndex={0}
-                        role="button"
-                        aria-label={blockAriaLabel}
-                        aria-pressed={isSelected}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            selectBlock(blk.id, { additive: e.shiftKey });
-                          }
-                        }}
-                        data-block-frame-id={blk.id}
-                      >
-                        <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
-                          width: "100%", height: "100%",
-                          pointerEvents: blk.kind === "table" ? "auto" : "none",
-                          visibility: blk.hidden ? "hidden" : "visible",
-                        }}>
-                          <BlockRenderer
-                            block={blk}
-                            isEditing={isEditing}
-                            cacheSlideId={slideId}
-                            onPatch={(patch) => updateBlock(blk.id, patch)}
-                          />
-                        </div>
-                        {isEditing && (
-                          <InlineTextEditor
-                            block={blk as TitleBlock | TextBlock}
-                            onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
-                            onExit={() => setInlineEditId(null)}
-                            yText={yBlockText(blk.id, "text")}
-                            remoteSelections={textAwarenessFor(blk.id, "text")}
-                          />
-                        )}
-                        {isInlineEditable && !isEditing && !blk.locked && (
-                          <div
-                            data-export-hide="true"
-                            className="opacity-0 group-hover/block:opacity-100 transition-opacity"
-                            style={{
-                              position: "absolute", top: 4, right: 4,
-                              width: 18, height: 18, borderRadius: 4,
-                              background: "hsl(var(--background) / 0.9)",
-                              border: "1px solid hsl(var(--border))",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              zIndex: 999990, pointerEvents: "none",
-                            }}
-                            title="Duplo-clique para editar"
-                          >
-                            <Pencil className="h-3 w-3 text-muted-foreground" />
-                          </div>
-                        )}
-                        <DataSourceBadge block={blk} />
-                        {blk.locked && (
-                          <div
-                            data-export-hide="true"
-                            style={{
-                              position: "absolute", top: 4, right: 4,
-                              width: 18, height: 18, borderRadius: 4,
-                              background: "hsl(var(--background) / 0.9)",
-                              border: "1px solid hsl(var(--border))",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              zIndex: 999990, pointerEvents: "none",
-                            }}
-                            title="Bloco bloqueado"
-                          >
-                            <Lock className="h-3 w-3 text-muted-foreground" />
-                          </div>
-                        )}
-                        {isSelected && !blk.locked && !readOnly && !isEditing && !spacePanActive && (
-                          <BlockRotationHandle
-                            block={blk as TitleBlock | TextBlock | ImageBlock}
-                          />
-                        )}
-                      </RotatableBlock>
-                    ) : (
-                      /* ---- bloco sem rotação: Rnd normal ---- */
-                      <Rnd
-                        key={`${blk.id}-${scaleKey}`}
-                        size={{ width: blk.w, height: blk.h }}
-                        position={{ x: blk.x, y: blk.y }}
-                        bounds="parent"
-                        scale={scale}
+                        bounds={{ w: CANVAS_W, h: CANVAS_H }}
                         cancel={TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR}
                         lockAspectRatio={shapeLockAspect || aspectResizeIds.has(blk.id)}
                         disableDragging={shapeDisableDrag}
                         enableResizing={shapeResize}
-                        tabIndex={0}
-                        role="button"
-                        aria-label={blockAriaLabel}
-                        aria-pressed={isSelected}
-                        onKeyDown={(e: React.KeyboardEvent) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            selectBlock(blk.id, { additive: e.shiftKey });
-                          }
-                        }}
                         onResizeStart={(e) => {
-                          if ((e as MouseEvent).shiftKey) {
+                          if ((e as React.MouseEvent).shiftKey) {
                             setAspectResizeIds((prev) => new Set(prev).add(blk.id));
                           }
                         }}
-                        onDragStart={(e, _d) => {
+                        onMoveStart={(e) => {
                           const altDrag = "altKey" in e && e.altKey;
                           if (altDrag) {
                             altDragCloneRef.current = { sourceId: blk.id };
@@ -2789,28 +2682,27 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           altDragCloneRef.current = null;
                           if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
                         }}
-                        onDrag={(_, d) => {
+                        onMove={(nx, ny) => {
                           const ids = draggableSiblings(blk.id);
-                          const snap = computeGuides(ids, d.x, d.y, blk.w, blk.h);
+                          const snap = computeGuides(ids, nx, ny, blk.w, blk.h);
                           if (snap.guides.v.length || snap.guides.h.length || snap.guides.equalSpacing.length) {
-                            d.x = snap.x; d.y = snap.y;
+                            return { x: snap.x, y: snap.y };
                           }
+                          return { x: nx, y: ny };
                         }}
-                        onResize={(_, __, refEl, ___, pos) => {
-                          const w = parseInt(refEl.style.width, 10);
-                          const h = parseInt(refEl.style.height, 10);
-                          const snap = computeGuides([blk.id], pos.x, pos.y, w, h);
+                        onResize={(nx, ny, nw, nh) => {
+                          const snap = computeGuides([blk.id], nx, ny, nw, nh);
                           void snap;
                         }}
-                        onDragStop={(_, d) => {
+                        onMoveEnd={(nx, ny) => {
                           clearGuides();
                           const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
                           const ids = draggableSiblings(blk.id);
-                          let dx = d.x - blk.x;
-                          let dy = d.y - blk.y;
+                          let dx = nx - blk.x;
+                          let dy = ny - blk.y;
                           if (prefs.gridEnabled) {
-                            const sx = snapToGrid(d.x, prefs.gridSize);
-                            const sy = snapToGrid(d.y, prefs.gridSize);
+                            const sx = snapToGrid(nx, prefs.gridSize);
+                            const sy = snapToGrid(ny, prefs.gridSize);
                             dx = sx - blk.x;
                             dy = sy - blk.y;
                           }
@@ -2833,16 +2725,17 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             patchBlocksAction(patches, "Mover blocos");
                           }
                         }}
-                        onResizeStop={(_, __, refEl, ___, pos) => {
+                        onResizeEnd={(nx, ny, nw, nh) => {
                           setAspectResizeIds((prev) => {
                             const next = new Set(prev);
                             next.delete(blk.id);
                             return next;
                           });
                           clearGuides();
-                          let w = parseInt(refEl.style.width, 10);
-                          let h = parseInt(refEl.style.height, 10);
-                          let x = pos.x, y = pos.y;
+                          let w = nw;
+                          let h = nh;
+                          let x = nx;
+                          let y = ny;
                           if (prefs.gridEnabled) {
                             x = snapToGrid(x, prefs.gridSize);
                             y = snapToGrid(y, prefs.gridSize);
@@ -2886,38 +2779,36 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           }
                           updateBlock(blk.id, { w, h, x, y });
                         }}
-                        onMouseDown={(e) => {
-                          if (isEditing) { return; }
-                          e.stopPropagation();
+                        onSelect={(additive) => {
                           const wasSelected = selectedIds.includes(blk.id);
-                          const shift = (e as MouseEvent).shiftKey;
-                          selectBlock(blk.id, { additive: shift });
-                          if (inlineEditId && inlineEditId !== blk.id) { setInlineEditId(null); }
-                          if (blk.locked && wasSelected && !shift && (e as MouseEvent).button === 0) {
+                          selectBlock(blk.id, { additive: !!additive });
+                          if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
+                          if (blk.locked && wasSelected && !additive) {
                             toast("Bloco bloqueado. Clique com botão direito para desbloquear.", { duration: 1800 });
                           }
                         }}
-                        onDoubleClick={(e) => {
-                          if (isInlineEditable) {
-                            e.stopPropagation();
-                            setInlineEditId(blk.id);
-                            selectBlock(blk.id);
-                            return;
-                          }
-                          if (blk.groupId) {
-                            e.stopPropagation();
-                            enterGroupEdit(blk.id);
-                          }
-                        }}
+                        onDoubleClick={isInlineEditable ? () => {
+                          setInlineEditId(blk.id);
+                          selectBlock(blk.id);
+                        } : blk.groupId ? () => enterGroupEdit(blk.id) : undefined}
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
-                        data-block-frame-id={blk.id}
                         className={cn(
-                          "group/block transition-[outline,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           altDragFlashIds.has(blk.id) && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
                           isSelected
                             ? "outline outline-2 outline-offset-1 outline-primary"
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
                         )}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={blockAriaLabel}
+                        aria-pressed={isSelected}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            selectBlock(blk.id, { additive: e.shiftKey });
+                          }
+                        }}
+                        data-block-frame-id={blk.id}
                       >
                         <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
@@ -2979,8 +2870,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                           />
                         )}
-                      </Rnd>
-                    )}
+                      </RotatableBlock>
+
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-56">
                     <ContextMenuItem disabled={readOnly} onSelect={() => duplicateBlock(blk.id)}>
@@ -6003,7 +5894,7 @@ function ClearFiltersToolbar() {
 }
 
 // ---------------------------------------------------------------------------
-// Rotation handle ? child of Rnd, NOT inside the rotated content div
+// Rotation handle: child of the block frame, NOT inside the rotated content div.
 // ---------------------------------------------------------------------------
 function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageBlock }) {
   const handleMouseDown = (e: React.MouseEvent) => {

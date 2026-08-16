@@ -1,8 +1,7 @@
-// Contextual handles overlay for ShapeBlock — replaces the default
-// 8-point react-rnd handles for line family / triangle / ellipse / circle
-// shapes, and adds extra geometry handles (radius for roundRect, notch
-// for chevron). Rendered as a sibling of the Rnd, positioned absolutely
-// within the slide canvas in slide-coords.
+// Contextual handles overlay for ShapeBlock: owns the specialized geometry
+// handles for line family / triangle / ellipse / circle shapes, and adds
+// extra controls such as radius for roundRect and notch for chevron.
+// Rendered as a sibling of the block frame in slide coordinates.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
