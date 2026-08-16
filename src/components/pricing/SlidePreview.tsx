@@ -790,10 +790,126 @@ const PREVIEW_W_INSPECTOR = 260;
 const PREVIEW_W_DIALOG = 800;
 const STATIC_THUMBNAIL_W = 400;
 const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
+const MAX_THUMBNAIL_RENDERERS = 1;
 
 function recordThumbnailMetric(name: string, id?: string): void {
   if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
+}
+
+type ThumbnailPriority = "visible" | "background";
+type ThumbnailWarmOptions = { useData?: boolean; priority?: ThumbnailPriority };
+type ThumbnailWarmResult = "hit" | "generated" | "fallback" | "error";
+type ThumbnailQueueJob = {
+  key: string;
+  item: SlideItem;
+  priority: ThumbnailPriority;
+  queuedAt: number;
+  resolve: (result: ThumbnailWarmResult) => void;
+};
+
+const thumbnailQueue: ThumbnailQueueJob[] = [];
+const pendingThumbnailJobs = new Map<string, ThumbnailQueueJob>();
+const runningThumbnailJobs = new Map<string, Promise<ThumbnailWarmResult>>();
+let activeThumbnailRenderers = 0;
+
+function thumbnailPriorityRank(priority: ThumbnailPriority): number {
+  return priority === "visible" ? 0 : 1;
+}
+
+function yieldThumbnailQueueFrame(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function sortThumbnailQueue(): void {
+  thumbnailQueue.sort((a, b) => {
+    const priority = thumbnailPriorityRank(a.priority) - thumbnailPriorityRank(b.priority);
+    return priority !== 0 ? priority : a.queuedAt - b.queuedAt;
+  });
+}
+
+async function generateSlideThumbnailNow(key: string, item: SlideItem): Promise<ThumbnailWarmResult> {
+  markSlideThumbnailRendering(key);
+  recordThumbnailMetric("SlideThumbnail:render", item.id);
+  try {
+    const dataUrl = await renderActualThumbnail(item);
+    setSlideThumbnail(key, dataUrl);
+    recordThumbnailMetric("SlideThumbnail:ready", item.id);
+    return "generated";
+  } catch {
+    markSlideThumbnailError(key);
+    recordThumbnailMetric("SlideThumbnail:error", item.id);
+    return "error";
+  }
+}
+
+function runThumbnailQueue(): void {
+  while (activeThumbnailRenderers < MAX_THUMBNAIL_RENDERERS && thumbnailQueue.length > 0) {
+    sortThumbnailQueue();
+    const job = thumbnailQueue.shift();
+    if (!job) return;
+    pendingThumbnailJobs.delete(job.key);
+    activeThumbnailRenderers += 1;
+
+    const promise = (async () => {
+      await yieldThumbnailQueueFrame();
+      const result = await generateSlideThumbnailNow(job.key, job.item);
+      await yieldThumbnailQueueFrame();
+      return result;
+    })();
+
+    runningThumbnailJobs.set(job.key, promise);
+    void promise
+      .then(job.resolve)
+      .catch(() => job.resolve("error"))
+      .finally(() => {
+        runningThumbnailJobs.delete(job.key);
+        activeThumbnailRenderers = Math.max(0, activeThumbnailRenderers - 1);
+        runThumbnailQueue();
+      });
+  }
+}
+
+function enqueueSlideThumbnail(
+  key: string,
+  item: SlideItem,
+  priority: ThumbnailPriority,
+): Promise<ThumbnailWarmResult> {
+  const running = runningThumbnailJobs.get(key);
+  if (running) return running;
+
+  const pending = pendingThumbnailJobs.get(key);
+  if (pending) {
+    if (thumbnailPriorityRank(priority) < thumbnailPriorityRank(pending.priority)) {
+      pending.priority = priority;
+      sortThumbnailQueue();
+    }
+    return new Promise((resolve) => {
+      const previousResolve = pending.resolve;
+      pending.resolve = (result) => {
+        previousResolve(result);
+        resolve(result);
+      };
+    });
+  }
+
+  markSlideThumbnailRendering(key);
+  const promise = new Promise<ThumbnailWarmResult>((resolve) => {
+    const job: ThumbnailQueueJob = {
+      key,
+      item,
+      priority,
+      queuedAt: typeof performance !== "undefined" ? performance.now() : Date.now(),
+      resolve,
+    };
+    pendingThumbnailJobs.set(key, job);
+    thumbnailQueue.push(job);
+    runThumbnailQueue();
+  });
+  return promise;
 }
 
 const THUMBNAIL_CAPTURE_CSS = `
@@ -1021,28 +1137,22 @@ export function getSlideThumbnailKeyForItem(item: SlideItem, options?: { useData
 // eslint-disable-next-line react-refresh/only-export-components
 export async function warmSlideThumbnail(
   item: SlideItem,
-  options?: { useData?: boolean },
-): Promise<"hit" | "generated" | "fallback" | "error"> {
+  options?: ThumbnailWarmOptions,
+): Promise<ThumbnailWarmResult> {
   const key = getSlideThumbnailKeyForItem(item, options);
   const current = getSlideThumbnail(key);
   if (current?.status === "ready") {
     recordThumbnailMetric("SlideThumbnail:hit", item.id);
     return "hit";
   }
-  if (current?.status === "rendering") return "hit";
-
-  markSlideThumbnailRendering(key);
-  recordThumbnailMetric("SlideThumbnail:render", item.id);
-  try {
-    const dataUrl = await renderActualThumbnail(item);
-    setSlideThumbnail(key, dataUrl);
-    recordThumbnailMetric("SlideThumbnail:ready", item.id);
-    return "generated";
-  } catch {
-    markSlideThumbnailError(key);
-    recordThumbnailMetric("SlideThumbnail:error", item.id);
-    return "error";
+  const running = runningThumbnailJobs.get(key);
+  if (running) return running;
+  const priority = options?.priority ?? "background";
+  if (current?.status === "rendering" && pendingThumbnailJobs.has(key)) {
+    return enqueueSlideThumbnail(key, item, priority);
   }
+  if (current?.status === "rendering") return "hit";
+  return enqueueSlideThumbnail(key, item, priority);
 }
 
 function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
@@ -1147,7 +1257,7 @@ function StaticScaledPreview({
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
     if (deferUntilVisible) return;
     const timer = window.setTimeout(async () => {
-      await warmSlideThumbnail(item);
+      await warmSlideThumbnail(item, { priority: "visible" });
     }, STATIC_THUMBNAIL_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(timer);
