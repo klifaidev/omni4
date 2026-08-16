@@ -61,6 +61,7 @@ type ThumbnailKeySignature = {
   forecastSignature: string;
   rollingSignature: string;
   useData: boolean;
+  pixelRatio: number;
 };
 
 const slideThumbnailKeyByItem = new WeakMap<SlideItem, { signature: ThumbnailKeySignature; key: string }>();
@@ -71,7 +72,8 @@ function sameThumbnailKeySignature(a: ThumbnailKeySignature, b: ThumbnailKeySign
     && a.budgetSignature === b.budgetSignature
     && a.forecastSignature === b.forecastSignature
     && a.rollingSignature === b.rollingSignature
-    && a.useData === b.useData;
+    && a.useData === b.useData
+    && a.pixelRatio === b.pixelRatio;
 }
 
 // ---------------------------------------------------------------------------
@@ -791,10 +793,18 @@ const PREVIEW_W_DIALOG = 800;
 const STATIC_THUMBNAIL_W = 400;
 const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
 const MAX_THUMBNAIL_RENDERERS = 1;
+const MAX_THUMBNAIL_PIXEL_RATIO = 2;
 
 function recordThumbnailMetric(name: string, id?: string): void {
   if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
+}
+
+function thumbnailPixelRatio(): number {
+  if (typeof window === "undefined") return 1;
+  const ratio = Number(window.devicePixelRatio || 1);
+  if (!Number.isFinite(ratio) || ratio <= 1) return 1;
+  return Math.min(MAX_THUMBNAIL_PIXEL_RATIO, ratio);
 }
 
 type ThumbnailPriority = "visible" | "background";
@@ -976,7 +986,7 @@ async function waitForThumbnailPaint(root: HTMLElement): Promise<void> {
 async function captureThumbnailHost(host: HTMLElement): Promise<HTMLCanvasElement> {
   const thumbnailH = Math.round((CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W);
   return html2canvas(host, {
-    scale: 1,
+    scale: thumbnailPixelRatio(),
     useCORS: true,
     backgroundColor: "#FFFFFF",
     width: STATIC_THUMBNAIL_W,
@@ -1103,6 +1113,7 @@ function buildSlideThumbnailKeyFromSignatures({
     forecastSignature,
     rollingSignature,
     useData,
+    pixelRatio: thumbnailPixelRatio(),
   };
   const cached = slideThumbnailKeyByItem.get(item);
   if (cached && sameThumbnailKeySignature(cached.signature, signature)) return cached.key;
@@ -1115,6 +1126,7 @@ function buildSlideThumbnailKeyFromSignatures({
     rollingSignature,
     thumbnailMode: useData ? "rich" : "light",
     renderWidth: STATIC_THUMBNAIL_W,
+    pixelRatio: thumbnailPixelRatio(),
   });
   slideThumbnailKeyByItem.set(item, { signature, key });
   return key;
