@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import {
+  clampFrameToBounds,
+  resizeFrameFromPointerDelta,
+  type BlockFrame,
+  type ResizeDirection,
+  type TransformBounds,
+} from "./blockTransform";
 
 const HANDLES = [
   { cursor: "nw-resize", top: -4, left: -4,                         dir: "nw" },
@@ -13,7 +20,6 @@ const HANDLES = [
 ] as const;
 
 type Direction = typeof HANDLES[number]["dir"];
-type BlockFrame = { x: number; y: number; w: number; h: number };
 type ResizeHandleMap = Partial<Record<Direction | "top" | "right" | "bottom" | "left" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight", boolean>>;
 
 const HANDLE_TO_RND_KEY: Record<Direction, keyof ResizeHandleMap> = {
@@ -41,7 +47,7 @@ interface RotatableBlockProps extends React.HTMLAttributes<HTMLDivElement> {
   disableDragging?: boolean;
   enableResizing?: boolean | ResizeHandleMap;
   lockAspectRatio?: boolean;
-  bounds?: { w: number; h: number } | null;
+  bounds?: TransformBounds | null;
   cancel?: string;
   onMoveStart?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onMove?: (x: number, y: number) => Partial<BlockFrame> | void;
@@ -57,24 +63,6 @@ function resizeHandleEnabled(enableResizing: boolean | ResizeHandleMap | undefin
   if (enableResizing === false) return false;
   if (enableResizing == null || enableResizing === true) return true;
   return enableResizing[dir] !== false && enableResizing[HANDLE_TO_RND_KEY[dir]] !== false;
-}
-
-function clampFrameToBounds(frame: BlockFrame, rotation: number, bounds?: { w: number; h: number } | null): BlockFrame {
-  if (!bounds) return frame;
-  const rad = (rotation * Math.PI) / 180;
-  const bboxW = Math.abs(frame.w * Math.cos(rad)) + Math.abs(frame.h * Math.sin(rad));
-  const bboxH = Math.abs(frame.w * Math.sin(rad)) + Math.abs(frame.h * Math.cos(rad));
-  const minCx = bboxW / 2;
-  const maxCx = Math.max(minCx, bounds.w - bboxW / 2);
-  const minCy = bboxH / 2;
-  const maxCy = Math.max(minCy, bounds.h - bboxH / 2);
-  const cx = Math.min(maxCx, Math.max(minCx, frame.x + frame.w / 2));
-  const cy = Math.min(maxCy, Math.max(minCy, frame.y + frame.h / 2));
-  return {
-    ...frame,
-    x: Math.round(cx - frame.w / 2),
-    y: Math.round(cy - frame.h / 2),
-  };
 }
 
 function targetMatchesCancel(target: EventTarget | null, cancel?: string): boolean {
@@ -177,12 +165,6 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
       const origX = x; const origY = y;
       const origW = w; const origH = h;
       const lockAspect = lockAspectRatio || e.shiftKey;
-      const aspect = origW / Math.max(1, origH);
-      const rad = (rotation * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      const minW = 40;
-      const minH = 30;
       frameRef.current = { x, y, w, h };
       gestureChangedRef.current = false;
 
@@ -192,30 +174,18 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
           gestureChangedRef.current = true;
         }
-        const localDx = (dx * cos + dy * sin) / scale;
-        const localDy = (-dx * sin + dy * cos) / scale;
-
-        const centerX = origX + origW / 2;
-        const centerY = origY + origH / 2;
-        let nw = origW, nh = origH;
-        if (dir.includes("e")) nw = Math.max(minW, origW + localDx);
-        if (dir.includes("s")) nh = Math.max(minH, origH + localDy);
-        if (dir.includes("w")) nw = Math.max(minW, origW - localDx);
-        if (dir.includes("n")) nh = Math.max(minH, origH - localDy);
-        if (lockAspect) {
-          if (dir.includes("e") || dir.includes("w")) nh = Math.max(minH, nw / aspect);
-          else nw = Math.max(minW, nh * aspect);
-        }
-        const nx = centerX - nw / 2;
-        const ny = centerY - nh / 2;
+        const frame = resizeFrameFromPointerDelta({
+          origin: { x: origX, y: origY, w: origW, h: origH },
+          dir: dir as ResizeDirection,
+          clientDx: dx,
+          clientDy: dy,
+          scale,
+          rotation,
+          lockAspectRatio: lockAspect,
+        });
 
         scheduleUpdate(() => {
-          const requested = clampFrameToBounds({
-            x: Math.round(nx),
-            y: Math.round(ny),
-            w: Math.round(nw),
-            h: Math.round(nh),
-          }, rotation, bounds);
+          const requested = clampFrameToBounds(frame, rotation, bounds);
           const override = onResize?.(requested.x, requested.y, requested.w, requested.h) ?? {};
           const next = clampFrameToBounds({ ...requested, ...override }, rotation, bounds);
           frameRef.current = next;

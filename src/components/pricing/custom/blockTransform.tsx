@@ -14,6 +14,9 @@ import { snapToGrid, type GridSize } from "./editorPrefs";
 import { boundsOf, computeSnap, groupBounds, type EqualSpacingGuide } from "./canvas/alignmentGuides";
 import type { EditorActionLabel } from "./editorStore";
 
+export type BlockFrame = { x: number; y: number; w: number; h: number };
+export type TransformBounds = { w: number; h: number; bleed?: number };
+export type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export type GuideState = { v: number[]; h: number[]; equalSpacing: EqualSpacingGuide[] };
 
 export const EMPTY_GUIDES: GuideState = { v: [], h: [], equalSpacing: [] };
@@ -119,6 +122,134 @@ export function buildAltDragClones({
     .filter((block): block is CustomBlock => Boolean(block));
 }
 
+export function applyBlockMove(block: CustomBlock, x: number, y: number): BlockPatch {
+  return { id: block.id, patch: { x, y } as Partial<CustomBlock> };
+}
+
+export function applyMultiBlockMove(blocks: CustomBlock[], ids: string[], dx: number, dy: number): BlockPatch[] {
+  const idSet = new Set(ids);
+  return blocks
+    .filter((block) => idSet.has(block.id) && !block.locked)
+    .map((block) => ({
+      id: block.id,
+      patch: { x: block.x + dx, y: block.y + dy } as Partial<CustomBlock>,
+    }));
+}
+
+export function clampFrameToBounds(
+  frame: BlockFrame,
+  rotation: number,
+  bounds?: TransformBounds | null,
+): BlockFrame {
+  if (!bounds) return frame;
+  const bleed = bounds.bleed ?? 0;
+  const rad = (rotation * Math.PI) / 180;
+  const bboxW = Math.abs(frame.w * Math.cos(rad)) + Math.abs(frame.h * Math.sin(rad));
+  const bboxH = Math.abs(frame.w * Math.sin(rad)) + Math.abs(frame.h * Math.cos(rad));
+  const minCx = bboxW / 2 - bleed;
+  const maxCx = Math.max(minCx, bounds.w - bboxW / 2 + bleed);
+  const minCy = bboxH / 2 - bleed;
+  const maxCy = Math.max(minCy, bounds.h - bboxH / 2 + bleed);
+  const cx = Math.min(maxCx, Math.max(minCx, frame.x + frame.w / 2));
+  const cy = Math.min(maxCy, Math.max(minCy, frame.y + frame.h / 2));
+  return {
+    ...frame,
+    x: Math.round(cx - frame.w / 2),
+    y: Math.round(cy - frame.h / 2),
+  };
+}
+
+export function resizeFrameFromPointerDelta({
+  origin,
+  dir,
+  clientDx,
+  clientDy,
+  scale,
+  rotation,
+  lockAspectRatio,
+  minW = 40,
+  minH = 30,
+}: {
+  origin: BlockFrame;
+  dir: ResizeDirection;
+  clientDx: number;
+  clientDy: number;
+  scale: number;
+  rotation: number;
+  lockAspectRatio: boolean;
+  minW?: number;
+  minH?: number;
+}): BlockFrame {
+  const aspect = origin.w / Math.max(1, origin.h);
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const localDx = (clientDx * cos + clientDy * sin) / scale;
+  const localDy = (-clientDx * sin + clientDy * cos) / scale;
+  const centerX = origin.x + origin.w / 2;
+  const centerY = origin.y + origin.h / 2;
+  let w = origin.w;
+  let h = origin.h;
+  if (dir.includes("e")) w = Math.max(minW, origin.w + localDx);
+  if (dir.includes("s")) h = Math.max(minH, origin.h + localDy);
+  if (dir.includes("w")) w = Math.max(minW, origin.w - localDx);
+  if (dir.includes("n")) h = Math.max(minH, origin.h - localDy);
+  if (lockAspectRatio) {
+    if (dir.includes("e") || dir.includes("w")) h = Math.max(minH, w / aspect);
+    else w = Math.max(minW, h * aspect);
+  }
+  return {
+    x: Math.round(centerX - w / 2),
+    y: Math.round(centerY - h / 2),
+    w: Math.round(w),
+    h: Math.round(h),
+  };
+}
+
+export function snapBlockFrame(blocks: CustomBlock[], activeIds: string[], frame: BlockFrame) {
+  return computeSnap(frame, boundsOf(blocks, new Set(activeIds)));
+}
+
+export function computeGroupResizePatches(
+  blocks: CustomBlock[],
+  ids: string[],
+  origin: BlockFrame,
+  next: BlockFrame,
+): BlockPatch[] {
+  if (ids.length === 0 || origin.w <= 0 || origin.h <= 0) return [];
+  const scaleX = next.w / origin.w;
+  const scaleY = next.h / origin.h;
+  const fontScale = Math.max(0.5, Math.min(3, (scaleX + scaleY) / 2));
+  const set = new Set(ids);
+  return blocks
+    .filter((block) => set.has(block.id) && !block.locked)
+    .map((block) => {
+      const dx = block.x - origin.x;
+      const dy = block.y - origin.y;
+      const textSizePatch =
+        (block.kind === "title" || block.kind === "text") && typeof block.size === "number"
+          ? { size: Math.max(8, Math.round(block.size * fontScale)) }
+          : {};
+      return {
+        id: block.id,
+        patch: {
+          x: Math.round(next.x + dx * scaleX),
+          y: Math.round(next.y + dy * scaleY),
+          w: Math.round(Math.max(40, block.w * scaleX)),
+          h: Math.round(Math.max(40, block.h * scaleY)),
+          ...textSizePatch,
+        } as Partial<CustomBlock>,
+      };
+    });
+}
+
+export function gestureLayerStyle(originalZ: number, active: boolean): { during: number; after: number } {
+  return {
+    during: active ? 9999998 : originalZ,
+    after: originalZ,
+  };
+}
+
 export type BlockTransformParams = {
   blocks: CustomBlock[];
   groups: CustomSlideConfig["groups"] | undefined;
@@ -133,6 +264,7 @@ export type BlockTransformParams = {
 export type BlockTransformHandlers = {
   lockAspectRatio: boolean;
   isAltDragFlashing: boolean;
+  zIndex: (isEditing: boolean) => number;
   onMoveStart: (event: ReactMouseEvent<HTMLDivElement>) => void;
   onMove: (x: number, y: number) => { x: number; y: number } | void;
   onMoveEnd: (x: number, y: number) => void;
@@ -158,6 +290,7 @@ export function useBlockTransform({
   const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   const altDragCloneRef = useRef<{ sourceId: string } | null>(null);
   const [altDragFlashIds, setAltDragFlashIds] = useState<Set<string>>(() => new Set());
+  const [activeGestureIds, setActiveGestureIds] = useState<Set<string>>(() => new Set());
 
   const setGuidesImmediate = useCallback((next: GuideState) => {
     if (
@@ -222,8 +355,7 @@ export function useBlockTransform({
   }, [actions, blocks, collaborative, draggableSiblings]);
 
   const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
-    const others = boundsOf(blocks, new Set(activeIds));
-    const snap = computeSnap({ x, y, w, h }, others);
+    const snap = snapBlockFrame(blocks, activeIds, { x, y, w, h });
     scheduleGuides(snap.guides);
     return snap;
   }, [blocks, scheduleGuides]);
@@ -231,12 +363,15 @@ export function useBlockTransform({
   const getBlockFrameHandlers = useCallback((block: CustomBlock, shapeLockAspect = false): BlockTransformHandlers => ({
     lockAspectRatio: shapeLockAspect || aspectResizeIds.has(block.id),
     isAltDragFlashing: altDragFlashIds.has(block.id),
+    zIndex: (isEditing) => (isEditing ? 9999998 : gestureLayerStyle(block.z, activeGestureIds.has(block.id)).during),
     onResizeStart: (event) => {
+      setActiveGestureIds(new Set([block.id]));
       if (event.shiftKey) {
         setAspectResizeIds((prev) => new Set(prev).add(block.id));
       }
     },
     onMoveStart: (event) => {
+      setActiveGestureIds(new Set(draggableSiblings(block.id)));
       if (event.altKey) {
         altDragCloneRef.current = { sourceId: block.id };
         return;
@@ -257,6 +392,7 @@ export function useBlockTransform({
     },
     onMoveEnd: (nextX, nextY) => {
       clearGuides();
+      setActiveGestureIds(new Set());
       const altDrag = altDragCloneRef.current?.sourceId === block.id ? altDragCloneRef.current : null;
       const ids = draggableSiblings(block.id);
       let dx = nextX - block.x;
@@ -273,16 +409,10 @@ export function useBlockTransform({
         return;
       }
       if (ids.length === 1) {
-        actions.updateBlock(block.id, { x: block.x + dx, y: block.y + dy });
+        actions.updateBlock(block.id, applyBlockMove(block, block.x + dx, block.y + dy).patch);
         return;
       }
-      const patches = ids
-        .map((id) => blocks.find((candidate) => candidate.id === id))
-        .filter((candidate): candidate is CustomBlock => !!candidate && !candidate.locked)
-        .map((candidate) => ({
-          id: candidate.id,
-          patch: { x: candidate.x + dx, y: candidate.y + dy } as Partial<CustomBlock>,
-        }));
+      const patches = applyMultiBlockMove(blocks, ids, dx, dy);
       if (collaborative) {
         patches.forEach((item) => actions.updateBlock(item.id, item.patch));
         return;
@@ -290,6 +420,7 @@ export function useBlockTransform({
       actions.patchBlocks(patches, "Mover blocos");
     },
     onResizeEnd: (nextX, nextY, nextW, nextH) => {
+      setActiveGestureIds(new Set());
       setAspectResizeIds((prev) => {
         const next = new Set(prev);
         next.delete(block.id);
@@ -328,12 +459,8 @@ export function useBlockTransform({
               .forEach((member) => {
                 const dx = member.x - origin.x;
                 const dy = member.y - origin.y;
-                actions.updateBlock(member.id, {
-                  x: Math.round(next.x + dx * scaleX),
-                  y: Math.round(next.y + dy * scaleY),
-                  w: Math.round(Math.max(40, member.w * scaleX)),
-                  h: Math.round(Math.max(40, member.h * scaleY)),
-                } as Partial<CustomBlock>);
+                const patch = computeGroupResizePatches([member], [member.id], origin, next)[0]?.patch;
+                if (patch) actions.updateBlock(member.id, patch);
               });
           } else {
             actions.resizeGroup(memberIds, origin, next);
@@ -345,6 +472,7 @@ export function useBlockTransform({
     },
   }), [
     actions,
+    activeGestureIds,
     altDragFlashIds,
     aspectResizeIds,
     blocks,

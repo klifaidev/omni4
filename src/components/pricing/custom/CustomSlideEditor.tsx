@@ -2579,7 +2579,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           setInlineEditId(blk.id);
                           selectBlock(blk.id);
                         } : blk.groupId ? () => enterGroupEdit(blk.id) : undefined}
-                        style={{ zIndex: isEditing ? 9999998 : blk.z }}
+                        style={{ zIndex: blockFrameHandlers.zIndex(isEditing) }}
                         className={cn(
                           blockFrameHandlers.isAltDragFlashing && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
                           isSelected

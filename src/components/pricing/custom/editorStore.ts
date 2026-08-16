@@ -27,6 +27,7 @@ import type {
   CustomSlideConfig,
 } from "@/lib/customSlide";
 import { newBlock, newChartBlock } from "@/lib/customSlide";
+import { computeGroupResizePatches } from "./blockTransform";
 
 export type EditorActionLabel =
   | "Adicionar bloco"
@@ -738,36 +739,9 @@ export function resizeGroupAction(
   next: { x: number; y: number; w: number; h: number },
 ) {
   if (ids.length === 0 || origin.w <= 0 || origin.h <= 0) return;
-  const scaleX = next.w / origin.w;
-  const scaleY = next.h / origin.h;
   const cur = baseStore.getState().config;
   if (!cur) return;
-  const set = new Set(ids);
-  const fontScale = Math.max(0.5, Math.min(3, (scaleX + scaleY) / 2));
-  const patches = cur.blocks
-    .filter((b) => set.has(b.id) && !b.locked)
-    .map((b) => {
-      const dx = b.x - origin.x;
-      const dy = b.y - origin.y;
-      const newX = next.x + dx * scaleX;
-      const newY = next.y + dy * scaleY;
-      const newW = Math.max(40, b.w * scaleX);
-      const newH = Math.max(40, b.h * scaleY);
-      const textSizePatch =
-        (b.kind === "title" || b.kind === "text") && typeof b.size === "number"
-          ? { size: Math.max(8, Math.round(b.size * fontScale)) }
-          : {};
-      return {
-        id: b.id,
-        patch: {
-          x: Math.round(newX),
-          y: Math.round(newY),
-          w: Math.round(newW),
-          h: Math.round(newH),
-          ...textSizePatch,
-        } as Partial<CustomBlock>,
-      };
-    });
+  const patches = computeGroupResizePatches(cur.blocks, ids, origin, next);
   if (patches.length) patchBlocksAction(patches, "Redimensionar grupo");
 }
 
