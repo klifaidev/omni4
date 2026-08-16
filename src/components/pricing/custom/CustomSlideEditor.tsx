@@ -564,6 +564,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
   });
   const [canvasHovered, setCanvasHovered] = useState(false);
+  const [fileDragOverCanvas, setFileDragOverCanvas] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [canvasPanning, setCanvasPanning] = useState(false);
   const [styleFocusRequest, setStyleFocusRequest] = useState(0);
@@ -576,6 +577,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const fileDragDepthRef = useRef(0);
   const altDragCloneRef = useRef<{ sourceId: string } | null>(null);
   const [altDragFlashIds, setAltDragFlashIds] = useState<Set<string>>(() => new Set());
   // Inline text editing (double-click no bloco title/text).
@@ -789,6 +791,102 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     patchBlockAction(id, patch, label);
   }, [canEdit, collabYDoc, commitYDocConfig, queueYBlockPatch]);
+
+  const fitImageToCanvas = useCallback((naturalW: number, naturalH: number, anchor?: { x: number; y: number }, offset = 0) => {
+    const maxW = CANVAS_W * 0.62;
+    const maxH = (CANVAS_H - FOOTER_H) * 0.68;
+    const safeW = Math.max(1, naturalW || 600);
+    const safeH = Math.max(1, naturalH || 400);
+    const ratio = Math.min(maxW / safeW, maxH / safeH, 1);
+    const w = Math.max(120, Math.round(safeW * ratio));
+    const h = Math.max(80, Math.round(safeH * ratio));
+    const centeredX = Math.round((CANVAS_W - w) / 2);
+    const centeredY = Math.round((CANVAS_H - FOOTER_H - h) / 2);
+    const x = anchor ? Math.round(anchor.x - w / 2 + offset) : centeredX;
+    const y = anchor ? Math.round(anchor.y - h / 2 + offset) : centeredY;
+    return {
+      w,
+      h,
+      x: Math.max(0, Math.min(CANVAS_W - w, x)),
+      y: Math.max(0, Math.min(CANVAS_H - h, y)),
+    };
+  }, []);
+
+  const readImageBounds = useCallback((src: string, anchor?: { x: number; y: number }, offset = 0) =>
+    new Promise<{ w: number; h: number; x: number; y: number }>((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve(fitImageToCanvas(img.naturalWidth, img.naturalHeight, anchor, offset));
+      img.onerror = () => resolve(fitImageToCanvas(600, 400, anchor, offset));
+      img.src = src;
+    }), [fitImageToCanvas]);
+
+  const readFileAsDataUrl = useCallback((file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    }), []);
+
+  const isImageFile = useCallback((file: File) => (
+    file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name)
+  ), []);
+
+  const insertImageFiles = useCallback(async (files: File[], anchor?: { x: number; y: number }) => {
+    if (!canEdit() || files.length === 0) return;
+    const imageFiles = files.filter(isImageFile);
+    const rejected = files.length - imageFiles.length;
+    if (rejected > 0) {
+      toast.warning(rejected === 1
+        ? "O arquivo arrastado não é uma imagem."
+        : `${rejected} arquivos ignorados porque não são imagens.`);
+    }
+    if (imageFiles.length === 0) return;
+
+    try {
+      const blocks = await Promise.all(imageFiles.map(async (file, index) => {
+        const src = await readFileAsDataUrl(file);
+        const bounds = await readImageBounds(src, anchor, index * 18);
+        return {
+          id: crypto.randomUUID(),
+          kind: "image",
+          z: 1,
+          src,
+          fit: "contain",
+          ...bounds,
+        } as ImageBlock;
+      }));
+      const ids = collabYDoc
+        ? insertYBlocks(blocks as CustomBlock[])
+        : insertBlocksAction(blocks as CustomBlock[], imageFiles.length > 1 ? "Inserir imagens" : "Inserir imagem");
+      if (!collabYDoc && ids.length > 0) setSelection(ids);
+      toast.success(imageFiles.length === 1
+        ? "Imagem inserida no slide."
+        : `${imageFiles.length} imagens inseridas no slide.`);
+    } catch {
+      toast.error("Não foi possível inserir a imagem arrastada.");
+    }
+  }, [canEdit, collabYDoc, insertBlocksAction, insertYBlocks, isImageFile, readFileAsDataUrl, readImageBounds, setSelection]);
+
+  const insertImageDataUrl = useCallback(async (src: string, anchor?: { x: number; y: number }) => {
+    if (!canEdit()) return;
+    const bounds = await readImageBounds(src, anchor);
+    const block: ImageBlock = {
+      id: crypto.randomUUID(),
+      kind: "image",
+      z: 1,
+      src,
+      fit: "contain",
+      ...bounds,
+    };
+    if (collabYDoc) {
+      insertYBlocks([block]);
+    } else {
+      const id = insertBlockAction(block, "Colar imagem");
+      if (id) setSelection([id]);
+    }
+  }, [canEdit, collabYDoc, insertBlockAction, insertYBlocks, readImageBounds, setSelection]);
+
   const yBlockText = useCallback((blockId: string, field: string) => (
     collabYDoc ? getCustomSlideBlockText(collabYDoc, blockId, field) : null
   ), [collabYDoc]);
@@ -1773,30 +1871,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
-    const fitImageToCanvas = (naturalW: number, naturalH: number) => {
-      const maxW = CANVAS_W * 0.62;
-      const maxH = (CANVAS_H - FOOTER_H) * 0.68;
-      const safeW = Math.max(1, naturalW || 600);
-      const safeH = Math.max(1, naturalH || 400);
-      const scale = Math.min(maxW / safeW, maxH / safeH, 1);
-      const w = Math.max(120, Math.round(safeW * scale));
-      const h = Math.max(80, Math.round(safeH * scale));
-      return {
-        w,
-        h,
-        x: Math.round((CANVAS_W - w) / 2),
-        y: Math.round((CANVAS_H - FOOTER_H - h) / 2),
-      };
-    };
-
-    const readImageSize = (src: string) =>
-      new Promise<{ w: number; h: number }>((resolve) => {
-        const img = new window.Image();
-        img.onload = () => resolve(fitImageToCanvas(img.naturalWidth, img.naturalHeight));
-        img.onerror = () => resolve(fitImageToCanvas(600, 400));
-        img.src = src;
-      });
-
     const handlePaste = (e: ClipboardEvent) => {
       const active = document.activeElement;
       const inField =
@@ -1820,33 +1894,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       const file = imageItem.getAsFile();
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const dataUrl = reader.result as string;
-        const bounds = await readImageSize(dataUrl);
-        const block: ImageBlock = {
-          id: crypto.randomUUID(),
-          kind: "image",
-          z: 1,
-          src: dataUrl,
-          fit: "contain",
-          ...bounds,
-        };
-
-        if (collabYDoc) {
-          insertYBlocks([block]);
-        } else {
-          const id = insertBlockAction(block, "Colar imagem");
-          if (id) setSelection([id]);
-        }
-        toast.success("Imagem colada no slide.");
-      };
-      reader.readAsDataURL(file);
+      void readFileAsDataUrl(file)
+        .then((dataUrl) => insertImageDataUrl(dataUrl))
+        .then(() => toast.success("Imagem colada no slide."))
+        .catch(() => toast.error("Não foi possível colar a imagem."));
     };
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [canEdit, collabYDoc, insertYBlocks, pasteFromClipboard]);
+  }, [canEdit, insertImageDataUrl, pasteFromClipboard, readFileAsDataUrl]);
 
   // Smart guides ? compute lines + snap target for the dragging block.
   // Snap is applied by react-rnd via onDrag's returned coords; we mutate
@@ -2403,7 +2459,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               margin: "12px auto",
             }}
             onMouseEnter={() => setCanvasHovered(true)}
-            onMouseLeave={() => setCanvasHovered(false)}
+            onMouseLeave={() => {
+              setCanvasHovered(false);
+              setFileDragOverCanvas(false);
+              fileDragDepthRef.current = 0;
+            }}
           >
             <div
               data-canvas-bg="true"
@@ -2430,21 +2490,44 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 position: "relative",
                 overflow: "hidden",
               }}
+              onDragEnter={(e) => {
+                if (e.dataTransfer.types.includes("Files")) {
+                  fileDragDepthRef.current += 1;
+                  setFileDragOverCanvas(true);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.dataTransfer.types.includes("Files")) return;
+                fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+                if (fileDragDepthRef.current === 0) setFileDragOverCanvas(false);
+              }}
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes("application/x-slide-asset")) {
+                if (e.dataTransfer.types.includes("application/x-slide-asset") || e.dataTransfer.types.includes("Files")) {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "copy";
+                  if (e.dataTransfer.types.includes("Files")) setFileDragOverCanvas(true);
                 }
               }}
               onDrop={(e) => {
+                setFileDragOverCanvas(false);
+                fileDragDepthRef.current = 0;
                 if (readOnly) {
+                  if (e.dataTransfer.types.includes("application/x-slide-asset") || e.dataTransfer.types.includes("Files")) {
+                    e.preventDefault();
+                  }
                   notifyReadOnly();
                   return;
                 }
                 const src = e.dataTransfer.getData("application/x-slide-asset");
-                if (!src) return;
-                e.preventDefault();
                 const pos = clientToCanvas(canvasRef.current, e.clientX, e.clientY, scaleRef.current);
+                if (!src) {
+                  const files = Array.from(e.dataTransfer.files ?? []);
+                  if (files.length === 0) return;
+                  e.preventDefault();
+                  void insertImageFiles(files, pos ?? undefined);
+                  return;
+                }
+                e.preventDefault();
                 const id = addBlockAction("image");
                 if (id) {
                   const w = 360, h = 220;
@@ -2461,14 +2544,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               }}
             >
               {/* Paste-image hint ? shown when canvas is hovered with no selection */}
-              {canvasHovered && selectedIds.length === 0 && (
+              {(fileDragOverCanvas || (canvasHovered && selectedIds.length === 0)) && (
                 <div
                   data-edit-only="true"
                   style={{
                     position: "absolute", inset: 0, pointerEvents: "none", zIndex: 9998,
-                    border: `2px solid ${SLIDE_RGBA.editorSelectionBorder}`,
+                    border: `2px solid ${fileDragOverCanvas ? "hsl(var(--primary))" : SLIDE_RGBA.editorSelectionBorder}`,
                     borderRadius: 2,
                     animation: "omni-paste-pulse 2s ease-in-out infinite",
+                    background: fileDragOverCanvas ? "hsl(var(--primary) / 0.06)" : undefined,
                   }}
                 >
                   <style>{`@keyframes omni-paste-pulse{0%,100%{border-color:hsl(var(--editor-selection) / 0.55)}50%{border-color:hsl(var(--editor-selection) / 0.15)}}`}</style>
@@ -2480,7 +2564,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     borderRadius: 4, fontSize: 10, whiteSpace: "nowrap",
                     letterSpacing: "0.02em",
                   }}>
-                    Ctrl+V para colar imagem
+                    {fileDragOverCanvas ? "Solte para inserir imagem" : "Ctrl+V para colar imagem"}
                   </div>
                 </div>
               )}
