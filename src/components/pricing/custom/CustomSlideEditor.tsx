@@ -301,15 +301,16 @@ import {
   type AlignKind,
   type EditorActionLabel,
 } from "./editorStore";
-import { snapToGrid, type GridSize } from "./editorPrefs";
+import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
 import { getTheme, type SlideTheme } from "@/lib/slideThemes";
-import { computeSnap, boundsOf, groupBounds, type EqualSpacingGuide } from "./canvas/alignmentGuides";
+import { groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, RotateCw, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
+import { BlockRotationHandle, useBlockTransform } from "./blockTransform";
 import {
   brandStyleTargetLabel,
   buildBrandStylePatch,
@@ -454,26 +455,6 @@ type CustomTextAwareness = {
   field: string;
 };
 
-type GuideState = { v: number[]; h: number[]; equalSpacing: EqualSpacingGuide[] };
-
-const EMPTY_GUIDES: GuideState = { v: [], h: [], equalSpacing: [] };
-
-function equalSpacingGuidesEqual(a: EqualSpacingGuide[], b: EqualSpacingGuide[]): boolean {
-  return a.length === b.length && a.every((guide, index) => {
-    const other = b[index];
-    return guide.axis === other.axis
-      && guide.gap === other.gap
-      && guide.start === other.start
-      && guide.end === other.end
-      && guide.anchorStart === other.anchorStart
-      && guide.anchorEnd === other.anchorEnd
-      && guide.movingStart === other.movingStart
-      && guide.movingEnd === other.movingEnd
-      && guide.crossStart === other.crossStart
-      && guide.crossEnd === other.crossEnd;
-  });
-}
-
 function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
   const [value, setValue] = useState(() => yText?.toString() ?? fallback);
   useEffect(() => {
@@ -569,16 +550,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [styleFocusRequest, setStyleFocusRequest] = useState(0);
   const [stylePanelHighlight, setStylePanelHighlight] = useState(false);
 
-  const [guides, setGuides] = useState<GuideState>(EMPTY_GUIDES);
-  const guidesRef = useRef(guides);
-  const pendingGuidesRef = useRef(guides);
-  const guidesRafRef = useRef<number | null>(null);
-  const [aspectResizeIds, setAspectResizeIds] = useState<Set<string>>(() => new Set());
   // Marquee selection rectangle (canvas-space coords).
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const fileDragDepthRef = useRef(0);
-  const altDragCloneRef = useRef<{ sourceId: string } | null>(null);
-  const [altDragFlashIds, setAltDragFlashIds] = useState<Set<string>>(() => new Set());
   // Inline text editing (double-click no bloco title/text).
   const [inlineEditId, setInlineEditId] = useState<string | null>(null);
   // Limpa inline edit se o bloco for excluído ou ficar bloqueado.
@@ -611,43 +585,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     window.addEventListener("resize", updateSide);
     return () => window.removeEventListener("resize", updateSide);
   }, [palettePanelOpen, activePaletteCategory]);
-
-  const setGuidesImmediate = useCallback((next: GuideState) => {
-    if (
-      guidesRef.current.v.length === next.v.length
-      && guidesRef.current.h.length === next.h.length
-      && guidesRef.current.v.every((value, index) => value === next.v[index])
-      && guidesRef.current.h.every((value, index) => value === next.h[index])
-      && equalSpacingGuidesEqual(guidesRef.current.equalSpacing, next.equalSpacing)
-    ) return;
-    guidesRef.current = next;
-    setGuides(next);
-  }, []);
-
-  const scheduleGuides = useCallback((next: GuideState) => {
-    pendingGuidesRef.current = next;
-    if (guidesRafRef.current !== null) return;
-    guidesRafRef.current = requestAnimationFrame(() => {
-      guidesRafRef.current = null;
-      setGuidesImmediate(pendingGuidesRef.current);
-    });
-  }, [setGuidesImmediate]);
-
-  const clearGuides = useCallback(() => {
-    if (guidesRafRef.current !== null) {
-      cancelAnimationFrame(guidesRafRef.current);
-      guidesRafRef.current = null;
-    }
-    pendingGuidesRef.current = EMPTY_GUIDES;
-    setGuidesImmediate(EMPTY_GUIDES);
-  }, [setGuidesImmediate]);
-
-  useEffect(() => () => {
-    if (guidesRafRef.current !== null) {
-      cancelAnimationFrame(guidesRafRef.current);
-      guidesRafRef.current = null;
-    }
-  }, []);
 
   useEffect(() => {
     if (!slideId) return;
@@ -790,6 +727,29 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     patchBlockAction(id, patch, label);
   }, [canEdit, collabYDoc, commitYDocConfig, queueYBlockPatch]);
+
+  const blockTransformActions = useMemo(() => ({
+    canEdit,
+    insertBlocks: insertBlocksAction,
+    insertYBlocks,
+    maxBlockZ,
+    patchBlocks: patchBlocksAction,
+    resizeGroup: resizeGroupAction,
+    selectBlock,
+    setSelection,
+    updateBlock,
+  }), [canEdit, insertYBlocks, maxBlockZ, updateBlock]);
+  const blockTransform = useBlockTransform({
+    blocks: config.blocks,
+    groups: config.groups,
+    selectedIds,
+    groupEditMemberId,
+    collaborative: !!collabYDoc,
+    gridEnabled: prefs.gridEnabled,
+    gridSize: prefs.gridSize,
+    actions: blockTransformActions,
+  });
+  const { guides, clearGuides } = blockTransform;
 
   const fitImageToCanvas = useCallback((naturalW: number, naturalH: number, anchor?: { x: number; y: number }, offset = 0) => {
     const maxW = CANVAS_W * 0.62;
@@ -1628,64 +1588,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       || (activePaletteCategory === "story" && visibleStorytellingPalette.length > 0)
       || (activePaletteCategory === "omni" && visibleOmniPalette.length > 0);
 
-  // Helper: ids that move together when dragging `id`.
-  // If id belongs to a group (and we're not in group-edit mode for it),
-  // and the selection includes any group member, drag the whole group.
-  const draggableSiblings = useCallback((id: string): string[] => {
-    if (groupEditMemberId === id) return [id];
-    const blk = config.blocks.find((b) => b.id === id);
-    if (!blk) return [id];
-    if (blk.groupId) {
-      const grp = (config.groups ?? []).find((g) => g.id === blk.groupId);
-      if (grp) return grp.memberIds;
-    }
-    // Multi-selection move: if id is in selection and selection > 1, move all selected.
-    if (selectedIds.includes(id) && selectedIds.length > 1) return selectedIds;
-    return [id];
-  }, [config.blocks, config.groups, groupEditMemberId, selectedIds]);
-
-  const createAltDragCloneAtOffset = useCallback((sourceId: string, dx: number, dy: number): string[] => {
-    if (!canEdit()) return [];
-    const ids = draggableSiblings(sourceId);
-    const zTop = maxBlockZ();
-    const groupIdMap = new Map<string, string>();
-    const clones = ids
-      .map((id, index) => {
-        const orig = config.blocks.find((block) => block.id === id);
-        if (!orig || orig.locked) return null;
-        let groupId = orig.groupId;
-        if (groupId) {
-          if (!groupIdMap.has(groupId)) groupIdMap.set(groupId, localId());
-          groupId = groupIdMap.get(groupId);
-        }
-        return {
-          ...JSON.parse(JSON.stringify(orig)),
-          id: localId(),
-          x: orig.x + dx,
-          y: orig.y + dy,
-          z: zTop + index + 1,
-          locked: false,
-          groupId,
-        } as CustomBlock;
-      })
-      .filter((block): block is CustomBlock => Boolean(block));
-    if (clones.length === 0) return [];
-
-    const cloneIds = collabYDoc
-      ? insertYBlocks(clones, false)
-      : insertBlocksAction(clones, "Duplicar blocos");
-    if (cloneIds.length === 0) return [];
-
-    setSelection(cloneIds);
-    setAltDragFlashIds(new Set(cloneIds));
-    window.setTimeout(() => setAltDragFlashIds((current) => {
-      const next = new Set(current);
-      cloneIds.forEach((id) => next.delete(id));
-      return next;
-    }), 260);
-    return cloneIds;
-  }, [canEdit, collabYDoc, config.blocks, draggableSiblings, insertBlocksAction, insertYBlocks, maxBlockZ]);
-
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
     if (selectedIds.length === 0) return;
@@ -1902,16 +1804,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [canEdit, insertImageDataUrl, pasteFromClipboard, readFileAsDataUrl]);
-
-  // Smart guides ? compute lines + snap target for the dragging block.
-  // Snap is applied by returning adjusted coordinates to the unified block frame.
-  const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
-    const excl = new Set(activeIds);
-    const others = boundsOf(config.blocks, excl);
-    const snap = computeSnap({ x, y, w, h }, others);
-    scheduleGuides(snap.guides);
-    return snap;
-  }, [config.blocks, scheduleGuides]);
 
   // Layers panel data
   const layersSorted = useMemo(
@@ -2651,6 +2543,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   shapeResize = false;
                   shapeDisableDrag = true;
                 }
+                const blockFrameHandlers = blockTransform.getBlockFrameHandlers(blk, shapeLockAspect);
                 return (
                 <ContextMenu key={blk.id}>
                   <ContextMenuTrigger asChild>
@@ -2665,120 +2558,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         showResizeHandles={selectedIds.length <= 1}
                         bounds={{ w: CANVAS_W, h: CANVAS_H }}
                         cancel={TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR}
-                        lockAspectRatio={shapeLockAspect || aspectResizeIds.has(blk.id)}
+                        lockAspectRatio={blockFrameHandlers.lockAspectRatio}
                         disableDragging={shapeDisableDrag}
                         enableResizing={shapeResize}
-                        onResizeStart={(e) => {
-                          if ((e as React.MouseEvent).shiftKey) {
-                            setAspectResizeIds((prev) => new Set(prev).add(blk.id));
-                          }
-                        }}
-                        onMoveStart={(e) => {
-                          const altDrag = "altKey" in e && e.altKey;
-                          if (altDrag) {
-                            altDragCloneRef.current = { sourceId: blk.id };
-                            return;
-                          }
-                          altDragCloneRef.current = null;
-                          if (!selectedIds.includes(blk.id)) selectBlock(blk.id);
-                        }}
-                        onMove={(nx, ny) => {
-                          const ids = draggableSiblings(blk.id);
-                          const snap = computeGuides(ids, nx, ny, blk.w, blk.h);
-                          if (snap.guides.v.length || snap.guides.h.length || snap.guides.equalSpacing.length) {
-                            return { x: snap.x, y: snap.y };
-                          }
-                          return { x: nx, y: ny };
-                        }}
-                        onResize={(nx, ny, nw, nh) => {
-                          const snap = computeGuides([blk.id], nx, ny, nw, nh);
-                          void snap;
-                        }}
-                        onMoveEnd={(nx, ny) => {
-                          clearGuides();
-                          const altDrag = altDragCloneRef.current?.sourceId === blk.id ? altDragCloneRef.current : null;
-                          const ids = draggableSiblings(blk.id);
-                          let dx = nx - blk.x;
-                          let dy = ny - blk.y;
-                          if (prefs.gridEnabled) {
-                            const sx = snapToGrid(nx, prefs.gridSize);
-                            const sy = snapToGrid(ny, prefs.gridSize);
-                            dx = sx - blk.x;
-                            dy = sy - blk.y;
-                          }
-                          if (altDrag) {
-                            altDragCloneRef.current = null;
-                            createAltDragCloneAtOffset(blk.id, dx, dy);
-                            return;
-                          }
-                          if (ids.length === 1) {
-                            updateBlock(blk.id, { x: blk.x + dx, y: blk.y + dy });
-                          } else {
-                            const patches = ids
-                              .map((id) => config.blocks.find((b) => b.id === id))
-                              .filter((b): b is CustomBlock => !!b && !b.locked)
-                              .map((b) => ({ id: b.id, patch: { x: b.x + dx, y: b.y + dy } as Partial<CustomBlock> }));
-                            if (collabYDoc) {
-                              patches.forEach((item) => updateBlock(item.id, item.patch));
-                              return;
-                            }
-                            patchBlocksAction(patches, "Mover blocos");
-                          }
-                        }}
-                        onResizeEnd={(nx, ny, nw, nh) => {
-                          setAspectResizeIds((prev) => {
-                            const next = new Set(prev);
-                            next.delete(blk.id);
-                            return next;
-                          });
-                          clearGuides();
-                          let w = nw;
-                          let h = nh;
-                          let x = nx;
-                          let y = ny;
-                          if (prefs.gridEnabled) {
-                            x = snapToGrid(x, prefs.gridSize);
-                            y = snapToGrid(y, prefs.gridSize);
-                            w = Math.max(prefs.gridSize, snapToGrid(w, prefs.gridSize));
-                            h = Math.max(prefs.gridSize, snapToGrid(h, prefs.gridSize));
-                          }
-                          if (blk.groupId && groupEditMemberId !== blk.id) {
-                            const group = (config.groups ?? []).find((g) => g.id === blk.groupId);
-                            const memberIds = group?.memberIds ?? [];
-                            const members = memberIds
-                              .map((id) => config.blocks.find((b) => b.id === id))
-                              .filter((b): b is CustomBlock => !!b);
-                            const origin = groupBounds(members);
-                            if (origin && blk.w > 0 && blk.h > 0) {
-                              const scaleX = w / blk.w;
-                              const scaleY = h / blk.h;
-                              const next = {
-                                x: Math.round(x - (blk.x - origin.x) * scaleX),
-                                y: Math.round(y - (blk.y - origin.y) * scaleY),
-                                w: Math.round(origin.w * scaleX),
-                                h: Math.round(origin.h * scaleY),
-                              };
-                              if (collabYDoc) {
-                                members
-                                  .filter((b) => !b.locked)
-                                  .forEach((b) => {
-                                    const dx = b.x - origin.x;
-                                    const dy = b.y - origin.y;
-                                    updateBlock(b.id, {
-                                      x: Math.round(next.x + dx * scaleX),
-                                      y: Math.round(next.y + dy * scaleY),
-                                      w: Math.round(Math.max(40, b.w * scaleX)),
-                                      h: Math.round(Math.max(40, b.h * scaleY)),
-                                    } as Partial<CustomBlock>);
-                                  });
-                              } else {
-                                resizeGroupAction(memberIds, origin, next);
-                              }
-                              return;
-                            }
-                          }
-                          updateBlock(blk.id, { w, h, x, y });
-                        }}
+                        onResizeStart={blockFrameHandlers.onResizeStart}
+                        onMoveStart={blockFrameHandlers.onMoveStart}
+                        onMove={blockFrameHandlers.onMove}
+                        onResize={blockFrameHandlers.onResize}
+                        onMoveEnd={blockFrameHandlers.onMoveEnd}
+                        onResizeEnd={blockFrameHandlers.onResizeEnd}
                         onSelect={(additive) => {
                           const wasSelected = selectedIds.includes(blk.id);
                           selectBlock(blk.id, { additive: !!additive });
@@ -2793,7 +2581,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         } : blk.groupId ? () => enterGroupEdit(blk.id) : undefined}
                         style={{ zIndex: isEditing ? 9999998 : blk.z }}
                         className={cn(
-                          altDragFlashIds.has(blk.id) && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
+                          blockFrameHandlers.isAltDragFlashing && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
                           isSelected
                             ? "outline outline-2 outline-offset-1 outline-primary"
                             : "outline outline-1 outline-transparent hover:outline-primary/40",
@@ -2868,6 +2656,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         {isSelected && !blk.locked && !readOnly && !isEditing && !spacePanActive && isRotatable && (
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
+                            onRotate={(id, rotationValue) => {
+                              patchBlockAction(id, { rotation: rotationValue } as Partial<CustomBlock>, "Rotacionar");
+                            }}
                           />
                         )}
                       </RotatableBlock>
@@ -5893,95 +5684,6 @@ function ClearFiltersToolbar() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Rotation handle: child of the block frame, NOT inside the rotated content div.
-// ---------------------------------------------------------------------------
-function BlockRotationHandle({ block }: { block: TitleBlock | TextBlock | ImageBlock }) {
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const canvasRoot = e.currentTarget.closest('[data-custom-slide-canvas="true"]');
-    const visualEl = blockVisualElement(block.id, canvasRoot);
-    const rndEl = (e.currentTarget as HTMLElement).parentElement;
-    if (!rndEl) return;
-    const rect = rndEl.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const startRot = block.rotation ?? 0;
-    const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
-    let raf: number | null = null;
-    let finalRot = Math.round(startRot);
-
-    const applyPreview = () => {
-      if (!visualEl) return;
-      const previewDelta = finalRot - startRot;
-      visualEl.style.transformOrigin = "50% 50%";
-      visualEl.style.transform = `rotate(${previewDelta}deg)`;
-      visualEl.style.willChange = "transform";
-    };
-
-    const clearPreview = () => {
-      if (!visualEl) return;
-      visualEl.style.transform = "";
-      visualEl.style.transformOrigin = "";
-      visualEl.style.willChange = "";
-    };
-
-    const onMove = (ev: MouseEvent) => {
-      if (raf !== null) cancelAnimationFrame(raf);
-      const evX = ev.clientX; const evY = ev.clientY;
-      const shiftKey = ev.shiftKey;
-      raf = requestAnimationFrame(() => {
-        const angle = Math.atan2(evY - cy, evX - cx) * (180 / Math.PI);
-        let newRot = startRot + (angle - startAngle);
-        if (shiftKey) newRot = Math.round(newRot / 15) * 15;
-        newRot = ((newRot % 360) + 360) % 360;
-        if (newRot > 180) newRot -= 360;
-        finalRot = Math.round(newRot);
-        applyPreview();
-        raf = null;
-      });
-    };
-    const onUp = () => {
-      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      clearPreview();
-      if (finalRot !== Math.round(startRot)) {
-        patchBlockAction(block.id, { rotation: finalRot } as Partial<CustomBlock>, "Rotacionar");
-      }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  return (
-    <div
-      data-export-hide="true"
-      style={{
-        position: "absolute",
-        top: -28,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: 16,
-        height: 16,
-        borderRadius: "50%",
-        background: "white",
-        border: "2px solid hsl(var(--primary))",
-        cursor: "crosshair",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 999995,
-        pointerEvents: "all",
-      }}
-      onMouseDown={handleMouseDown}
-    >
-      <RotateCw style={{ width: 8, height: 8, color: "hsl(var(--primary))" }} />
-    </div>
-  );
-}
-
 function clientToCanvas(
   canvasEl: HTMLDivElement | null,
   clientX: number,
@@ -6000,10 +5702,6 @@ function cssEscapeId(id: string): string {
 
 function blockFrameElement(id: string, root: ParentNode | null): HTMLElement | null {
   return root?.querySelector<HTMLElement>(`[data-block-frame-id="${cssEscapeId(id)}"]`) ?? null;
-}
-
-function blockVisualElement(id: string, root: ParentNode | null): HTMLElement | null {
-  return root?.querySelector<HTMLElement>(`[data-block-visual-id="${cssEscapeId(id)}"]`) ?? null;
 }
 
 // ---------------------------------------------------------------------------
