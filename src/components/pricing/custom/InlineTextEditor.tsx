@@ -2,7 +2,7 @@
 // Canva/PowerPoint: double-click no canvas → textarea posicionado sobre o
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import type * as Y from "yjs";
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
@@ -115,8 +115,10 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
         setDraftValue(nextValue);
         scheduleTextCommit(nextValue);
       }}
-      onBlur={() => {
+      onBlur={(event) => {
         if (localDirtyRef.current) commitTextValue(pendingValueRef.current);
+        const nextTarget = event.relatedTarget as HTMLElement | null;
+        if (nextTarget?.closest("[data-inline-text-toolbar='true']")) return;
         onExit();
       }}
       onKeyDown={(e) => {
@@ -187,16 +189,24 @@ interface ToolbarProps {
 
 export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
   const isTitle = block.kind === "title";
+  const [hexDraft, setHexDraft] = useState(`#${block.color}`);
   // Se o bloco está perto do topo do canvas, mostra a toolbar abaixo.
   const placeBelow = block.y < 80;
   const inv = 1 / scale;
+  const keepTextFocus = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  useEffect(() => {
+    setHexDraft(`#${block.color}`);
+  }, [block.color]);
 
   return (
     <div
       data-export-hide="true"
+      data-inline-text-toolbar="true"
       onMouseDown={(e) => {
-        // Impede que o clique na toolbar tire foco do textarea (blur → exit).
-        e.preventDefault();
         e.stopPropagation();
       }}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -225,6 +235,7 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
         <button
           type="button"
           aria-label="Negrito"
+          onMouseDown={keepTextFocus}
           onClick={() =>
             onPatch({ bold: !(block as TitleBlock).bold } as Partial<CustomBlock>)
           }
@@ -241,6 +252,7 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
       <button
         type="button"
         aria-label="Itálico"
+        onMouseDown={keepTextFocus}
         onClick={() => onPatch({ italic: !block.italic } as Partial<CustomBlock>)}
         className={cn(
           "h-7 w-7 rounded inline-flex items-center justify-center border",
@@ -273,6 +285,7 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
             key={c}
             type="button"
             aria-label={`Cor ${c}`}
+            onMouseDown={keepTextFocus}
             onClick={() => onPatch({ color: c } as Partial<CustomBlock>)}
             className={cn(
               "h-5 w-5 rounded-full border",
@@ -286,9 +299,11 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
         <input
           type="text"
           aria-label="Cor (hex)"
-          value={`#${block.color}`}
+          value={hexDraft}
           onChange={(e) => {
-            const v = e.target.value.replace("#", "").toUpperCase();
+            const next = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
+            setHexDraft(next.toUpperCase());
+            const v = next.replace("#", "").toUpperCase();
             if (/^[0-9A-F]{6}$/.test(v)) {
               onPatch({ color: v } as Partial<CustomBlock>);
             }
@@ -305,6 +320,7 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
               key={a}
               type="button"
               aria-label={`Alinhar ${a}`}
+              onMouseDown={keepTextFocus}
               onClick={() => onPatch({ align: a } as Partial<CustomBlock>)}
               className={cn(
                 "h-7 w-7 rounded inline-flex items-center justify-center border",
