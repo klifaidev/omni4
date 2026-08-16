@@ -19,6 +19,7 @@ export type TransformBounds = { w: number; h: number; bleed?: number };
 export type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export type GuideState = { v: number[]; h: number[]; equalSpacing: EqualSpacingGuide[] };
 
+export const TRANSFORM_BLEED = 24;
 export const EMPTY_GUIDES: GuideState = { v: [], h: [], equalSpacing: [] };
 
 function createLocalId(): string {

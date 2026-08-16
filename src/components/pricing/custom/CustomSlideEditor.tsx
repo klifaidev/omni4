@@ -310,7 +310,7 @@ import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
 import { AssetLibrary } from "./AssetLibrary";
 import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
-import { BlockRotationHandle, useBlockTransform } from "./blockTransform";
+import { BlockRotationHandle, TRANSFORM_BLEED, useBlockTransform } from "./blockTransform";
 import {
   brandStyleTargetLabel,
   buildBrandStylePatch,
@@ -2556,7 +2556,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         isLocked={!!blk.locked || readOnly || spacePanActive}
                         isEditing={isEditing}
                         showResizeHandles={selectedIds.length <= 1}
-                        bounds={{ w: CANVAS_W, h: CANVAS_H }}
+                        bounds={{ w: CANVAS_W, h: CANVAS_H, bleed: TRANSFORM_BLEED }}
                         cancel={TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR}
                         lockAspectRatio={blockFrameHandlers.lockAspectRatio}
                         disableDragging={shapeDisableDrag}
