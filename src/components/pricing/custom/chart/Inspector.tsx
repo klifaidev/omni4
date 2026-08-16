@@ -27,6 +27,8 @@ export function Section({
     <div className="surface-raised rounded-lg border border-border/50">
       <div className="flex items-center justify-between px-3 py-2">
         <button onClick={() => setOpen((o) => !o)}
+          data-inspector-section-toggle="true"
+          aria-expanded={open}
           className="flex flex-1 items-center gap-1.5 text-left slides-type-section text-foreground/85 hover:text-foreground">
           <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", !open && "-rotate-90")} />
           <span>{title}</span>

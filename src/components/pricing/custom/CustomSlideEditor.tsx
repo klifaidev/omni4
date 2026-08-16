@@ -34,7 +34,7 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, Search, Star, StickyNote,
-  Eye, EyeOff, GripVertical, Loader2, MessageSquare, Minus, MoreHorizontal,
+  Eye, EyeOff, GripVertical, Loader2, Minus, MoreHorizontal,
   PanelRightClose,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -531,6 +531,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const canvasShellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const paletteRailRef = useRef<HTMLDivElement>(null);
+  const inspectorStyleRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
   const speculativeChartWarmSignaturesRef = useRef<Set<string>>(new Set());
   const { prefs, scale, scaleKey } = useSlideEditorScale(wrapperRef, canvasShellRef);
@@ -564,6 +565,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [canvasHovered, setCanvasHovered] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [canvasPanning, setCanvasPanning] = useState(false);
+  const [styleFocusRequest, setStyleFocusRequest] = useState(0);
+  const [stylePanelHighlight, setStylePanelHighlight] = useState(false);
 
   const [guides, setGuides] = useState<GuideState>(EMPTY_GUIDES);
   const guidesRef = useRef(guides);
@@ -676,6 +679,33 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     notifyReadOnly();
     return false;
   }, [notifyReadOnly, readOnly]);
+  const focusSelectedBlockStyle = useCallback(() => {
+    setStyleFocusRequest(Date.now());
+  }, []);
+  useEffect(() => {
+    if (!styleFocusRequest || !selected) return;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let rafId = 0;
+    const focusStylePanel = () => {
+      const scope = inspectorStyleRef.current;
+      if (!scope) return;
+      const target = scope.querySelector<HTMLElement>("[data-style-panel-target='true']") ?? scope;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      setStylePanelHighlight(true);
+      const focusable = target.querySelector<HTMLElement>(
+        "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]):not([data-inspector-section-toggle='true']), [tabindex]:not([tabindex='-1'])",
+      );
+      focusable?.focus({ preventScroll: true });
+      timeoutId = window.setTimeout(() => setStylePanelHighlight(false), 1000);
+    };
+    rafId = window.requestAnimationFrame(() => {
+      rafId = window.requestAnimationFrame(focusStylePanel);
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [selected, styleFocusRequest]);
   const pendingYBlockPatchesRef = useRef(new Map<string, Partial<CustomBlock>>());
   const yBlockPatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commitYDocConfig = useCallback((label: EditorActionLabel) => {
@@ -2932,8 +2962,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 onToFront={() => bringToFront(selected.id)}
                 onToBack={() => sendToBack(selected.id)}
                 onToggleLock={() => toggleLock(selected.id)}
-                onStyle={() => toast.info("Ajuste cor, fonte e estilo no painel à direita.")}
-                onComment={() => toast.info("Comentários por bloco entram na próxima etapa da colaboração.")}
+                onStyle={focusSelectedBlockStyle}
               />
               )}
 
@@ -3313,17 +3342,26 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   )}
                 </div>
                 <p className="slides-type-helper">
-                  Configure o bloco aqui. Acoes rapidas como duplicar, camadas, comentario e excluir ficam na toolbar sobre o bloco.
+                  Configure o bloco aqui. Acoes rapidas como duplicar, camadas e excluir ficam na toolbar sobre o bloco.
                 </p>
               </div>
 
               <PositionInputs block={selected} onChange={(p) => updateBlock(selected.id, p)} />
               <Separator />
-              <BlockSpecificEditor
-                block={selected}
-                onChange={(p) => updateBlock(selected.id, p)}
-                getYText={(field) => yBlockText(selected.id, field)}
-              />
+              <div
+                ref={inspectorStyleRef}
+                className={cn(
+                  "rounded-lg transition-[box-shadow,background-color] duration-300",
+                  stylePanelHighlight && "bg-primary/5 shadow-[0_0_0_2px_hsl(var(--primary)/0.35)]",
+                )}
+              >
+                <BlockSpecificEditor
+                  block={selected}
+                  onChange={(p) => updateBlock(selected.id, p)}
+                  getYText={(field) => yBlockText(selected.id, field)}
+                  styleFocusRequest={styleFocusRequest}
+                />
+              </div>
             </>
           )}
         </div>
@@ -3445,7 +3483,6 @@ function FloatingBlockToolbar({
   onToBack,
   onToggleLock,
   onStyle,
-  onComment,
 }: {
   block: CustomBlock;
   onDuplicate: () => void;
@@ -3456,9 +3493,8 @@ function FloatingBlockToolbar({
   onToBack: () => void;
   onToggleLock: () => void;
   onStyle: () => void;
-  onComment: () => void;
 }) {
-  const toolbarW = 370;
+  const toolbarW = 334;
   const x = Math.min(Math.max(block.x + block.w / 2 - toolbarW / 2, 8), CANVAS_W - toolbarW - 8);
   const y = block.y < 52 ? Math.min(block.y + block.h + 10, CANVAS_H - 44) : block.y - 46;
   const iconButton = (label: string, onClick: () => void, icon: ReactNode) => (
@@ -3504,7 +3540,6 @@ function FloatingBlockToolbar({
         </TooltipTrigger>
         <TooltipContent>{block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}</TooltipContent>
       </Tooltip>
-      {iconButton("Comentar no bloco", onComment, <MessageSquare className="h-3.5 w-3.5" />)}
       <Popover>
         <PopoverTrigger asChild>
           <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações" aria-label="Abrir mais ações do bloco">
@@ -3684,10 +3719,11 @@ function PositionInputs({ block, onChange }: {
   );
 }
 
-function BlockSpecificEditor({ block, onChange, getYText }: {
+function BlockSpecificEditor({ block, onChange, getYText, styleFocusRequest }: {
   block: CustomBlock;
   onChange: (p: Partial<CustomBlock>) => void;
   getYText?: (field: string) => Y.Text | null;
+  styleFocusRequest?: number;
 }) {
   useEffect(() => {
     if (!isSlidePerfEnabled()) return;
@@ -3717,6 +3753,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={block.filters ?? {}}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     case "image":
@@ -3756,6 +3793,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     case "table":
@@ -3765,6 +3803,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     case "chart":
@@ -3774,6 +3813,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     case "topSku":
@@ -3783,6 +3823,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     case "dre":
@@ -3792,6 +3833,7 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
         filters={(block as DreBlock).filters ?? {}}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
+        styleFocusRequest={styleFocusRequest}
       />;
 
     // Omni Analytics inspectors
@@ -3834,15 +3876,17 @@ function BlockSpecificEditor({ block, onChange, getYText }: {
 // próxima do PowerPoint (painel de formatação à direita).
 // Inclui o seletor de Fonte de Dados PINADO no topo (não-colapsável).
 function FilteredInspector({
-  block, design, filters, onFiltersChange, onChange,
+  block, design, filters, onFiltersChange, onChange, styleFocusRequest,
 }: {
   block: CustomBlock;
   design: React.ReactNode;
   filters: Filters;
   onFiltersChange: (f: Filters) => void;
   onChange: (p: Partial<CustomBlock>) => void;
+  styleFocusRequest?: number;
 }) {
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
+  const [activeTab, setActiveTab] = useState("design");
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const hasBudget = useBudget((s) => s.rows.length > 0);
@@ -3851,6 +3895,10 @@ function FilteredInspector({
 
   // Bridge não tem fonte selecionável (sempre KE30 ? usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
+
+  useEffect(() => {
+    if (styleFocusRequest) setActiveTab("design");
+  }, [styleFocusRequest]);
 
   const applySwitch = (next: BlockDataSource) => {
     if (next === ds) return;
@@ -3996,13 +4044,13 @@ function FilteredInspector({
         </div>
       )}
 
-      <Tabs defaultValue="design" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid h-8 w-full grid-cols-2">
           <TabsTrigger value="design" className="text-[11px]">Design</TabsTrigger>
           <TabsTrigger value="filters" className="text-[11px]">Filtros</TabsTrigger>
         </TabsList>
         <TabsContent value="design" className="mt-2 space-y-2">
-          {design}
+          <div data-style-panel-target="true">{design}</div>
         </TabsContent>
         <TabsContent value="filters" className="mt-2">
           <BlockFilters filters={filters} onChange={onFiltersChange} dataSource={ds} />
