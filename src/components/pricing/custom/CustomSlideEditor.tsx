@@ -46,12 +46,7 @@ import { toast } from "sonner";
 
 import {
   CANVAS_W, CANVAS_H, FOOTER_H,
-  newBlock, newChartBlock, newPositivacaoChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS, KPI_MEASURES,
-  BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
-  ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
-  isFromBudgetBase, isFromForecastBase, isFromRollingBase,
-  type BlockDataSource,
+  newBlock, newChartBlock, newPositivacaoChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
@@ -128,73 +123,9 @@ import {
   setYTextValue,
 } from "@/lib/customSlideYjs";
 import {
-  DEFAULT_BASE_RELATIVE_MONTH_PRESET,
-  DEFAULT_RELATIVE_MONTH_PRESET,
-  DEFAULT_RELATIVE_MONTH_RANGE_PRESET,
-  RELATIVE_FY_PRESETS,
-  RELATIVE_MONTH_RANGE_PRESETS,
-  RELATIVE_MONTH_PRESETS,
-  resolveMonthRangeSelection,
-  type MonthRangeSelection,
-  type PeriodSelectionMode,
-  type RelativeMonthRangePreset,
-  type RelativePeriodPreset,
-} from "@/lib/relativePeriods";
-import {
   getSourceFooterText,
   type SourceRowsByDataSource,
 } from "@/lib/customSlideSourceFooter";
-
-function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_MEASURES;
-  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
-  return [];
-}
-
-function unavailableHintForSource(ds: BlockDataSource | undefined): string | undefined {
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
-  if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
-  return undefined;
-}
-
-function defaultRelativePresetForMode(mode: "month" | "fy"): RelativePeriodPreset {
-  return mode === "fy" ? "latest_fy_minus_1" : DEFAULT_RELATIVE_MONTH_PRESET;
-}
-
-function relativeOptionsForMode(mode: "month" | "fy") {
-  return mode === "fy" ? RELATIVE_FY_PRESETS : RELATIVE_MONTH_PRESETS;
-}
-
-function PeriodModeBadge({ mode }: { mode: PeriodSelectionMode }) {
-  return (
-    <Badge variant={mode === "relative" ? "default" : "secondary"} className="h-4 px-1.5 text-[9px]">
-      {mode === "relative" ? "Relativo" : "Fixo"}
-    </Badge>
-  );
-}
-
-function RelativePresetSelect({
-  mode,
-  value,
-  onChange,
-}: {
-  mode: "month" | "fy";
-  value: RelativePeriodPreset | undefined;
-  onChange: (value: RelativePeriodPreset) => void;
-}) {
-  const options = relativeOptionsForMode(mode);
-  const safeValue = value ?? defaultRelativePresetForMode(mode);
-  return (
-    <Select value={safeValue} onValueChange={(v) => onChange(v as RelativePeriodPreset)}>
-      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function SlideSourceFooterEditor({
   config,
@@ -307,6 +238,7 @@ import { groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
+import { useYTextValue } from "./useYTextValue";
 import { AssetLibrary } from "./AssetLibrary";
 import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
 import { BlockRotationHandle, TRANSFORM_BLEED, useBlockTransform } from "./blockTransform";
@@ -447,21 +379,6 @@ type CustomTextAwareness = {
   blockId?: string | null;
   field: string;
 };
-
-function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
-  const [value, setValue] = useState(() => yText?.toString() ?? fallback);
-  useEffect(() => {
-    if (!yText) {
-      setValue(fallback);
-      return;
-    }
-    const sync = () => setValue(yText.toString());
-    sync();
-    yText.observe(sync);
-    return () => yText.unobserve(sync);
-  }, [fallback, yText]);
-  return value;
-}
 
 export const CustomSlideEditor = memo(function CustomSlideEditor({
   slideId,

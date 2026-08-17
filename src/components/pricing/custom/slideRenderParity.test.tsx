@@ -3,6 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { BlockRenderer } from "./BlockRenderer";
 import { CustomSlideEditor } from "./CustomSlideEditor";
+import { BlockSpecificEditor } from "./inspectors/BlockInspectors";
 import { CustomCanvasReadOnly } from "./PresentationMode";
 import { SlideFilterProvider } from "./SlideFilterContext";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
@@ -336,6 +337,23 @@ describe("custom slide editor smoke render", () => {
 
     expect(container.textContent).toContain("Slide personalizado");
     expect(container.textContent).not.toContain("Algo deu errado");
+  });
+
+  it("mounts extracted block inspectors for every block type", () => {
+    for (const kind of BLOCK_KINDS) {
+      const block = referenceBlock(kind, 0);
+      const { container, unmount } = render(
+        <SlideFilterProvider slideKey={`inspector-${kind}`}>
+          <BlockSpecificEditor
+            block={block}
+            onChange={() => undefined}
+          />
+        </SlideFilterProvider>,
+      );
+
+      expect(container.textContent).not.toContain("Algo deu errado");
+      unmount();
+    }
   });
 });
 
