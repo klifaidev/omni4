@@ -2,12 +2,14 @@ import React from "react";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { BlockRenderer } from "./BlockRenderer";
+import { CustomSlideEditor } from "./CustomSlideEditor";
 import { CustomCanvasReadOnly } from "./PresentationMode";
 import { SlideFilterProvider } from "./SlideFilterContext";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import {
   CANVAS_H,
   CANVAS_W,
+  defaultCustomSlide,
   newBlock,
   type CustomBlock,
   type CustomBlockKind,
@@ -319,6 +321,21 @@ describe("slide render context parity", () => {
         }
       }
     }
+  });
+});
+
+describe("custom slide editor smoke render", () => {
+  it("mounts the editor shell without missing extracted components", () => {
+    const { container } = render(
+      <CustomSlideEditor
+        slideId="smoke-slide"
+        config={defaultCustomSlide()}
+        onChange={() => undefined}
+      />,
+    );
+
+    expect(container.textContent).toContain("Slide personalizado");
+    expect(container.textContent).not.toContain("Algo deu errado");
   });
 });
 

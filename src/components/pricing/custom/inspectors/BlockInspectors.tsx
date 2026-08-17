@@ -8,10 +8,11 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Info, Loader2, Minus, Plus, Copy as CopyIcon, Trash2, Group as GroupIcon, Ungroup as UngroupIcon } from "lucide-react";
+import { Filter as FunnelIcon, Info, Loader2, Minus, Paintbrush, Plus, Copy as CopyIcon, Sparkles, Trash2, Group as GroupIcon, Ungroup as UngroupIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField } from "../chart/Inspector";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
@@ -51,9 +52,16 @@ import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
 import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import {
+  brandStyleTargetLabel,
+  buildBrandStylePatch,
+  getBrandStyleTarget,
+  getBrandStylesForBlock,
   SLIDE_DEFAULT_FONT_FAMILY,
   SLIDE_DEFAULT_FONT_LABEL,
+  type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
+import type { SlideTheme } from "@/lib/slideThemes";
+import { dimensionLabel, useSlideFilters } from "../SlideFilterContext";
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
@@ -2219,7 +2227,7 @@ function TextStyleButton({
 
 // Badge "KE30" / "Budget" mostrado no canto superior-esquerdo de cada bloco
 // de dados durante a edição. Marcado data-edit-only para o exporter remover.
-function DataSourceBadge({ block }: { block: CustomBlock }) {
+export function DataSourceBadge({ block }: { block: CustomBlock }) {
   const kinds: CustomBlockKind[] = ["chart", "kpi", "table", "topSku"];
   if (!kinds.includes(block.kind)) return null;
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
@@ -2259,7 +2267,7 @@ function DataSourceBadge({ block }: { block: CustomBlock }) {
 // ---------------------------------------------------------------------------
 // ClearFiltersToolbar ? slide-level cross-filter clear button (Part B.6)
 // ---------------------------------------------------------------------------
-function ClearFiltersToolbar() {
+export function ClearFiltersToolbar() {
   const { filters, clearAll } = useSlideFilters();
   if (filters.length === 0) return null;
   const summary = filters
@@ -2586,7 +2594,7 @@ function collectUsedColors(blocks: CustomBlock[]): string[] {
   return Array.from(set).filter(Boolean).slice(0, 7);
 }
 
-function BrandKitPopover({
+export function BrandKitPopover({
   selected, readOnly, canEdit,
 }: {
   selected: CustomBlock | null;
@@ -2688,7 +2696,7 @@ function BrandStyleButton({
   );
 }
 
-function PalettePopover({
+export function PalettePopover({
   theme, blocks, selected, readOnly, canEdit,
 }: {
   theme: SlideTheme;

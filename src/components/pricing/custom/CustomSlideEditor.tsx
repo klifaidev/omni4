@@ -71,7 +71,7 @@ import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
 import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS, TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR } from "./BlockRenderer";
-import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
+import { SlideFilterProvider } from "./SlideFilterContext";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
 import { cn } from "@/lib/utils";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
@@ -82,7 +82,11 @@ import { ShapeInspector } from "./ShapeInspector";
 import {
   BlockAppearanceControls,
   BlockSpecificEditor,
+  BrandKitPopover,
+  ClearFiltersToolbar,
+  DataSourceBadge,
   MultiSelectInspector,
+  PalettePopover,
   PositionInputs,
 } from "./inspectors/BlockInspectors";
 import { RotatableBlock } from "./RotatableBlock";
@@ -112,12 +116,6 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  dataSourceActiveClass,
-  dataSourceBadgeClass,
-  dataSourceDescription,
-  dataSourceLabel,
-} from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import {
   getCustomSlideBlockText,
@@ -304,7 +302,7 @@ import {
 } from "./editorStore";
 import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
-import { getTheme, type SlideTheme } from "@/lib/slideThemes";
+import { getTheme } from "@/lib/slideThemes";
 import { groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
@@ -314,12 +312,7 @@ import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity,
 import { BlockRotationHandle, TRANSFORM_BLEED, useBlockTransform } from "./blockTransform";
 import { useSlideCollaborationActions } from "./useSlideCollaborationActions";
 import {
-  brandStyleTargetLabel,
-  buildBrandStylePatch,
-  getBrandStyleTarget,
-  getBrandStylesForBlock,
   SLIDE_BRAND_STYLES,
-  type SlideBrandStyle,
 } from "@/lib/slideBrandKit";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 
