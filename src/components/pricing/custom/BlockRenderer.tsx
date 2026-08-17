@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  CustomBlock, TitleBlock, TextBlock, KpiBlock, ImageBlock,
-  ShapeBlock, BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
+  CustomBlock, KpiBlock,
+  BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
   BlockDataSource,
   TableGapColumn,
   OmniBaseBlock,
@@ -32,7 +32,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { SLIDE_CHART_PALETTE, SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
-import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 import { formatPct, formatTon, formatNum } from "@/lib/format";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
@@ -62,6 +61,7 @@ import { resolveMonthRangeSelection, resolvePeriodValue, resolvePeriodValues, re
 import { buildPositivacaoSeries } from "@/lib/positivacao";
 import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
+import { buildSimpleBlockLayout, type CustomSlideLayoutNode } from "@/lib/customSlideLayout";
 import brMapRaw from "@/assets/br.svg?raw";
 
 function useDataSource(
@@ -182,7 +182,6 @@ function fmtMeasure(m: PivotMeasure, v: number | null | undefined): string {
   return n.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
-const justifyMap: Record<string, string> = { left: "flex-start", center: "center", right: "flex-end" };
 const textAlignToJustify: Record<string, React.CSSProperties["justifyContent"]> = {
   left: "flex-start",
   center: "center",
@@ -453,11 +452,11 @@ export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly
 function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
   let content: React.ReactNode;
   switch (block.kind) {
-    case "title":  content = <TitleRender block={block} isEditing={isEditing} readOnly={readOnly} />; break;
-    case "text":   content = <TextRender block={block} isEditing={isEditing} readOnly={readOnly} />; break;
+    case "title":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;
+    case "text":   content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;
     case "kpi":    content = <KpiRender block={block} readOnly={readOnly} />; break;
-    case "image":  content = <ImageRender block={block} />; break;
-    case "shape":  content = <ShapeRender block={block} />; break;
+    case "image":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} />; break;
+    case "shape":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} />; break;
     case "bridge": content = <BridgeRender block={block} cacheSlideId={cacheSlideId} />; break;
     case "table":  content = <TableRender block={block} readOnly={readOnly} onPatch={onPatch} />; break;
     case "chart":  content = <ChartRender block={block} cacheSlideId={cacheSlideId} />; break;
@@ -489,65 +488,73 @@ function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId, onPatch 
   );
 }
 
-function TitleRender({ block: b, isEditing, readOnly }: { block: TitleBlock; isEditing?: boolean; readOnly?: boolean }) {
-  const padding = b.padding ?? 0;
-  const lineHeight = b.lineHeight ?? 1.1;
-  const fontSize = b.size;
-  return (
-    <div style={{
-      width: "100%", height: "100%", display: "flex",
-      alignItems: "center", justifyContent: justifyMap[b.align] ?? "flex-start",
-      boxSizing: "border-box",
-      fontFamily: b.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
-      fontSize,
-      fontWeight: b.bold ? 700 : 400,
-      fontStyle: b.italic ? "italic" : "normal",
-      color: `#${b.color}`,
-      lineHeight,
-      textAlign: b.align,
-      letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
-      textShadow: b.textShadow || undefined,
-      textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
-      padding,
-      backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
-        ? `#${b.backgroundColor}` : undefined,
-      borderRadius: b.borderRadius ?? undefined,
-      overflow: readOnly ? "visible" : "hidden",
-      visibility: isEditing ? "hidden" : "visible",
-    }}>
-      {b.text}
-    </div>
-  );
-}
+function SimpleLayoutRender({
+  node,
+  isEditing,
+  readOnly,
+}: {
+  node: CustomSlideLayoutNode;
+  isEditing?: boolean;
+  readOnly?: boolean;
+}) {
+  if (node.kind === "text") {
+    return (
+      <div style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: node.style.alignItems,
+        justifyContent: node.style.justifyContent,
+        boxSizing: "border-box",
+        fontFamily: node.style.fontFamily,
+        fontSize: node.style.fontSize,
+        fontWeight: node.style.fontWeight,
+        fontStyle: node.style.fontStyle,
+        color: node.style.color,
+        lineHeight: node.style.lineHeight,
+        textAlign: node.style.textAlign,
+        whiteSpace: node.role === "body" ? "pre-wrap" : undefined,
+        letterSpacing: node.style.letterSpacing,
+        textShadow: node.style.textShadow,
+        textTransform: node.style.textTransform,
+        padding: node.style.padding,
+        backgroundColor: node.style.backgroundColor,
+        borderRadius: node.style.borderRadius,
+        overflow: readOnly ? "visible" : "hidden",
+        visibility: isEditing ? "hidden" : "visible",
+      }}>
+        {node.text}
+      </div>
+    );
+  }
 
-function TextRender({ block: b, isEditing, readOnly }: { block: TextBlock; isEditing?: boolean; readOnly?: boolean }) {
-  const padding = b.padding ?? 0;
-  const lineHeight = b.lineHeight ?? 1.3;
-  const fontSize = b.size;
-  return (
-    <div style={{
-      width: "100%", height: "100%", display: "flex",
-      alignItems: "flex-start", justifyContent: b.align,
-      boxSizing: "border-box",
-      fontFamily: b.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
-      fontSize,
-      fontStyle: b.italic ? "italic" : "normal",
-      color: `#${b.color}`,
-      textAlign: b.align,
-      whiteSpace: "pre-wrap", overflow: readOnly ? "visible" : "hidden",
-      lineHeight,
-      letterSpacing: b.letterSpacing != null ? `${b.letterSpacing}em` : undefined,
-      textShadow: b.textShadow || undefined,
-      textTransform: (b.textTransform ?? "none") as React.CSSProperties["textTransform"],
-      padding,
-      backgroundColor: b.backgroundColor && b.backgroundColor !== "transparent"
-        ? `#${b.backgroundColor}` : undefined,
-      borderRadius: b.borderRadius ?? undefined,
-      visibility: isEditing ? "hidden" : "visible",
-    }}>
-      {b.text}
-    </div>
-  );
+  if (node.kind === "image") {
+    if (!node.src) {
+      return (
+        <div style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: node.placeholder.background,
+          border: node.placeholder.border,
+          color: node.placeholder.color,
+          fontFamily: node.placeholder.fontFamily,
+          fontSize: node.placeholder.fontSize,
+        }}>
+          {node.placeholder.text}
+        </div>
+      );
+    }
+    return (
+      <img src={node.src} alt=""
+        style={{ width: "100%", height: "100%", objectFit: node.fit, display: "block" }}
+      />
+    );
+  }
+
+  return <ShapeRenderer block={node.block} />;
 }
 
 function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
@@ -718,30 +725,6 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       )}
     </div>
   );
-}
-
-function ImageRender({ block: b }: { block: ImageBlock }) {
-  if (!b.src) {
-    return (
-      <div style={{
-        width: "100%", height: "100%", display: "flex",
-        alignItems: "center", justifyContent: "center",
-        background: SLIDE_HEX.gridSoft, border: `1px dashed ${SLIDE_HEX.slate400}`,
-        color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
-      }}>
-        Faça upload de uma imagem
-      </div>
-    );
-  }
-  return (
-    <img src={b.src} alt=""
-      style={{ width: "100%", height: "100%", objectFit: b.fit, display: "block" }}
-    />
-  );
-}
-
-function ShapeRender({ block: b }: { block: ShapeBlock }) {
-  return <ShapeRenderer block={b} />;
 }
 
 function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSlideId?: string }) {
