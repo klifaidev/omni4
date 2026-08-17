@@ -1402,9 +1402,6 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   };
   const getOthersGap = (gapId: string) =>
     hiddenHeaders.reduce((sum, rh) => sum + (gapValues.get(rh.key)?.[gapId] ?? 0), 0);
-  const htmlRowStyle: React.CSSProperties =
-    b.autoFit === false ? { height: `${100 / Math.max(1, renderedRowCount)}%`, minHeight: 0 } : {};
-
   // Pré-computa pools de valores por (medida, escopo-key) p/ heatmap/avg/data_bar
   const cfPoolCache = new Map<string, number[]>();
   const getPool = (mId: string, colKey: string, rowKey: string, scope: "column" | "table" | "row"): number[] => {
@@ -1498,13 +1495,12 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     return {};
   };
 
-  if (readOnly || b.autoFit === false) {
-    const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
-    const rowH = 100 / rowCount;
-    const firstCol = columnLayouts[0] ?? { key: TABLE_ROW_COL_KEY, left: 0, width: 100 };
-    const valueCol = (idx: number) => columnLayouts[idx + 1] ?? { key: `missing-${idx}`, left: firstCol.width, width: 0 };
+  const rowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
+  const rowH = 100 / rowCount;
+  const firstCol = columnLayouts[0] ?? { key: TABLE_ROW_COL_KEY, left: 0, width: 100 };
+  const valueCol = (idx: number) => columnLayouts[idx + 1] ?? { key: `missing-${idx}`, left: firstCol.width, width: 0 };
 
-    const headerCells = [
+  const headerCells = [
       <ExportPositionedCell key="row-head" style={renderCellHead} left={firstCol.left} top={0} width={firstCol.width} height={rowH} padX={8}>
         {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
       </ExportPositionedCell>,
@@ -1744,145 +1740,6 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     );
   }
 
-  const htmlHeaderCell = (index: number, content: React.ReactNode, key?: React.Key) => (
-    tableCell("th", (
-      <div style={{
-        position: "relative",
-        width: "100%",
-        height: "100%",
-        minHeight: 24,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "6px 8px",
-        boxSizing: "border-box",
-        overflow: "hidden",
-      }}>
-        <span style={{
-          overflow: "hidden",
-          textOverflow: b.wrapColumnText ? undefined : "ellipsis",
-          whiteSpace: b.wrapColumnText ? "normal" : "nowrap",
-          overflowWrap: b.wrapColumnText ? "anywhere" : undefined,
-          wordBreak: b.wrapColumnText ? "break-word" : undefined,
-          maxWidth: "100%",
-        }}>
-          {content}
-        </span>
-        {index < columnLayouts.length - 1 && onPatch && (
-          <TableColumnResizeHandle placement="inside" onPointerDown={(event) => startTableColumnResize(index, event)} />
-        )}
-      </div>
-    ), { ...renderCellHead, padding: 0, position: "relative" }, key)
-  );
-
-  return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri", fontSize: 12 }}>
-      {tableTitleEl}
-      <div ref={tableResizeRef} style={{ height: `calc(100% - ${tableTitleGap}px)`, overflow: "hidden" }}>
-      <table style={{
-        width: "100%",
-        height: b.autoFit === false ? "100%" : undefined,
-        borderCollapse: "collapse",
-        tableLayout: "fixed",
-      }}>
-        <colgroup>
-          {columnLayouts.map((layout) => (
-            <col key={layout.key} style={{ width: `${layout.width}%` }} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr style={htmlRowStyle}>
-            {htmlHeaderCell(0, b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total", "row-head")}
-            {showCols
-              ? (
-                  <>
-                    {cols.flatMap((c, ci) => measures.map((m, mi) => (
-                      htmlHeaderCell(1 + ci * measures.length + mi, tableHeaderLabel(c.values.join(" / "), m.label), `${c.key}-${m.id}`)
-                    )))}
-                    {showLastColumnVariation && measures.map((m, mi) => (
-                      htmlHeaderCell(1 + cols.length * measures.length + mi, variationHeaderLabel(m.label), `var-${m.id}`)
-                    ))}
-                    {gapColumns.map((gap, gi) => (
-                      htmlHeaderCell(1 + gapStartIndex + gi, tableGapLabel(gap, measureById.get(gap.measureId)), `gap-${gap.id}`)
-                    ))}
-                  </>
-                )
-              : (
-                  <>
-                    {measures.map((m, mi) => htmlHeaderCell(1 + mi, m.label, m.id))}
-                    {gapColumns.map((gap, gi) => (
-                      htmlHeaderCell(1 + gapStartIndex + gi, tableGapLabel(gap, measureById.get(gap.measureId)), `gap-${gap.id}`)
-                    ))}
-                  </>
-                )}
-          </tr>
-        </thead>
-        <tbody>
-          {visibleHeaders.map((rh) => (
-            <tr key={rh.key} style={htmlRowStyle}>
-              {tableCell("td", rh.values.join(" / ") || "Total", renderCellLabel)}
-              {showCols
-                ? (
-                    <>
-                      {cols.flatMap((c) => measures.map((m) => {
-                        const v = result.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
-                        return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, c.key, rh.key) }, `${c.key}-${m.id}`);
-                      }))}
-                      {showLastColumnVariation && measures.map((m) => {
-                        const v = getRowVariation(rh.key, m.id);
-                        return tableCell("td", fmtVariation(v), { ...cellValDyn, ...variationStyle(v) }, `var-${m.id}`);
-                      })}
-                      {gapColumns.map((gap) => {
-                        const value = gapValues.get(rh.key)?.[gap.id] ?? null;
-                        return tableCell("td", fmtGap(gap, value), { ...cellValDyn, ...gapCellStyle(value) }, `gap-${gap.id}`);
-                      })}
-                    </>
-                  )
-                : measures.map((m) => {
-                    const v = result.rowTotals.get(rh.key)?.[m.id] ?? 0;
-                    return tableCell("td", fmtMeasure(m, v), { ...cellValDyn, ...getConditionalStyle(m.id, v, "__row__", rh.key) }, m.id);
-                  })}
-              {!showCols && gapColumns.map((gap) => {
-                const value = gapValues.get(rh.key)?.[gap.id] ?? null;
-                return tableCell("td", fmtGap(gap, value), { ...cellValDyn, ...gapCellStyle(value) }, `gap-${gap.id}`);
-              })}
-            </tr>
-          ))}
-          {othersRow && (
-            <tr style={{ ...htmlRowStyle, background: SLIDE_HEX.gridSoft }}>
-              {tableCell("td", `Outros (${hiddenHeaders.length})`, { ...renderCellLabel, fontStyle: "italic" })}
-              {showCols
-                ? (
-                    <>
-                      {cols.flatMap((c) => measures.map((m) => (
-                        tableCell("td", fmtMeasure(m, othersRow[c.key]?.[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${c.key}-${m.id}`)
-                      )))}
-                      {showLastColumnVariation && measures.map((m) => {
-                        const v = getOthersVariation(m.id);
-                        return tableCell("td", fmtVariation(v), { ...cellValDyn, fontStyle: "italic", ...variationStyle(v) }, `oth-var-${m.id}`);
-                      })}
-                      {gapColumns.map((gap) => {
-                        const value = getOthersGap(gap.id);
-                        return tableCell("td", fmtGap(gap, value), { ...cellValDyn, fontStyle: "italic", ...gapCellStyle(value) }, `oth-gap-${gap.id}`);
-                      })}
-                    </>
-                  )
-                : measures.map((m) => (
-                    tableCell("td", fmtMeasure(m, othersRow.__row__[m.id]), { ...cellValDyn, fontStyle: "italic" }, `oth-${m.id}`)
-                  ))}
-              {!showCols && gapColumns.map((gap) => {
-                const value = getOthersGap(gap.id);
-                return tableCell("td", fmtGap(gap, value), { ...cellValDyn, fontStyle: "italic", ...gapCellStyle(value) }, `oth-gap-${gap.id}`);
-              })}
-            </tr>
-          )}
-        </tbody>
-      </table>
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Chart — delegates to the unified ChartCanvas (Recharts + ChartStyle)
 // ---------------------------------------------------------------------------
@@ -1936,15 +1793,12 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const max = Math.max(...items.map((i) => i.value), 1);
   const topTitleH = b.title ? 28 : 0;
   const topRowCount = 1 + items.length;
-  const topManualRowPx = b.autoFit === false
-    ? Math.max(1, (b.h - topTitleH) / Math.max(1, topRowCount))
-    : 0;
+  const topManualRowPx = Math.max(1, (b.h - topTitleH) / Math.max(1, topRowCount));
   const topManualFontSize = topManualRowPx < 14 ? 8 : topManualRowPx < 20 ? 9 : 12;
   const topManualPadX = topManualRowPx < 18 ? 4 : 6;
 
   if (missingData) return <MissingLocalData label={missingData} />;
-  if (b.autoFit === false) {
-    const shareColW = b.showShare ? 12 : 0;
+  const shareColW = b.showShare ? 12 : 0;
     const rankColW = 8;
     const valueColW = 22;
     const itemColW = 100 - rankColW - valueColW - shareColW;
@@ -1978,11 +1832,15 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
       const isOthers = b.showOthers && i === items.length - 1 && hidden.length > 0;
       const top = (i + 1) * rowH;
       const rowBg = isOthers ? SLIDE_HEX.gridSoft : SLIDE_HEX.white;
+      const barPct = max > 0 ? Math.max(0, Math.min(100, (it.value / max) * 100)) : 0;
+      const itemBg = isOthers
+        ? rowBg
+        : `linear-gradient(90deg, ${SLIDE_HEX.haraldWash} ${barPct}%, ${rowBg} ${barPct}%)`;
       return [
         <ExportPositionedCell key={`${it.name}-rank`} style={{ ...bodyBase, color: SLIDE_HEX.slate500, fontWeight: 600, background: rowBg, textAlign: "center" }} left={0} top={top} width={rankColW} height={rowH} padX={topManualPadX}>
           {isOthers ? "—" : i + 1}
         </ExportPositionedCell>,
-        <ExportPositionedCell key={`${it.name}-name`} style={{ ...bodyBase, background: rowBg, fontStyle: isOthers ? "italic" : undefined, textAlign: "left" }} left={rankColW} top={top} width={itemColW} height={rowH} padX={topManualPadX}>
+        <ExportPositionedCell key={`${it.name}-name`} style={{ ...bodyBase, background: itemBg, fontStyle: isOthers ? "italic" : undefined, textAlign: "left" }} left={rankColW} top={top} width={itemColW} height={rowH} padX={topManualPadX}>
           {it.name}
         </ExportPositionedCell>,
         <ExportPositionedCell key={`${it.name}-value`} style={{ ...bodyBase, background: rowBg, fontWeight: 600, fontStyle: isOthers ? "italic" : undefined, textAlign: "right" }} left={rankColW + itemColW} top={top} width={valueColW} height={rowH} padX={topManualPadX}>
@@ -2009,54 +1867,6 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
       </div>
     );
   }
-  return (
-    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri" }}>
-      {b.title && (
-        <div style={{ fontSize: 16, fontWeight: 700, color: SLIDE_HEX.chart1, padding: "4px 8px" }}>
-          {b.title}
-        </div>
-      )}
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "0 8px" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead>
-            <tr style={{ background: SLIDE_HEX.chart1, color: SLIDE_HEX.white }}>
-              <th style={topHead}>#</th>
-              <th style={{ ...topHead, textAlign: "left" }}>Item</th>
-              <th style={{ ...topHead, textAlign: "right" }}>Valor</th>
-              {b.showShare && <th style={{ ...topHead, textAlign: "right" }}>%</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => {
-              const isOthers = b.showOthers && i === items.length - 1 && hidden.length > 0;
-              return (
-                <tr key={it.name} style={{ borderBottom: `1px solid ${SLIDE_HEX.grid}`, background: isOthers ? SLIDE_HEX.gridSoft : undefined }}>
-                  <td style={{ padding: "4px 6px", color: SLIDE_HEX.slate500, fontWeight: 600 }}>{isOthers ? "—" : i + 1}</td>
-                  <td style={{ padding: "4px 6px", maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isOthers ? "italic" : undefined }}>
-                    <div style={{ position: "relative" }}>
-                      <div style={{
-                        position: "absolute", left: 0, top: 0, bottom: 0,
-                        width: `${(it.value / max) * 100}%`,
-                        background: SLIDE_RGBA.haraldWash, zIndex: 0,
-                      }} />
-                      <span style={{ position: "relative", zIndex: 1 }}>{it.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, fontStyle: isOthers ? "italic" : undefined }}>{fmt(it.value)}</td>
-                  {b.showShare && (
-                    <td style={{ padding: "4px 6px", textAlign: "right", color: SLIDE_HEX.slate500 }}>
-                      {(it.share * 100).toFixed(1)}%
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 const topHead: React.CSSProperties = {
   padding: "5px 6px", fontSize: 11, fontWeight: 700, textAlign: "center",
@@ -2099,7 +1909,7 @@ function conditionalColor(
   return t <= 0.5 ? lerpColor(colorMin, colorMid, t * 2) : lerpColor(colorMid, colorMax, (t - 0.5) * 2);
 }
 
-function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boolean }) {
+function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
   const forecastRows = useForecast((s) => s.rows);
@@ -2201,32 +2011,14 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
     line.id === "vol" ? "Volume (Tons)" : line.label;
   const fmtDreValue = (line: (typeof visibleLines)[number], value: number | null) =>
     line.id === "vol" && value !== null ? formatNum(value, 0) : fmt(value, line.kind);
-  const dreCell = (
-    tag: "th" | "td",
-    content: React.ReactNode,
-    style: React.CSSProperties,
-    key?: React.Key,
-  ) => {
-    if (!readOnly) {
-      return tag === "th"
-        ? <th key={key} style={style}>{content}</th>
-        : <td key={key} style={style}>{content}</td>;
-    }
-    const inner = exportCellContent(content, { padding: style.padding, align: style.textAlign });
-    const cellStyle = exportCellStyle(style);
-    return tag === "th"
-      ? <th key={key} style={cellStyle}>{inner}</th>
-      : <td key={key} style={cellStyle}>{inner}</td>;
-  };
 
-  if (readOnly) {
-    const rowCount = 1 + visibleLines.length;
-    const rowH = 100 / rowCount;
-    const firstColW = 30;
-    const periodColW = (showVar ? 55 : 70) / cols.length;
-    const varColW = showVar ? 15 : 0;
-    const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
-    const headerBase: React.CSSProperties = {
+  const rowCount = 1 + visibleLines.length;
+  const rowH = 100 / rowCount;
+  const firstColW = 30;
+  const periodColW = (showVar ? 55 : 70) / cols.length;
+  const varColW = showVar ? 15 : 0;
+  const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
+  const headerBase: React.CSSProperties = {
       background: blk.headerColor,
       color: SLIDE_HEX.white,
       fontWeight: 600,
@@ -2381,155 +2173,7 @@ function DreRender({ block: blk, readOnly }: { block: DreBlock; readOnly?: boole
       </div>
     );
   }
-
-  return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "Calibri, Arial, sans-serif" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: fs, color: blk.textColor, tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "30%" }} />
-          {cols.map((c) => <col key={c.periodo} style={{ width: `${(showVar ? 55 : 70) / cols.length}%` }} />)}
-          {showVar && <col style={{ width: "15%" }} />}
-        </colgroup>
-        <thead>
-          <tr>
-            <th style={{
-              background: blk.headerColor, color: SLIDE_HEX.white,
-              padding: pad, textAlign: "left", fontWeight: 600,
-              fontSize: fs + 1, whiteSpace: "nowrap",
-              verticalAlign: "middle", lineHeight: 1.15,
-            }}>
-              Indicador
-            </th>
-            {cols.map((col) => (
-              <th key={col.periodo} style={{
-                background: blk.headerColor, color: SLIDE_HEX.white,
-                padding: padVal, textAlign: "center", fontWeight: 600,
-                fontSize: fs + 1,
-                verticalAlign: "middle", lineHeight: 1.15,
-              }}>
-                {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
-              </th>
-            ))}
-            {showVar && ultimoCol && penultimoCol && (
-              <th style={{
-                background: blk.headerColor, color: SLIDE_HEX.white,
-                padding: padVal, textAlign: "center", fontWeight: 600,
-                fontSize: fs + 1,
-                borderLeft: "1px solid rgba(255,255,255,0.3)",
-                verticalAlign: "middle", lineHeight: 1.15,
-              }}>
-                {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
-                {" vs "}
-                {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {visibleLines.map((line, idx) => {
-            const isEven = idx % 2 === 0;
-            return (
-              <tr key={line.id} style={{ background: isEven ? SLIDE_HEX.paper : SLIDE_HEX.white }}>
-                {dreCell("td", dreLineLabel(line), {
-                  padding: pad,
-                  fontWeight: line.bold ? 600 : 400,
-                  color: line.id === "cm" || line.id === "cmPct" || line.id === "cmKg"
-                    ? blk.headerColor : blk.textColor,
-                  borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  fontSize: fs,
-                  verticalAlign: "middle", lineHeight: 1.15,
-                  textAlign: "left",
-                })}
-                {cols.map((col) => {
-                  const agg = aggsByCol.get(col.periodo);
-                  const val = agg ? line.get(agg) : null;
-                  const isNeg = val !== null && val < 0;
-                  const cf = conditionalMeta?.cf;
-                  const cfActive = cf?.enabled && cf.linhasAtivas.includes(line.id) && val !== null;
-                  let cfBg: string | undefined;
-                  let cfColor: string | undefined;
-                  if (cfActive && conditionalMeta && val !== null) {
-                    const { min, max } = cf.scope === "row"
-                      ? (conditionalMeta.rowMinMax.get(line.id) ?? { min: val, max: val })
-                      : { min: conditionalMeta.tableMin, max: conditionalMeta.tableMax };
-                    const cc = conditionalColor(val, min, max, cf.colorMin, cf.colorMid, cf.colorMax);
-                    if (cf.applyTo === "cell") cfBg = cc;
-                    else cfColor = cc;
-                  }
-                  return (
-                    <td key={col.periodo} style={{
-                      padding: readOnly ? 0 : padVal, textAlign: "center",
-                      fontWeight: line.bold ? 600 : 400,
-                      color: cfColor ?? (isNeg ? SLIDE_HEX.danger
-                        : (line.id === "cm" || line.id === "cmPct") ? SLIDE_HEX.success
-                        : blk.textColor),
-                      background: cfBg,
-                      borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
-                      fontSize: fs,
-                      verticalAlign: "middle", lineHeight: 1.15,
-                    }}>
-                      {readOnly
-                        ? exportCellContent(fmtDreValue(line, val), { padding: padVal, align: "center" })
-                        : fmtDreValue(line, val)}
-                    </td>
-                  );
-                })}
-                {showVar && (() => {
-                  const valUltimo = aggUltimo ? line.get(aggUltimo) : null;
-                  const valPenultimo = aggPenultimo ? line.get(aggPenultimo) : null;
-                  const varPct = (valUltimo !== null && valPenultimo !== null && valPenultimo !== 0)
-                    ? (valUltimo - valPenultimo) / Math.abs(valPenultimo)
-                    : null;
-                  const varAbs = (valUltimo !== null && valPenultimo !== null)
-                    ? valUltimo - valPenultimo
-                    : null;
-                  const isCusto = LINHAS_CUSTO.includes(line.id);
-                  const isPositivo = varPct !== null && varPct > 0;
-                  const cor = varPct === null ? blk.textColor
-                    : (isPositivo !== isCusto) ? SLIDE_HEX.success : SLIDE_HEX.danger;
-                  const tipo = blk.variacaoTipo ?? "percentual";
-                  let display: React.ReactNode = "—";
-                  if (tipo === "percentual") {
-                    if (varPct !== null) {
-                      const sinal = varPct > 0 ? "+" : "";
-                      display = `${sinal}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-                    }
-                  } else if (tipo === "absoluta") {
-                    display = varAbs !== null ? fmt(varAbs, line.kind) : "—";
-                  } else {
-                    const pctStr = varPct !== null
-                      ? `${varPct > 0 ? "+" : ""}${(varPct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
-                      : "—";
-                    display = varAbs !== null ? <>{pctStr} ({fmt(varAbs, line.kind)})</> : pctStr;
-                  }
-                  return (
-                    <td style={{
-                      padding: readOnly ? 0 : padVal, textAlign: "center",
-                      fontWeight: line.bold ? 600 : 400,
-                      color: cor,
-                      borderLeft: `1px solid ${blk.headerColor}20`,
-                      borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
-                      fontSize: fs,
-                      background: isEven ? SLIDE_HEX.paper : SLIDE_HEX.white,
-                      verticalAlign: "middle", lineHeight: 1.15,
-                    }}>
-                      {readOnly
-                        ? exportCellContent(display, { padding: padVal, align: "center" })
-                        : display}
-                    </td>
-                  );
-                })()}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function labelOfDim(id: string): string {
+function labelOfDim(id: string): string {
   return ALL_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 
