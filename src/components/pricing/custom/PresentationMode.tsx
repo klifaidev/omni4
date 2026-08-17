@@ -594,6 +594,8 @@ export function CustomCanvasReadOnly({
         return (
           <div
             key={`${blk.id}-${animKey}`}
+            data-slide-block-id={blk.id}
+            data-slide-block-kind={blk.kind}
             style={{
               position: "absolute",
               left: blk.x, top: blk.y, width: blk.w, height: blk.h,
