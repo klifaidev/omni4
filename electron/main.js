@@ -565,6 +565,21 @@ ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
   }
 });
 
+ipcMain.handle("bases:processed-invalidate", async (event, { tipo } = {}) => {
+  try {
+    if (tipo) {
+      deleteProcessedCache(tipo);
+    } else if (fs.existsSync(getBasesCacheDir())) {
+      for (const dir of fs.readdirSync(getBasesCacheDir())) deleteProcessedCache(dir);
+    }
+    log.info("Cache processado invalidado:", tipo ?? "(todos)");
+    return { ok: true };
+  } catch (err) {
+    log.error("Erro ao invalidar cache processado:", err);
+    return { ok: false, erro: err.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

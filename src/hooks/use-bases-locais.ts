@@ -37,6 +37,7 @@ declare global {
         finalizarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, chunks: number) => Promise<{ ok: boolean; erro?: string }>;
         info: () => Promise<{ ok: boolean; bases?: Record<string, InfoBase>; erro?: string }>;
         deletar: (tipo: string, nomeArquivo?: string) => Promise<{ ok: boolean; erro?: string }>;
+        invalidarProcessado?: (tipo?: string) => Promise<{ ok: boolean; erro?: string }>;
       };
     };
   }

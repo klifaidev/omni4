@@ -52,6 +52,9 @@ function persistOverrides() {
   } catch {
     // Sem persistência local disponível; mantém a correção em memória nesta sessão.
   }
+  // Invalida o cache de bases já processadas: sem isso, na próxima abertura o app
+  // recarregaria as linhas antigas (do disco) em vez de reaplicar o De/Para atualizado.
+  void window.electronAPI?.bases?.invalidarProcessado?.();
 }
 
 /** Lookup direto por código SKU (string). */
