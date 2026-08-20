@@ -387,6 +387,7 @@ function buildSkuTargetMap(
       recentStart: premise.recentStart,
       recentEnd: premise.recentEnd,
       overrides: settings.categories[category.key]?.skuOverrides,
+      sonhoBoostPct: settings.categories[category.key]?.sonhoBoostPct,
     });
 
     for (const skuTarget of skuTargets) {

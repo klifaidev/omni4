@@ -22,6 +22,7 @@ import type { PricingRow } from "@/lib/types";
 import {
   STORAGE_KEY,
   aggregateByDimension,
+  balanceWeights,
   buildCategoryTargets,
   buildChildrenTargets,
   buildSkuTargetsForCategory,
@@ -31,6 +32,7 @@ import {
   normalizePremiseRange,
   resolvePremise,
   rowsForPath,
+  type CategorySetting,
   type EffectivePremise,
   type PeriodOption,
   type PremiseBaseValues,
@@ -51,6 +53,7 @@ import {
   Gauge,
   Layers3,
   SlidersHorizontal,
+  Sparkles,
   Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -112,6 +115,7 @@ function buildTargetExportRows(
       recentStart: premise.recentStart,
       recentEnd: premise.recentEnd,
       overrides: settings.categories[category.key]?.skuOverrides,
+      sonhoBoostPct: settings.categories[category.key]?.sonhoBoostPct,
     });
     for (const sku of skuTargets) {
       out.push(targetRowToExport(sku, "sku", category.label, sku.label, "", ""));
@@ -344,6 +348,7 @@ export default function MargemTarget() {
       recentStart: activePremise.recentStart,
       recentEnd: activePremise.recentEnd,
       overrides: selectedCategory ? settings.categories[selectedCategory]?.skuOverrides : undefined,
+      sonhoBoostPct: selectedCategory ? settings.categories[selectedCategory]?.sonhoBoostPct : undefined,
     });
   }, [categoryRows, periodOptions, selectedCategoryTarget, activePremise.preservation, activePremise.recentStart, activePremise.recentEnd, selectedCategory, settings.categories]);
 
@@ -632,6 +637,7 @@ export default function MargemTarget() {
                     key={row.key}
                     row={row}
                     mode={settings.categories[row.key]?.mode ?? "auto"}
+                    sonhoBoostPct={settings.categories[row.key]?.sonhoBoostPct}
                     onClick={() => {
                       setSelectedCategory(row.key);
                       setSelectedSku(undefined);
@@ -782,10 +788,12 @@ function BreadcrumbActions({
 function CategoryTargetCard({
   row,
   mode,
+  sonhoBoostPct,
   onClick,
 }: {
   row: TargetRow;
   mode: TargetMode;
+  sonhoBoostPct?: number;
   onClick: () => void;
 }) {
   const positiveGap = row.gapPp > 0;
@@ -831,6 +839,13 @@ function CategoryTargetCard({
       {row.budgetAvailable === false ? (
         <div className="mt-3 rounded-xl border border-warning/25 bg-warning/10 px-3 py-2 text-[11px] font-medium text-warning">
           Sem Budget: peso redistribuído
+        </div>
+      ) : null}
+      {sonhoBoostPct ? (
+        <div className="mt-3 flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[11px] font-medium text-primary">
+          <Sparkles className="h-3 w-3" />
+          Sonho +{Math.round(sonhoBoostPct * 100)}%
+          {(row.manualOverrideCount ?? 0) > 0 ? ` · ${row.manualOverrideCount} SKU(s) manual(is) fora` : ""}
         </div>
       ) : null}
     </button>
@@ -1069,6 +1084,30 @@ function WeightSlider({
   );
 }
 
+function SonhoTooltip({ count }: { count: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-warning/40 bg-warning/10 text-[10px] font-semibold text-warning"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`${count} SKU(s) com ajuste manual nao recebem o Sonho`}
+      >
+        !
+      </button>
+      {open ? (
+        <span className="absolute left-1/2 top-full z-10 mt-1.5 w-56 -translate-x-1/2 rounded-lg border border-border/60 bg-popover px-3 py-2 text-[11px] leading-snug text-popover-foreground shadow-lg">
+          {count} SKU{count > 1 ? "s" : ""} com ajuste manual nesta categoria não recebe{count > 1 ? "m" : ""} o
+          aumento do Sonho — continua{count > 1 ? "m" : ""} com o valor definido à mão.
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function AssumptionPanel({
   activePremise,
   periodOptions,
@@ -1102,6 +1141,7 @@ function AssumptionPanel({
       : null;
   const weightsTotal = activePremise.historyWeight + activePremise.recentWeight + activePremise.budgetWeight;
   const weightsAboveLimit = weightsTotal > 1.0001;
+  const selectedSonhoValue = selectedSetting?.sonhoBoostPct ?? 0;
 
   return (
     <GlassCard className="h-fit p-5">
@@ -1283,6 +1323,43 @@ function AssumptionPanel({
                   {selectedCategoryTarget ? formatBRL(selectedCategoryTarget.rol, { compact: true }) : "—"}
                 </p>
               </div>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-border/40 bg-background/35 p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <p className="text-sm font-semibold">Sonho</p>
+          </div>
+          {!selectedCategory ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Selecione uma categoria para configurar o aumento "Sonho".
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="flex items-center gap-1.5 font-medium">
+                  Aumento sobre a meta
+                  {(selectedCategoryTarget?.manualOverrideCount ?? 0) > 0 && (selectedSonhoValue ?? 0) > 0 ? (
+                    <SonhoTooltip count={selectedCategoryTarget?.manualOverrideCount ?? 0} />
+                  ) : null}
+                </span>
+                <span className="text-muted-foreground">{Math.round((selectedSonhoValue ?? 0) * 100)}%</span>
+              </div>
+              <Slider
+                value={[Math.round((selectedSonhoValue ?? 0) * 100)]}
+                min={0}
+                max={100}
+                step={5}
+                onValueChange={([value]) => onCategoryChange(selectedCategory, { sonhoBoostPct: value / 100 })}
+                aria-label="Aumento Sonho sobre a meta"
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Aumento irracional (aposta da diretoria) aplicado sobre a meta já calculada pelos 3 pilares, apenas
+                nos SKUs desta categoria que ainda seguem a premissa automática — SKUs com ajuste manual não são
+                afetados.
+              </p>
             </div>
           )}
         </div>

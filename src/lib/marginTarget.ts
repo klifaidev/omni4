@@ -7,6 +7,8 @@ export interface CategorySetting {
   mode: TargetMode;
   manualTargetPct?: number;
   skuOverrides?: Record<string, number>;
+  /** Aumento multiplicativo ("Sonho") aplicado sobre a meta ja calculada, so nos SKUs sem ajuste manual. */
+  sonhoBoostPct?: number;
   benchmarkWeight?: number;
   historyWeight?: number;
   recentWeight?: number;
@@ -38,6 +40,10 @@ export interface TargetRow extends Record<string, unknown> {
   skuCode?: string;
   recentMarginPct?: number;
   manualOverride?: boolean;
+  /** Numero de SKUs com ajuste manual (so preenchido na linha de categoria). */
+  manualOverrideCount?: number;
+  /** True quando o boost "Sonho" foi aplicado a esta linha (SKU sem ajuste manual). */
+  sonhoApplied?: boolean;
   rol: number;
   margem: number;
   margemPct: number;
@@ -333,7 +339,8 @@ export function buildCategoryTargets(
       ? setting.manualTargetPct
       : autoTarget;
     const skuOverrideCount = setting?.skuOverrides ? Object.keys(setting.skuOverrides).length : 0;
-    const adjustedTargetPct = skuOverrideCount > 0
+    const sonhoBoostPct = setting?.sonhoBoostPct ?? 0;
+    const adjustedTargetPct = skuOverrideCount > 0 || sonhoBoostPct > 0
       ? weightedTargetFromRows(
           buildSkuTargetsForCategory({
             categoryRows: rowsForPath(currentRows, category.key),
@@ -343,6 +350,7 @@ export function buildCategoryTargets(
             recentStart: premise.recentStart,
             recentEnd: premise.recentEnd,
             overrides: setting?.skuOverrides,
+            sonhoBoostPct,
           }),
           targetPct,
         )
@@ -351,6 +359,7 @@ export function buildCategoryTargets(
       budgetAvailable,
       appliedBudgetWeight: appliedWeights.budgetWeight,
       manualOverride: skuOverrideCount > 0,
+      manualOverrideCount: skuOverrideCount,
       baseTargetPct: targetPct,
     });
   });
@@ -373,6 +382,8 @@ export function buildSkuTargetsForCategory(args: {
   recentStart?: string;
   recentEnd?: string;
   overrides?: Record<string, number>;
+  /** Aumento multiplicativo "Sonho": aplicado so aos SKUs sem ajuste manual (overrides). */
+  sonhoBoostPct?: number;
 }): TargetRow[] {
   const skuCodeByLabel = new Map<string, string>();
   for (const row of args.categoryRows) {
@@ -386,10 +397,14 @@ export function buildSkuTargetsForCategory(args: {
     ).map((row) => [row.key, row]),
   );
   const skus = aggregateByDimension(args.categoryRows, (row) => row.skuDesc || row.sku || "Sem SKU");
+  const sonhoBoostPct = args.sonhoBoostPct ?? 0;
   return buildChildrenTargets(skus, args.categoryTargetPct, args.preservation)
     .map((row) => {
       const manualTarget = args.overrides?.[row.key];
-      const targetPct = typeof manualTarget === "number" ? manualTarget : row.targetPct;
+      const isManual = typeof manualTarget === "number";
+      const sonhoApplied = !isManual && sonhoBoostPct > 0;
+      const cascadedTargetPct = sonhoApplied ? row.targetPct * (1 + sonhoBoostPct) : row.targetPct;
+      const targetPct = isManual ? manualTarget : cascadedTargetPct;
       return {
         ...row,
         targetPct,
@@ -398,7 +413,8 @@ export function buildSkuTargetsForCategory(args: {
         risk: Math.abs(targetPct - row.margemPct) >= 0.05 ? "critical" : Math.abs(targetPct - row.margemPct) >= 0.02 ? "attention" : "ok",
         skuCode: skuCodeByLabel.get(row.key) ?? "",
         recentMarginPct: recentSkuAgg.get(row.key)?.margemPct,
-        manualOverride: typeof manualTarget === "number",
+        manualOverride: isManual,
+        sonhoApplied,
       };
     });
 }
@@ -413,7 +429,7 @@ function buildTargetRow(
   row: Aggregate,
   targetPct: number,
   totalRol: number,
-  extra?: Pick<TargetRow, "budgetAvailable" | "appliedBudgetWeight" | "manualOverride" | "baseTargetPct">,
+  extra?: Pick<TargetRow, "budgetAvailable" | "appliedBudgetWeight" | "manualOverride" | "manualOverrideCount" | "baseTargetPct">,
 ): TargetRow {
   const gapPp = targetPct - row.margemPct;
   const impact = gapPp * row.rol;
