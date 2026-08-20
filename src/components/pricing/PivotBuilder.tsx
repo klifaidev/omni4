@@ -2341,22 +2341,25 @@ function ExportMenu({
         ...(hasExplicitCols ? measures.map((m) => xlsxFmt(m.format)) : []),
       ];
 
-      const safeNum = (v: number | null | undefined): number | "" =>
-        v !== null && v !== undefined && isFinite(v) ? Number(v) : "";
+      // null/undefined viram celula genuinamente vazia no aoa_to_sheet; "" cria uma
+      // celula de texto vazio (conteudo "invisivel" que o Localizar/Substituir do
+      // Excel nao trata como em branco).
+      const safeNum = (v: number | null | undefined): number | null =>
+        v !== null && v !== undefined && isFinite(v) ? Number(v) : null;
 
-      const dataRows: (string | number)[][] = [];
+      const dataRows: (string | number | null)[][] = [];
 
       for (const rh of sortedRows) {
-        const row: (string | number)[] = [];
+        const row: (string | number | null)[] = [];
         rowDims.forEach((_, i) => {
           if (!rh.isLeaf) {
-            row.push(i === 0 ? `${rh.values[0] ?? ""} subtotal` : "");
+            row.push(i === 0 ? `${rh.values[0] ?? ""} subtotal` : null);
           } else if (rh.parentKey && i === 0) {
-            row.push("");
+            row.push(null);
           } else if (rh.parentKey && i === Math.min(1, rowDims.length - 1)) {
             row.push(`  ${rh.values[i] ?? ""}`);
           } else {
-            row.push(rh.values[i] ?? "");
+            row.push(rh.values[i] ?? null);
           }
         });
         for (const c of exportCols) {
@@ -2371,8 +2374,8 @@ function ExportMenu({
       }
 
       // Linha de rodapé com totais por coluna + grand total
-      const footerRow: (string | number)[] = ["Total"];
-      for (let i = 1; i < rowDims.length; i++) footerRow.push("");
+      const footerRow: (string | number | null)[] = ["Total"];
+      for (let i = 1; i < rowDims.length; i++) footerRow.push(null);
       for (const c of exportCols) {
         const colTot = pivot.colTotals.get(c.key) ?? {};
         for (const m of measures) footerRow.push(safeNum(colTot[m.id]));
