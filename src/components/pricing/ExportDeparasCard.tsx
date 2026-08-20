@@ -3,10 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { GlassCard } from "./GlassCard";
+import { SkuHierarchyManagerDialog } from "./SkuHierarchyManagerDialog";
 import {
   Download,
   FileSpreadsheet,
   GitBranch,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Upload,
@@ -30,7 +32,8 @@ const DEPARAS = [
     id: "hierarquia",
     title: "SKU - Hierarquia",
     description: "Categoria, marca, tecnologia, formato, mercado, peso e sabor por SKU.",
-    status: "Somente download",
+    status: "Administrável",
+    editable: true,
   },
   {
     id: "inovacao",
@@ -67,6 +70,7 @@ const DEPARAS = [
 
 export function ExportDeparasCard() {
   const [open, setOpen] = useState(false);
+  const [skuEditorOpen, setSkuEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const basesLocais = useBasesLocais();
@@ -227,6 +231,17 @@ export function ExportDeparasCard() {
                           Restaurar padrão
                         </Button>
                       </>
+                    ) : item.id === "hierarquia" ? (
+                      <>
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleExportAll}>
+                          <Download className="h-3.5 w-3.5" />
+                          Baixar
+                        </Button>
+                        <Button size="sm" className="h-8 gap-1.5" onClick={() => setSkuEditorOpen(true)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Reclassificar SKU
+                        </Button>
+                      </>
                     ) : (
                       <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleExportAll}>
                         <Download className="h-3.5 w-3.5" />
@@ -240,6 +255,8 @@ export function ExportDeparasCard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <SkuHierarchyManagerDialog open={skuEditorOpen} onOpenChange={setSkuEditorOpen} />
     </GlassCard>
   );
 }

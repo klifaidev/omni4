@@ -120,3 +120,38 @@ export function getDeParaFieldOptions(field: keyof DeParaEntry): string[] {
   }
   return Array.from(values).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
 }
+
+export interface DeParaSkuSearchResult {
+  sku: string;
+  entry: DeParaEntry;
+  missingFields: (keyof DeParaEntry)[];
+  hasOverride: boolean;
+}
+
+const allSkuKeys = () => new Set([...Object.keys(RAW), ...Object.keys(runtimeOverrides)]);
+
+/**
+ * Busca SKUs (por código ou descrição) em todo o De/Para — completos ou não —
+ * para permitir reclassificação manual mesmo de SKUs já mapeados.
+ */
+export function searchDeParaSkus(query: string, limit = 60): DeParaSkuSearchResult[] {
+  const q = query.trim().toUpperCase();
+  const keys = Array.from(allSkuKeys()).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const results: DeParaSkuSearchResult[] = [];
+  for (const sku of keys) {
+    const entry = getDeParaBySku(sku);
+    if (!entry) continue;
+    if (q) {
+      const haystack = `${sku} ${entry.skuDesc}`.toUpperCase();
+      if (!haystack.includes(q)) continue;
+    }
+    results.push({
+      sku,
+      entry,
+      missingFields: getMissingDeParaFields(sku),
+      hasOverride: Boolean(runtimeOverrides[sku]),
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
+}
