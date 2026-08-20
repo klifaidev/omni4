@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { RollingFile, RollingRow } from "@/lib/rolling";
 import { isRollingMonthAfterCycle } from "@/lib/rolling";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
+import { getDeParaBySku, type DeParaOverrideEntry } from "@/lib/depara";
 
 interface RollingState {
   rows: RollingRow[];
@@ -11,6 +12,7 @@ interface RollingState {
   removeRollingFile: (name: string) => void;
   clearRolling: () => void;
   reclassifyInovacao: () => void;
+  applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
 }
 
 function rank(periodo: string) {
@@ -63,6 +65,30 @@ export const useRolling = create<RollingState>((set) => ({
         legado: getLegado(r.sku),
       })),
     })),
+
+  applySkuDeParaEntries: (entries) =>
+    set((s) => {
+      const changedSkus = new Set(Object.keys(entries));
+      return {
+        rows: s.rows.map((r) => {
+          if (!r.sku || !changedSkus.has(r.sku)) return r;
+          const dp = getDeParaBySku(r.sku);
+          if (!dp) return r;
+          return {
+            ...r,
+            categoria: dp.categoria || r.categoria,
+            subcategoria: dp.subcategoria || r.subcategoria,
+            formato: dp.formato || r.formato,
+            marca: dp.marca || r.marca,
+            tecnologia: dp.tecnologia || r.tecnologia,
+            mercado: dp.mercado || r.mercado,
+            faixaPeso: dp.faixaPeso || r.faixaPeso,
+            sabor: dp.sabor || r.sabor,
+            skuDesc: dp.skuDesc || r.skuDesc,
+          };
+        }),
+      };
+    }),
 }));
 
 export function getRollingMonthsInfo(rows: RollingRow[]) {

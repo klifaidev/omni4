@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ForecastFile, ForecastRow } from "@/lib/forecast";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
+import { getDeParaBySku, type DeParaOverrideEntry } from "@/lib/depara";
 
 interface ForecastState {
   rows: ForecastRow[];
@@ -10,6 +11,7 @@ interface ForecastState {
   removeForecastFile: (name: string) => void;
   clearForecast: () => void;
   reclassifyInovacao: () => void;
+  applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
 }
 
 function activeForecastFiles(files: ForecastFile[], rows: ForecastRow[], replacingFile: ForecastFile, replacingCycles: Set<string>) {
@@ -68,6 +70,30 @@ export const useForecast = create<ForecastState>((set) => ({
         legado: getLegado(r.sku),
       })),
     })),
+
+  applySkuDeParaEntries: (entries) =>
+    set((s) => {
+      const changedSkus = new Set(Object.keys(entries));
+      return {
+        rows: s.rows.map((r) => {
+          if (!r.sku || !changedSkus.has(r.sku)) return r;
+          const dp = getDeParaBySku(r.sku);
+          if (!dp) return r;
+          return {
+            ...r,
+            categoria: dp.categoria || r.categoria,
+            subcategoria: dp.subcategoria || r.subcategoria,
+            formato: dp.formato || r.formato,
+            marca: dp.marca || r.marca,
+            tecnologia: dp.tecnologia || r.tecnologia,
+            mercado: dp.mercado || r.mercado,
+            faixaPeso: dp.faixaPeso || r.faixaPeso,
+            sabor: dp.sabor || r.sabor,
+            skuDesc: dp.skuDesc || r.skuDesc,
+          };
+        }),
+      };
+    }),
 }));
 
 export function getForecastMonthsInfo(rows: ForecastRow[]) {

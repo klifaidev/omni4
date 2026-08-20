@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePricing } from "@/store/pricing";
+import { useBudget } from "@/store/budget";
+import { useForecast } from "@/store/forecast";
+import { useRolling } from "@/store/rolling";
 import { toast } from "sonner";
 import {
   DEPARA_FIELDS,
@@ -98,6 +101,9 @@ export function SkuHierarchyManagerDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const applySkuDeParaEntries = usePricing((s) => s.applySkuDeParaEntries);
+  const applyBudgetDeParaEntries = useBudget((s) => s.applySkuDeParaEntries);
+  const applyForecastDeParaEntries = useForecast((s) => s.applySkuDeParaEntries);
+  const applyRollingDeParaEntries = useRolling((s) => s.applySkuDeParaEntries);
   const [query, setQuery] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [draft, setDraft] = useState<DeParaEntry | null>(null);
@@ -131,6 +137,9 @@ export function SkuHierarchyManagerDialog({
     const entry = Object.fromEntries(filled);
     upsertDeParaEntries({ [activeResult.sku]: entry });
     applySkuDeParaEntries({ [activeResult.sku]: entry });
+    applyBudgetDeParaEntries({ [activeResult.sku]: entry });
+    applyForecastDeParaEntries({ [activeResult.sku]: entry });
+    applyRollingDeParaEntries({ [activeResult.sku]: entry });
     toast.success(`De/Para do SKU ${activeResult.sku} atualizado.`);
     setDraft(null);
     setRefreshTick((t) => t + 1);

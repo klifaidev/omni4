@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { BudgetFile, BudgetRow } from "@/lib/budget";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
+import { getDeParaBySku, type DeParaOverrideEntry } from "@/lib/depara";
 
 interface BudgetState {
   rows: BudgetRow[];
@@ -10,6 +11,7 @@ interface BudgetState {
   removeBudgetFile: (name: string) => void;
   clearBudget: () => void;
   reclassifyInovacao: () => void;
+  applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
 }
 
 function sortPeriods(periods: Iterable<string>) {
@@ -79,6 +81,30 @@ export const useBudget = create<BudgetState>((set) => ({
         legado: getLegado(r.sku),
       })),
     })),
+
+  applySkuDeParaEntries: (entries) =>
+    set((s) => {
+      const changedSkus = new Set(Object.keys(entries));
+      return {
+        rows: s.rows.map((r) => {
+          if (!r.sku || !changedSkus.has(r.sku)) return r;
+          const dp = getDeParaBySku(r.sku);
+          if (!dp) return r;
+          return {
+            ...r,
+            categoria: dp.categoria || r.categoria,
+            subcategoria: dp.subcategoria || r.subcategoria,
+            formato: dp.formato || r.formato,
+            marca: dp.marca || r.marca,
+            tecnologia: dp.tecnologia || r.tecnologia,
+            mercado: dp.mercado || r.mercado,
+            faixaPeso: dp.faixaPeso || r.faixaPeso,
+            sabor: dp.sabor || r.sabor,
+            skuDesc: dp.skuDesc || r.skuDesc,
+          };
+        }),
+      };
+    }),
 }));
 
 // Selectors --------------------------------------------------------
