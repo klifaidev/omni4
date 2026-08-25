@@ -4,7 +4,7 @@
 // Espelha exatamente: cores, posições, fontes (proporcionalmente), curvas suaves
 // para o Budget Evo (Overview CM/VOL) e bridge waterfall com retângulos pretos
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
@@ -1273,10 +1273,21 @@ function StaticScaledPreview({
   item,
   targetWidth,
   deferUntilVisible = false,
+  liveEditingActive = false,
 }: {
   item: SlideItem;
   targetWidth?: number;
   deferUntilVisible?: boolean;
+  /**
+   * true quando este é o slide aberto/ativo no editor no momento — ou seja,
+   * a pessoa está digitando/arrastando nele agora. `item.config` (e por
+   * tanto a chave da miniatura) muda a cada edição; sem essa flag, cada
+   * pausa de digitação disparava uma captura real de DOM (html2canvas) da
+   * miniatura da tira, travando/piscando a tela. Com a flag, a miniatura
+   * fica congelada na última versão pronta e só é recapturada uma vez,
+   * quando a pessoa sai da edição deste slide.
+   */
+  liveEditingActive?: boolean;
 }) {
   if (isSlidePerfEnabled()) recordSlideRender("StaticScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
@@ -1288,7 +1299,22 @@ function StaticScaledPreview({
     () => getSlideThumbnail(key),
   );
 
+  const lastReadyDataUrlRef = useRef<string | null>(null);
+  if (current?.status === "ready" && current.dataUrl) {
+    lastReadyDataUrlRef.current = current.dataUrl;
+  }
+
+  const wasLiveEditingRef = useRef(liveEditingActive);
   useEffect(() => {
+    const wasActive = wasLiveEditingRef.current;
+    wasLiveEditingRef.current = liveEditingActive;
+    if (wasActive && !liveEditingActive) {
+      void warmSlideThumbnail(item, { priority: "visible" });
+    }
+  }, [liveEditingActive, item]);
+
+  useEffect(() => {
+    if (liveEditingActive) return;
     const entry = getSlideThumbnail(key);
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
     if (deferUntilVisible) return;
@@ -1298,13 +1324,19 @@ function StaticScaledPreview({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [deferUntilVisible, item, key]);
+  }, [deferUntilVisible, item, key, liveEditingActive]);
+
+  const displayDataUrl = current?.status === "ready" && current.dataUrl
+    ? current.dataUrl
+    : liveEditingActive
+      ? lastReadyDataUrlRef.current
+      : null;
 
   return (
     <>
-      {current?.status === "ready" && current.dataUrl ? (
+      {displayDataUrl ? (
         <img
-          src={current.dataUrl}
+          src={displayDataUrl}
           alt=""
           className="block rounded-lg border border-border/40 bg-white object-cover"
           style={{ width: previewW, height: previewH }}
@@ -1322,14 +1354,23 @@ export function ScaledPreview({
   targetWidth,
   mode = "static",
   deferUntilVisible = false,
+  liveEditingActive = false,
 }: {
   item: SlideItem;
   targetWidth?: number;
   mode?: "static" | "live";
   deferUntilVisible?: boolean;
+  liveEditingActive?: boolean;
 }) {
   if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
-  return <StaticScaledPreview item={item} targetWidth={targetWidth} deferUntilVisible={deferUntilVisible} />;
+  return (
+    <StaticScaledPreview
+      item={item}
+      targetWidth={targetWidth}
+      deferUntilVisible={deferUntilVisible}
+      liveEditingActive={liveEditingActive}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------

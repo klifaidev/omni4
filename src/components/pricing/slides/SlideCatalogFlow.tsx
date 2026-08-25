@@ -251,6 +251,7 @@ export const FlowCard = React.memo(function FlowCard({
                 item={item}
                 targetWidth={104}
                 deferUntilVisible={!previewVisible}
+                liveEditingActive={selected}
               />
               <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-1">
                 {statusSeverity && (

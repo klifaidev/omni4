@@ -832,6 +832,7 @@ function StripThumbnail({
             item={item}
             targetWidth={112}
             deferUntilVisible={!previewVisible}
+            liveEditingActive={active}
           />
         </div>
       </div>
