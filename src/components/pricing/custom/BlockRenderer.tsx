@@ -1892,6 +1892,56 @@ function conditionalColor(
   return t <= 0.5 ? lerpColor(colorMin, colorMid, t * 2) : lerpColor(colorMid, colorMax, (t - 0.5) * 2);
 }
 
+let dreMeasureCtx: CanvasRenderingContext2D | null | undefined;
+function measureDreTextWidth(text: string, fontPx: number, bold: boolean): number {
+  if (dreMeasureCtx === undefined) {
+    dreMeasureCtx = typeof document === "undefined"
+      ? null
+      : document.createElement("canvas").getContext("2d");
+  }
+  if (!dreMeasureCtx) return text.length * fontPx * 0.58; // fallback estimate (sem DOM/canvas)
+  dreMeasureCtx.font = `${bold ? "600 " : ""}${fontPx}px Calibri, Arial, sans-serif`;
+  return dreMeasureCtx.measureText(text).width;
+}
+
+// Larguras da tabela DRE: a coluna "Indicador" e a de variacao carregam texto
+// (nomes de linha, "Mmm/AA vs Mmm/AA") que nao pode encolher livremente sem
+// truncar; as colunas de mes/valor sao numeros curtos e podem absorver o
+// aperto quando o bloco fica mais estreito. Por isso as duas primeiras tem
+// largura minima calculada a partir do texto real (medido em canvas) e a
+// sobra e dividida entre as colunas de valor — nunca o contrario.
+function computeDreColumnWidths(args: {
+  blockWidthUnits: number;
+  fontPx: number;
+  indicatorLabels: { text: string; bold: boolean }[];
+  varHeaderLabel: string | null;
+  colCount: number;
+}): { firstColW: number; varColW: number; periodColW: number } {
+  const { blockWidthUnits, fontPx, indicatorLabels, varHeaderLabel, colCount } = args;
+  const labelPadX = Math.round(fontPx * 0.55) * 2;
+  const valPadX = Math.round(fontPx * 0.36) * 2;
+
+  const indicatorTextWidth = Math.max(
+    measureDreTextWidth("Indicador", fontPx + 1, true),
+    ...indicatorLabels.map((l) => measureDreTextWidth(l.text, fontPx, l.bold)),
+  );
+  const indicatorTargetUnits = indicatorTextWidth + labelPadX;
+  const firstColWRaw = blockWidthUnits > 0 ? (indicatorTargetUnits / blockWidthUnits) * 100 : 30;
+  const firstColW = Math.min(55, Math.max(18, firstColWRaw));
+
+  let varColW = 0;
+  if (varHeaderLabel) {
+    const varTextWidth = measureDreTextWidth(varHeaderLabel, fontPx + 1, true);
+    const varTargetUnits = varTextWidth + valPadX;
+    const varColWRaw = blockWidthUnits > 0 ? (varTargetUnits / blockWidthUnits) * 100 : 15;
+    varColW = Math.min(30, Math.max(11, varColWRaw));
+  }
+
+  const remaining = Math.max(10, 100 - firstColW - varColW);
+  const periodColW = colCount > 0 ? remaining / colCount : remaining;
+  return { firstColW, varColW, periodColW };
+}
+
 function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
@@ -1995,9 +2045,16 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
 
   const rowCount = 1 + visibleLines.length;
   const rowH = 100 / rowCount;
-  const firstColW = 30;
-  const periodColW = (showVar ? 55 : 70) / cols.length;
-  const varColW = showVar ? 15 : 0;
+  const varHeaderLabel = showVar && ultimoCol && penultimoCol
+    ? `${MESES[ultimoCol.mes - 1]}/${String(ultimoCol.ano).slice(2)} vs ${MESES[penultimoCol.mes - 1]}/${String(penultimoCol.ano).slice(2)}`
+    : null;
+  const { firstColW, varColW, periodColW } = computeDreColumnWidths({
+    blockWidthUnits: blk.w,
+    fontPx: fs,
+    indicatorLabels: visibleLines.map((line) => ({ text: dreLineLabel(line), bold: !!line.bold })),
+    varHeaderLabel,
+    colCount: cols.length,
+  });
   const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
   const headerBase: React.CSSProperties = {
       background: blk.headerColor,
