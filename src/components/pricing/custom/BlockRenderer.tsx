@@ -844,33 +844,23 @@ function normalizeTableColumnWidths(
   return fixed.map((value, index) => value - overflow * (flexible[index] / flexTotal));
 }
 
+// Cada alça representa a borda entre a coluna `index` e a coluna `index + 1`
+// (so existem n-1 alças para n colunas — ver `columnLayouts.slice(0, -1)` no
+// render). Por isso o ajuste deve ficar restrito a esse par: arrastar a borda
+// depois da 1a coluna nao pode empurrar/encolher a 3a, 4a etc. — senao fica
+// impossivel dar espaço só para uma coluna sem as outras brigarem entre si.
 function resizeTableColumnWidths(widths: number[], index: number, deltaPct: number) {
-  if (widths.length <= 1) return widths;
+  if (widths.length <= 1 || index < 0 || index >= widths.length - 1) return widths;
   const minWidth = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / widths.length);
-  const maxWidth = 100 - minWidth * (widths.length - 1);
   const next = [...widths];
+  const pairTotal = widths[index] + widths[index + 1];
+  const maxWidth = Math.max(minWidth, pairTotal - minWidth);
   const resized = clampNumber(widths[index] + deltaPct, minWidth, maxWidth);
   const diff = resized - widths[index];
   if (Math.abs(diff) < 0.0001) return next;
 
-  const otherIndexes = widths.map((_, i) => i).filter((i) => i !== index);
-  if (diff > 0) {
-    const shrinkCapacity = otherIndexes.reduce((acc, i) => acc + Math.max(0, widths[i] - minWidth), 0);
-    if (shrinkCapacity <= 0.0001) return next;
-    const actualDiff = Math.min(diff, shrinkCapacity);
-    next[index] = widths[index] + actualDiff;
-    for (const i of otherIndexes) {
-      const capacity = Math.max(0, widths[i] - minWidth);
-      next[i] = widths[i] - actualDiff * (capacity / shrinkCapacity);
-    }
-    return next;
-  }
-
-  const growTotal = otherIndexes.reduce((acc, i) => acc + Math.max(0.0001, widths[i]), 0);
   next[index] = resized;
-  for (const i of otherIndexes) {
-    next[i] = widths[i] + Math.abs(diff) * (Math.max(0.0001, widths[i]) / growTotal);
-  }
+  next[index + 1] = pairTotal - resized;
   return next;
 }
 
