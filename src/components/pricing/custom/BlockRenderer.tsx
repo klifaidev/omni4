@@ -1947,8 +1947,6 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const aggUltimo = showVar && ultimoCol ? aggsByCol.get(ultimoCol.periodo) ?? null : null;
   const aggPenultimo = showVar && penultimoCol ? aggsByCol.get(penultimoCol.periodo) ?? null : null;
 
-  const LINHAS_CUSTO = ["cv","cvPctRol","cvKg","mp","emb","cf","cfKg","mod","cif","frete","freteKg","com","comPct","comKg"];
-
   const conditionalMeta = useMemo(() => {
     const cf = blk.conditionalFormat;
     if (!cf?.enabled || cf.linhasAtivas.length === 0 || cols.length === 0) return null;
@@ -2104,10 +2102,12 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
         const valPenultimo = line.get(aggPenultimo);
         const varPct = valPenultimo !== 0 ? (valUltimo - valPenultimo) / Math.abs(valPenultimo) : null;
         const varAbs = valUltimo - valPenultimo;
-        const isCusto = LINHAS_CUSTO.includes(line.id);
+        // Linhas de custo já são armazenadas negativas (-Math.abs(...) em DRE_LINES),
+        // entao um custo pior (mais negativo) ja produz variacao negativa aqui —
+        // nao é preciso (nem correto) inverter a cor de novo por ser uma linha de custo.
         const isPositivo = varPct !== null && varPct > 0;
         const cor = varPct === null ? blk.textColor
-          : (isPositivo !== isCusto) ? SLIDE_HEX.success : SLIDE_HEX.danger;
+          : isPositivo ? SLIDE_HEX.success : SLIDE_HEX.danger;
         const tipo = blk.variacaoTipo ?? "percentual";
         let display: React.ReactNode = "—";
         if (tipo === "percentual") {
