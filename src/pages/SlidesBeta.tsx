@@ -108,6 +108,8 @@ import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/compo
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlidePrecompute";
+import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
+import { useThumbnailVisibilityScheduler } from "@/components/pricing/slides/useThumbnailVisibilityScheduler";
 import { useSlideExport } from "@/hooks/useSlideExport";
 import {
   createPersistentCollabRoom,
@@ -213,6 +215,20 @@ const DOWNLOAD_URL = "https://github.com/klifaidev/omni4/releases/latest";
 const DECK_PREP_THRESHOLD = 8;
 const DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE = 2;
 const DECK_PREP_MAX_CHART_BLOCKS_TOTAL = 40;
+
+// Quantos slides preparamos de forma sincrona (bloqueando a abertura) quando o
+// deck e grande: apenas o que realmente cabe na tira no momento em que ela
+// abre (posicao de rolagem inicial = topo + a altura real da area visivel),
+// mais a mesma margem de overscan usada pela virtualizacao da lista. O resto
+// do deck fica a cargo do IntersectionObserver da tira (visible/preload,
+// enquanto a pessoa rola) e do preenchimento em segundo plano via
+// requestIdleCallback (useIdleSlidePrecompute / useIdleSlideChartPrecompute) —
+// nunca bloqueando a abertura, mesmo com 48+ slides.
+function estimateInitialVisibleSlideCount(): number {
+  if (typeof window === "undefined") return DECK_PREP_THRESHOLD + SLIDE_PREVIEW_OVERSCAN;
+  const viewportHeight = window.innerHeight || 900;
+  return Math.max(1, Math.ceil(viewportHeight / FLOW_CARD_ESTIMATED_HEIGHT) + SLIDE_PREVIEW_OVERSCAN);
+}
 
 type DeckPreparationState = {
   visible: boolean;
@@ -739,7 +755,7 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick, editingUsers,
-  currentUser, onCommentEvent, previewVisible = true,
+  currentUser, onCommentEvent, previewVisible = true, thumbnailRef,
 }: {
   item: SlideItem;
   index: number;
@@ -749,6 +765,8 @@ function StripThumbnail({
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
   previewVisible?: boolean;
+  /** Ref do IntersectionObserver da tira — ver useThumbnailVisibilityScheduler. */
+  thumbnailRef?: (element: HTMLElement | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const editors = editingUsers ?? [];
@@ -809,7 +827,7 @@ function StripThumbnail({
         <span className="truncate text-[9px] text-muted-foreground">{meta.title}</span>
       </div>
       <div className="thumb px-1 pb-1">
-        <div className="pointer-events-none mx-auto w-full max-w-[132px] min-w-[82px] overflow-hidden rounded-sm">
+        <div ref={thumbnailRef} className="pointer-events-none mx-auto w-full max-w-[132px] min-w-[82px] overflow-hidden rounded-sm">
           <ScaledPreview
             item={item}
             targetWidth={112}
@@ -1143,6 +1161,7 @@ function FullscreenCustomEditor({
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
+  const stripThumbnailScheduler = useThumbnailVisibilityScheduler(stripPreviewWindow.viewportRef);
 
   return (
     <>
@@ -1254,6 +1273,7 @@ function FullscreenCustomEditor({
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
                         previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
+                        thumbnailRef={stripThumbnailScheduler.getRefCallback(it)}
                         onClick={() => {
                           if (it.id === current?.id) return;
                           select(it.id);
@@ -2083,7 +2103,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     deckPreparationGenerationRef.current += 1;
     const generation = deckPreparationGenerationRef.current;
     deckPreparationSkippedRef.current = false;
-    const queuedItems = [...deckItems];
+    // So preparamos de forma sincrona o que ja esta de fato visivel na tira
+    // quando o deck abre (rolagem comeca no topo). O resto fica para o
+    // IntersectionObserver da tira (visible/preload, ao rolar) e para o
+    // preenchimento em segundo plano via requestIdleCallback — sem isso, um
+    // deck de 48 slides fazia 48 capturas reais de DOM em fila sequencial
+    // (MAX_THUMBNAIL_RENDERERS = 1) antes de devolver o controle a pessoa.
+    const queuedItems = deckItems.slice(0, Math.min(deckItems.length, estimateInitialVisibleSlideCount()));
     const total = queuedItems.length;
     const startedAt = Date.now();
     let warmedChartBlocks = 0;
@@ -2114,7 +2140,11 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           : previous);
 
         try {
-          await warmSlideThumbnail(item, { useData: false });
+          // Sem useData:false aqui: a tira sempre le a variante "rich" (padrao
+          // de useSlideThumbnailKey), entao gerar a variante "light" seria uma
+          // segunda captura de DOM inteira que ninguem le — desperdicio que
+          // dobrava o tempo de abertura antes desta correcao.
+          await warmSlideThumbnail(item, { priority: "visible" });
           const remainingChartBudget = Math.max(0, DECK_PREP_MAX_CHART_BLOCKS_TOTAL - warmedChartBlocks);
           if (remainingChartBudget > 0) {
             warmedChartBlocks += await warmSlideChartData(item, {
@@ -2788,6 +2818,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
   useIdleSlidePrecompute(items, selectedId);
+  useIdleSlideChartPrecompute(items, selectedId);
   useEffect(() => {
     if (initialDeckPreparationCheckedRef.current || items.length === 0) return;
     initialDeckPreparationCheckedRef.current = true;
@@ -2846,6 +2877,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
   const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
+  const flowThumbnailScheduler = useThumbnailVisibilityScheduler(flowPreviewWindow.viewportRef);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
@@ -3585,6 +3617,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                           index={idx}
                           selected={selectedId === item.id}
                           previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
+                          thumbnailRef={flowThumbnailScheduler.getRefCallback(item)}
                           onSelect={() => select(item.id)}
                           onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
                           onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}

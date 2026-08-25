@@ -807,7 +807,11 @@ function thumbnailPixelRatio(): number {
   return Math.min(MAX_THUMBNAIL_PIXEL_RATIO, ratio);
 }
 
-type ThumbnailPriority = "visible" | "background";
+// "visible": slide dentro da área visível da tira agora — gera imediatamente.
+// "preload": slide logo fora da área visível (rootMargin do IntersectionObserver)
+//   — gera com prioridade média para já estar pronto quando a pessoa rolar até lá.
+// "background": resto do deck — só preenchido em tempo ocioso real (requestIdleCallback).
+type ThumbnailPriority = "visible" | "preload" | "background";
 type ThumbnailWarmOptions = { useData?: boolean; priority?: ThumbnailPriority };
 type ThumbnailWarmResult = "hit" | "generated" | "fallback" | "error";
 type ThumbnailQueueJob = {
@@ -824,7 +828,9 @@ const runningThumbnailJobs = new Map<string, Promise<ThumbnailWarmResult>>();
 let activeThumbnailRenderers = 0;
 
 function thumbnailPriorityRank(priority: ThumbnailPriority): number {
-  return priority === "visible" ? 0 : 1;
+  if (priority === "visible") return 0;
+  if (priority === "preload") return 1;
+  return 2;
 }
 
 function yieldThumbnailQueueFrame(): Promise<void> {
@@ -1165,6 +1171,24 @@ export async function warmSlideThumbnail(
   }
   if (current?.status === "rendering") return "hit";
   return enqueueSlideThumbnail(key, item, priority);
+}
+
+/**
+ * Rebaixa a prioridade de um job de miniatura ainda pendente (na fila, mas cuja
+ * geração não começou) para "background". Usado quando o slide sai da área
+ * visível/pré-carregamento da tira antes de ser processado — evita que uma
+ * rolagem rápida deixe uma fila de trabalho obsoleto com prioridade alta.
+ * Jobs já em execução (runningThumbnailJobs) não são afetados: cancelar uma
+ * captura de DOM em andamento não economiza trabalho e o resultado ainda é
+ * útil (fica em cache).
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function demoteSlideThumbnailPriority(item: SlideItem, options?: { useData?: boolean }): void {
+  const key = getSlideThumbnailKeyForItem(item, options);
+  const pending = pendingThumbnailJobs.get(key);
+  if (!pending || pending.priority === "background") return;
+  pending.priority = "background";
+  sortThumbnailQueue();
 }
 
 function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
