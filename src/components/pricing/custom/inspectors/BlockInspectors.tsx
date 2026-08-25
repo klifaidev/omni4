@@ -609,7 +609,7 @@ const CHECKER_BG: React.CSSProperties = {
 };
 
 /** Background color picker with "Sem fundo" toggle. value: hex sem '#' OR "transparent". */
-function BgField({ label, value, onChange }: {
+export function BgField({ label, value, onChange }: {
   label: string; value: string; onChange: (v: string) => void;
 }) {
   const isT = value === "transparent";
@@ -817,7 +817,7 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
 }
 
 // ---------------------------------------------------------------------------
-function ComparePeriodField({
+export function ComparePeriodField({
   label,
   mode,
   fixedValue,
@@ -2574,7 +2574,7 @@ function TruncationAlert({ blockId, fit, unitPlural }: {
   );
 }
 
-function PaletteGroup({
+export function PaletteGroup({
   title, defaultOpen = true, children,
 }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -2591,7 +2591,7 @@ function PaletteGroup({
   );
 }
 
-function PaletteButton({
+export function PaletteButton({
   icon: Icon, label, onClick, favorite = false, onToggleFavorite,
 }: {
   icon: Icon;
@@ -2633,7 +2633,7 @@ function PaletteButton({
   );
 }
 
-function QuickLayoutButton({
+export function QuickLayoutButton({
   label,
   description,
   onClick,
@@ -2654,7 +2654,7 @@ function QuickLayoutButton({
   );
 }
 
-function TextStyleButton({
+export function TextStyleButton({
   label,
   className,
   onClick,
@@ -2735,7 +2735,7 @@ export function ClearFiltersToolbar() {
   );
 }
 
-function clientToCanvas(
+export function clientToCanvas(
   canvasEl: HTMLDivElement | null,
   clientX: number,
   clientY: number,
@@ -2863,7 +2863,7 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
 // Drag preview is local; on mouseup a single labeled action commits the
 // proportional scale to every member ("Redimensionar grupo" ? undoable).
 // ---------------------------------------------------------------------------
-function GroupOverlay({
+export function GroupOverlay({
   bounds, active, showHandles, members, scaleRef, canvasEl,
 }: {
   bounds: { x: number; y: number; w: number; h: number };

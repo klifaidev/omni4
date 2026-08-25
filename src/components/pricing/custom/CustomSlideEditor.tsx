@@ -75,14 +75,22 @@ import { saveUserTemplate } from "@/lib/customTemplates";
 import { TemplatePicker } from "./templates/TemplatePicker";
 import { ShapeInspector } from "./ShapeInspector";
 import {
+  BgField,
   BlockAppearanceControls,
   BlockSpecificEditor,
   BrandKitPopover,
   ClearFiltersToolbar,
+  clientToCanvas,
+  ComparePeriodField,
   DataSourceBadge,
+  GroupOverlay,
   MultiSelectInspector,
+  PaletteButton,
+  PaletteGroup,
   PalettePopover,
   PositionInputs,
+  QuickLayoutButton,
+  TextStyleButton,
 } from "./inspectors/BlockInspectors";
 import { RotatableBlock } from "./RotatableBlock";
 import { Slider as UiSlider } from "@/components/ui/slider";
