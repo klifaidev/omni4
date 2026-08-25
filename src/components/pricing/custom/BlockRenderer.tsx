@@ -821,6 +821,7 @@ function normalizeTableColumnWidths(
   columnKeys: string[],
   saved: Record<string, number> | undefined,
   defaultWeights: number[],
+  minWidths: number[],
 ) {
   if (columnKeys.length === 0) return [];
   const raw = columnKeys.map((key, index) => {
@@ -829,19 +830,47 @@ function normalizeTableColumnWidths(
       ? savedValue
       : Math.max(0.1, defaultWeights[index] ?? 1);
   });
-  const minWidth = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / columnKeys.length);
   const sum = raw.reduce((acc, value) => acc + value, 0) || columnKeys.length;
   const normalized = raw.map((value) => (value / sum) * 100);
-  const fixed = normalized.map((value) => Math.max(minWidth, value));
+  const fixed = normalized.map((value, index) => Math.max(minWidths[index] ?? 0, value));
   const overflow = fixed.reduce((acc, value) => acc + value, 0) - 100;
   if (overflow <= 0.0001) {
     const total = fixed.reduce((acc, value) => acc + value, 0) || 100;
     return fixed.map((value) => (value / total) * 100);
   }
-  const flexible = fixed.map((value) => Math.max(0, value - minWidth));
+  const flexible = fixed.map((value, index) => Math.max(0, value - (minWidths[index] ?? 0)));
   const flexTotal = flexible.reduce((acc, value) => acc + value, 0);
   if (flexTotal <= 0.0001) return columnKeys.map(() => 100 / columnKeys.length);
   return fixed.map((value, index) => value - overflow * (flexible[index] / flexTotal));
+}
+
+// A largura minima da 1a coluna (rotulo/indicador) e calculada a partir do
+// texto real (header + valor mais longo de cada linha), igual ao DRE: assim
+// ela nunca fica pequena demais a ponto de esconder palavras, e o aperto ao
+// redimensionar o bloco recai sobre as colunas de valor. As demais colunas
+// usam o minimo generico de sempre.
+function computeTableColumnMinWidths(args: {
+  columnCount: number;
+  blockWidthUnits: number;
+  firstColumnLabels: string[];
+}): number[] {
+  const { columnCount, blockWidthUnits, firstColumnLabels } = args;
+  if (columnCount === 0) return [];
+  const baseMin = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / columnCount);
+  const minWidths = new Array(columnCount).fill(baseMin);
+  if (firstColumnLabels.length === 0 || blockWidthUnits <= 0) return minWidths;
+
+  const [headerLabel, ...rowLabels] = firstColumnLabels;
+  const textWidth = Math.max(
+    measureCanvasTextWidth(headerLabel ?? "", 11, true),
+    ...rowLabels.map((text) => measureCanvasTextWidth(text, 12, false)),
+    0,
+  );
+  const padX = 8 * 2; // padX das celulas da 1a coluna (ExportPositionedCell, esquerda+direita)
+  const targetPct = ((textWidth + padX) / blockWidthUnits) * 100;
+  const cap = Math.max(baseMin, Math.min(60, 100 - baseMin * (columnCount - 1)));
+  minWidths[0] = Math.min(cap, Math.max(baseMin, targetPct));
+  return minWidths;
 }
 
 // Cada alça representa a borda entre a coluna `index` e a coluna `index + 1`
@@ -849,13 +878,16 @@ function normalizeTableColumnWidths(
 // render). Por isso o ajuste deve ficar restrito a esse par: arrastar a borda
 // depois da 1a coluna nao pode empurrar/encolher a 3a, 4a etc. — senao fica
 // impossivel dar espaço só para uma coluna sem as outras brigarem entre si.
-function resizeTableColumnWidths(widths: number[], index: number, deltaPct: number) {
+// `minWidths` (por coluna) garante que a coluna de rotulo nunca seja
+// espremida abaixo do necessario para mostrar seu texto por completo.
+function resizeTableColumnWidths(widths: number[], index: number, deltaPct: number, minWidths: number[]) {
   if (widths.length <= 1 || index < 0 || index >= widths.length - 1) return widths;
-  const minWidth = Math.min(TABLE_MIN_COL_WIDTH_PCT, 100 / widths.length);
+  const minA = minWidths[index] ?? TABLE_MIN_COL_WIDTH_PCT;
+  const minB = minWidths[index + 1] ?? TABLE_MIN_COL_WIDTH_PCT;
   const next = [...widths];
   const pairTotal = widths[index] + widths[index + 1];
-  const maxWidth = Math.max(minWidth, pairTotal - minWidth);
-  const resized = clampNumber(widths[index] + deltaPct, minWidth, maxWidth);
+  const maxForIndex = Math.max(minA, pairTotal - minB);
+  const resized = clampNumber(widths[index] + deltaPct, minA, maxForIndex);
   const diff = resized - widths[index];
   if (Math.abs(diff) < 0.0001) return next;
 
@@ -1123,13 +1155,26 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     () => tableColumnKeys.map((_, index) => (index === 0 ? 1.7 : 1)),
     [tableColumnKeys],
   );
+  const firstColumnLabelTexts = useMemo(() => {
+    if (!data) return [];
+    const headerLabel = b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total";
+    return [headerLabel, ...data.sortedHeaders.map((rh) => rh.values.join(" / ") || "Total")];
+  }, [data, b.rowDims]);
+  const tableColumnMinWidths = useMemo(
+    () => computeTableColumnMinWidths({
+      columnCount: tableColumnKeys.length,
+      blockWidthUnits: b.w,
+      firstColumnLabels: firstColumnLabelTexts,
+    }),
+    [tableColumnKeys.length, b.w, firstColumnLabelTexts],
+  );
   const [draftColumnWidths, setDraftColumnWidths] = useState<Record<string, number> | null>(null);
   useEffect(() => {
     setDraftColumnWidths(null);
   }, [b.id, b.columnWidths, tableColumnKeys.join("|")]);
   const activeColumnWidths = useMemo(
-    () => normalizeTableColumnWidths(tableColumnKeys, draftColumnWidths ?? b.columnWidths, defaultColumnWeights),
-    [tableColumnKeys, draftColumnWidths, b.columnWidths, defaultColumnWeights],
+    () => normalizeTableColumnWidths(tableColumnKeys, draftColumnWidths ?? b.columnWidths, defaultColumnWeights, tableColumnMinWidths),
+    [tableColumnKeys, draftColumnWidths, b.columnWidths, defaultColumnWeights, tableColumnMinWidths],
   );
   const columnLayouts = useMemo(
     () => buildTableColumnLayout(tableColumnKeys, activeColumnWidths),
@@ -1156,7 +1201,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     const handleMove = (moveEvent: PointerEvent) => {
       moveEvent.preventDefault();
       const deltaPct = ((moveEvent.clientX - startX) / rect.width) * 100;
-      const next = resizeTableColumnWidths(startWidths, index, deltaPct);
+      const next = resizeTableColumnWidths(startWidths, index, deltaPct, tableColumnMinWidths);
       setDraftColumnWidths(columnWidthsToRecord(tableColumnKeys, next));
     };
     const stopTracking = () => {
@@ -1173,7 +1218,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     };
     const handleUp = (upEvent: PointerEvent) => {
       const deltaPct = ((upEvent.clientX - startX) / rect.width) * 100;
-      const next = resizeTableColumnWidths(startWidths, index, deltaPct);
+      const next = resizeTableColumnWidths(startWidths, index, deltaPct, tableColumnMinWidths);
       const columnWidths = columnWidthsToRecord(tableColumnKeys, next);
       setDraftColumnWidths(columnWidths);
       onPatch({ columnWidths } as Partial<CustomBlock>);
@@ -1882,16 +1927,16 @@ function conditionalColor(
   return t <= 0.5 ? lerpColor(colorMin, colorMid, t * 2) : lerpColor(colorMid, colorMax, (t - 0.5) * 2);
 }
 
-let dreMeasureCtx: CanvasRenderingContext2D | null | undefined;
-function measureDreTextWidth(text: string, fontPx: number, bold: boolean): number {
-  if (dreMeasureCtx === undefined) {
-    dreMeasureCtx = typeof document === "undefined"
+let canvasTextMeasureCtx: CanvasRenderingContext2D | null | undefined;
+function measureCanvasTextWidth(text: string, fontPx: number, bold: boolean): number {
+  if (canvasTextMeasureCtx === undefined) {
+    canvasTextMeasureCtx = typeof document === "undefined"
       ? null
       : document.createElement("canvas").getContext("2d");
   }
-  if (!dreMeasureCtx) return text.length * fontPx * 0.58; // fallback estimate (sem DOM/canvas)
-  dreMeasureCtx.font = `${bold ? "600 " : ""}${fontPx}px Calibri, Arial, sans-serif`;
-  return dreMeasureCtx.measureText(text).width;
+  if (!canvasTextMeasureCtx) return text.length * fontPx * 0.58; // fallback estimate (sem DOM/canvas)
+  canvasTextMeasureCtx.font = `${bold ? "600 " : ""}${fontPx}px Calibri, Arial, sans-serif`;
+  return canvasTextMeasureCtx.measureText(text).width;
 }
 
 // Larguras da tabela DRE: a coluna "Indicador" e a de variacao carregam texto
@@ -1912,8 +1957,8 @@ function computeDreColumnWidths(args: {
   const valPadX = Math.round(fontPx * 0.36) * 2;
 
   const indicatorTextWidth = Math.max(
-    measureDreTextWidth("Indicador", fontPx + 1, true),
-    ...indicatorLabels.map((l) => measureDreTextWidth(l.text, fontPx, l.bold)),
+    measureCanvasTextWidth("Indicador", fontPx + 1, true),
+    ...indicatorLabels.map((l) => measureCanvasTextWidth(l.text, fontPx, l.bold)),
   );
   const indicatorTargetUnits = indicatorTextWidth + labelPadX;
   const firstColWRaw = blockWidthUnits > 0 ? (indicatorTargetUnits / blockWidthUnits) * 100 : 30;
@@ -1921,7 +1966,7 @@ function computeDreColumnWidths(args: {
 
   let varColW = 0;
   if (varHeaderLabel) {
-    const varTextWidth = measureDreTextWidth(varHeaderLabel, fontPx + 1, true);
+    const varTextWidth = measureCanvasTextWidth(varHeaderLabel, fontPx + 1, true);
     const varTargetUnits = varTextWidth + valPadX;
     const varColWRaw = blockWidthUnits > 0 ? (varTargetUnits / blockWidthUnits) * 100 : 15;
     varColW = Math.min(30, Math.max(11, varColWRaw));
