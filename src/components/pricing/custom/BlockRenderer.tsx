@@ -868,7 +868,11 @@ function computeTableColumnMinWidths(args: {
   );
   const padX = 8 * 2; // padX das celulas da 1a coluna (ExportPositionedCell, esquerda+direita)
   const targetPct = ((textWidth + padX) / blockWidthUnits) * 100;
-  const cap = Math.max(baseMin, Math.min(60, 100 - baseMin * (columnCount - 1)));
+  // Sem teto fixo aqui: uma tabela com poucas colunas (ex.: rotulo + 1 mes)
+  // pode legitimamente precisar de bem mais de 50-60% da largura para o
+  // rotulo. O unico limite necessario e deixar cada outra coluna com seu
+  // proprio minimo (baseMin) — nunca um numero arbitrario tipo 60%.
+  const cap = Math.max(baseMin, 100 - baseMin * (columnCount - 1));
   minWidths[0] = Math.min(cap, Math.max(baseMin, targetPct));
   return minWidths;
 }
@@ -1732,7 +1736,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
               left: `${layout.left + layout.width}%`,
               top: 0,
               width: 0,
-              height: `${rowH}%`,
+              height: "100%",
               zIndex: 30,
             }}
           >
