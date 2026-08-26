@@ -3,7 +3,6 @@ import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
-import type { CollabEvent } from "@/lib/collaboration";
 import { migrateDataSource } from "@/lib/customSlide";
 
 const SLIDES_FLOW_STORAGE_KEY = "pricing.slidesFlow.v1";
@@ -27,11 +26,6 @@ interface SlidesFlowState {
   selectedId: string | null;
   transition: SlideTransition;
 
-  // Colaboração — função opcional injetada pelo hook useCollaboration.
-  _collabBroadcast: ((e: CollabEvent) => void) | null;
-  _collabUserId: string | null;
-  setCollabBroadcast: (fn: ((e: CollabEvent) => void) | null, userId?: string | null) => void;
-
   // Itens
   addItem: (kind: SlideKind) => void;
   removeItem: (id: string) => void;
@@ -42,21 +36,6 @@ interface SlidesFlowState {
   duplicateDeck: () => void;
   select: (id: string | null) => void;
   setTransition: (t: SlideTransition) => void;
-
-  // Mutações vindas de colaboradores (não re-broadcast)
-  addItemFromCollab: (item: SlideItem) => void;
-  updateItemFromCollab: (payload: { id: string; patch: Partial<SlideItem> }) => void;
-  removeItemFromCollab: (id: string) => void;
-  duplicateItemFromCollab: (payload: { sourceId: string; item: SlideItem }) => void;
-  reorderFromCollab: (sourceId: string, targetId: string) => void;
-  clearItemsFromCollab: () => void;
-  setTransitionFromCollab: (t: SlideTransition) => void;
-  loadPresetFromCollab: (items: SlideItem[]) => void;
-  applySnapshotFromCollab: (payload: {
-    items: SlideItem[];
-    selectedId: string | null;
-    transition: SlideTransition;
-  }) => void;
 
   // Presets
   savePreset: (name: string, description?: string) => SlidesPreset;
@@ -270,108 +249,19 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       selectedId: null,
       transition: "fade",
 
-      _collabBroadcast: null,
-      _collabUserId: null,
-      setCollabBroadcast: (fn, userId = null) =>
-        set({ _collabBroadcast: fn, _collabUserId: userId }),
-
-      setTransition: (t) =>
-        set((s) => {
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "update_transition",
-              payload: { transition: t },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
-          return { transition: t };
-        }),
+      setTransition: (t) => set({ transition: t }),
 
       addItem: (kind) =>
         set((s) => {
           const item = defaultItem(kind);
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "add_item",
-              payload: item,
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
           return { items: [...s.items, item], selectedId: item.id };
         }),
 
-      addItemFromCollab: (item) =>
-        set((s) => {
-          if (s.items.some((i) => i.id === item.id)) return {};
-          return { items: sanitizeSlidesFlowItems([...s.items, item]) };
-        }),
-
-      loadPresetFromCollab: (items) =>
-        set(() => {
-          const safeItems = sanitizeSlidesFlowItems(items);
-          return { items: safeItems, selectedId: safeItems[0]?.id ?? null };
-        }),
-
-      removeItemFromCollab: (id) =>
+      removeItem: (id) =>
         set((s) => ({
           items: s.items.filter((i) => i.id !== id),
           selectedId: s.selectedId === id ? null : s.selectedId,
         })),
-
-      duplicateItemFromCollab: ({ sourceId, item }) =>
-        set((s) => {
-          if (s.items.some((i) => i.id === item.id)) return {};
-          const idx = s.items.findIndex((i) => i.id === sourceId);
-          const items = [...s.items];
-          items.splice(idx >= 0 ? idx + 1 : items.length, 0, item);
-          const safeItems = sanitizeSlidesFlowItems(items);
-          return { items: safeItems, selectedId: item.id };
-        }),
-
-      reorderFromCollab: (sourceId, targetId) =>
-        set((s) => {
-          const from = s.items.findIndex((i) => i.id === sourceId);
-          const to = s.items.findIndex((i) => i.id === targetId);
-          if (from < 0 || to < 0 || from === to) return {};
-          const items = [...s.items];
-          const [moved] = items.splice(from, 1);
-          items.splice(to, 0, moved);
-          return { items };
-        }),
-
-      clearItemsFromCollab: () => set({ items: [], selectedId: null }),
-
-      setTransitionFromCollab: (t) => set({ transition: t }),
-
-      applySnapshotFromCollab: ({ items, selectedId, transition }) =>
-        set(() => {
-          const safeItems = sanitizeSlidesFlowItems(items);
-          return {
-            items: safeItems,
-            selectedId: selectedId && safeItems.some((item) => item.id === selectedId)
-              ? selectedId
-              : safeItems[0]?.id ?? null,
-            transition,
-          };
-        }),
-
-      removeItem: (id) =>
-        set((s) => {
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "remove_item",
-              payload: { id },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
-          return {
-            items: s.items.filter((i) => i.id !== id),
-            selectedId: s.selectedId === id ? null : s.selectedId,
-          };
-        }),
 
       duplicateItem: (id) =>
         set((s) => {
@@ -383,49 +273,15 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           if (clone.label) clone.label = `${clone.label} (cópia)`;
           const items = [...s.items];
           items.splice(idx + 1, 0, clone);
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "duplicate_item",
-              payload: { sourceId: id, item: clone },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
           return { items, selectedId: clone.id };
         }),
 
       updateItem: (id, patch) =>
-        set((s) => {
-          const next = sanitizeSlidesFlowItems(s.items.map((i) => {
+        set((s) => ({
+          items: sanitizeSlidesFlowItems(s.items.map((i) => {
             if (i.id !== id) return i;
             return typeof patch === "function" ? patch(i) : ({ ...i, ...patch } as SlideItem);
-          }));
-          if (s._collabBroadcast && typeof patch !== "function") {
-            const updated = next.find((i) => i.id === id);
-            s._collabBroadcast({
-              type: updated?.kind === "custom" ? "update_custom_slide" : "update_item",
-              payload: updated?.kind === "custom" ? { id, item: updated } : { id, patch },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          } else if (s._collabBroadcast) {
-            // Para mutações funcionais transmitimos o item final completo.
-            const updated = next.find((i) => i.id === id);
-            if (updated) {
-              s._collabBroadcast({
-                type: updated.kind === "custom" ? "update_custom_slide" : "update_item",
-                payload: updated.kind === "custom" ? { id, item: updated } : { id, patch: updated },
-                userId: s._collabUserId ?? "local",
-                ts: Date.now(),
-              });
-            }
-          }
-          return { items: next };
-        }),
-
-      updateItemFromCollab: ({ id, patch }) =>
-        set((s) => ({
-          items: sanitizeSlidesFlowItems(s.items.map((i) => (i.id === id ? ({ ...i, ...patch } as SlideItem) : i))),
+          })),
         })),
 
       reorder: (sourceId, targetId) =>
@@ -436,29 +292,10 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           const items = [...s.items];
           const [moved] = items.splice(from, 1);
           items.splice(to, 0, moved);
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "reorder_items",
-              payload: { activeId: sourceId, overId: targetId },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
           return { items };
         }),
 
-      clearItems: () =>
-        set((s) => {
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "clear_items",
-              payload: {},
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
-          return { items: [], selectedId: null };
-        }),
+      clearItems: () => set({ items: [], selectedId: null }),
 
       duplicateDeck: () =>
         set((s) => {
@@ -469,14 +306,6 @@ export const useSlidesFlow = create<SlidesFlowState>()(
             return c;
           });
           const nextItems = [...s.items, ...clones];
-          if (s._collabBroadcast) {
-            s._collabBroadcast({
-              type: "load_snapshot",
-              payload: { items: nextItems, selectedId: clones[0]?.id ?? s.selectedId, transition: s.transition },
-              userId: s._collabUserId ?? "local",
-              ts: Date.now(),
-            });
-          }
           return { items: nextItems, selectedId: clones[0]?.id ?? s.selectedId };
         }),
       select: (id) => set({ selectedId: id }),
@@ -533,14 +362,6 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         })) as SlideItem[];
         const safeItems = sanitizeSlidesFlowItems(items);
         set({ items: safeItems, selectedId: safeItems[0]?.id ?? null });
-        if (state._collabBroadcast) {
-          state._collabBroadcast({
-            type: "load_snapshot",
-            payload: { items: safeItems, selectedId: safeItems[0]?.id ?? null, transition: state.transition },
-            userId: state._collabUserId ?? "local",
-            ts: Date.now(),
-          });
-        }
       },
 
       deletePreset: (id) =>

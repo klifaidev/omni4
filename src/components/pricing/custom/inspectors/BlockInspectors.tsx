@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type * as Y from "yjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,7 +43,6 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { BlockFilters } from "../BlockFilters";
 import { ShapeInspector } from "../ShapeInspector";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "../DraftInput";
-import { useYTextValue } from "../useYTextValue";
 import { ChartInspector } from "../chart/ChartInspector";
 import { CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "../BlockRenderer";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
@@ -197,10 +195,9 @@ export function BlockAppearanceControls({ block, onChange }: {
   );
 }
 
-export function BlockSpecificEditor({ block, onChange, getYText, styleFocusRequest }: {
+export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
   block: CustomBlock;
   onChange: (p: Partial<CustomBlock>) => void;
-  getYText?: (field: string) => Y.Text | null;
   styleFocusRequest?: number;
 }) {
   useEffect(() => {
@@ -225,8 +222,6 @@ export function BlockSpecificEditor({ block, onChange, getYText, styleFocusReque
         design={<KpiInspector
           block={block}
           onChange={onChange}
-          labelText={getYText?.("label")}
-          manualValueText={getYText?.("manualValue")}
         />}
         filters={block.filters ?? {}}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
@@ -297,7 +292,7 @@ export function BlockSpecificEditor({ block, onChange, getYText, styleFocusReque
     case "topSku":
       return <FilteredInspector
         block={block}
-        design={<TopSkuBlockEditor block={block} onChange={onChange} titleText={getYText?.("title")} />}
+        design={<TopSkuBlockEditor block={block} onChange={onChange} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -558,27 +553,21 @@ function Field({
   label,
   value,
   onChange,
-  yText,
   normalize,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  yText?: Y.Text | null;
   normalize?: (v: string) => string;
 }) {
-  const currentValue = useYTextValue(yText, value);
   return (
     <div>
       <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
       <DraftInput
         className="h-7 text-xs"
-        value={currentValue}
+        value={value}
         normalize={normalize}
-        onCommit={(next) => {
-          if (yText) setYTextValue(yText, next);
-          else onChange(next);
-        }}
+        onCommit={onChange}
       />
     </div>
   );
@@ -642,11 +631,9 @@ export function BgField({ label, value, onChange }: {
 // ---------------------------------------------------------------------------
 // KPI inspector — Manual ou Dinâmico
 // ---------------------------------------------------------------------------
-function KpiInspector({ block, onChange, labelText, manualValueText }: {
+function KpiInspector({ block, onChange }: {
   block: KpiBlock;
   onChange: (p: Partial<CustomBlock>) => void;
-  labelText?: Y.Text | null;
-  manualValueText?: Y.Text | null;
 }) {
   const months = useMonthsInfo();
   const fyList = useFyList();
@@ -661,7 +648,6 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
   return (
     <div className="space-y-2">
       <Field label="Rótulo" value={block.label}
-        yText={labelText}
         onChange={(v) => onChange({ label: v } as never)} />
 
       <div>
@@ -678,7 +664,6 @@ function KpiInspector({ block, onChange, labelText, manualValueText }: {
 
       {block.source === "manual" ? (
         <Field label="Valor" value={block.manualValue ?? ""}
-          yText={manualValueText}
           onChange={(v) => onChange({ manualValue: v } as never)} />
       ) : (
         <>
@@ -1617,10 +1602,9 @@ function ChartBlockEditor({ block, onChange }: {
   return <ChartInspector block={block} onChange={onChange as never} />;
 }
 
-function TopSkuBlockEditor({ block, onChange, titleText }: {
+function TopSkuBlockEditor({ block, onChange }: {
   block: TopSkuBlock;
   onChange: (p: Partial<CustomBlock>) => void;
-  titleText?: Y.Text | null;
 }) {
   const months = useMonthsInfo();
   const fyList = useFyList();
@@ -1633,7 +1617,6 @@ function TopSkuBlockEditor({ block, onChange, titleText }: {
   return (
     <div className="space-y-2">
       <Field label="Título" value={block.title ?? ""}
-        yText={titleText}
         onChange={(v) => onChange({ title: v } as never)} />
       <div className="grid grid-cols-2 gap-2">
         <div>

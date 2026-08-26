@@ -9,8 +9,6 @@
 // ============================================================================
 import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import * as Y from "yjs";
-import { Awareness } from "y-protocols/awareness";
 import {
   DndContext,
   PointerSensor,
@@ -58,9 +56,9 @@ import { Progress } from "@/components/ui/progress";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { toast } from "sonner";
 import {
-  AlertTriangle, ArrowRight, Bell, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
-  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, History, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Target, Trash2, Upload, Users2, X, MoreHorizontal,
-  MonitorPlay, PanelRightClose, RefreshCw, Share2, Timer,
+  AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
+  GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Trash2, Upload, X, MoreHorizontal,
+  MonitorPlay, PanelRightClose, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -93,16 +91,13 @@ import type { CustomBlock, CustomSlideConfig, ImageBlock } from "@/lib/customSli
 import { PresentationMode } from "@/components/pricing/custom/PresentationMode";
 import type { SlideTemplate } from "@/lib/slideTemplates";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useCollaboration } from "@/hooks/use-collaboration";
-import type { CollabUser } from "@/lib/collaboration";
 import { initials } from "@/lib/kanban";
 import {
   addComment, deleteComment, getComments, getUnresolvedCount, reopenComment,
-  replaceComments, resolveComment, setCommentStorageScope, subscribe as subscribeComments,
+  resolveComment, subscribe as subscribeComments,
   type SlideComment, type SlideCommentEvent,
 } from "@/lib/slideComments";
-import { readLog, clearLog, subscribeLog, type ChangeLogEntry } from "@/lib/slideChangeLog";
-import { formatDistanceToNow, format as formatDate } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/components/pricing/slides/SlideCatalogFlow";
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
@@ -111,34 +106,6 @@ import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlide
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useThumbnailVisibilityScheduler } from "@/components/pricing/slides/useThumbnailVisibilityScheduler";
 import { useSlideExport } from "@/hooks/useSlideExport";
-import {
-  createPersistentCollabRoom,
-  getPersistentCollabRoleLabel,
-  joinPersistentCollabRoom,
-  loadPersistentCollabComments,
-  normalizeCollabCode,
-  savePersistentCollabComment,
-  savePersistentCollabSnapshot,
-  type CreatePersistentRoomResult,
-  type PersistentCollabRole,
-} from "@/lib/persistentCollab";
-import {
-  isEdgeFunctionQuotaError,
-  recordCollabDegradedLog,
-  type CollabDegradedReason,
-} from "@/lib/collabDegradedMode";
-import {
-  createSupabaseYjsProvider,
-  getTextAwarenessStates,
-  type SupabaseYjsProvider,
-  type YjsTextAwarenessState,
-} from "@/lib/supabaseYjsProvider";
-import { reportRendererError } from "@/lib/rendererErrorReporting";
-import {
-  compactCustomSlideBlockOrder,
-  customSlideConfigToYDoc,
-  yDocToCustomSlideConfig,
-} from "@/lib/customSlideYjs";
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
@@ -186,6 +153,9 @@ function useSlideConfirm() {
   return { requestConfirm, dialog };
 }
 
+/** Autoria local dos comentarios por slide — este app nao tem sistema de contas. */
+const LOCAL_COMMENT_AUTHOR = { name: "Você", color: "#457B9D" };
+
 function LocalSaveStatusBadge({ status }: { status: "saving" | "saved" | "error" }) {
   return (
     <span className={cn(
@@ -199,19 +169,9 @@ function LocalSaveStatusBadge({ status }: { status: "saving" | "saved" | "error"
     </span>
   );
 }
-const CUSTOM_YJS_STORE_SYNC_MS = 120;
 const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
 const FLOW_CARD_ESTIMATED_HEIGHT = 98;
 const SLIDE_PREVIEW_OVERSCAN = 8;
-const COLLAB_PRIVACY_NOTICE =
-  "A sala sincroniza de forma criptografada estrutura, layout, textos, blocos, comentarios, edicao simultanea e cursores. Bases brutas, valores calculados dos graficos e arquivos CSV/XLSX originais continuam locais em cada computador.";
-const APP_VERSION = (() => {
-  const fallback = import.meta.env.VITE_APP_VERSION ?? "omni4-slides-client";
-  if (typeof window === "undefined") return fallback;
-  return localStorage.getItem("omni4.collab.testAppVersion") || fallback;
-})();
-const COLLAB_PROTOCOL_VERSION = 1;
-const DOWNLOAD_URL = "https://github.com/klifaidev/omni4/releases/latest";
 const DECK_PREP_THRESHOLD = 8;
 const DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE = 2;
 const DECK_PREP_MAX_CHART_BLOCKS_TOTAL = 40;
@@ -273,11 +233,6 @@ function yieldDeckPreparationFrame(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, 0);
   });
-}
-
-function stableBlock(prev: CustomBlock | undefined, next: CustomBlock): CustomBlock {
-  if (!prev) return next;
-  return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
 }
 
 function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, overscan = SLIDE_PREVIEW_OVERSCAN) {
@@ -344,65 +299,6 @@ function useVirtualPreviewWindow(count: number, estimatedItemHeight: number, ove
     bottomSpacerHeight,
   };
 }
-
-function mergeCustomSlideConfigRefs(prev: CustomSlideConfig, next: CustomSlideConfig): CustomSlideConfig {
-  const prevById = new Map(prev.blocks.map((block) => [block.id, block]));
-  let blocksChanged = prev.blocks.length !== next.blocks.length;
-  const blocks = next.blocks.map((block, index) => {
-    const stable = stableBlock(prevById.get(block.id), block);
-    if (stable !== prev.blocks[index]) blocksChanged = true;
-    return stable;
-  });
-  return {
-    ...next,
-    blocks: blocksChanged ? blocks : prev.blocks,
-    groups: JSON.stringify(prev.groups ?? []) === JSON.stringify(next.groups ?? [])
-      ? prev.groups
-      : next.groups,
-  };
-}
-
-function versionParts(version: string): number[] {
-  const clean = version.replace(/^v/i, "").match(/\d+(?:\.\d+)*/)?.[0] ?? "";
-  return clean.split(".").filter(Boolean).map((part) => Number(part));
-}
-
-function compareVersions(a: string, b: string): number {
-  const aa = versionParts(a);
-  const bb = versionParts(b);
-  const max = Math.max(aa.length, bb.length);
-  for (let i = 0; i < max; i += 1) {
-    const diff = (aa[i] ?? 0) - (bb[i] ?? 0);
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-function triggerUpdateNow(): void {
-  const api = (window as unknown as { electronAPI?: { checkForUpdates?: () => void } }).electronAPI;
-  if (api?.checkForUpdates) {
-    api.checkForUpdates();
-    slideToastInfo("Verificando atualizações...");
-    return;
-  }
-  window.open(DOWNLOAD_URL, "_blank", "noopener,noreferrer");
-}
-
-async function retryAsync<T>(operation: () => Promise<T>, attempts = 2, delayMs = 900): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (attempt < attempts - 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-      }
-    }
-  }
-  throw lastError;
-}
-
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -754,14 +650,13 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // Strip lateral de slides ? thumbnails empilhados verticalmente, ordenáveis.
 // ----------------------------------------------------------------------------
 function StripThumbnail({
-  item, index, active, onClick, editingUsers,
+  item, index, active, onClick,
   currentUser, onCommentEvent, previewVisible = true, thumbnailRef,
 }: {
   item: SlideItem;
   index: number;
   active: boolean;
   onClick: () => void;
-  editingUsers?: CollabUser[];
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
   previewVisible?: boolean;
@@ -769,13 +664,10 @@ function StripThumbnail({
   thumbnailRef?: (element: HTMLElement | null) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  const editors = editingUsers ?? [];
-  const firstEditorColor = editors[0]?.color;
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    ...(firstEditorColor ? { borderColor: firstEditorColor, borderWidth: 2 } : {}),
   };
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
@@ -843,16 +735,6 @@ function StripThumbnail({
       >
         {displayName}
       </div>
-      {editors.length > 1 && (
-        <div
-          className="absolute bottom-1 left-1 z-10 rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
-          style={{ background: firstEditorColor ?? "#333" }}
-          title={`${editors.length} pessoas editando`}
-        >
-          +{editors.length - 1}
-        </div>
-      )}
-
       {/* Botão de comentários (hover + sempre visível se houver não-resolvidos) */}
       <Popover open={commentsOpen} onOpenChange={setCommentsOpen} modal={false}>
         <PopoverTrigger asChild>
@@ -1027,22 +909,15 @@ function CommentsThread({
 }
 
 function FullscreenCustomEditor({
-  open, onOpenChange, collaborators, isConnected, updateCursor, updateSlideId,
+  open, onOpenChange,
   currentUser, onCommentEvent, readOnly = false,
-  yjsCollabReady = false, getCollabYDoc, textAwarenessBySlide = {}, isStandby = false, onMinimize,
+  isStandby = false, onMinimize,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   readOnly?: boolean;
-  collaborators?: CollabUser[];
-  isConnected?: boolean;
-  updateCursor?: (x: number, y: number) => void;
-  updateSlideId?: (slideId: string | null) => void;
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
-  yjsCollabReady?: boolean;
-  getCollabYDoc?: (item: Extract<SlideItem, { kind: "custom" }>) => Y.Doc | null;
-  textAwarenessBySlide?: Record<string, YjsTextAwarenessState[]>;
   isStandby?: boolean;
   onMinimize?: () => void;
 }) {
@@ -1050,7 +925,6 @@ function FullscreenCustomEditor({
   const selectedId = useSlidesFlow((s) => s.selectedId);
   const select = useSlidesFlow((s) => s.select);
   const updateItem = useSlidesFlow((s) => s.updateItem);
-  const updateItemFromCollab = useSlidesFlow((s) => s.updateItemFromCollab);
   const addItem = useSlidesFlow((s) => s.addItem);
   const removeItem = useSlidesFlow((s) => s.removeItem);
   const reorder = useSlidesFlow((s) => s.reorder);
@@ -1058,7 +932,6 @@ function FullscreenCustomEditor({
   const current = items.find((i) => i.id === selectedId) ?? null;
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
   const isCustom = current?.kind === "custom";
-  const currentCustomYDoc = current?.kind === "custom" && getCollabYDoc ? getCollabYDoc(current) : null;
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
   const [warmCustomSlideIds, setWarmCustomSlideIds] = useState<string[]>([]);
 
@@ -1081,13 +954,6 @@ function FullscreenCustomEditor({
   useEffect(() => {
     if (open && current && !isCustom) onOpenChange(false);
   }, [open, current, isCustom, onOpenChange]);
-
-  // Atualiza o slideId do usuário local no presence sempre que a seleção muda.
-  useEffect(() => {
-    if (!updateSlideId) return;
-    if (open && isCustom && current) updateSlideId(current.id);
-    else if (!open) updateSlideId(null);
-  }, [open, current, isCustom, updateSlideId]);
 
   // Navegação sequencial (apenas slides custom).
   const goRel = useCallback((offset: number) => {
@@ -1208,46 +1074,7 @@ function FullscreenCustomEditor({
           <DialogDescription className="sr-only">
             Editor de slide personalizado com strip lateral de navegação.
           </DialogDescription>
-          <div className="flex w-[200px] items-center justify-end gap-2">
-            {isConnected && (
-              <span className="relative inline-flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-              </span>
-            )}
-            {(collaborators ?? []).length > 0 && (
-              <TooltipProvider delayDuration={150}>
-                <div className="flex items-center">
-                  {(collaborators ?? []).slice(0, 4).map((c, i) => {
-                    const slideIdx = items.findIndex((it) => it.id === c.slideId);
-                    const tip = slideIdx >= 0
-                      ? `${c.name} ? editando slide ${slideIdx + 1}`
-                      : `${c.name} ? sem slide ativo`;
-                    return (
-                      <Tooltip key={c.id}>
-                        <TooltipTrigger asChild>
-                          <div
-                            className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background text-[11px] font-medium text-white"
-                            style={{ background: c.color, marginLeft: i === 0 ? 0 : -8 }}
-                          >
-                            {initials(c.name)}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{tip}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                  {(collaborators ?? []).length > 4 && (
-                    <div
-                      className="ml-[-8px] flex h-7 min-w-[28px] items-center justify-center rounded-full border-2 border-background bg-muted px-1.5 text-[11px] font-medium text-foreground"
-                    >
-                      +{(collaborators ?? []).length - 4}
-                    </div>
-                  )}
-                </div>
-              </TooltipProvider>
-            )}
-          </div>
+          <div className="flex w-[200px] items-center justify-end gap-2" />
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 gap-3">
@@ -1270,7 +1097,6 @@ function FullscreenCustomEditor({
                         item={it}
                         index={i}
                         active={it.id === current?.id}
-                        editingUsers={(collaborators ?? []).filter((c) => c.slideId === it.id)}
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
                         previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
@@ -1317,21 +1143,11 @@ function FullscreenCustomEditor({
                     toast.info("Modo somente leitura");
                     return;
                   }
-                  if (yjsCollabReady) {
-                    // Em sala ativa, o canvas customizado é sincronizado pelo Y.Doc.
-                    // Refletimos no store local sem rebroadcastar o fluxo legado deck-op.
-                    updateItemFromCollab({ id: current.id, patch: { config: cfg } as Partial<SlideItem> });
-                    return;
-                  }
                   updateItem(current.id, (it) =>
                     it.kind === "custom" ? ({ ...it, config: cfg } as SlideItem) : it,
                   );
                 }}
                 readOnly={readOnly}
-                collaborators={collaborators}
-                onCursorMove={updateCursor}
-                collabYDoc={currentCustomYDoc}
-                textAwareness={textAwarenessBySlide[current.id] ?? []}
                 isStandby={isStandby}
                 onMinimize={onMinimize}
               />
@@ -1799,10 +1615,8 @@ type SlidesRailTab = "catalog" | "templates" | "assets" | "presets";
 
 function QuickAddSlideButton({
   onAdd,
-  readOnly,
 }: {
   onAdd: (kind: SlideKind) => void;
-  readOnly: boolean;
 }) {
   const common: SlideKind[] = ["custom", "bridge_pvm", "budget_evo", "cover"];
   return (
@@ -1810,7 +1624,6 @@ function QuickAddSlideButton({
       <PopoverTrigger asChild>
         <button
           type="button"
-          disabled={readOnly}
           className="mx-auto mt-5 flex min-h-16 w-[172px] items-center justify-center gap-2 rounded-2xl border border-primary/35 bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_45px_-22px_hsl(var(--primary)/0.9)] transition hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_22px_52px_-24px_hsl(var(--primary)/0.95)] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Adicionar slide"
           title="Adicionar slide"
@@ -2016,8 +1829,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const reorder = useSlidesFlow((s) => s.reorder);
   const clearItems = useSlidesFlow((s) => s.clearItems);
   const transition = useSlidesFlow((s) => s.transition);
-  const applySnapshotFromCollab = useSlidesFlow((s) => s.applySnapshotFromCollab);
-  const updateItemFromCollab = useSlidesFlow((s) => s.updateItemFromCollab);
 
   const months = useMonthsInfo();
   const budgetRowsAll = useBudget((s) => s.rows);
@@ -2030,7 +1841,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   }, [budgetRowsAll]);
 
   const addWithDefaults = (kind: SlideKind): string | null => {
-    if (viewOnly) { toast.info("Modo somente leitura"); return null; }
     addItem(kind);
     // O zustand atualiza items síncronamente; pegamos o último item criado.
     const state = useSlidesFlow.getState();
@@ -2185,363 +1995,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     slideToastInfo("Preparacao continua em segundo plano.");
   }, []);
 
-  // ====== Colaboração em tempo real ======
-  const [collabOpen, setCollabOpen] = useState(false);
-  const [collabName, setCollabName] = useState<string>(() =>
-    typeof window === "undefined" ? "" : localStorage.getItem("collab-username") ?? "",
-  );
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [persistentRoomDbId, setPersistentRoomDbId] = useState<string | null>(null);
-  const [persistentCollabCode, setPersistentCollabCode] = useState<string | null>(null);
-  const [persistentCollabContentKey, setPersistentCollabContentKey] = useState<CryptoKey | null>(null);
-  const [persistentCollabRole, setPersistentCollabRole] = useState<PersistentCollabRole | null>(null);
-  const [createdPersistentRoom, setCreatedPersistentRoom] = useState<CreatePersistentRoomResult | null>(null);
-  const [collabJoinCode, setCollabJoinCode] = useState("");
-  const [collabBusy, setCollabBusy] = useState<"create" | "join" | null>(null);
-  const [collabSnapshotVersion, setCollabSnapshotVersion] = useState<number | null>(null);
-  const [collabSaveStatus, setCollabSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
   const [localSaveStatus, setLocalSaveStatus] = useState<"saving" | "saved" | "error">("saved");
-  const [edgeDegradedSince, setEdgeDegradedSince] = useState<number | null>(null);
-  const [degradedNow, setDegradedNow] = useState(() => Date.now());
-  const [isFollowingHost, setIsFollowingHost] = useState(false);
-  const [lastHostUpdateNotice, setLastHostUpdateNotice] = useState<string | null>(null);
-  const lastSavedSnapshotRef = useRef<string>("");
-  const saveTimerRef = useRef<number | null>(null);
-  const savingRef = useRef(false);
   const localSaveSignatureRef = useRef<string>("");
   const localSaveTimerRef = useRef<number | null>(null);
-  const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
-  const customYDocsRef = useRef<Map<string, Y.Doc>>(new Map());
-  const customYProvidersRef = useRef<Map<string, SupabaseYjsProvider>>(new Map());
-  const customYAwarenessRef = useRef<Map<string, Awareness>>(new Map());
-  const customYSyncDisposersRef = useRef<Map<string, () => void>>(new Map());
-  const customYSyncTimersRef = useRef<Map<string, number>>(new Map());
-  const [textAwarenessBySlide, setTextAwarenessBySlide] = useState<Record<string, YjsTextAwarenessState[]>>({});
-  const setCollabBroadcast = useSlidesFlow((s) => s.setCollabBroadcast);
-
-  const [viewOnly, setViewOnly] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const guardViewOnly = useCallback(() => {
-    return guardSlideReadOnly(viewOnly, () => slideToastInfo("Modo somente leitura"));
-  }, [viewOnly]);
-
-  const selectedSlideIndex = useMemo(
-    () => (selectedId ? items.findIndex((item) => item.id === selectedId) : -1),
-    [items, selectedId],
-  );
-  const selectedSlideIndexForPresence = selectedSlideIndex >= 0 ? selectedSlideIndex : null;
-  const collabActivity = presentationOpen
-    ? "presenting"
-    : selectedId ? "editing" : "idle";
-
-  const handleRemoteCollabEvent = useCallback((event: import("@/lib/collaboration").CollabEvent) => {
-    if (event.type === "bring_to_slide") {
-      if (event.role !== "host") return;
-      const payload = event.payload as { slideId?: string | null };
-      if (payload.slideId && items.some((item) => item.id === payload.slideId)) {
-        select(payload.slideId);
-      }
-      return;
-    }
-    if (event.type === "notify_host_update" && persistentCollabRole === "host") {
-      const payload = event.payload as { fromName?: string; appVersion?: string };
-      const message = `${payload.fromName ?? "Um convidado"} está em uma versão mais nova (${payload.appVersion ?? "desconhecida"}).`;
-      setLastHostUpdateNotice(message);
-      toast.info(message, { icon: <Bell className="h-4 w-4 text-primary" /> });
-    }
-  }, [items, persistentCollabRole, select]);
-
-  const { collaborators, isConnected, channel: realtimeChannel, degraded: realtimeDegraded, broadcast, updateCursor, updateSlideId, broadcastComment, userId: collabUserId } = useCollaboration(
-    roomId,
-    collabName,
-    persistentCollabRole,
-    {
-      appVersion: APP_VERSION,
-      collabProtocolVersion: COLLAB_PROTOCOL_VERSION,
-      currentSlideId: selectedId,
-      currentSlideIndex: selectedSlideIndexForPresence,
-      activity: collabActivity,
-      isFollowingHost,
-      commentContentKey: persistentCollabContentKey,
-      onRemoteEvent: handleRemoteCollabEvent,
-    },
-  );
-  const degradedActive = realtimeDegraded.active || edgeDegradedSince !== null;
-  const degradedSince = realtimeDegraded.since ?? edgeDegradedSince;
-  const degradedReason: CollabDegradedReason | null = realtimeDegraded.reason ?? (edgeDegradedSince ? "edge_function_quota" : null);
-  const degradedLongRunning = degradedActive && degradedSince !== null && degradedNow - degradedSince >= 15 * 60_000;
-
-  const activateEdgeDegraded = useCallback((detail?: string) => {
-    const now = Date.now();
-    setEdgeDegradedSince((current) => current ?? now);
-    setCollabSaveStatus("error");
-    recordCollabDegradedLog({
-      at: new Date(now).toISOString(),
-      action: "activated",
-      reason: "edge_function_quota",
-      roomId,
-      detail,
-    });
-  }, [roomId]);
-
-  const recoverEdgeDegraded = useCallback(() => {
-    setEdgeDegradedSince((current) => {
-      if (current) {
-        recordCollabDegradedLog({
-          at: new Date().toISOString(),
-          action: "recovered",
-          reason: "edge_function_quota",
-          roomId,
-        });
-      }
-      return null;
-    });
-  }, [roomId]);
-
-  useEffect(() => {
-    if (!degradedActive) return;
-    const id = window.setInterval(() => setDegradedNow(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, [degradedActive]);
-
-  // Cor estável do usuário local (mesmo cálculo do hook de colaboração).
-  const currentUserColor = useMemo(() => {
-    const id = collabUserId ?? collabName ?? "anon";
-    let h = 0;
-    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-    const palette = ["#E63946", "#457B9D", "#2A9D8F", "#E9C46A", "#F4A261", "#A8DADC", "#8338EC", "#06D6A0", "#FFB703", "#FB8500", "#3A86FF", "#FF006E"];
-    return palette[h % palette.length];
-  }, [collabUserId, collabName]);
-  const currentUser = useMemo(
-    () => ({ name: collabName || "Convidado", color: currentUserColor }),
-    [collabName, currentUserColor],
-  );
-  const yjsCollabReady = !!roomId && !!persistentCollabContentKey && !!realtimeChannel;
-
-  const getOrCreateCustomYDoc = useCallback((item: Extract<SlideItem, { kind: "custom" }>): Y.Doc => {
-    const existing = customYDocsRef.current.get(item.id);
-    if (existing) return existing;
-    const doc = customSlideConfigToYDoc(item.config);
-    customYDocsRef.current.set(item.id, doc);
-    return doc;
-  }, []);
-
-  const syncCustomYDocToStore = useCallback((slideId: string, doc: Y.Doc) => {
-    const config = yDocToCustomSlideConfig(doc);
-    const current = useSlidesFlow.getState().items.find((item) => item.id === slideId);
-    const mergedConfig = current?.kind === "custom"
-      ? mergeCustomSlideConfigRefs(current.config, config)
-      : config;
-    updateItemFromCollab({
-      id: slideId,
-      patch: { config: mergedConfig } as Partial<SlideItem>,
-    });
-  }, [updateItemFromCollab]);
-
-  const scheduleCustomYDocStoreSync = useCallback((slideId: string, doc: Y.Doc) => {
-    const currentTimer = customYSyncTimersRef.current.get(slideId);
-    if (currentTimer !== undefined) window.clearTimeout(currentTimer);
-    const timer = window.setTimeout(() => {
-      customYSyncTimersRef.current.delete(slideId);
-      syncCustomYDocToStore(slideId, doc);
-    }, CUSTOM_YJS_STORE_SYNC_MS);
-    customYSyncTimersRef.current.set(slideId, timer);
-  }, [syncCustomYDocToStore]);
-
-  const ensureCustomYProvider = useCallback((item: Extract<SlideItem, { kind: "custom" }>) => {
-    if (!persistentCollabContentKey || !realtimeChannel || !collabUserId) return null;
-    const doc = getOrCreateCustomYDoc(item);
-    if (!customYSyncDisposersRef.current.has(item.id)) {
-      const sync = () => scheduleCustomYDocStoreSync(item.id, doc);
-      doc.on("update", sync);
-      customYSyncDisposersRef.current.set(item.id, () => doc.off("update", sync));
-    }
-    if (customYProvidersRef.current.has(item.id)) return doc;
-
-    let awareness: Awareness | undefined;
-    try {
-      awareness = new Awareness(doc);
-      awareness.setLocalStateField("user", currentUser);
-      const updateAwareness = () => {
-        if (!awareness) return;
-        setTextAwarenessBySlide((current) => ({
-          ...current,
-          [item.id]: getTextAwarenessStates(awareness, awareness.clientID),
-        }));
-      };
-      awareness.on("update", updateAwareness);
-      customYAwarenessRef.current.set(item.id, awareness);
-    } catch (error) {
-      reportRendererError("slides.yjs-awareness-init", error);
-      setTextAwarenessBySlide((current) => {
-        if (!current[item.id]) return current;
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
-    }
-
-    const provider = createSupabaseYjsProvider({
-      doc,
-      channel: realtimeChannel,
-      contentKey: persistentCollabContentKey,
-      clientId: collabUserId,
-      eventName: `custom-slide-yjs:${item.id}`,
-      awarenessEventName: `custom-slide-yjs-awareness:${item.id}`,
-      awareness,
-      throttleMs: 120,
-      onSendFailure: () => {
-        recordCollabDegradedLog({
-          at: new Date().toISOString(),
-          action: "activated",
-          reason: "realtime_channel_error",
-          roomId,
-          detail: `custom-slide-yjs:${item.id}`,
-        });
-      },
-    });
-    customYProvidersRef.current.set(item.id, provider);
-    return doc;
-  }, [
-    collabUserId,
-    currentUser,
-    getOrCreateCustomYDoc,
-    persistentCollabContentKey,
-    realtimeChannel,
-    roomId,
-    scheduleCustomYDocStoreSync,
-  ]);
-
-  useEffect(() => {
-    customYProvidersRef.current.forEach((provider) => provider.destroy());
-    customYProvidersRef.current.clear();
-    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
-    customYAwarenessRef.current.clear();
-    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-    customYSyncTimersRef.current.clear();
-    setTextAwarenessBySlide({});
-  }, [persistentCollabContentKey, realtimeChannel, roomId]);
-
-  useEffect(() => {
-    customYAwarenessRef.current.forEach((awareness) => {
-      awareness.setLocalStateField("user", currentUser);
-    });
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (roomId) return;
-    setPersistentCollabContentKey(null);
-    customYProvidersRef.current.forEach((provider) => provider.destroy());
-    customYProvidersRef.current.clear();
-    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
-    customYAwarenessRef.current.clear();
-    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-    customYSyncTimersRef.current.clear();
-    customYSyncDisposersRef.current.forEach((dispose) => dispose());
-    customYSyncDisposersRef.current.clear();
-    customYDocsRef.current.clear();
-    setTextAwarenessBySlide({});
-  }, [roomId]);
-
-  useEffect(() => () => {
-    customYProvidersRef.current.forEach((provider) => provider.destroy());
-    customYProvidersRef.current.clear();
-    customYAwarenessRef.current.forEach((awareness) => awareness.destroy());
-    customYAwarenessRef.current.clear();
-    customYSyncTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-    customYSyncTimersRef.current.clear();
-    customYSyncDisposersRef.current.forEach((dispose) => dispose());
-    customYSyncDisposersRef.current.clear();
-    customYDocsRef.current.clear();
-  }, []);
-
-  const hostParticipant = useMemo(
-    () => collaborators.find((user) => user.role === "host") ?? null,
-    [collaborators],
-  );
-  const appVersionComparison = hostParticipant?.appVersion
-    ? compareVersions(APP_VERSION, hostParticipant.appVersion)
-    : 0;
-  const localAppOutdated = !!roomId && persistentCollabRole !== "host" && !!hostParticipant?.appVersion && appVersionComparison < 0;
-  const hostAppOutdated = !!roomId && persistentCollabRole !== "host" && !!hostParticipant?.appVersion && appVersionComparison > 0;
-  const protocolMismatch = !!roomId && !!hostParticipant?.collabProtocolVersion
-    && hostParticipant.collabProtocolVersion !== COLLAB_PROTOCOL_VERSION;
-
-  useEffect(() => {
-    if (!protocolMismatch) return;
-    setViewOnly(true);
-  }, [protocolMismatch]);
-
-  useEffect(() => {
-    if (!isFollowingHost || !hostParticipant?.currentSlideId) return;
-    if (hostParticipant.currentSlideId === selectedId) return;
-    if (!items.some((item) => item.id === hostParticipant.currentSlideId)) return;
-    select(hostParticipant.currentSlideId);
-  }, [hostParticipant?.currentSlideId, isFollowingHost, items, select, selectedId]);
-
-  const bringEveryoneToCurrentSlide = useCallback(() => {
-    if (persistentCollabRole !== "host" || !selectedId) return;
-    broadcast({
-      type: "bring_to_slide",
-      payload: { slideId: selectedId },
-      userId: collabUserId ?? "local",
-      ts: Date.now(),
-    });
-    slideToastSuccess("Participantes chamados para este slide.");
-  }, [broadcast, collabUserId, persistentCollabRole, selectedId]);
-
-  const notifyHostAboutVersion = useCallback(() => {
-    if (!hostParticipant || !roomId) return;
-    broadcast({
-      type: "notify_host_update",
-      payload: { fromName: collabName || "Convidado", appVersion: APP_VERSION },
-      userId: collabUserId ?? "local",
-      ts: Date.now(),
-    });
-    slideToastSuccess("Host notificado sobre a versão.");
-  }, [broadcast, collabName, collabUserId, hostParticipant, roomId]);
-
-  const handleCommentEvent = useCallback((event: SlideCommentEvent) => {
-    if (!roomId) return;
-    if (persistentCollabRole === "viewer") return;
-    broadcastComment(event);
-    if (!persistentRoomDbId || !persistentCollabCode) return;
-    void retryAsync(
-      () => savePersistentCollabComment({
-        roomId: persistentRoomDbId,
-        code: persistentCollabCode,
-        comment: event.comment,
-        status: event.type === "comment_delete"
-          ? "deleted"
-          : event.comment.resolved ? "resolved" : "open",
-      }),
-      3,
-      1200,
-    ).then(() => {
-      recoverEdgeDegraded();
-    }).catch((error) => {
-      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
-        activateEdgeDegraded("save-collab-comment");
-        slideToastInfo("Comentario mantido localmente. Vamos tentar sincronizar quando o servico normalizar.");
-        return;
-      }
-      slideToastError("Nao foi possivel salvar o comentario na sala.");
-    });
-  }, [activateEdgeDegraded, broadcastComment, persistentCollabCode, persistentCollabRole, persistentRoomDbId, recoverEdgeDegraded, roomId]);
-
-  useEffect(() => {
-    if (roomId) {
-      setCollabBroadcast(broadcast, collabUserId);
-    } else {
-      setCollabBroadcast(null, null);
-    }
-    return () => setCollabBroadcast(null, null);
-  }, [roomId, broadcast, collabUserId, setCollabBroadcast]);
-
-  useEffect(() => {
-    setCommentStorageScope(roomId);
-    return () => setCommentStorageScope(null);
-  }, [roomId]);
 
   const currentSnapshotSignature = useMemo(
     () => JSON.stringify({ items, selectedId, transition }),
@@ -2549,7 +2006,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   );
 
   useEffect(() => {
-    if (roomId) return;
     if (!localSaveSignatureRef.current) {
       localSaveSignatureRef.current = currentSnapshotSignature;
       setLocalSaveStatus("saved");
@@ -2574,218 +2030,14 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         localSaveTimerRef.current = null;
       }
     };
-  }, [currentSnapshotSignature, roomId]);
+  }, [currentSnapshotSignature]);
 
-  const saveCollabSnapshotNow = useCallback(async () => {
-    if (
-      !persistentRoomDbId ||
-      !persistentCollabCode ||
-      !collabSnapshotVersion ||
-      persistentCollabRole === "viewer" ||
-      savingRef.current
-    ) {
-      return;
-    }
-    if (lastSavedSnapshotRef.current === currentSnapshotSignature) {
-      setCollabSaveStatus("saved");
-      return;
-    }
-
-    savingRef.current = true;
-    setCollabSaveStatus("saving");
-    try {
-      const itemsForSnapshot = items.map((item) => {
-        if (item.kind !== "custom") return item;
-        const doc = customYDocsRef.current.get(item.id);
-        if (!doc) return item;
-        compactCustomSlideBlockOrder(doc);
-        return {
-          ...item,
-          config: yDocToCustomSlideConfig(doc),
-        } as SlideItem;
-      });
-      const result = await retryAsync(() => savePersistentCollabSnapshot({
-        roomId: persistentRoomDbId,
-        code: persistentCollabCode,
-        expectedPreviousVersion: collabSnapshotVersion,
-        items: itemsForSnapshot,
-        selectedSlideId: selectedId,
-        transition,
-        appVersion: APP_VERSION,
-      }), 3, 1200);
-      lastSavedSnapshotRef.current = currentSnapshotSignature;
-      setCollabSnapshotVersion(result.version);
-      setCollabSaveStatus("saved");
-      recoverEdgeDegraded();
-    } catch (error) {
-      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
-        activateEdgeDegraded("save-collab-snapshot");
-        slideToastInfo("Salvamento online temporariamente indisponivel. Suas edicoes continuam nesta sessao.");
-      }
-      setCollabSaveStatus("error");
-    } finally {
-      savingRef.current = false;
-    }
-  }, [
-    collabSnapshotVersion,
-    currentSnapshotSignature,
-    items,
-    persistentCollabCode,
-    persistentCollabRole,
-    persistentRoomDbId,
-    activateEdgeDegraded,
-    recoverEdgeDegraded,
-    selectedId,
-    transition,
-  ]);
-
-  useEffect(() => {
-    if (!roomId || persistentCollabRole === "viewer" || !persistentRoomDbId || !persistentCollabCode) return;
-    if (!lastSavedSnapshotRef.current || lastSavedSnapshotRef.current === currentSnapshotSignature) return;
-    setCollabSaveStatus("saving");
-    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveCollabSnapshotNow();
-    }, 1200);
-    return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [
-    currentSnapshotSignature,
-    persistentCollabCode,
-    persistentCollabRole,
-    persistentRoomDbId,
-    roomId,
-    saveCollabSnapshotNow,
-  ]);
-
-  useEffect(() => {
-    if (!roomId || persistentCollabRole === "viewer") return;
-    const flush = () => {
-      void saveCollabSnapshotNow();
-    };
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("pagehide", flush);
-      flush();
-    };
-  }, [persistentCollabRole, roomId, saveCollabSnapshotNow]);
-
-  const handleCreatePersistentRoom = async () => {
-    if (guardViewOnly()) return null;
-    const name = collabName.trim() || "Convidado";
-    if (typeof window !== "undefined") {
-      localStorage.setItem("collab-username", name);
-    }
-    setCollabName(name);
-    setCollabBusy("create");
-    try {
-      const created = await createPersistentCollabRoom({
-        items,
-        selectedSlideId: selectedId,
-        transition,
-        appVersion: APP_VERSION,
-      });
-      setCreatedPersistentRoom(created);
-      setPersistentCollabRole("host");
-      setPersistentRoomDbId(created.roomId);
-      setPersistentCollabCode(created.editorCode);
-      setPersistentCollabContentKey(created.contentKey);
-      setRoomId(created.roomPublicId);
-      setCollabSnapshotVersion(created.latestSnapshotVersion);
-      lastSavedSnapshotRef.current = JSON.stringify({ items, selectedId, transition });
-      setCommentStorageScope(created.roomPublicId);
-      replaceComments([]);
-      setViewOnly(false);
-      recoverEdgeDegraded();
-      slideToastSuccess("Sala colaborativa criada.");
-    } catch (error) {
-      if (isEdgeFunctionQuotaError(error) || (error instanceof Error && error.message === "SUPABASE_EDGE_FUNCTION_QUOTA")) {
-        activateEdgeDegraded("create-collab-room");
-        slideToastError("Criacao de sala temporariamente indisponivel. O deck local continua preservado.");
-      } else {
-        slideToastError("Nao foi possivel criar a sala colaborativa.");
-      }
-    } finally {
-      setCollabBusy(null);
-    }
-  };
-
-  const handleJoinPersistentRoom = async () => {
-    const normalizedCode = normalizeCollabCode(collabJoinCode);
-    if (!normalizedCode) {
-      slideToastInfo("Informe um codigo de convite.");
-      return;
-    }
-    setCollabJoinCode(normalizedCode);
-    setCollabBusy("join");
-    try {
-      const joined = await joinPersistentCollabRoom(normalizedCode);
-      if (items.length > 0) {
-        const shouldReplace = await requestConfirm({
-          title: "Substituir esteira local?",
-          description: `Entrar nesta sala vai substituir os ${items.length} slide(s) atuais pelo snapshot mais recente da sala colaborativa.`,
-          confirmLabel: "Substituir esteira",
-        });
-        if (!shouldReplace) return;
-      }
-      applySnapshotFromCollab(joined.state);
-      const persistedComments = await loadPersistentCollabComments({
-        roomId: joined.roomId,
-        code: normalizedCode,
-      });
-      setCommentStorageScope(joined.roomPublicId);
-      replaceComments(persistedComments);
-      setCreatedPersistentRoom(null);
-      setPersistentCollabRole(joined.role);
-      setPersistentRoomDbId(joined.roomId);
-      setPersistentCollabCode(normalizedCode);
-      setPersistentCollabContentKey(joined.contentKey);
-      setRoomId(joined.roomPublicId);
-      setCollabSnapshotVersion(joined.latestSnapshotVersion);
-      lastSavedSnapshotRef.current = JSON.stringify({
-        items: joined.state.items,
-        selectedId: joined.state.selectedId,
-        transition: joined.state.transition,
-      });
-      setViewOnly(joined.role === "viewer");
-      recoverEdgeDegraded();
-      slideToastSuccess(joined.role === "viewer" ? "Entrada como visualizador confirmada." : "Entrada como editor confirmada.");
-      setCollabOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (message.includes("UNSUPPORTED") || message.includes("SNAPSHOT")) {
-        slideToastError("Snapshot incompatível com esta versão do app.");
-      } else if (message.includes("CORRUPTED")) {
-        slideToastError("Snapshot da sala está corrompido ou não pode ser lido.");
-      } else if (message.includes("SUPABASE_EDGE_FUNCTION_QUOTA")) {
-        activateEdgeDegraded("join-collab-room");
-        slideToastError("Entrada em sala temporariamente indisponivel. Seu deck local continua preservado.");
-      } else if (message.includes("INVALID") || message.includes("EXPIRED") || message.includes("EMPTY_CODE")) {
-        slideToastError("Código inválido ou expirado.");
-      } else {
-        slideToastError("Não foi possível entrar na sala. Verifique sua conexão e tente novamente.");
-      }
-    } finally {
-      setCollabBusy(null);
-    }
-  };
-
-  const copyText = (value: string, message: string) => {
-    navigator.clipboard?.writeText(value);
-    slideToastSuccess(message);
-  };
   const openPresentation = (presenter = false) => {
     setPresentationPresenterMode(presenter);
     setPresentationOpen(true);
   };
 
   const applyTemplate = (tpl: SlideTemplate) => {
-    if (guardViewOnly()) return;
     setTemplateApplying(true);
     window.setTimeout(() => {
       try {
@@ -2856,26 +2108,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     else await handleExport();
   };
 
-  const saveLocalCollabSafetyCopy = useCallback(() => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      appVersion: APP_VERSION,
-      collabProtocolVersion: COLLAB_PROTOCOL_VERSION,
-      roomId,
-      selectedId,
-      transition,
-      items,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `omni4-sala-colaborativa-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    slideToastSuccess("Copia local salva.");
-  }, [items, roomId, selectedId, transition]);
-
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
   const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
   const flowThumbnailScheduler = useThumbnailVisibilityScheduler(flowPreviewWindow.viewportRef);
@@ -2887,7 +2119,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   };
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(null);
-    if (guardViewOnly()) return;
     const { active, over } = e;
     if (!over) return;
     const activeData = active.data.current as { source?: string; kind?: SlideKind } | undefined;
@@ -2919,38 +2150,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         showPeriodStrip={false}
         subtitle="Monte uma apresentação combinando slides com filtros independentes"
       />
-      {viewOnly && (
-        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-amber-700 md:px-8">
-          Somente leitura
-        </div>
-      )}
-      {degradedActive && (
-        <div className="border-b border-warning/25 bg-warning/10 px-4 py-2 md:px-8">
-          <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-warning" />
-              <div className="space-y-0.5">
-                <p className="font-medium">
-                  {degradedReason === "edge_function_quota"
-                    ? "Salvamento online temporariamente indisponivel."
-                    : "Colaboracao ao vivo temporariamente indisponivel."}
-                </p>
-                <p className="text-muted-foreground">
-                  {degradedReason === "edge_function_quota"
-                    ? "Suas edicoes continuam nesta sessao. Salve uma copia local se precisar de uma seguranca extra."
-                    : "Suas edicoes continuam sendo salvas normalmente e vao sincronizar automaticamente assim que a conexao for restabelecida."}
-                </p>
-              </div>
-            </div>
-            {degradedLongRunning && (
-              <Button size="sm" variant="outline" className="h-8 gap-2 bg-background/70" onClick={saveLocalCollabSafetyCopy}>
-                <Download className="h-3.5 w-3.5" />
-                Salvar copia local
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
       <AnimatePresence initial={false}>
         {deckPreparation?.visible && (
           <motion.div
@@ -3089,7 +2288,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       <Button
                         className="h-12 w-full justify-start gap-3 rounded-lg"
                         onClick={() => addSlideFromShortcut("custom")}
-                        disabled={viewOnly}
                       >
                         <Plus className="h-4 w-4" />
                         <span className="flex flex-col items-start leading-tight">
@@ -3118,7 +2316,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   )}
                   {activeRailTab === "templates" && (
                     <div className="space-y-2">
-                      <Button className="w-full justify-start gap-2" variant="outline" onClick={() => { if (guardViewOnly()) return; setGalleryOpen(true); }}>
+                      <Button className="w-full justify-start gap-2" variant="outline" onClick={() => setGalleryOpen(true)}>
                         <Sparkles className="h-4 w-4" /> Abrir galeria
                       </Button>
                       <p className="text-xs leading-relaxed text-muted-foreground">
@@ -3130,7 +2328,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     <div className="space-y-2 rounded-xl border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
                       <ImageIcon className="mx-auto h-6 w-6 text-muted-foreground/70" />
                       Importe PPTX ou use imagens dentro do slide personalizado.
-                      <Button className="mt-2 w-full gap-2" size="sm" variant="outline" onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}>
+                      <Button className="mt-2 w-full gap-2" size="sm" variant="outline" onClick={() => setImportOpen(true)}>
                         <Upload className="h-3.5 w-3.5" /> Importar PPTX
                       </Button>
                     </div>
@@ -3168,39 +2366,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   Incompleto
                 </Badge>
               )}
-              {!roomId && <LocalSaveStatusBadge status={localSaveStatus} />}
-              {roomId && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 slides-type-badge text-success">
-                    <span className="relative inline-flex h-1.5 w-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
-                    </span>
-                    Sala ativa
-                    <span className="text-muted-foreground">- {getPersistentCollabRoleLabel(persistentCollabRole)}</span>
-                    {collabSnapshotVersion && (
-                      <span className="text-muted-foreground">- v{collabSnapshotVersion}</span>
-                    )}
-                    {persistentCollabRole !== "viewer" && collabSaveStatus !== "idle" && (
-                      <span className={cn(
-                        "text-muted-foreground",
-                        collabSaveStatus === "error" && "text-destructive",
-                        collabSaveStatus === "saved" && "text-success",
-                      )}>
-                        - {collabSaveStatus === "saving"
-                          ? "Salvando..."
-                          : collabSaveStatus === "saved" ? "Salvo" : "Erro ao salvar"}
-                      </span>
-                    )}
-                    {isConnected && collaborators.length > 0 && (
-                      <span className="text-muted-foreground">- {collaborators.length}</span>
-                    )}
-                  </span>
-                  <span className="hidden max-w-[520px] truncate slides-type-helper xl:inline">
-                    {COLLAB_PRIVACY_NOTICE}
-                  </span>
-                </div>
-              )}
+              <LocalSaveStatusBadge status={localSaveStatus} />
             </div>
             <TooltipProvider delayDuration={200}>
               <div className="flex items-center gap-1.5">
@@ -3208,7 +2374,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   <TooltipTrigger asChild>
                     <Button
                       variant="outline" size="sm" className="h-8 gap-1.5"
-                      onClick={() => { if (guardViewOnly()) return; setGalleryOpen(true); }}
+                      onClick={() => setGalleryOpen(true)}
                       aria-label="Abrir galeria de templates"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
@@ -3243,118 +2409,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   </PopoverTrigger>
                   <PopoverContent align="end" className="surface-overlay w-[360px] p-4">
                     <div className="space-y-4">
-                      <div>
-                        <div className="flex items-center gap-2 slides-type-section">
-                          <Users2 className="h-4 w-4 text-primary" />
-                          Sala colaborativa persistente
-                        </div>
-                        <p className="mt-1 slides-type-helper">
-                          Crie uma sala segura ou entre com um codigo recebido.
-                        </p>
-                      </div>
-                      <div className="surface-raised space-y-3 rounded-lg border border-border/50 p-3">
-                        {roomId ? (
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-xs font-medium">Sala ativa</p>
-                              <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
-                            </div>
-                            <Badge variant="outline" className="border-success/40 bg-success/10 text-success">
-                              {getPersistentCollabRoleLabel(persistentCollabRole)}
-                            </Badge>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Nenhuma sala ativa neste deck.</p>
-                        )}
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          {COLLAB_PRIVACY_NOTICE}
-                        </p>
-                        {roomId && (
-                          <div className="space-y-2 rounded-lg border border-border/40 bg-background/70 p-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                Participantes
-                              </p>
-                              <Badge variant="secondary" className="h-5 text-[10px]">{collaborators.length}</Badge>
-                            </div>
-                            <div className="space-y-1.5">
-                              {collaborators.map((user) => (
-                                <div key={user.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-[11px]">
-                                  <span className="h-2 w-2 rounded-full" style={{ background: user.color }} />
-                                  <span className="min-w-0 flex-1 truncate">
-                                    <span className="font-medium">{user.name || "Convidado"}</span>
-                                    <span className="text-muted-foreground">
-                                      {" — "}{getPersistentCollabRoleLabel(user.role ?? null)} · v{user.appVersion ?? "?"}
-                                      {typeof user.currentSlideIndex === "number" ? ` · Slide ${user.currentSlideIndex + 1}` : " · Sem slide"}
-                                      {user.activity === "presenting" ? " · Apresentando" : user.activity === "editing" ? " · Editando" : " · Ocioso"}
-                                    </span>
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {persistentCollabRole !== "host" && (
-                                <Button
-                                  variant={isFollowingHost ? "default" : "outline"}
-                                  size="sm"
-                                  className="h-8 gap-2 text-xs"
-                                  onClick={() => setIsFollowingHost((value) => !value)}
-                                >
-                                  <Target className="h-3.5 w-3.5" />
-                                  {isFollowingHost ? "Seguindo host" : "Seguir host"}
-                                </Button>
-                              )}
-                              {persistentCollabRole === "host" && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 gap-2 text-xs"
-                                  disabled={!selectedId}
-                                  onClick={bringEveryoneToCurrentSlide}
-                                >
-                                  <Users2 className="h-3.5 w-3.5" />
-                                  Trazer todos
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        {roomId && protocolMismatch && (
-                          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
-                            Protocolo incompatível. Edição colaborativa bloqueada; você pode permanecer em visualização.
-                          </div>
-                        )}
-                        {roomId && localAppOutdated && !protocolMismatch && (
-                          <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/10 p-2 text-[11px] text-warning">
-                            <p>Você está em uma versão anterior à do host. Atualize para editar com segurança.</p>
-                            <div className="flex gap-2">
-                              <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={triggerUpdateNow}>
-                                <RefreshCw className="h-3 w-3" /> Atualizar agora
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setViewOnly(true)}>
-                                Entrar em modo visualização
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                        {roomId && hostAppOutdated && !protocolMismatch && (
-                          <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/10 p-2 text-[11px] text-primary">
-                            <p>Seu app está mais novo que o do host.</p>
-                            <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={notifyHostAboutVersion}>
-                              <Bell className="h-3 w-3" /> Notificar host
-                            </Button>
-                          </div>
-                        )}
-                        {lastHostUpdateNotice && persistentCollabRole === "host" && (
-                          <div className="rounded-lg border border-primary/25 bg-primary/10 p-2 text-[11px] text-primary">
-                            {lastHostUpdateNotice}
-                          </div>
-                        )}
-                        <Button className="w-full gap-2" onClick={() => setCollabOpen(true)}>
-                          <Users2 className="h-3.5 w-3.5" />
-                          Abrir colaboracao
-                        </Button>
-                      </div>
                       <div className="grid grid-cols-3 gap-2">
                         <ShareActionButton icon={Download} label="PPTX" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pptx")} />
                         <ShareActionButton icon={FileText} label="PDF" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pdf")} />
@@ -3378,18 +2432,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
-                      onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
+                      onClick={() => setImportOpen(true)}
                     >
                       <Upload className="h-4 w-4 text-muted-foreground" />
                       Importar PPTX
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
-                      onClick={() => setHistoryOpen(true)}
-                    >
-                      <History className="h-4 w-4 text-muted-foreground" />
-                      Historico de alteracoes
                     </button>
                     <SavePresetDialog triggerClassName="h-8 w-full justify-start gap-2 px-2 text-xs text-muted-foreground" triggerLabel="Salvar pre-definicao" />
                     {items.length > 0 && (
@@ -3397,11 +2443,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         type="button"
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
-                          if (guardViewOnly()) return;
                           duplicateDeck();
                           toast.success(`Deck duplicado (${items.length} slides)`);
                         }}
-                        disabled={viewOnly}
                       >
                         <Copy className="h-4 w-4 text-muted-foreground" />
                         Duplicar deck inteiro
@@ -3412,7 +2456,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         type="button"
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
-                          if (guardViewOnly()) return;
                           void requestConfirm({
                             title: "Excluir todos os slides?",
                             description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
@@ -3421,7 +2464,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                             if (confirmed) clearItems();
                           });
                         }}
-                        disabled={viewOnly}
                       >
                         <X className="h-4 w-4" />
                         Limpar esteira
@@ -3442,7 +2484,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   <TooltipTrigger asChild>
                     <Button
                       variant="outline" size="sm" className="hidden"
-                      onClick={() => { if (guardViewOnly()) return; setImportOpen(true); }}
+                      onClick={() => setImportOpen(true)}
                       aria-label="Importar slides de PowerPoint"
                     >
                       <Upload className="h-3.5 w-3.5" />
@@ -3452,47 +2494,15 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   <TooltipContent>Importar slides de um arquivo .pptx</TooltipContent>
                 </Tooltip>
                 <SavePresetDialog triggerClassName="hidden" />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="hidden">
-                    <Button
-                      variant="outline" size="sm" className="h-8 gap-1.5 rounded-r-none"
-                      onClick={() => setCollabOpen(true)}
-                      aria-label="Iniciar colaboração"
-                    >
-                      <Users2 className="h-3.5 w-3.5" />
-                      Colaborar
-                    </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {roomId ? `Sala ativa: ${roomId}` : "Abrir sala persistente por código"}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost" size="sm" className="hidden"
-                      onClick={() => setHistoryOpen(true)}
-                      aria-label="Histórico de alterações"
-                    >
-                      <History className="h-3.5 w-3.5" />
-                      Histórico
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Log de alterações da sala</TooltipContent>
-                </Tooltip>
                 {items.length > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost" size="icon" className="hidden"
                         onClick={() => {
-                          if (guardViewOnly()) return;
                           duplicateDeck();
                           toast.success(`Deck duplicado (${items.length} slides)`);
                         }}
-                        disabled={viewOnly}
                         aria-label="Duplicar deck"
                       >
                         <Copy className="h-4 w-4" />
@@ -3507,7 +2517,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       <Button
                         variant="ghost" size="icon" className="hidden"
                         onClick={() => {
-                          if (guardViewOnly()) return;
                           void requestConfirm({
                             title: "Excluir todos os slides?",
                             description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
@@ -3516,7 +2525,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                             if (confirmed) clearItems();
                           });
                         }}
-                        disabled={viewOnly}
                         aria-label="Limpar esteira"
                       >
                         <X className="h-4 w-4" />
@@ -3607,7 +2615,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
             <div className="mx-auto max-w-3xl px-4 py-5">
               <FlowDropZone>
                 {items.length === 0 ? (
-                  <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => { if (guardViewOnly()) return; setGalleryOpen(true); }} />
+                  <EmptyFlow onAdd={addWithDefaults} onOpenGallery={() => setGalleryOpen(true)} />
                 ) : (
                   <SortableContext items={flowSortableIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
@@ -3620,11 +2628,11 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                           previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
                           thumbnailRef={flowThumbnailScheduler.getRefCallback(item)}
                           onSelect={() => select(item.id)}
-                          onRemove={() => { if (viewOnly) { toast.info("Modo somente leitura"); return; } removeItem(item.id); }}
-                          onDuplicate={() => { if (guardViewOnly()) return; duplicateItem(item.id); }}
+                          onRemove={() => removeItem(item.id)}
+                          onDuplicate={() => duplicateItem(item.id)}
                         />
                       ))}
-                      <QuickAddSlideButton onAdd={addSlideFromShortcut} readOnly={viewOnly} />
+                      <QuickAddSlideButton onAdd={addSlideFromShortcut} />
                     </div>
                   </SortableContext>
                 )}
@@ -3665,7 +2673,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           {inspectorOpen ? (
             <Inspector
               item={selected}
-              readOnly={viewOnly}
+              readOnly={false}
               onOpenFullscreen={() => setFullscreenOpen(true)}
             />
           ) : (
@@ -3734,7 +2742,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         open={importOpen}
         onOpenChange={setImportOpen}
         onImport={(slides: PptxSlide[], selectedIndices: number[]) => {
-          if (guardViewOnly()) return;
           setImportApplying(true);
           setImportOpen(false);
           window.setTimeout(() => {
@@ -3787,163 +2794,12 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
       <FullscreenCustomEditor
         open={fullscreenOpen}
         onOpenChange={setFullscreenOpen}
-        collaborators={collaborators}
-        isConnected={isConnected}
-        updateCursor={updateCursor}
-        updateSlideId={updateSlideId}
-        currentUser={currentUser}
-        onCommentEvent={handleCommentEvent}
-        readOnly={viewOnly}
-        yjsCollabReady={yjsCollabReady}
-        getCollabYDoc={ensureCustomYProvider}
-        textAwarenessBySlide={textAwarenessBySlide}
+        currentUser={LOCAL_COMMENT_AUTHOR}
+        readOnly={false}
         isStandby={isStandby}
         onMinimize={onMinimize}
       />
 
-      <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users2 className="h-4 w-4 text-primary" />
-              Colaboracao
-            </DialogTitle>
-            <DialogDescription>
-              Crie uma sala persistente ou entre com um codigo recebido. O conteudo da sala fica criptografado.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
-            {COLLAB_PRIVACY_NOTICE}
-          </div>
-          {roomId && (
-            <div className="space-y-3 rounded-lg border border-success/30 bg-success/10 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold text-success">Sala ativa</p>
-                  <p className="font-mono text-[11px] text-muted-foreground">{roomId}</p>
-                  {collabSnapshotVersion && (
-                    <p className="text-[11px] text-muted-foreground">Snapshot v{collabSnapshotVersion}</p>
-                  )}
-                </div>
-                <Badge variant="outline" className="border-success/40 bg-background/80 text-success">
-                  {getPersistentCollabRoleLabel(persistentCollabRole)}
-                </Badge>
-              </div>
-              <div className="space-y-1.5 rounded-md bg-background/60 p-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Participantes</p>
-                {collaborators.map((user) => (
-                  <p key={user.id} className="truncate text-[11px]">
-                    <span className="font-medium">{user.name || "Convidado"}</span>
-                    <span className="text-muted-foreground">
-                      {" — "}{getPersistentCollabRoleLabel(user.role ?? null)} · v{user.appVersion ?? "?"}
-                      {typeof user.currentSlideIndex === "number" ? ` · Slide ${user.currentSlideIndex + 1}` : " · Sem slide"}
-                      {user.activity === "presenting" ? " · Apresentando" : user.activity === "editing" ? " · Editando" : " · Ocioso"}
-                    </span>
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-          <Tabs defaultValue="create" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="create">Criar sala</TabsTrigger>
-              <TabsTrigger value="join">Entrar com codigo</TabsTrigger>
-            </TabsList>
-            <TabsContent value="create" className="mt-4 space-y-4">
-              <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
-                <Label htmlFor="collab-name" className="text-xs">Seu nome</Label>
-                <Input
-                  id="collab-name"
-                  value={collabName}
-                  disabled={viewOnly || collabBusy === "create"}
-                  onChange={(e) => setCollabName(e.target.value)}
-                  placeholder="Ex.: Alice"
-                />
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  A sala salva snapshots Yjs criptografados e mantém a estrutura normal do deck para exportação.
-                </p>
-                <Button className="w-full gap-2" onClick={handleCreatePersistentRoom} disabled={viewOnly || collabBusy === "create"}>
-                  {collabBusy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  Criar sala
-                </Button>
-              </div>
-              {createdPersistentRoom && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 rounded-lg border border-border/60 bg-card/70 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-semibold">Codigo de editor</p>
-                        <p className="text-[11px] text-muted-foreground">Pode editar quando a sincronizacao for ativada.</p>
-                      </div>
-                      <Badge variant="secondary">Editor</Badge>
-                    </div>
-                    <Input readOnly value={createdPersistentRoom.editorCode} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-                    <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(createdPersistentRoom.editorCode, "Codigo de editor copiado.")}>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copiar editor
-                    </Button>
-                  </div>
-                  <div className="space-y-2 rounded-lg border border-border/60 bg-card/70 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-semibold">Codigo de visualizador</p>
-                        <p className="text-[11px] text-muted-foreground">Entra sem permissao de edicao.</p>
-                      </div>
-                      <Badge variant="outline">Viewer</Badge>
-                    </div>
-                    <Input readOnly value={createdPersistentRoom.viewerCode} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-                    <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => copyText(createdPersistentRoom.viewerCode, "Codigo de visualizador copiado.")}>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copiar viewer
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-            <TabsContent value="join" className="mt-4 space-y-4">
-              <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3">
-                <Label htmlFor="collab-code" className="text-xs">Codigo recebido</Label>
-                <Input
-                  id="collab-code"
-                  value={collabJoinCode}
-                  onChange={(e) => setCollabJoinCode(e.target.value)}
-                  onBlur={() => setCollabJoinCode((value) => normalizeCollabCode(value))}
-                  onKeyDown={(e) => { if (e.key === "Enter") void handleJoinPersistentRoom(); }}
-                  placeholder="ED_ABC123-... ou VW_ABC123-..."
-                  className="font-mono text-sm"
-                />
-                <Button className="w-full gap-2" onClick={handleJoinPersistentRoom} disabled={collabBusy === "join"}>
-                  {collabBusy === "join" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users2 className="h-4 w-4" />}
-                  Entrar com codigo
-                </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
-          <DialogFooter>
-            {roomId && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setRoomId(null);
-                  setPersistentCollabRole(null);
-                  setCreatedPersistentRoom(null);
-                  setCollabSnapshotVersion(null);
-                  setPersistentRoomDbId(null);
-                  setPersistentCollabCode(null);
-                  setIsFollowingHost(false);
-                  setLastHostUpdateNotice(null);
-                  setViewOnly(false);
-                  setCollabOpen(false);
-                }}
-              >
-                Encerrar sala local
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <HistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
       {confirmDialog}
 
       {presentationOpen && (
@@ -3954,67 +2810,6 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         />
       )}
     </>
-  );
-}
-
-// ----------------------------------------------------------------------------
-// HistoryDialog ? log de alterações da sala de colaboração.
-// ----------------------------------------------------------------------------
-function HistoryDialog({
-  open, onOpenChange,
-}: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [, force] = useState(0);
-  useEffect(() => subscribeLog(() => force((n) => n + 1)), []);
-  const entries: ChangeLogEntry[] = [...readLog()].reverse();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="h-4 w-4 text-primary" />
-            Histórico de alterações
-          </DialogTitle>
-          <DialogDescription>
-            ?ltimas {entries.length} {entries.length === 1 ? "alteração" : "alterações"} recebidas.
-          </DialogDescription>
-        </DialogHeader>
-        <ScrollArea className="max-h-[60vh]">
-          {entries.length === 0 ? (
-            <p className="px-1 py-6 text-center text-xs text-muted-foreground">
-              Nenhuma alteração registrada ainda.
-            </p>
-          ) : (
-            <ul className="space-y-2 pr-2">
-              {entries.map((e) => (
-                <li key={e.eventId} className="flex items-start gap-2 rounded-md border border-border/40 bg-card/40 px-2 py-1.5">
-                  <div
-                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white"
-                    style={{ background: e.userColor ?? "#666" }}
-                  >
-                    {initials(e.userName)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs">{e.description}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatDate(new Date(e.ts), "dd/MM HH:mm", { locale: ptBR })}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </ScrollArea>
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => { clearLog(); toast.success("Histórico limpo"); }}
-            disabled={entries.length === 0}
-          >
-            Limpar histórico
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

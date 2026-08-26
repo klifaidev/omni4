@@ -48,7 +48,6 @@ type BlockPatch = { id: string; patch: Partial<CustomBlock> };
 type BlockTransformActions = {
   canEdit: () => boolean;
   insertBlocks: (blocks: CustomBlock[], label: EditorActionLabel) => string[];
-  insertYBlocks: (blocks: CustomBlock[], selectInserted?: boolean) => string[];
   maxBlockZ: () => number;
   patchBlocks: (patches: BlockPatch[], label: EditorActionLabel) => void;
   resizeGroup: (
@@ -256,7 +255,6 @@ export type BlockTransformParams = {
   groups: CustomSlideConfig["groups"] | undefined;
   selectedIds: string[];
   groupEditMemberId: string | null;
-  collaborative: boolean;
   gridEnabled: boolean;
   gridSize: GridSize;
   actions: BlockTransformActions;
@@ -279,7 +277,6 @@ export function useBlockTransform({
   groups,
   selectedIds,
   groupEditMemberId,
-  collaborative,
   gridEnabled,
   gridSize,
   actions,
@@ -340,9 +337,7 @@ export function useBlockTransform({
     const clones = buildAltDragClones({ sourceIds: ids, blocks, dx, dy, zTop: actions.maxBlockZ() });
     if (clones.length === 0) return [];
 
-    const cloneIds = collaborative
-      ? actions.insertYBlocks(clones, false)
-      : actions.insertBlocks(clones, "Duplicar blocos");
+    const cloneIds = actions.insertBlocks(clones, "Duplicar blocos");
     if (cloneIds.length === 0) return [];
 
     actions.setSelection(cloneIds);
@@ -353,7 +348,7 @@ export function useBlockTransform({
       return next;
     }), 260);
     return cloneIds;
-  }, [actions, blocks, collaborative, draggableSiblings]);
+  }, [actions, blocks, draggableSiblings]);
 
   const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
     const snap = snapBlockFrame(blocks, activeIds, { x, y, w, h });
@@ -414,10 +409,6 @@ export function useBlockTransform({
         return;
       }
       const patches = applyMultiBlockMove(blocks, ids, dx, dy);
-      if (collaborative) {
-        patches.forEach((item) => actions.updateBlock(item.id, item.patch));
-        return;
-      }
       actions.patchBlocks(patches, "Mover blocos");
     },
     onResizeEnd: (nextX, nextY, nextW, nextH) => {
@@ -454,18 +445,7 @@ export function useBlockTransform({
             w: Math.round(origin.w * scaleX),
             h: Math.round(origin.h * scaleY),
           };
-          if (collaborative) {
-            members
-              .filter((member) => !member.locked)
-              .forEach((member) => {
-                const dx = member.x - origin.x;
-                const dy = member.y - origin.y;
-                const patch = computeGroupResizePatches([member], [member.id], origin, next)[0]?.patch;
-                if (patch) actions.updateBlock(member.id, patch);
-              });
-          } else {
-            actions.resizeGroup(memberIds, origin, next);
-          }
+          actions.resizeGroup(memberIds, origin, next);
           return;
         }
       }
@@ -478,7 +458,6 @@ export function useBlockTransform({
     aspectResizeIds,
     blocks,
     clearGuides,
-    collaborative,
     computeGuides,
     createAltDragCloneAtOffset,
     draggableSiblings,

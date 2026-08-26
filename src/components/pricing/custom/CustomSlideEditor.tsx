@@ -4,7 +4,6 @@
 // de templates built-in / do usuário.
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import type * as Y from "yjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -121,16 +120,6 @@ import {
 } from "@/components/ui/tooltip";
 import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import {
-  getCustomSlideBlockText,
-  getCustomSlideSpeakerNotesText,
-  insertCustomSlideBlock,
-  insertCustomSlideBlocks,
-  duplicateCustomSlideBlock,
-  patchCustomSlideBlock,
-  removeCustomSlideBlock,
-  setYTextValue,
-} from "@/lib/customSlideYjs";
-import {
   getSourceFooterText,
   type SourceRowsByDataSource,
 } from "@/lib/customSlideSourceFooter";
@@ -237,6 +226,7 @@ import {
   resizeGroupAction,
   copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction,
   insertBlockAction, insertBlocksAction,
+  undo as undoAction, redo as redoAction,
   type AlignKind,
 } from "./editorStore";
 import type { GridSize } from "./editorPrefs";
@@ -246,11 +236,9 @@ import { groupBounds } from "./canvas/alignmentGuides";
 import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
-import { useYTextValue } from "./useYTextValue";
 import { AssetLibrary } from "./AssetLibrary";
 import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
 import { BlockRotationHandle, TRANSFORM_BLEED, useBlockTransform } from "./blockTransform";
-import { useSlideCollaborationActions } from "./useSlideCollaborationActions";
 import {
   SLIDE_BRAND_STYLES,
 } from "@/lib/slideBrandKit";
@@ -357,13 +345,6 @@ interface Props {
   config: CustomSlideConfig;
   onChange: (next: CustomSlideConfig) => void;
   readOnly?: boolean;
-  /** Colaboradores ativos (todos os slides) ? filtrados internamente por slideId */
-  collaborators?: import("@/lib/collaboration").CollabUser[];
-  /** Callback de mouse-move em coordenadas do canvas (1280x720) */
-  onCursorMove?: (x: number, y: number) => void;
-  /** Optional collaborative Yjs document. When present, free text fields write to Y.Text. */
-  collabYDoc?: Y.Doc | null;
-  textAwareness?: CustomTextAwareness[];
   /** True when the Slides workspace is kept alive but hidden in standby. */
   isStandby?: boolean;
   onMinimize?: () => void;
@@ -374,29 +355,14 @@ function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
     && prev.config === next.config
     && prev.readOnly === next.readOnly
     && prev.isStandby === next.isStandby
-    && prev.onMinimize === next.onMinimize
-    && prev.collabYDoc === next.collabYDoc
-    && prev.collaborators === next.collaborators
-    && prev.textAwareness === next.textAwareness;
+    && prev.onMinimize === next.onMinimize;
 }
-
-type CustomTextAwareness = {
-  id: string;
-  name: string;
-  color: string;
-  blockId?: string | null;
-  field: string;
-};
 
 export const CustomSlideEditor = memo(function CustomSlideEditor({
   slideId,
   config,
   onChange,
   readOnly = false,
-  collaborators,
-  onCursorMove,
-  collabYDoc,
-  textAwareness = [],
   isStandby = false,
   onMinimize,
 }: Props) {
@@ -563,38 +529,45 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [selected, styleFocusRequest]);
-  const {
-    commitYDocConfig,
-    handleRedo,
-    handleUndo,
-    insertYBlocks,
-    maxBlockZ,
-    updateBlock,
-  } = useSlideCollaborationActions({
-    collabYDoc,
-    config,
-    canEdit,
-    onChange,
-    setSelection,
-  });
+  const handleUndo = useCallback(() => {
+    undoAction();
+  }, []);
+  const handleRedo = useCallback(() => {
+    redoAction();
+  }, []);
+  const maxBlockZ = useCallback(() => (
+    config.blocks.reduce((max, block) => Math.max(max, block.z), 0)
+  ), [config.blocks]);
+  const updateBlock = useCallback((id: string, patch: Partial<CustomBlock>) => {
+    if (!canEdit()) return;
+    const keys = Object.keys(patch);
+    const isMove = keys.every((k) => k === "x" || k === "y");
+    const isResize = keys.some((k) => k === "w" || k === "h");
+    const isOrder = keys.length === 1 && keys[0] === "z";
+    const isLock = keys.length === 1 && keys[0] === "locked";
+    const label = isLock ? "Bloquear / Desbloquear"
+      : isOrder ? "Alterar ordem"
+      : isResize ? "Redimensionar bloco"
+      : isMove ? "Mover bloco"
+      : "Alterar dados";
+    patchBlockAction(id, patch, label);
+  }, [canEdit]);
 
   const blockTransformActions = useMemo(() => ({
     canEdit,
     insertBlocks: insertBlocksAction,
-    insertYBlocks,
     maxBlockZ,
     patchBlocks: patchBlocksAction,
     resizeGroup: resizeGroupAction,
     selectBlock,
     setSelection,
     updateBlock,
-  }), [canEdit, insertYBlocks, maxBlockZ, updateBlock]);
+  }), [canEdit, maxBlockZ, updateBlock]);
   const blockTransform = useBlockTransform({
     blocks: config.blocks,
     groups: config.groups,
     selectedIds,
     groupEditMemberId,
-    collaborative: !!collabYDoc,
     gridEnabled: prefs.gridEnabled,
     gridSize: prefs.gridSize,
     actions: blockTransformActions,
@@ -665,17 +638,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           ...bounds,
         } as ImageBlock;
       }));
-      const ids = collabYDoc
-        ? insertYBlocks(blocks as CustomBlock[])
-        : insertBlocksAction(blocks as CustomBlock[], imageFiles.length > 1 ? "Inserir imagens" : "Inserir imagem");
-      if (!collabYDoc && ids.length > 0) setSelection(ids);
+      const ids = insertBlocksAction(blocks as CustomBlock[], imageFiles.length > 1 ? "Inserir imagens" : "Inserir imagem");
+      if (ids.length > 0) setSelection(ids);
       toast.success(imageFiles.length === 1
         ? "Imagem inserida no slide."
         : `${imageFiles.length} imagens inseridas no slide.`);
     } catch {
       toast.error("Não foi possível inserir a imagem arrastada.");
     }
-  }, [canEdit, collabYDoc, insertBlocksAction, insertYBlocks, isImageFile, readFileAsDataUrl, readImageBounds, setSelection]);
+  }, [canEdit, insertBlocksAction, isImageFile, readFileAsDataUrl, readImageBounds, setSelection]);
 
   const insertImageDataUrl = useCallback(async (src: string, anchor?: { x: number; y: number }) => {
     if (!canEdit()) return;
@@ -688,41 +659,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       fit: "contain",
       ...bounds,
     };
-    if (collabYDoc) {
-      insertYBlocks([block]);
-    } else {
-      const id = insertBlockAction(block, "Colar imagem");
-      if (id) setSelection([id]);
-    }
-  }, [canEdit, collabYDoc, insertBlockAction, insertYBlocks, readImageBounds, setSelection]);
+    const id = insertBlockAction(block, "Colar imagem");
+    if (id) setSelection([id]);
+  }, [canEdit, insertBlockAction, readImageBounds, setSelection]);
 
-  const yBlockText = useCallback((blockId: string, field: string) => (
-    collabYDoc ? getCustomSlideBlockText(collabYDoc, blockId, field) : null
-  ), [collabYDoc]);
-  const ySpeakerNotes = collabYDoc ? getCustomSlideSpeakerNotesText(collabYDoc) : null;
-  const textAwarenessFor = useCallback((blockId: string | null, field: string) => (
-    textAwareness.filter((item) => (item.blockId ?? null) === blockId && item.field === field)
-  ), [textAwareness]);
   const addBlock = useCallback((kind: CustomBlockKind) => {
     if (!canEdit()) return;
     const perfEnabled = isSlidePerfEnabled();
     const startMark = perfEnabled ? `slides:addBlockClick:${performance.now()}` : "";
     if (perfEnabled) markSlidePerf(startMark);
-    if (collabYDoc) {
-      const block = newBlock(kind, maxBlockZ()) as CustomBlock;
-      insertCustomSlideBlock(collabYDoc, block);
-      commitYDocConfig("Adicionar bloco");
-      setSelection([block.id]);
-      if (perfEnabled) {
-        measureSlidePerf("slides.addBlock.clickToReturn", startMark, undefined, {
-          kind,
-          blockId: block.id,
-          mode: "yjs",
-          previousBlockCount: config.blocks.length,
-        });
-      }
-      return;
-    }
     const id = addBlockAction(kind);
     if (id) setSelection([id]);
     if (perfEnabled) {
@@ -733,30 +678,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         previousBlockCount: config.blocks.length,
       });
     }
-  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks.length, maxBlockZ]);
+  }, [canEdit, config.blocks.length]);
   const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
     const perfEnabled = isSlidePerfEnabled();
     const startMark = perfEnabled ? `slides:addChartClick:${performance.now()}` : "";
     if (perfEnabled) markSlidePerf(startMark);
-    if (collabYDoc) {
-      const block = preset === "positivacao"
-        ? (newPositivacaoChartBlock(maxBlockZ()) as CustomBlock)
-        : (newChartBlock(chartType, maxBlockZ()) as CustomBlock);
-      insertCustomSlideBlock(collabYDoc, block);
-      commitYDocConfig("Adicionar bloco");
-      setSelection([block.id]);
-      if (perfEnabled) {
-        measureSlidePerf("slides.addChart.clickToReturn", startMark, undefined, {
-          chartType,
-          preset,
-          blockId: block.id,
-          mode: "yjs",
-          previousBlockCount: config.blocks.length,
-        });
-      }
-      return;
-    }
     const id = preset === "positivacao"
       ? insertBlockAction(newPositivacaoChartBlock(0) as CustomBlock)
       : addChartBlockAction(chartType);
@@ -770,7 +697,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         previousBlockCount: config.blocks.length,
       });
     }
-  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks.length, maxBlockZ]);
+  }, [canEdit, config.blocks.length]);
   const insertTextStyle = useCallback((styleId: string, text: string, x: number, y: number, w: number, h: number) => {
     if (!canEdit()) return;
     const style = SLIDE_BRAND_STYLES.find((item) => item.id === styleId);
@@ -781,13 +708,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       text,
       ...(style?.patch ?? {}),
     } as TextBlock;
-    if (collabYDoc) {
-      insertYBlocks([block as CustomBlock]);
-      return;
-    }
     const id = insertBlockAction(block as CustomBlock, "Adicionar bloco");
     if (id) setSelection([id]);
-  }, [canEdit, collabYDoc, insertYBlocks]);
+  }, [canEdit]);
   const insertQuickLayout = useCallback((layout: "kpis" | "chartInsight" | "table" | "heroNumber" | "bridgeComment") => {
     if (!canEdit()) return;
     const title = (text: string, x: number, y: number, w: number, h: number, size = 34) => ({
@@ -846,13 +769,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         text("Comentario\n\nDestaque os principais ofensores e alavancas.", 920, 180, 300, 160, 20),
       ],
     };
-    if (collabYDoc) {
-      insertYBlocks(blocksByLayout[layout]);
-      return;
-    }
     const ids = insertBlocksAction(blocksByLayout[layout], "Adicionar layout rapido");
     if (ids.length > 0) setSelection(ids);
-  }, [canEdit, collabYDoc, insertYBlocks]);
+  }, [canEdit]);
   const addInsightCard = () => {
     const x = 60;
     const y = 150;
@@ -926,10 +845,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ]);
-    if (collabYDoc) {
-      insertYBlocks(blocks);
-      return;
-    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       setSelection(ids);
@@ -1038,10 +953,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 10,
       } as CustomBlock,
     ]);
-    if (collabYDoc) {
-      insertYBlocks(blocks);
-      return;
-    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       setSelection(ids);
@@ -1150,10 +1061,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ]);
-    if (collabYDoc) {
-      insertYBlocks(blocks);
-      return;
-    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       setSelection(ids);
@@ -1231,10 +1138,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 0,
       } as CustomBlock,
     ]);
-    if (collabYDoc) {
-      insertYBlocks(blocks);
-      return;
-    }
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
     if (ids.length > 0) {
       setSelection(ids);
@@ -1242,71 +1145,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   };
   const removeBlock = useCallback((id: string) => {
     if (!canEdit()) return;
-    if (collabYDoc) {
-      removeCustomSlideBlock(collabYDoc, id);
-      commitYDocConfig("Excluir bloco");
-      if (selectedIds.includes(id)) clearSelection();
-      return;
-    }
     deleteBlockAction(id);
     if (selectedIds.includes(id)) clearSelection();
-  }, [canEdit, collabYDoc, commitYDocConfig, selectedIds]);
+  }, [canEdit, selectedIds]);
   const duplicateBlock = useCallback((id: string) => {
     if (!canEdit()) return;
-    if (collabYDoc) {
-      const orig = config.blocks.find((block) => block.id === id);
-      if (!orig) return;
-      const clone = {
-        ...JSON.parse(JSON.stringify(orig)),
-        id: localId(),
-        x: orig.x + 20,
-        y: orig.y + 20,
-        z: maxBlockZ() + 1,
-        locked: false,
-      } as CustomBlock;
-      const newId = duplicateCustomSlideBlock(collabYDoc, id, clone);
-      commitYDocConfig("Duplicar bloco");
-      if (newId) setSelection([newId]);
-      return;
-    }
     const newId = duplicateBlockAction(id);
     if (newId) setSelection([newId]);
-  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks, maxBlockZ]);
+  }, [canEdit]);
   const removeBlocks = useCallback((ids: string[]) => {
     if (!canEdit() || ids.length === 0) return;
-    if (collabYDoc) {
-      ids.forEach((id) => removeCustomSlideBlock(collabYDoc, id));
-      commitYDocConfig("Excluir blocos");
-      clearSelection();
-      return;
-    }
     deleteBlocksAction(ids);
-  }, [canEdit, collabYDoc, commitYDocConfig]);
+  }, [canEdit]);
   const duplicateBlocks = useCallback((ids: string[]) => {
     if (!canEdit() || ids.length === 0) return;
-    if (collabYDoc) {
-      const zTop = maxBlockZ();
-      const clones = ids
-        .map((id, index) => {
-          const orig = config.blocks.find((block) => block.id === id);
-          if (!orig) return null;
-          return {
-            ...JSON.parse(JSON.stringify(orig)),
-            id: localId(),
-            x: orig.x + 20,
-            y: orig.y + 20,
-            z: zTop + index + 1,
-            locked: false,
-          } as CustomBlock;
-        })
-        .filter((block): block is CustomBlock => Boolean(block));
-      const inserted = insertCustomSlideBlocks(collabYDoc, clones);
-      commitYDocConfig("Duplicar blocos");
-      if (inserted.length > 0) setSelection(inserted);
-      return;
-    }
     duplicateBlocksAction(ids);
-  }, [canEdit, collabYDoc, commitYDocConfig, config.blocks, maxBlockZ]);
+  }, [canEdit]);
   const bringForward = useCallback((id: string) => { if (canEdit()) bringForwardAction(id); }, [canEdit]);
   const sendBack = useCallback((id: string) => { if (canEdit()) sendBackAction(id); }, [canEdit]);
   const bringToFront = useCallback((id: string) => { if (canEdit()) bringToFrontAction(id); }, [canEdit]);
@@ -1468,15 +1322,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     clone.x = x;
     clone.y = y;
-    if (collabYDoc) {
-      insertYBlocks([clone]);
-      return;
-    }
     const newId = insertBlockAction(clone, "Adicionar bloco");
     if (newId) {
       setSelection([newId]);
     }
-  }, [canEdit, collabYDoc, insertYBlocks]);
+  }, [canEdit]);
 
   const centerSelectedH = useCallback(() => {
     if (!canEdit()) return;
@@ -1602,13 +1452,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       if (dx !== 0 || dy !== 0) {
         e.preventDefault();
         if (!canEdit()) return;
-        if (collabYDoc) {
-          selectedIds.forEach((id) => {
-            const block = config.blocks.find((item) => item.id === id);
-            if (block && !block.locked) updateBlock(id, { x: block.x + dx, y: block.y + dy });
-          });
-          return;
-        }
         nudgeBlocksAction(
           selectedIds,
           dx, dy,
@@ -1618,7 +1461,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, collabYDoc, updateBlock, handleUndo, handleRedo]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, handleUndo, handleRedo]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -1670,18 +1513,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const newIndex = layersSorted.findIndex((b) => b.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
     const reordered = arrayMove(layersSorted, oldIndex, newIndex);
-    if (collabYDoc) {
-      reordered.forEach((blk, i) => {
-        patchCustomSlideBlock(collabYDoc, blk.id, { z: reordered.length - i } as Partial<CustomBlock>);
-      });
-      commitYDocConfig("Reordenar camadas");
-      return;
-    }
     patchBlocksAction(
       reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
       "Reordenar camadas",
     );
-  }, [canEdit, collabYDoc, commitYDocConfig, layersSorted]);
+  }, [canEdit, layersSorted]);
 
   // Templates
   const [tplOpen, setTplOpen] = useState(false);
@@ -2277,11 +2113,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   setSelection([id]);
                 }
               }}
-              onMouseMove={(e) => {
-                if (!onCursorMove) return;
-                const pos = clientToCanvas(canvasRef.current, e.clientX, e.clientY, scaleRef.current);
-                if (pos) onCursorMove(pos.x, pos.y);
-              }}
             >
               {/* Paste-image hint ? shown when canvas is hovered with no selection */}
               {(fileDragOverCanvas || (canvasHovered && selectedIds.length === 0)) && (
@@ -2465,8 +2296,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             block={blk as TitleBlock | TextBlock}
                             onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
                             onExit={() => setInlineEditId(null)}
-                            yText={yBlockText(blk.id, "text")}
-                            remoteSelections={textAwarenessFor(blk.id, "text")}
                           />
                         )}
                         {isInlineEditable && !isEditing && !blk.locked && (
@@ -2701,41 +2530,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 />
               )}
 
-              {/* Cursores de colaboradores remotos (filtrados pelo slide atual) */}
-              {collaborators && collaborators
-                .filter((c) => c.slideId === slideId
-                  && typeof c.cursorX === "number" && typeof c.cursorY === "number")
-                .map((c) => (
-                  <div
-                    key={`cursor-${c.id}`}
-                    data-export-hide="true"
-                    style={{
-                      position: "absolute",
-                      left: c.cursorX, top: c.cursorY,
-                      pointerEvents: "none",
-                      zIndex: 9999,
-                      transition: "transform 50ms linear",
-                      transform: "translate(0,0)",
-                    }}
-                  >
-                    <svg width={12} height={18} viewBox="0 0 12 18" style={{ display: "block" }}>
-                      <path d="M0 0 L0 14 L4 10 L7 17 L9 16 L6 9 L11 9 Z"
-                        fill={c.color} stroke={SLIDE_HEX.white} strokeWidth={1} />
-                    </svg>
-                    <span
-                      style={{
-                        position: "absolute", top: 14, left: 12,
-                        background: c.color, color: SLIDE_HEX.white,
-                        fontSize: 10, padding: "1px 6px",
-                        borderRadius: 999, whiteSpace: "nowrap",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {c.name}
-                    </span>
-                  </div>
-                ))}
-
               {/* Faixa Harald (não editável, sempre por cima) */}
               {config.showHaraldFooter && (
                 <img
@@ -2893,8 +2687,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <SpeakerNotesBar
           value={config.speakerNotes ?? ""}
           onChange={(v) => { if (canEdit()) setSpeakerNotesAction(v); }}
-          yText={ySpeakerNotes}
-          remoteSelections={textAwarenessFor(null, "speakerNotes")}
         />
       </div>
 
@@ -2976,7 +2768,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 <BlockSpecificEditor
                   block={selected}
                   onChange={(p) => updateBlock(selected.id, p)}
-                  getYText={(field) => yBlockText(selected.id, field)}
                   styleFocusRequest={styleFocusRequest}
                 />
               </div>
@@ -3297,18 +3088,13 @@ function SortableLayerItem({
 function SpeakerNotesBar({
   value,
   onChange,
-  yText,
-  remoteSelections = [],
 }: {
   value: string;
   onChange: (v: string) => void;
-  yText?: Y.Text | null;
-  remoteSelections?: CustomTextAwareness[];
 }) {
   const [open, setOpen] = useState(false);
   const MAX = 500;
-  const currentValue = useYTextValue(yText, value);
-  const trimmed = currentValue.slice(0, MAX);
+  const trimmed = value.slice(0, MAX);
   return (
     <div className="surface-raised shrink-0 rounded-lg border border-border/40">
       <button
@@ -3318,7 +3104,7 @@ function SpeakerNotesBar({
       >
         <StickyNote className="h-3.5 w-3.5" />
         Anotações do apresentador
-        {currentValue.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px] font-semibold">{currentValue.length}</Badge>}
+        {value.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px] font-semibold">{value.length}</Badge>}
         <ChevronUp className={cn("ml-auto h-3 w-3 transition-transform", !open && "rotate-180")} />
       </button>
       {open && (
@@ -3326,27 +3112,11 @@ function SpeakerNotesBar({
           <DraftTextarea
             value={trimmed}
             normalize={(next) => next.slice(0, MAX)}
-            onCommit={(next) => {
-              if (yText) setYTextValue(yText, next);
-              else onChange(next);
-            }}
+            onCommit={onChange}
             placeholder="Adicione notas para o apresentador..."
             className="h-[80px] resize-none text-xs"
             maxLength={MAX}
           />
-          {remoteSelections.length > 0 && (
-            <div className="pointer-events-none absolute right-5 top-1 flex max-w-[70%] flex-wrap justify-end gap-1">
-              {remoteSelections.map((selection) => (
-                <span
-                  key={selection.id}
-                  className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
-                  style={{ background: selection.color }}
-                >
-                  {selection.name}
-                </span>
-              ))}
-            </div>
-          )}
           <span className="pointer-events-none absolute bottom-3 right-5 text-[10px] tabular-nums text-muted-foreground">
             {trimmed.length}/{MAX}
           </span>

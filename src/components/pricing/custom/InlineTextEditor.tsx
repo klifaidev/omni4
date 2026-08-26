@@ -3,11 +3,9 @@
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
-import type * as Y from "yjs";
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
-import { setYTextValue } from "@/lib/customSlideYjs";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 
 type TextLikeBlock = TitleBlock | TextBlock;
@@ -18,35 +16,17 @@ const SWATCHES = [
   "0E9F6E", "F59E0B", "94A3B8", "7C3AED",
 ];
 const LOCAL_TEXT_COMMIT_DELAY_MS = 400;
-const Y_TEXT_COMMIT_DELAY_MS = 120;
 
 interface EditorProps {
   block: TextLikeBlock;
   onPatch: (patch: Partial<CustomBlock>) => void;
   onExit: () => void;
-  yText?: Y.Text | null;
-  remoteSelections?: Array<{ id: string; name: string; color: string }>;
 }
 
-function useYTextValue(yText: Y.Text | null | undefined, fallback: string): string {
-  const [value, setValue] = useState(() => yText?.toString() ?? fallback);
-  useEffect(() => {
-    if (!yText) {
-      setValue(fallback);
-      return;
-    }
-    const sync = () => setValue(yText.toString());
-    sync();
-    yText.observe(sync);
-    return () => yText.unobserve(sync);
-  }, [fallback, yText]);
-  return value;
-}
-
-export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelections = [] }: EditorProps) {
+export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const isTitle = block.kind === "title";
-  const externalValue = useYTextValue(yText, block.text);
+  const externalValue = block.text;
   const [draftValue, setDraftValue] = useState(externalValue);
   const pendingValueRef = useRef(externalValue);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,14 +47,10 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
     clearCommitTimer();
     localDirtyRef.current = false;
     pendingValueRef.current = value;
-    if (yText) {
-      if (yText.toString() !== value) setYTextValue(yText, value);
-      return;
-    }
     if (block.text !== value) {
       onPatchRef.current({ text: value } as Partial<CustomBlock>);
     }
-  }, [block.text, clearCommitTimer, yText]);
+  }, [block.text, clearCommitTimer]);
 
   const scheduleTextCommit = useCallback((value: string) => {
     pendingValueRef.current = value;
@@ -82,8 +58,8 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
     clearCommitTimer();
     commitTimerRef.current = setTimeout(() => {
       commitTextValue(pendingValueRef.current);
-    }, yText ? Y_TEXT_COMMIT_DELAY_MS : LOCAL_TEXT_COMMIT_DELAY_MS);
-  }, [clearCommitTimer, commitTextValue, yText]);
+    }, LOCAL_TEXT_COMMIT_DELAY_MS);
+  }, [clearCommitTimer, commitTextValue]);
 
   useEffect(() => {
     if (localDirtyRef.current) return;
@@ -161,22 +137,6 @@ export function InlineTextEditor({ block, onPatch, onExit, yText, remoteSelectio
       }}
       data-export-hide="true"
     />
-    {remoteSelections.length > 0 && (
-      <div
-        data-export-hide="true"
-        className="pointer-events-none absolute right-1 top-1 z-[10000000] flex max-w-[70%] flex-wrap justify-end gap-1"
-      >
-        {remoteSelections.map((selection) => (
-          <span
-            key={selection.id}
-            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm"
-            style={{ background: selection.color }}
-          >
-            {selection.name}
-          </span>
-        ))}
-      </div>
-    )}
     </>
   );
 }
