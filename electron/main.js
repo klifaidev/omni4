@@ -580,6 +580,93 @@ ipcMain.handle("bases:processed-invalidate", async (event, { tipo } = {}) => {
   }
 });
 
+// Esteira de Slides (pricing.slidesFlow.v1): armazenamento em arquivo, sem o
+// teto de ~10MB do localStorage do Chromium. O renderer grava aqui via IPC em
+// vez de localStorage — ver src/store/slidesFlow.ts. Escrita atomica (arquivo
+// temporario + rename) e backups rotativos em arquivos separados, baratos
+// porque nao competem com a mesma cota do dado principal.
+const SLIDES_FLOW_BACKUP_COUNT = 5;
+
+function getSlidesFlowDir() {
+  return path.join(app.getPath("userData"), "slides-flow");
+}
+
+function ensureSlidesFlowDir() {
+  const dir = getSlidesFlowDir();
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getSlidesFlowFilePath(key) {
+  return path.join(getSlidesFlowDir(), `${key}.json`);
+}
+
+function rotateSlidesFlowBackups(destino) {
+  for (let i = SLIDES_FLOW_BACKUP_COUNT; i >= 2; i -= 1) {
+    const src = `${destino}.bak${i - 1}`;
+    const dst = `${destino}.bak${i}`;
+    if (fs.existsSync(src)) {
+      try { fs.copyFileSync(src, dst); } catch (err) { log.warn("Falha ao rotacionar backup da esteira:", dst, err.message); }
+    }
+  }
+  if (fs.existsSync(destino)) {
+    try { fs.copyFileSync(destino, `${destino}.bak1`); } catch (err) { log.warn("Falha ao criar backup da esteira:", err.message); }
+  }
+}
+
+ipcMain.handle("slidesFlow:read", async (event, { key }) => {
+  try {
+    const filePath = getSlidesFlowFilePath(key);
+    if (!fs.existsSync(filePath)) return { ok: true, value: null };
+    const value = fs.readFileSync(filePath, "utf8");
+    return { ok: true, value };
+  } catch (err) {
+    log.error("Erro ao ler esteira de slides:", key, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("slidesFlow:write", async (event, { key, value }) => {
+  try {
+    ensureSlidesFlowDir();
+    const destino = getSlidesFlowFilePath(key);
+    rotateSlidesFlowBackups(destino);
+    const temp = `${destino}.tmp`;
+    fs.writeFileSync(temp, value);
+    fs.renameSync(temp, destino);
+    return { ok: true };
+  } catch (err) {
+    log.error("Erro ao salvar esteira de slides:", key, `bytes=${value?.length ?? "desconhecido"}`, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("slidesFlow:remove", async (event, { key }) => {
+  try {
+    const filePath = getSlidesFlowFilePath(key);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { ok: true };
+  } catch (err) {
+    log.error("Erro ao remover esteira de slides:", key, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
+ipcMain.handle("slidesFlow:latest-backup", async (event, { key }) => {
+  try {
+    for (let i = 1; i <= SLIDES_FLOW_BACKUP_COUNT; i += 1) {
+      const backupPath = `${getSlidesFlowFilePath(key)}.bak${i}`;
+      if (fs.existsSync(backupPath)) {
+        return { ok: true, value: fs.readFileSync(backupPath, "utf8") };
+      }
+    }
+    return { ok: true, value: null };
+  } catch (err) {
+    log.error("Erro ao ler backup da esteira de slides:", key, err.message);
+    return { ok: false, erro: err.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

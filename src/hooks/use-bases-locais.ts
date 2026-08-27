@@ -21,26 +21,22 @@ interface ArquivoBaseSalvo extends InfoArquivoBase {
   conteudoBase64: string;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      bases?: {
-        salvar: (tipo: string, nomeArquivo: string, conteudoBase64: string) => Promise<{ ok: boolean; erro?: string }>;
-        carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: ArquivoBaseSalvo[]; motivo?: string; erro?: string }>;
-        carregarArquivo?: (tipo: string, nomeArquivo: string) => Promise<{ ok: boolean; arquivo?: ArquivoBaseSalvo; motivo?: string; erro?: string }>;
-        carregarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; payload?: unknown; motivo?: string; erro?: string }>;
-        salvarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, payload: unknown) => Promise<{ ok: boolean; erro?: string }>;
-        carregarProcessadoManifesto?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; manifest?: unknown; motivo?: string; erro?: string }>;
-        carregarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number) => Promise<{ ok: boolean; rows?: unknown[]; erro?: string }>;
-        iniciarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, header: unknown, totalRows: number, chunkSize: number) => Promise<{ ok: boolean; erro?: string }>;
-        salvarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number, rows: unknown[]) => Promise<{ ok: boolean; erro?: string }>;
-        finalizarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, chunks: number) => Promise<{ ok: boolean; erro?: string }>;
-        info: () => Promise<{ ok: boolean; bases?: Record<string, InfoBase>; erro?: string }>;
-        deletar: (tipo: string, nomeArquivo?: string) => Promise<{ ok: boolean; erro?: string }>;
-        invalidarProcessado?: (tipo?: string) => Promise<{ ok: boolean; erro?: string }>;
-      };
-    };
-  }
+// Forma de window.electronAPI.bases — o tipo canonico de window.electronAPI
+// fica em src/vite-env.d.ts, que importa este tipo daqui.
+export interface ElectronBasesAPI {
+  salvar: (tipo: string, nomeArquivo: string, conteudoBase64: string) => Promise<{ ok: boolean; erro?: string }>;
+  carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: ArquivoBaseSalvo[]; motivo?: string; erro?: string }>;
+  carregarArquivo?: (tipo: string, nomeArquivo: string) => Promise<{ ok: boolean; arquivo?: ArquivoBaseSalvo; motivo?: string; erro?: string }>;
+  carregarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; payload?: unknown; motivo?: string; erro?: string }>;
+  salvarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, payload: unknown) => Promise<{ ok: boolean; erro?: string }>;
+  carregarProcessadoManifesto?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; manifest?: unknown; motivo?: string; erro?: string }>;
+  carregarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number) => Promise<{ ok: boolean; rows?: unknown[]; erro?: string }>;
+  iniciarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, header: unknown, totalRows: number, chunkSize: number) => Promise<{ ok: boolean; erro?: string }>;
+  salvarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number, rows: unknown[]) => Promise<{ ok: boolean; erro?: string }>;
+  finalizarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, chunks: number) => Promise<{ ok: boolean; erro?: string }>;
+  info: () => Promise<{ ok: boolean; bases?: Record<string, InfoBase>; erro?: string }>;
+  deletar: (tipo: string, nomeArquivo?: string) => Promise<{ ok: boolean; erro?: string }>;
+  invalidarProcessado?: (tipo?: string) => Promise<{ ok: boolean; erro?: string }>;
 }
 
 function fileToDataUrlBase64(file: File): Promise<string> {

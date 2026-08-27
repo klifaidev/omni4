@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     invalidarProcessado: (tipo) =>
       ipcRenderer.invoke("bases:processed-invalidate", { tipo }),
   },
+  // Esteira de Slides — armazenamento em arquivo (sem o teto do localStorage)
+  slidesFlow: {
+    ler: (key) => ipcRenderer.invoke("slidesFlow:read", { key }),
+    salvar: (key, value) => ipcRenderer.invoke("slidesFlow:write", { key, value }),
+    remover: (key) => ipcRenderer.invoke("slidesFlow:remove", { key }),
+    ultimoBackup: (key) => ipcRenderer.invoke("slidesFlow:latest-backup", { key }),
+  },
   // Utilitarios
   isElectron: true,
 });

@@ -66,7 +66,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
-import { useSlidesFlow, type SlidesPreset } from "@/store/slidesFlow";
+import {
+  useSlidesFlow, getSlidesFlowSaveStatus, subscribeSlidesFlowSaveStatus,
+  type SlidesPreset, type SlidesFlowSaveStatus,
+} from "@/store/slidesFlow";
 import {
   SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
   type SlideItem, type SlideKind,
@@ -156,7 +159,7 @@ function useSlideConfirm() {
 /** Autoria local dos comentarios por slide — este app nao tem sistema de contas. */
 const LOCAL_COMMENT_AUTHOR = { name: "Você", color: "#457B9D" };
 
-function LocalSaveStatusBadge({ status }: { status: "saving" | "saved" | "error" }) {
+function LocalSaveStatusBadge({ status }: { status: SlidesFlowSaveStatus }) {
   return (
     <span className={cn(
       "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 slides-type-badge",
@@ -1996,41 +1999,25 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   }, []);
 
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
-  const [localSaveStatus, setLocalSaveStatus] = useState<"saving" | "saved" | "error">("saved");
-  const localSaveSignatureRef = useRef<string>("");
-  const localSaveTimerRef = useRef<number | null>(null);
-
-  const currentSnapshotSignature = useMemo(
-    () => JSON.stringify({ items, selectedId, transition }),
-    [items, selectedId, transition],
+  // Status REAL de gravacao da esteira (nao um "achismo"): vem direto do
+  // resultado da escrita em disco/localStorage feito pelo zustand persist —
+  // ver subscribeSlidesFlowSaveStatus em src/store/slidesFlow.ts. Antes,
+  // este indicador so verificava se um localStorage.getItem nao lançava
+  // excecao, o que e sempre verdade e nunca refletia se a gravacao
+  // realmente aconteceu — por isso uma falha de gravacao (ex.: cota do
+  // localStorage estourada) podia ficar meses mostrando "Salvo localmente"
+  // enquanto nada de novo era persistido.
+  const [localSaveStatus, setLocalSaveStatus] = useState<SlidesFlowSaveStatus>(
+    () => getSlidesFlowSaveStatus().status,
+  );
+  const [localSaveError, setLocalSaveError] = useState<string | null>(
+    () => getSlidesFlowSaveStatus().error,
   );
 
-  useEffect(() => {
-    if (!localSaveSignatureRef.current) {
-      localSaveSignatureRef.current = currentSnapshotSignature;
-      setLocalSaveStatus("saved");
-      return;
-    }
-    if (localSaveSignatureRef.current === currentSnapshotSignature) return;
-    setLocalSaveStatus("saving");
-    if (localSaveTimerRef.current !== null) window.clearTimeout(localSaveTimerRef.current);
-    localSaveTimerRef.current = window.setTimeout(() => {
-      try {
-        window.localStorage.getItem("pricing.slidesFlow.v1");
-        localSaveSignatureRef.current = currentSnapshotSignature;
-        setLocalSaveStatus("saved");
-      } catch {
-        setLocalSaveStatus("error");
-      }
-      localSaveTimerRef.current = null;
-    }, 180);
-    return () => {
-      if (localSaveTimerRef.current !== null) {
-        window.clearTimeout(localSaveTimerRef.current);
-        localSaveTimerRef.current = null;
-      }
-    };
-  }, [currentSnapshotSignature]);
+  useEffect(() => subscribeSlidesFlowSaveStatus((status, error) => {
+    setLocalSaveStatus(status);
+    setLocalSaveError(error);
+  }), []);
 
   const openPresentation = (presenter = false) => {
     setPresentationPresenterMode(presenter);
@@ -2150,6 +2137,33 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         showPeriodStrip={false}
         subtitle="Monte uma apresentação combinando slides com filtros independentes"
       />
+      {localSaveStatus === "error" && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 md:px-8">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-destructive sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+              <div className="space-y-0.5">
+                <p className="font-medium">Suas ultimas alteracoes NAO foram salvas.</p>
+                <p className="text-destructive/80">
+                  A esteira continua funcionando nesta sessao, mas o salvamento local esta falhando.
+                  Exporte como PPTX/PDF agora para nao correr risco de perder o progresso ao fechar o app.
+                  {localSaveError ? ` Detalhe tecnico: ${localSaveError}` : ""}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 gap-2 border-destructive/40 bg-background/70 text-destructive hover:bg-destructive/10"
+              onClick={() => setExportConfirm("pptx")}
+              disabled={items.length === 0}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar agora
+            </Button>
+          </div>
+        </div>
+      )}
       <AnimatePresence initial={false}>
         {deckPreparation?.visible && (
           <motion.div

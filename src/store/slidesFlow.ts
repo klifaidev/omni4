@@ -9,6 +9,33 @@ const SLIDES_FLOW_STORAGE_KEY = "pricing.slidesFlow.v1";
 const SLIDES_FLOW_BACKUP_KEY = "pricing.slidesFlow.v1.backup";
 const SLIDES_FLOW_BACKUP_LIMIT = 3;
 
+// ---------------------------------------------------------------------------
+// Status de salvamento — a UI assina isso para mostrar um aviso persistente
+// (nao um toast que some sozinho) quando uma gravacao realmente falha, em vez
+// de assumir silenciosamente que tudo foi salvo.
+// ---------------------------------------------------------------------------
+export type SlidesFlowSaveStatus = "idle" | "saving" | "saved" | "error";
+let lastSlidesFlowSaveStatus: SlidesFlowSaveStatus = "idle";
+let lastSlidesFlowSaveError: string | null = null;
+const slidesFlowSaveListeners = new Set<(status: SlidesFlowSaveStatus, error: string | null) => void>();
+
+function reportSlidesFlowSaveStatus(status: SlidesFlowSaveStatus, error: string | null = null): void {
+  lastSlidesFlowSaveStatus = status;
+  lastSlidesFlowSaveError = error;
+  for (const listener of slidesFlowSaveListeners) listener(status, error);
+}
+
+export function subscribeSlidesFlowSaveStatus(
+  handler: (status: SlidesFlowSaveStatus, error: string | null) => void,
+): () => void {
+  slidesFlowSaveListeners.add(handler);
+  return () => { slidesFlowSaveListeners.delete(handler); };
+}
+
+export function getSlidesFlowSaveStatus(): { status: SlidesFlowSaveStatus; error: string | null } {
+  return { status: lastSlidesFlowSaveStatus, error: lastSlidesFlowSaveError };
+}
+
 export interface SlidesPreset {
   id: string;
   name: string;
@@ -231,7 +258,26 @@ export function createSlidesFlowStorage(storage: Storage | undefined = typeof lo
           }
         }
       }
-      storage.setItem(name, value);
+      // A gravacao em si NUNCA estava protegida contra falha (ex.: cota do
+      // localStorage do Chromium, tipicamente ~5-10MB, estourada por uma
+      // esteira grande com imagens embutidas). Antes, uma excecao aqui
+      // (QuotaExceededError) subia sem tratamento e a gravacao era perdida
+      // em silencio — o usuario continuava editando normalmente na memoria,
+      // mas nada novo era persistido, e um restart voltava para o ultimo
+      // estado que tinha cabido na cota. Ver src/store/slidesFlow.ts —
+      // armazenamento em arquivo via Electron (createElectronSlidesFlowStorage)
+      // e o caminho preferido justamente para eliminar esse teto; isto aqui
+      // e so o fallback para o navegador/dev-server, mas precisa reportar a
+      // falha em vez de escondê-la.
+      try {
+        storage.setItem(name, value);
+        if (name === SLIDES_FLOW_STORAGE_KEY) reportSlidesFlowSaveStatus("saved");
+      } catch (error) {
+        if (name === SLIDES_FLOW_STORAGE_KEY) {
+          console.error("[slidesFlow] Falha ao salvar a esteira — as alteracoes NAO foram persistidas.", error);
+          reportSlidesFlowSaveStatus("error", error instanceof Error ? error.message : String(error));
+        }
+      }
     },
     removeItem: (name) => {
       if (!storage) return;
@@ -239,6 +285,83 @@ export function createSlidesFlowStorage(storage: Storage | undefined = typeof lo
       storage.removeItem(name);
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Armazenamento em arquivo via Electron (preferido) — sem o teto de tamanho
+// do localStorage. O renderer grava via IPC (electron/main.js), que faz
+// escrita atomica (arquivo temporario + rename) e mantem backups rotativos
+// em arquivos separados no disco.
+// ---------------------------------------------------------------------------
+// Forma de window.electronAPI.slidesFlow — o tipo canonico de
+// window.electronAPI fica em src/vite-env.d.ts, que importa este tipo daqui.
+export interface ElectronSlidesFlowAPI {
+  ler: (key: string) => Promise<{ ok: boolean; value?: string | null; erro?: string }>;
+  salvar: (key: string, value: string) => Promise<{ ok: boolean; erro?: string }>;
+  remover: (key: string) => Promise<{ ok: boolean; erro?: string }>;
+  ultimoBackup: (key: string) => Promise<{ ok: boolean; value?: string | null; erro?: string }>;
+}
+
+function isElectronSlidesFlowAvailable(): boolean {
+  return typeof window !== "undefined" && !!window.electronAPI?.slidesFlow;
+}
+
+export function createElectronSlidesFlowStorage(api: ElectronSlidesFlowAPI): StateStorage {
+  return {
+    getItem: async (name) => {
+      const result = await api.ler(name);
+      if (result.ok && result.value && persistedSlidesStateHasContent(result.value)) {
+        return result.value;
+      }
+      if (!result.ok) {
+        console.error("[slidesFlow] Falha ao ler a esteira do disco.", result.erro);
+      }
+      // Nada de valido no arquivo principal ainda. Antes de comecar do zero,
+      // tenta (1) o backup mais recente em disco e (2) uma esteira legada
+      // que ainda esteja no localStorage de uma versao anterior a esta
+      // correcao (migracao automatica, uma unica vez).
+      const backup = await api.ultimoBackup(name);
+      if (backup.ok && backup.value && persistedSlidesStateHasContent(backup.value)) {
+        console.warn("[slidesFlow] Esteira vazia no arquivo principal; backup em disco restaurado automaticamente.");
+        await api.salvar(name, backup.value);
+        return backup.value;
+      }
+      if (typeof localStorage !== "undefined") {
+        try {
+          const legacyRaw = localStorage.getItem(name);
+          if (legacyRaw && persistedSlidesStateHasContent(legacyRaw)) {
+            console.warn("[slidesFlow] Esteira migrada do localStorage (armazenamento antigo) para arquivo em disco.");
+            await api.salvar(name, legacyRaw);
+            return legacyRaw;
+          }
+        } catch (error) {
+          console.error("[slidesFlow] Falha ao verificar esteira legada no localStorage.", error);
+        }
+      }
+      return result.ok ? (result.value ?? null) : null;
+    },
+    setItem: async (name, value) => {
+      if (name === SLIDES_FLOW_STORAGE_KEY) reportSlidesFlowSaveStatus("saving");
+      const result = await api.salvar(name, value);
+      if (name !== SLIDES_FLOW_STORAGE_KEY) return;
+      if (!result.ok) {
+        console.error("[slidesFlow] Falha ao salvar a esteira em disco — as alteracoes NAO foram persistidas.", result.erro);
+        reportSlidesFlowSaveStatus("error", result.erro ?? "Falha desconhecida ao salvar a esteira.");
+        return;
+      }
+      reportSlidesFlowSaveStatus("saved");
+    },
+    removeItem: async (name) => {
+      await api.remover(name);
+    },
+  };
+}
+
+function pickSlidesFlowStorage(): StateStorage {
+  if (isElectronSlidesFlowAvailable()) {
+    return createElectronSlidesFlowStorage(window.electronAPI!.slidesFlow!);
+  }
+  return createSlidesFlowStorage();
 }
 
 export const useSlidesFlow = create<SlidesFlowState>()(
@@ -378,10 +501,13 @@ export const useSlidesFlow = create<SlidesFlowState>()(
     }),
     {
       name: SLIDES_FLOW_STORAGE_KEY,
-      storage: createJSONStorage(() => createSlidesFlowStorage()),
+      storage: createJSONStorage(() => pickSlidesFlowStorage()),
       partialize: (s) => ({ items: s.items, presets: s.presets, transition: s.transition }),
       onRehydrateStorage: () => {
-        backupSlidesFlowRawState();
+        // O backup preventivo por localStorage so faz sentido no fallback de
+        // navegador/dev-server — no Electron os backups ja sao mantidos em
+        // arquivos separados no disco pelo processo principal.
+        if (!isElectronSlidesFlowAvailable()) backupSlidesFlowRawState();
         return (state, error) => {
           if (error) {
             console.error("[slidesFlow] Falha ao reidratar esteira de slides.", error);

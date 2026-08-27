@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { CustomSlideConfig } from "@/lib/customSlide";
 import {
   backupSlidesFlowRawState,
+  createElectronSlidesFlowStorage,
   createSlidesFlowStorage,
   getLatestSlidesFlowBackupRaw,
   migrateSlidesFlowItemsDataSources,
   restoreSlidesFlowRawStateFromBackup,
   sanitizeSlidesFlowItems,
+  type ElectronSlidesFlowAPI,
 } from "./slidesFlow";
 
 function customItem(id: string, config: CustomSlideConfig): Extract<SlideItem, { kind: "custom" }> {
@@ -187,5 +189,118 @@ describe("backupSlidesFlowRawState", () => {
     expect(() => guarded.setItem("pricing.slidesFlow.v1", nextRaw)).not.toThrow();
 
     expect(storage.getItem("pricing.slidesFlow.v1")).toBe(nextRaw);
+  });
+
+  // Este e o cenario real que causou a perda de progresso reportada pelo
+  // usuario: a esteira principal (nao o backup) estourou a cota do
+  // localStorage do Chromium (~5-10MB, uma esteira com varias imagens
+  // embutidas passa disso facil). A escrita principal lancava
+  // QuotaExceededError sem nenhum try/catch, a excecao subia sem tratamento,
+  // e nada de novo era persistido — em silencio, sem nenhum aviso na tela.
+  // A cada reinicio do app o usuario voltava para o ultimo estado que tinha
+  // cabido na cota, meses atras. O armazenamento em arquivo via Electron
+  // (ver describe abaixo) elimina esse teto; este teste garante que, mesmo
+  // no fallback de navegador, uma falha na gravacao principal nunca mais
+  // fica muda.
+  it("does not throw when the main slide flow write itself exceeds quota, and reports it instead of failing silently", () => {
+    const currentRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const hugeNextRaw = JSON.stringify({
+      state: { items: [{ id: "slide-1" }, { id: "slide-2-com-imagem-enorme" }], presets: [], transition: "fade" },
+      version: 0,
+    });
+    const storage = memoryStorage({ "pricing.slidesFlow.v1": currentRaw });
+    const originalSetItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === "pricing.slidesFlow.v1") {
+        throw new DOMException("quota", "QuotaExceededError");
+      }
+      originalSetItem(key, value);
+    };
+    const guarded = createSlidesFlowStorage(storage);
+
+    expect(() => guarded.setItem("pricing.slidesFlow.v1", hugeNextRaw)).not.toThrow();
+    // A gravacao falhou de verdade — o valor antigo permanece, nao o novo.
+    expect(storage.getItem("pricing.slidesFlow.v1")).toBe(currentRaw);
+  });
+});
+
+describe("createElectronSlidesFlowStorage", () => {
+  function memoryElectronApi(initial: Record<string, string> = {}) {
+    const files = new Map(Object.entries(initial));
+    const backups = new Map<string, string>();
+    let failNextWrite = false;
+    const api: ElectronSlidesFlowAPI = {
+      ler: async (key) => ({ ok: true, value: files.get(key) ?? null }),
+      salvar: async (key, value) => {
+        if (failNextWrite) return { ok: false, erro: "ENOSPC: sem espaco em disco" };
+        if (files.has(key)) backups.set(key, files.get(key)!);
+        files.set(key, value);
+        return { ok: true };
+      },
+      remover: async (key) => { files.delete(key); return { ok: true }; },
+      ultimoBackup: async (key) => ({ ok: true, value: backups.get(key) ?? null }),
+    };
+    return {
+      api,
+      files,
+      setFailNextWrite: (value: boolean) => { failNextWrite = value; },
+    };
+  }
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("round-trips a write through getItem/setItem", async () => {
+    const { api } = memoryElectronApi();
+    const storage = createElectronSlidesFlowStorage(api);
+    const raw = JSON.stringify({ state: { items: [{ id: "a" }], presets: [], transition: "fade" }, version: 0 });
+
+    await storage.setItem("pricing.slidesFlow.v1", raw);
+    const read = await storage.getItem("pricing.slidesFlow.v1");
+
+    expect(read).toBe(raw);
+  });
+
+  it("does not throw when the disk write fails, and getItem still returns the last good value", async () => {
+    const { api, setFailNextWrite } = memoryElectronApi({
+      "pricing.slidesFlow.v1": JSON.stringify({ state: { items: [{ id: "a" }], presets: [], transition: "fade" }, version: 0 }),
+    });
+    const storage = createElectronSlidesFlowStorage(api);
+    setFailNextWrite(true);
+    const nextRaw = JSON.stringify({ state: { items: [{ id: "a" }, { id: "b" }], presets: [], transition: "fade" }, version: 0 });
+
+    await expect(storage.setItem("pricing.slidesFlow.v1", nextRaw)).resolves.toBeUndefined();
+    const read = await storage.getItem("pricing.slidesFlow.v1");
+
+    expect(read).not.toBe(nextRaw);
+  });
+
+  it("restores from the on-disk backup when the main file is empty", async () => {
+    const backupRaw = JSON.stringify({ state: { items: [{ id: "slide-from-backup" }], presets: [], transition: "fade" }, version: 0 });
+    const { api } = memoryElectronApi();
+    // Popula o backup diretamente, simulando um arquivo principal vazio com backup valido.
+    await api.salvar("pricing.slidesFlow.v1", backupRaw);
+    await api.salvar("pricing.slidesFlow.v1", JSON.stringify({ state: { items: [], presets: [], transition: "fade" }, version: 0 }));
+    const storage = createElectronSlidesFlowStorage(api);
+
+    const read = await storage.getItem("pricing.slidesFlow.v1");
+
+    expect(read).toBe(backupRaw);
+  });
+
+  it("migrates a non-empty legacy localStorage value into file storage on first read", async () => {
+    const legacyRaw = JSON.stringify({ state: { items: [{ id: "legacy" }], presets: [], transition: "fade" }, version: 0 });
+    localStorage.setItem("pricing.slidesFlow.v1", legacyRaw);
+    const { api, files } = memoryElectronApi();
+    const storage = createElectronSlidesFlowStorage(api);
+
+    const read = await storage.getItem("pricing.slidesFlow.v1");
+
+    expect(read).toBe(legacyRaw);
+    expect(files.get("pricing.slidesFlow.v1")).toBe(legacyRaw);
   });
 });
