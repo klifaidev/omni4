@@ -99,15 +99,45 @@ export function exportInovacaoDeparaModeloXlsx() {
   downloadWorkbook(wb, "modelo_depara_inovacao");
 }
 
-export function exportDeparasXlsx() {
+/** Linha mínima de qualquer base (Real/Budget/Forecast/Rolling) usada só para
+ * recuperar a descrição original do SKU quando o De/Para mestre está sem nome. */
+export interface SkuDescSourceRow {
+  sku?: string;
+  skuDesc?: string;
+}
+
+/**
+ * Monta um SKU → descrição a partir das bases carregadas no app, na ordem em
+ * que foram passadas (a primeira ocorrência não vazia de cada SKU vence).
+ * Usado como fallback só para os SKUs cujo De/Para mestre não tem nome.
+ */
+function buildSkuDescFallback(rowsBySource: SkuDescSourceRow[][]): Map<string, string> {
+  const fallback = new Map<string, string>();
+  for (const rows of rowsBySource) {
+    for (const row of rows) {
+      if (!row.sku || fallback.has(row.sku)) continue;
+      const desc = row.skuDesc?.trim();
+      if (desc) fallback.set(row.sku, desc);
+    }
+  }
+  return fallback;
+}
+
+export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
   const wb = XLSX.utils.book_new();
 
   // 1) De Para Principal (SKU → atributos)
   const principal = deparaPrincipal as Record<string, DeParaPrincipalEntry>;
+  // Alguns SKUs vêm sem nome no De/Para mestre. Para esses casos, usa a
+  // descrição original tal como veio na base carregada (Real/Budget/Forecast/
+  // Rolling) — sem ela o SKU fica sem nenhuma referência para ser
+  // classificado depois. Os demais níveis (categoria, marca etc.) continuam
+  // em branco normalmente; só o nome é recuperado.
+  const skuDescFallback = buildSkuDescFallback(rowsBySource);
   const principalRows = Object.entries(principal)
     .map(([sku, v]) => ({
       SKU: sku,
-      Descrição: v.skuDesc ?? "",
+      Descrição: (v.skuDesc && v.skuDesc.trim()) || skuDescFallback.get(sku) || "",
       Categoria: v.categoria ?? "",
       Subcategoria: v.subcategoria ?? "",
       Marca: v.marca ?? "",
