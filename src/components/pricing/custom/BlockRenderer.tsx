@@ -17,6 +17,7 @@ import type {
 } from "@/lib/customSlide";
 import type { Filters, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
+import { applyBudgetFilters, aggregateBudget, getBudgetLineValue, type BudgetTotals } from "@/lib/budget";
 import { aggregate, LINES, fmt } from "../DreTable";
 import { useMonthsInfo } from "@/store/selectors";
 import {
@@ -2023,6 +2024,17 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
     return map;
   }, [filteredRows, cols]);
 
+  const budgetAggByCol = useMemo(() => {
+    const map = new Map<string, BudgetTotals>();
+    if (!blk.showBudget) return map;
+    const filteredBudget = applyBudgetFilters(budgetRows, blk.filters ?? {}, null);
+    for (const col of cols) {
+      const rs = filteredBudget.filter((r) => r.periodo === col.periodo);
+      map.set(col.periodo, aggregateBudget(rs));
+    }
+    return map;
+  }, [blk.showBudget, budgetRows, blk.filters, cols]);
+
   const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
   const visibleLines = useMemo(() => {
@@ -2087,14 +2099,17 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const varHeaderLabel = showVar && ultimoCol && penultimoCol
     ? `${MESES[ultimoCol.mes - 1]}/${String(ultimoCol.ano).slice(2)} vs ${MESES[penultimoCol.mes - 1]}/${String(penultimoCol.ano).slice(2)}`
     : null;
+  const showBudgetCols = !!blk.showBudget && budgetAggByCol.size > 0;
   const { firstColW, varColW, periodColW } = computeDreColumnWidths({
     blockWidthUnits: blk.w,
     fontPx: fs,
     indicatorLabels: visibleLines.map((line) => ({ text: dreLineLabel(line), bold: !!line.bold })),
     varHeaderLabel,
-    colCount: cols.length,
+    colCount: cols.length * (showBudgetCols ? 2 : 1),
   });
-  const leftForPeriod = (idx: number) => firstColW + idx * periodColW;
+  const periodGroupW = showBudgetCols ? periodColW * 2 : periodColW;
+  const leftForPeriod = (idx: number) => firstColW + idx * periodGroupW;
+  const leftForBudget = (idx: number) => leftForPeriod(idx) + periodColW;
   const headerBase: React.CSSProperties = {
       background: blk.headerColor,
       color: SLIDE_HEX.white,
@@ -2108,7 +2123,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
       <ExportPositionedCell key="indicador" style={{ ...headerBase, padding: pad, textAlign: "left" }} left={0} top={0} width={firstColW} height={rowH} padX={Math.round(fs * 0.55)}>
         Indicador
       </ExportPositionedCell>,
-      ...cols.map((col, ci) => (
+      ...cols.flatMap((col, ci) => [
         <ExportPositionedCell
           key={col.periodo}
           style={{ ...headerBase, padding: padVal, textAlign: "center" }}
@@ -2119,8 +2134,31 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
           padX={Math.round(fs * 0.36)}
         >
           {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
-        </ExportPositionedCell>
-      )),
+        </ExportPositionedCell>,
+        ...(showBudgetCols
+          ? [
+              <ExportPositionedCell
+                key={`${col.periodo}-budget`}
+                style={{
+                  ...headerBase,
+                  padding: padVal,
+                  textAlign: "center",
+                  fontStyle: "italic",
+                  fontWeight: 500,
+                  background: `${blk.headerColor}CC`,
+                  borderLeft: "1px solid rgba(255,255,255,0.3)",
+                }}
+                left={leftForBudget(ci)}
+                top={0}
+                width={periodColW}
+                height={rowH}
+                padX={Math.round(fs * 0.36)}
+              >
+                Budget
+              </ExportPositionedCell>,
+            ]
+          : []),
+      ]),
       ...(showVar && ultimoCol && penultimoCol
         ? [
             <ExportPositionedCell key="var" style={{
@@ -2128,7 +2166,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
               padding: padVal,
               textAlign: "center",
               borderLeft: "1px solid rgba(255,255,255,0.3)",
-            }} left={firstColW + cols.length * periodColW} top={0} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
+            }} left={firstColW + cols.length * periodGroupW} top={0} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
               {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
               {" vs "}
               {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
@@ -2191,6 +2229,30 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
             {fmtDreValue(line, val)}
           </ExportPositionedCell>,
         );
+
+        if (showBudgetCols) {
+          const budgetAgg = budgetAggByCol.get(col.periodo);
+          const budgetVal = budgetAgg ? getBudgetLineValue(line.id, budgetAgg) : null;
+          const budgetIsNeg = budgetVal !== null && budgetVal < 0;
+          lineCells.push(
+            <ExportPositionedCell key={`${line.id}-${col.periodo}-budget`} style={{
+              padding: padVal,
+              textAlign: "center",
+              fontStyle: "italic",
+              fontWeight: line.bold ? 600 : 400,
+              color: budgetIsNeg ? SLIDE_HEX.danger
+                : (line.id === "cm" || line.id === "cmPct") ? SLIDE_HEX.success
+                : blk.textColor,
+              background: rowBg,
+              opacity: budgetVal === null ? 0.5 : 0.85,
+              borderLeft: `1px solid ${blk.headerColor}20`,
+              borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
+              fontSize: fs,
+            }} left={leftForBudget(ci)} top={top} width={periodColW} height={rowH} padX={Math.round(fs * 0.36)}>
+              {budgetVal === null ? "—" : fmtDreValue(line, budgetVal)}
+            </ExportPositionedCell>,
+          );
+        }
       }
 
       if (showVar && aggUltimo && aggPenultimo) {
@@ -2229,7 +2291,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
             borderBottom: line.bold ? `1px solid ${blk.headerColor}30` : "none",
             fontSize: fs,
             background: rowBg,
-          }} left={firstColW + cols.length * periodColW} top={top} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
+          }} left={firstColW + cols.length * periodGroupW} top={top} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
             {display}
           </ExportPositionedCell>,
         );

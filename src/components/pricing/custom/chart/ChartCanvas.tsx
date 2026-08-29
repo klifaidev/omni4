@@ -83,7 +83,7 @@ import {
   type TopRankingResult,
 } from "@/lib/slideCalcWorkerClient";
 import {
-  ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type BrazilMapPalette, type ChartStyle,
+  ensureChartStyle, colorForSeries, DEFAULT_PALETTE, type BrazilMapPalette, type ChartStyle, type MarkerShape,
 } from "./types";
 import {
   ChartTooltip, applySort, evalCondColor, renderRefLines,
@@ -1354,6 +1354,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
           const baseR = cfg?.marker?.size ?? 3;
           const dotFill = cfg?.marker?.fill ?? color;
           const dotStroke = cfg?.marker?.border ?? color;
+          const markerShape = cfg?.marker?.shape ?? "circle";
           const dotProp: boolean | ((dp: RechartsDotProps) => JSX.Element) = markerOn
             ? (showCrossing
               ? (dp: RechartsDotProps) => (
@@ -1365,9 +1366,21 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
                     dotFill={dotFill}
                     dotStroke={dotStroke}
                     strokeOpacity={sStrokeOp}
+                    shape={markerShape}
                   />
                 )
-              : { r: baseR, fill: dotFill, stroke: dotStroke, fillOpacity: sStrokeOp })
+              : (dp: RechartsDotProps) => (
+                  <MarkerDot
+                    key={dp.key}
+                    cx={dp.cx}
+                    cy={dp.cy}
+                    shape={markerShape}
+                    r={baseR}
+                    fill={dotFill}
+                    stroke={dotStroke}
+                    fillOpacity={sStrokeOp}
+                  />
+                ))
             : false;
           if (renderAsBar) {
             return (
@@ -2392,24 +2405,65 @@ function ActivePeriodTick(props: { x?: number; y?: number; payload?: { value?: u
   );
 }
 
+/** Renderiza o marcador de série (círculo/quadrado/diamante/triângulo) — usado
+ * tanto no dot padrão quanto no CrossingDot, para que a forma escolhida no
+ * inspector ("Marcador") realmente apareça no gráfico. */
+function MarkerShapeSvg({ shape, cx, cy, r, fill, stroke, strokeWidth, fillOpacity, style }: {
+  shape: MarkerShape; cx: number; cy: number; r: number;
+  fill: string; stroke: string; strokeWidth: number; fillOpacity?: number;
+  style?: React.CSSProperties;
+}) {
+  const common = { fill, stroke, strokeWidth, fillOpacity, style };
+  switch (shape) {
+    case "square": {
+      const side = r * 1.7;
+      return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} {...common} />;
+    }
+    case "diamond": {
+      const points = `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
+      return <polygon points={points} {...common} />;
+    }
+    case "triangle": {
+      const points = `${cx},${cy - r} ${cx + r * 0.866},${cy + r * 0.5} ${cx - r * 0.866},${cy + r * 0.5}`;
+      return <polygon points={points} {...common} />;
+    }
+    case "circle":
+    default:
+      return <circle cx={cx} cy={cy} r={r} {...common} />;
+  }
+}
+
+function MarkerDot(props: {
+  cx?: number; cy?: number;
+  shape: MarkerShape; r: number; fill: string; stroke: string; fillOpacity?: number;
+}) {
+  const { cx, cy, shape, r, fill, stroke, fillOpacity } = props;
+  if (cx == null || cy == null) return null;
+  return (
+    <MarkerShapeSvg shape={shape} cx={cx} cy={cy} r={r}
+      fill={fill} stroke={stroke} strokeWidth={1} fillOpacity={fillOpacity} />
+  );
+}
+
 interface CrossingDotProps {
   cx?: number; cy?: number; index?: number;
   payload?: Record<string, unknown>;
   activePeriods: Set<string>;
   baseR: number; dotFill: string; dotStroke: string;
   strokeOpacity: number;
+  shape: MarkerShape;
 }
 
 function CrossingDot(props: CrossingDotProps) {
   const { cx, cy, index, activePeriods, baseR,
-    dotFill, dotStroke, strokeOpacity } = props;
+    dotFill, dotStroke, strokeOpacity, shape } = props;
   if (cx == null || cy == null || index == null) return null;
   const period = String(props.payload?.__period ?? "");
   const isCross = activePeriods.has(period);
   const HIGHLIGHT = SLIDE_HEX.chart1;
   const r = isCross ? Math.max(baseR + 3, 6) : baseR;
   return (
-    <circle cx={cx} cy={cy} r={r}
+    <MarkerShapeSvg shape={shape} cx={cx} cy={cy} r={r}
       fill={isCross ? HIGHLIGHT : dotFill}
       stroke={isCross ? HIGHLIGHT : dotStroke}
       strokeWidth={isCross ? 2 : 1}

@@ -279,3 +279,17 @@ export function applyBudgetFilters(
     return true;
   });
 }
+
+/** Mesmas linhas do DRE que têm equivalente direto no Budget (as demais não têm dado de Budget). */
+export function getBudgetLineValue(lineId: string, a: BudgetTotals): number | null {
+  const safe = (n: number, d: number) => (d > 0 ? n / d : 0);
+  switch (lineId) {
+    case "vol": return a.volumeKg;
+    case "rol": return a.receita;
+    case "rolKg": return safe(a.receita, a.volumeKg);
+    case "cm": return a.cm;
+    case "cmPct": return safe(a.cm, a.receita);
+    case "cmKg": return safe(a.cm, a.volumeKg);
+    default: return null;
+  }
+}
