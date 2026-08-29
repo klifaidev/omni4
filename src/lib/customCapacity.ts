@@ -35,8 +35,8 @@ import type { TableBlock, ChartBlock, TopSkuBlock } from "./customSlide";
 export interface FitInfo { shown: number; total: number; truncated: boolean }
 
 export function resolveTableFit(block: TableBlock, totalRows: number): FitInfo {
-  const titleGap = tableTitleGap(block);
-  const cap = tableCapacity(Math.max(TABLE_HEADER_H + TABLE_ROW_H + 4, block.h - titleGap));
+  const gap = tableTitleGap(block) + tableCaptionGap(block);
+  const cap = tableCapacity(Math.max(TABLE_HEADER_H + TABLE_ROW_H + 4, block.h - gap));
   const limit = block.autoFit !== false
     ? cap
     : Math.max(1, block.maxRows ?? cap);
@@ -49,10 +49,18 @@ export function tableTitleGap(block: TableBlock): number {
   return block.title ? titleSize + 12 : 0;
 }
 
+/** Reserva espaço para a nota "Mostrando X de Y" quando `exportNote` está
+ *  ativo — reservado incondicionalmente (não só quando de fato truncado)
+ *  para não criar dependência circular com `resolveTableFit`, que é quem
+ *  decide se a tabela está truncada. */
+export function tableCaptionGap(block: TableBlock): number {
+  return block.exportNote ? 16 : 0;
+}
+
 export function effectiveTableRowHeight(block: TableBlock, shownRows: number): number {
   if (block.autoFit !== false) return TABLE_ROW_H;
   const rows = Math.max(1, shownRows);
-  const usable = block.h - tableTitleGap(block) - TABLE_HEADER_H - 4;
+  const usable = block.h - tableTitleGap(block) - tableCaptionGap(block) - TABLE_HEADER_H - 4;
   return Math.min(TABLE_ROW_H, Math.max(1, usable / rows));
 }
 

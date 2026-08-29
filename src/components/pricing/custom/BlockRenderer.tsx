@@ -1258,6 +1258,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     ? (b.titleColor.startsWith("#") ? b.titleColor : `#${b.titleColor}`)
     : SLIDE_HEX.ink;
   const tableTitleGap = tableTitle ? tableTitleSize + 12 : 0;
+  const tableCaptionGap = b.exportNote ? 16 : 0;
   const tableTitleEl = tableTitle ? (
     <div
       style={{
@@ -1313,7 +1314,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
 
   const renderedRowCount = 1 + visibleHeaders.length + (othersRow ? 1 : 0);
   const manualRowHeightPx = b.autoFit === false
-    ? Math.max(1, (b.h - tableTitleGap) / Math.max(1, renderedRowCount))
+    ? Math.max(1, (b.h - tableTitleGap - tableCaptionGap) / Math.max(1, renderedRowCount))
     : 0;
   const compactTableCell: React.CSSProperties = b.autoFit === false
     ? {
@@ -1751,7 +1752,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         {tableTitleEl}
         <div ref={tableResizeRef} style={{
           width: "100%",
-          height: `calc(100% - ${tableTitleGap}px)`,
+          height: `calc(100% - ${tableTitleGap + tableCaptionGap}px)`,
           position: "relative",
         }}>
           {headerCells}
@@ -1759,6 +1760,19 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
           {othersCells}
           {resizeHandles}
         </div>
+        {b.exportNote && fit.truncated && (
+          <div style={{
+            height: tableCaptionGap,
+            display: "flex",
+            alignItems: "center",
+            fontFamily: "Calibri",
+            fontSize: 9,
+            fontStyle: "italic",
+            color: SLIDE_HEX.slate400,
+          }}>
+            Mostrando {fit.shown} de {fit.total}
+          </div>
+        )}
       </div>
     );
   }
