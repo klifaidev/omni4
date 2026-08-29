@@ -212,6 +212,46 @@ ipcMain.on("renderer:error", (event, payload = {}) => {
 });
 
 // Bases locais: armazenamento de arquivos de dados
+//
+// Seguranca: todo handler abaixo recebe tipo/nomeArquivo/cacheKind vindos do
+// renderer via IPC. O renderer roda com contextIsolation e sem nodeIntegration,
+// mas isso NAO significa que o processo principal deva confiar cegamente nesses
+// valores — a tipagem TypeScript do lado do renderer (TipoBase, cacheKind
+// tipado) nao e imposta em tempo de execucao, e qualquer script que consiga
+// rodar no renderer (hoje nao ha nenhum vetor conhecido, mas uma dependencia
+// comprometida ou uma falha futura de renderizacao poderiam abrir um) tem
+// acesso direto a window.electronAPI.bases.*/slidesFlow.* com QUALQUER string.
+// Sem validacao aqui, um valor como tipo="../../../../Users/<user>/Documents"
+// faz path.join escapar do diretorio esperado e ler/escrever/apagar qualquer
+// arquivo que o usuario do SO tenha permissao de acessar — inclusive fora da
+// pasta de dados do app. Por isso tipo/cacheKind sao validados contra uma
+// lista fechada de valores conhecidos, e nomeArquivo/key sao validados para
+// aceitar apenas um nome de arquivo simples (sem separador de caminho, sem
+// "..", nunca um caminho absoluto).
+const VALID_BASE_TIPOS = new Set(["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"]);
+const VALID_CACHE_KINDS = new Set(["ke30-parsed-csv", "budget-parsed-xlsx"]);
+
+function isSafeTipo(tipo) {
+  return typeof tipo === "string" && VALID_BASE_TIPOS.has(tipo);
+}
+
+function isSafeCacheKind(cacheKind) {
+  return typeof cacheKind === "string" && VALID_CACHE_KINDS.has(cacheKind);
+}
+
+function isSafeFileName(nomeArquivo) {
+  if (typeof nomeArquivo !== "string" || nomeArquivo.length === 0 || nomeArquivo.length > 260) return false;
+  if (nomeArquivo.includes("\0")) return false;
+  if (path.isAbsolute(nomeArquivo)) return false;
+  if (nomeArquivo.replace(/\\/g, "/").includes("/")) return false;
+  if (nomeArquivo === "." || nomeArquivo === "..") return false;
+  return path.basename(nomeArquivo) === nomeArquivo;
+}
+
+function isSafeChunkIndex(index) {
+  return Number.isInteger(index) && index >= 0 && index < 1_000_000;
+}
+
 function getBasesDir() {
   return path.join(app.getPath("userData"), "bases");
 }
@@ -308,6 +348,7 @@ function writeChunkManifest(dir, manifest) {
 }
 
 ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo)) return { ok: false, erro: "parametro_invalido" };
   try {
     const dir = ensureBasesDir();
     const subDir = path.join(dir, tipo);
@@ -324,6 +365,7 @@ ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }
 });
 
 ipcMain.handle("bases:load", async (event, { tipo }) => {
+  if (!isSafeTipo(tipo)) return { ok: false, motivo: "erro", erro: "parametro_invalido" };
   try {
     const subDir = path.join(getBasesDir(), tipo);
     if (!fs.existsSync(subDir)) return { ok: false, motivo: "nenhum_arquivo" };
@@ -352,6 +394,7 @@ ipcMain.handle("bases:load", async (event, { tipo }) => {
 });
 
 ipcMain.handle("bases:load-file", async (event, { tipo, nomeArquivo }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo)) return { ok: false, motivo: "erro", erro: "parametro_invalido" };
   try {
     const caminho = getBaseFilePath(tipo, nomeArquivo);
     if (!fs.existsSync(caminho)) return { ok: false, motivo: "nenhum_arquivo" };
@@ -372,6 +415,9 @@ ipcMain.handle("bases:load-file", async (event, { tipo, nomeArquivo }) => {
 });
 
 ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
+    return { ok: true, hit: false, motivo: "cache_invalido" };
+  }
   try {
     const signature = getBaseSignature(tipo, nomeArquivo);
     if (!signature) return { ok: true, hit: false, motivo: "arquivo_ausente" };
@@ -393,6 +439,9 @@ ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheK
 });
 
 ipcMain.handle("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
+    return { ok: true, hit: false, motivo: "cache_invalido" };
+  }
   try {
     const signature = getBaseSignature(tipo, nomeArquivo);
     if (!signature) return { ok: true, hit: false, motivo: "arquivo_ausente" };
@@ -415,6 +464,9 @@ ipcMain.handle("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo
 });
 
 ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo, cacheKind, index }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind) || !isSafeChunkIndex(index)) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const chunkDir = getProcessedChunkDir(tipo, nomeArquivo, cacheKind);
     const chunkPath = path.join(chunkDir, "chunks", `chunk-${String(index).padStart(5, "0")}.json`);
@@ -427,6 +479,9 @@ ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo
 });
 
 ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheKind, version, payload }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const signature = getBaseSignature(tipo, nomeArquivo);
     if (!signature) return { ok: false, erro: "arquivo_base_ausente" };
@@ -450,6 +505,9 @@ ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheK
 });
 
 ipcMain.handle("bases:processed-chunked-start", async (event, { tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const signature = getBaseSignature(tipo, nomeArquivo);
     if (!signature) return { ok: false, erro: "arquivo_base_ausente" };
@@ -476,6 +534,9 @@ ipcMain.handle("bases:processed-chunked-start", async (event, { tipo, nomeArquiv
 });
 
 ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo, cacheKind, index, rows }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind) || !isSafeChunkIndex(index)) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const tempDir = getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind);
     if (!fs.existsSync(tempDir)) return { ok: false, erro: "cache_temp_ausente" };
@@ -490,6 +551,9 @@ ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo
 });
 
 ipcMain.handle("bases:processed-chunked-finish", async (event, { tipo, nomeArquivo, cacheKind, chunks }) => {
+  if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const tempDir = getProcessedChunkTempDir(tipo, nomeArquivo, cacheKind);
     if (!fs.existsSync(tempDir)) return { ok: false, erro: "cache_temp_ausente" };
@@ -545,6 +609,9 @@ ipcMain.handle("bases:info", async () => {
 });
 
 ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
+  if (!isSafeTipo(tipo) || (nomeArquivo != null && !isSafeFileName(nomeArquivo))) {
+    return { ok: false, erro: "parametro_invalido" };
+  }
   try {
     const subDir = path.join(getBasesDir(), tipo);
     if (!fs.existsSync(subDir)) return { ok: true };
@@ -566,6 +633,7 @@ ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
 });
 
 ipcMain.handle("bases:processed-invalidate", async (event, { tipo } = {}) => {
+  if (tipo != null && !isSafeTipo(tipo)) return { ok: false, erro: "parametro_invalido" };
   try {
     if (tipo) {
       deleteProcessedCache(tipo);
@@ -586,6 +654,15 @@ ipcMain.handle("bases:processed-invalidate", async (event, { tipo } = {}) => {
 // temporario + rename) e backups rotativos em arquivos separados, baratos
 // porque nao competem com a mesma cota do dado principal.
 const SLIDES_FLOW_BACKUP_COUNT = 5;
+
+// Mesmo raciocinio de seguranca da secao de bases locais acima: key vem do
+// renderer sem nenhuma garantia de que seja de fato "pricing.slidesFlow.v1"
+// (unico valor usado hoje) — validamos o formato para nunca deixar um
+// separador de caminho ou ".." chegar em path.join.
+function isSafeSlidesFlowKey(key) {
+  return typeof key === "string" && key.length > 0 && key.length <= 200
+    && /^[A-Za-z0-9_.-]+$/.test(key) && !key.includes("..");
+}
 
 function getSlidesFlowDir() {
   return path.join(app.getPath("userData"), "slides-flow");
@@ -615,6 +692,7 @@ function rotateSlidesFlowBackups(destino) {
 }
 
 ipcMain.handle("slidesFlow:read", async (event, { key }) => {
+  if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     const filePath = getSlidesFlowFilePath(key);
     if (!fs.existsSync(filePath)) return { ok: true, value: null };
@@ -627,6 +705,7 @@ ipcMain.handle("slidesFlow:read", async (event, { key }) => {
 });
 
 ipcMain.handle("slidesFlow:write", async (event, { key, value }) => {
+  if (!isSafeSlidesFlowKey(key) || typeof value !== "string") return { ok: false, erro: "parametro_invalido" };
   try {
     ensureSlidesFlowDir();
     const destino = getSlidesFlowFilePath(key);
@@ -642,6 +721,7 @@ ipcMain.handle("slidesFlow:write", async (event, { key, value }) => {
 });
 
 ipcMain.handle("slidesFlow:remove", async (event, { key }) => {
+  if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     const filePath = getSlidesFlowFilePath(key);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -653,6 +733,7 @@ ipcMain.handle("slidesFlow:remove", async (event, { key }) => {
 });
 
 ipcMain.handle("slidesFlow:latest-backup", async (event, { key }) => {
+  if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     for (let i = 1; i <= SLIDES_FLOW_BACKUP_COUNT; i += 1) {
       const backupPath = `${getSlidesFlowFilePath(key)}.bak${i}`;

@@ -30,6 +30,12 @@ jobs:
         env:
           EP_DRAFT: false
           EP_PRE_RELEASE: false
+          # Assinatura de codigo (Authenticode): sem efeito ate que os secrets
+          # CSC_LINK/CSC_KEY_PASSWORD existam no repositorio — o electron-builder
+          # so assina quando ambos estao presentes, entao isto e um no-op hoje.
+          # Ver RELEASING.md para como habilitar quando houver certificado.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: npm run electron:build
 
       - name: Publicar release no GitHub

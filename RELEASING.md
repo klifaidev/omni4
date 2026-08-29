@@ -44,3 +44,22 @@ OMNI4 Pricing Analytics Setup X.Y.Z.exe       ← instalador
 OMNI4 Pricing Analytics Setup X.Y.Z.exe.blockmap
 latest.yml                                      ← usado pelo auto-updater
 ```
+
+## Assinatura de código (Authenticode) — recomendado, ainda não configurado
+
+Hoje o instalador **não é assinado digitalmente**. O auto-updater confere a
+integridade do download (hash SHA-512 do `latest.yml`, gerado no mesmo
+release), mas isso não comprova identidade do publicador — apenas protege
+contra download corrompido/incompleto. Sem assinatura, o Windows SmartScreen
+não atribui o instalador a nenhum editor verificado, e não há nenhuma camada
+independente do próprio pipeline de release/GitHub para confirmar que um
+`.exe` publicado é legítimo. Como as atualizações são baixadas e instaladas
+automaticamente (`autoDownload: true`), comprometer o pipeline de release
+(token do GitHub Actions, credencial de um mantenedor, ou o runner de CI)
+seria suficiente para distribuir código malicioso para todas as instalações.
+
+Para habilitar a assinatura quando houver um certificado de assinatura de
+código (Authenticode, `.pfx`/`.p12`):
+1. Codificar o certificado em base64: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("certificado.pfx"))` (PowerShell) e salvar o resultado como o secret `CSC_LINK` no repositório GitHub (Settings → Secrets and variables → Actions).
+2. Salvar a senha do certificado como o secret `CSC_KEY_PASSWORD`.
+3. Nenhuma mudança de código é necessária além disso — `.github/workflows/release.yml` já repassa esses dois secrets para o `electron-builder`, que assina automaticamente assim que ambos existirem.
