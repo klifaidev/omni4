@@ -7,6 +7,16 @@
     <meta name="description" content="OMNI4 — Ferramenta de analytics e lucratividade B2B. Bridge PVM, portfólio de SKUs, budget e apresentações.">
     <meta name="theme-color" content="#0a0d1c">
     <meta name="author" content="Lovable" />
+    <!--
+      Content-Security-Policy: defesa em profundidade. O app roda 100% local
+      (sem chamadas de rede do renderer, sem fontes/scripts externos — auto-
+      update e IPC de arquivos ficam no processo principal do Electron, fora
+      do alcance desta politica). Isso nao substitui corrigir uma falha de
+      XSS caso uma apareca, mas limita bastante o dano possivel enquanto nao
+      existir uma: bloqueia script inline/externo, conexao de rede a
+      qualquer host que nao seja o proprio app, e plugins/objetos embutidos.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws:; object-src 'none'; base-uri 'self'; form-action 'self';">
 
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/28eaa351-3b09-46a8-9bcf-59d59bcb74e4/id-preview-55df11ba--58a562b2-985b-4782-857a-d1e086380ce4.lovable.app-1778230220423.png">
