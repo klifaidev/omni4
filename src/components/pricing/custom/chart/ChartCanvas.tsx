@@ -1396,6 +1396,39 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
               </Bar>
             );
           }
+          if (ct === "area" || ct === "stackedArea") {
+            const areaStacked = ct === "stackedArea" || !!style.area?.stacked;
+            const areaOpacity = cfg?.areaOpacity ?? 0.35;
+            const lineOnTop = !!style.area?.lineOnTop;
+            return (
+              <React.Fragment key={s.name}>
+                <Area isAnimationActive={false} dataKey={s.name}
+                  type={cfg?.smooth ? "monotone" : "linear"}
+                  stroke={color} strokeWidth={cfg?.thickness ?? 2.5}
+                  strokeOpacity={sStrokeOp}
+                  strokeDasharray={dash}
+                  fill={color} fillOpacity={sDim ? 0.1 : areaOpacity}
+                  yAxisId={yAxisId}
+                  stackId={areaStacked ? "area-stack" : undefined}
+                  dot={dotProp}
+                  connectNulls>
+                  {style.dataLabels.show && (
+                    <LabelList dataKey={s.name} position={mapPos("line", dlPos) as never}
+                      content={makeLabelContent({ style, measureFmt, seriesName: s.name, categories: cats, seriesColor: color }) as never} />
+                  )}
+                </Area>
+                {lineOnTop && (
+                  <Line isAnimationActive={false} dataKey={s.name} legendType="none"
+                    type={cfg?.smooth ? "monotone" : "linear"}
+                    stroke={color} strokeWidth={(cfg?.thickness ?? 2.5) + 0.5}
+                    strokeOpacity={sStrokeOp}
+                    yAxisId={yAxisId}
+                    dot={false}
+                    connectNulls />
+                )}
+              </React.Fragment>
+            );
+          }
           return (
             <Line key={s.name} isAnimationActive={false} dataKey={s.name}
               type={cfg?.smooth ? "monotone" : "linear"}

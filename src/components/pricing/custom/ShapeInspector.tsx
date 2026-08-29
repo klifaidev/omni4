@@ -9,7 +9,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import {
   type ShapeBlock, type ShapeType, type ShapeStrokeStyle, type ShapeLineDirection,
-  SHAPE_GROUPS, SHAPE_LABELS, ensureShapeBlock, isLineFamily,
+  SHAPE_GROUPS, SHAPE_LABELS, ensureShapeBlock, isLineFamily, deriveLineEndpoints,
 } from "@/lib/customSlide";
 import { ShapeMiniPreview } from "./ShapeRenderer";
 
@@ -83,7 +83,10 @@ export function ShapeInspector({ block, onChange }: {
                 { v: "diagonal-down", l: "↘" },
                 { v: "diagonal-up", l: "↗" },
               ]}
-              onChange={(v) => onChange({ lineDirection: v })} />
+              onChange={(v) => onChange({
+                lineDirection: v,
+                ...deriveLineEndpoints(v, b.x, b.y, b.w, b.h),
+              })} />
           </Row>
           <Row>
             <ToggleField label="Ponta inicial" value={b.arrowStart} onChange={(v) => onChange({ arrowStart: v })} />

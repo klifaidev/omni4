@@ -1725,8 +1725,23 @@ function TopSkuBlockEditor({ block, onChange }: {
           ))}
         </div>
       )}
+      <Row label="Itens exibidos">
+        <Segmented
+          value={block.autoFit === false ? "manual" : "auto"}
+          onChange={(v) => onChange({ autoFit: v !== "manual" } as never)}
+          options={[
+            { value: "auto", label: "Auto" },
+            { value: "manual", label: "Top N" },
+          ]}
+        />
+      </Row>
       <NumField label="Top N" value={block.topN}
-        onChange={(v) => onChange({ topN: Math.max(1, Math.min(50, v)) } as never)} />
+        onChange={(v) => onChange({ autoFit: false, topN: Math.max(1, Math.min(50, v)) } as never)} />
+      {block.autoFit !== false && (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Em Auto, a quantidade exibida se ajusta à altura do bloco. Mude para "Top N" para fixar exatamente {block.topN} itens.
+        </p>
+      )}
       <ToggleRow label="Mostrar % do total" value={block.showShare}
         onChange={(v) => onChange({ showShare: v } as never)} />
     </div>

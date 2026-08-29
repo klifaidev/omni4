@@ -222,6 +222,16 @@ export function isLineFamily(s: ShapeType): boolean {
   return LINE_FAMILY_SHAPES.includes(s);
 }
 
+/** Deriva os pontos p1/p2 de uma linha a partir da direção e do bbox (x,y,w,h). */
+export function deriveLineEndpoints(
+  dir: ShapeLineDirection, x: number, y: number, w: number, h: number,
+): { p1: { x: number; y: number }; p2: { x: number; y: number } } {
+  if (dir === "vertical")           return { p1: { x: x + w / 2, y },     p2: { x: x + w / 2, y: y + h } };
+  if (dir === "diagonal-down")      return { p1: { x, y },                p2: { x: x + w, y: y + h } };
+  if (dir === "diagonal-up")        return { p1: { x, y: y + h },         p2: { x: x + w, y } };
+  return                                   { p1: { x, y: y + h / 2 },     p2: { x: x + w, y: y + h / 2 } };
+}
+
 /** Garante todos os campos novos com defaults — backward compat. */
 export function ensureShapeBlock(b: ShapeBlock): Required<Omit<ShapeBlock, "groupId" | "locked">> & ShapeBlock {
   const isLine = isLineFamily(b.shape);
@@ -229,12 +239,9 @@ export function ensureShapeBlock(b: ShapeBlock): Required<Omit<ShapeBlock, "grou
   let p1 = b.p1;
   let p2 = b.p2;
   if (isLine && (!p1 || !p2)) {
-    const dir = b.lineDirection ?? "horizontal";
-    const x = b.x, y = b.y, w = b.w, h = b.h;
-    if (dir === "vertical")            { p1 = { x: x + w / 2, y };       p2 = { x: x + w / 2, y: y + h }; }
-    else if (dir === "diagonal-down")  { p1 = { x, y };                  p2 = { x: x + w, y: y + h }; }
-    else if (dir === "diagonal-up")    { p1 = { x, y: y + h };           p2 = { x: x + w, y }; }
-    else                               { p1 = { x, y: y + h / 2 };       p2 = { x: x + w, y: y + h / 2 }; }
+    const derived = deriveLineEndpoints(b.lineDirection ?? "horizontal", b.x, b.y, b.w, b.h);
+    p1 = derived.p1;
+    p2 = derived.p2;
   }
   // Default vertices for triangle / right-triangle.
   let vertices = b.vertices;
