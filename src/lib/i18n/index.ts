@@ -35,6 +35,10 @@
 //   - src/components/pricing/custom/inspectors/BlockInspectors.tsx
 //   - src/components/pricing/custom/BlockRenderer.tsx
 //   - src/pages/SlidesBeta.tsx
+//   - src/components/pricing/custom/CustomSlideEditor.tsx (exceto as ~15
+//     funções OmniXxxInspector no fim do arquivo — código morto duplicado,
+//     nunca invocado; ver comentário em slides.editor.customSlideEditor
+//     no pt-BR.ts)
 // Isto é uma fatia, não a extração completa do editor — o resto continua
 // com string cravada no JSX até ser migrado incrementalmente.
 

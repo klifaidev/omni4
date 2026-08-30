@@ -146,8 +146,8 @@ function SlideSourceFooterEditor({
         <button
           type="button"
           disabled={readOnly}
-          title={readOnly ? text : "Editar fonte de dados do rodape"}
-          aria-label="Fonte de dados do slide"
+          title={readOnly ? text : t.sourceFooter.editTitle}
+          aria-label={t.sourceFooter.ariaLabel}
           style={{
             position: "absolute",
             left: 40,
@@ -172,16 +172,16 @@ function SlideSourceFooterEditor({
             pointerEvents: readOnly ? "none" : "auto",
           }}
         >
-          {text || "Fonte: "}
+          {text || t.sourceFooter.prefix}
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-80 space-y-3">
         <div>
-          <p className="text-sm font-semibold">Fonte do rodape</p>
-          <p className="text-xs text-muted-foreground">Use o texto automatico ou escreva uma fonte personalizada para este slide.</p>
+          <p className="text-sm font-semibold">{t.sourceFooter.popoverTitle}</p>
+          <p className="text-xs text-muted-foreground">{t.sourceFooter.popoverHint}</p>
         </div>
         <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
-          <span className="text-xs font-medium">Automatico</span>
+          <span className="text-xs font-medium">{t.sourceFooter.auto}</span>
           <Switch
             checked={mode === "auto"}
             onCheckedChange={(checked) => {
@@ -193,16 +193,16 @@ function SlideSourceFooterEditor({
         </div>
         {mode === "manual" ? (
           <div className="space-y-1.5">
-            <Label className="text-xs">Texto manual</Label>
+            <Label className="text-xs">{t.sourceFooter.manualLabel}</Label>
             <DraftInput
               value={manualText}
               onCommit={(value) => setSourceFooterAction({ mode: "manual", manualText: value })}
-              placeholder="Ex.: Fonte: KE30 - Abr/25 a Mar/26"
+              placeholder={t.sourceFooter.manualPlaceholder}
             />
           </div>
         ) : (
           <div className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
-            {text || "Nenhuma fonte detectada nos blocos deste slide."}
+            {text || t.sourceFooter.noneDetected}
           </div>
         )}
       </PopoverContent>
@@ -243,6 +243,9 @@ import {
   SLIDE_BRAND_STYLES,
 } from "@/lib/slideBrandKit";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
+import { strings } from "@/lib/i18n";
+
+const t = strings.slides.editor.customSlideEditor;
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -278,66 +281,66 @@ const CHART_PALETTE: ({ id: string; label: string; icon: Icon } & (
   | { kind: "chart"; chartType: CustomChartType; preset?: "positivacao" }
   | { kind: Exclude<CustomBlockKind, "chart"> }
 ))[] = [
-  { id: "line",          kind: "chart", chartType: "line",          label: "Linha",            icon: LineChartIcon },
-  { id: "positivacao",   kind: "chart", chartType: "line",          label: "Positivação",      icon: LineChartIcon, preset: "positivacao" },
-  { id: "column",        kind: "chart", chartType: "column",        label: "Coluna",           icon: BarChart3 },
-  { id: "stackedColumn", kind: "chart", chartType: "stackedColumn", label: "Coluna Empilhada", icon: BarChart3 },
-  { id: "hbar",          kind: "chart", chartType: "hbar",          label: "Barra",            icon: BarChartHorizontal },
-  { id: "stackedBar",    kind: "chart", chartType: "stackedBar",    label: "Barra Empilhada",  icon: BarChartHorizontal },
-  { id: "area",          kind: "chart", chartType: "area",          label: "Área",             icon: AreaIcon },
-  { id: "stackedArea",   kind: "chart", chartType: "stackedArea",   label: "Área Empilhada",   icon: AreaIcon },
-  { id: "pie",           kind: "chart", chartType: "pie",           label: "Pizza",            icon: PieIcon },
-  { id: "donut",         kind: "chart", chartType: "donut",         label: "Rosca",            icon: CircleDot },
-  { id: "scatter",       kind: "chart", chartType: "scatter",       label: "Dispersão",        icon: ScatterIcon },
-  { id: "bubble",        kind: "chart", chartType: "bubble",        label: "Bolha",            icon: Circle },
-  { id: "funnel",        kind: "chart", chartType: "funnel",        label: "Funil",            icon: FunnelIcon },
-  { id: "combo",         kind: "chart", chartType: "combo",         label: "Combinado",        icon: Combine },
-  { id: "treemap",       kind: "chart", chartType: "treemap",       label: "Mapa de Árvore",   icon: Network },
-  { id: "mapaBrasil",    kind: "chart", chartType: "mapaBrasil",    label: "Mapa do Brasil",   icon: MapIcon },
-  { id: "radar",         kind: "chart", chartType: "radar",         label: "Radar",            icon: RadarIcon },
-  { id: "boxplot",       kind: "chart", chartType: "boxplot",       label: "Caixa",            icon: BoxIcon },
-  { id: "histogram",     kind: "chart", chartType: "histogram",     label: "Histograma",       icon: BarChart2 },
-  { id: "waterfall",     kind: "chart", chartType: "waterfall",     label: "Bridge",           icon: GitBranch },
-  { id: "table",         kind: "table", label: "Tabela",                                       icon: TableIcon },
-  { id: "kpi",           kind: "kpi",   label: "KPI Card",                                     icon: Hash },
+  { id: "line",          kind: "chart", chartType: "line",          label: t.chartPalette.line,          icon: LineChartIcon },
+  { id: "positivacao",   kind: "chart", chartType: "line",          label: t.chartPalette.positivacao,   icon: LineChartIcon, preset: "positivacao" },
+  { id: "column",        kind: "chart", chartType: "column",        label: t.chartPalette.column,        icon: BarChart3 },
+  { id: "stackedColumn", kind: "chart", chartType: "stackedColumn", label: t.chartPalette.stackedColumn, icon: BarChart3 },
+  { id: "hbar",          kind: "chart", chartType: "hbar",          label: t.chartPalette.hbar,          icon: BarChartHorizontal },
+  { id: "stackedBar",    kind: "chart", chartType: "stackedBar",    label: t.chartPalette.stackedBar,    icon: BarChartHorizontal },
+  { id: "area",          kind: "chart", chartType: "area",          label: t.chartPalette.area,          icon: AreaIcon },
+  { id: "stackedArea",   kind: "chart", chartType: "stackedArea",   label: t.chartPalette.stackedArea,   icon: AreaIcon },
+  { id: "pie",           kind: "chart", chartType: "pie",           label: t.chartPalette.pie,           icon: PieIcon },
+  { id: "donut",         kind: "chart", chartType: "donut",         label: t.chartPalette.donut,         icon: CircleDot },
+  { id: "scatter",       kind: "chart", chartType: "scatter",       label: t.chartPalette.scatter,       icon: ScatterIcon },
+  { id: "bubble",        kind: "chart", chartType: "bubble",        label: t.chartPalette.bubble,        icon: Circle },
+  { id: "funnel",        kind: "chart", chartType: "funnel",        label: t.chartPalette.funnel,        icon: FunnelIcon },
+  { id: "combo",         kind: "chart", chartType: "combo",         label: t.chartPalette.combo,         icon: Combine },
+  { id: "treemap",       kind: "chart", chartType: "treemap",       label: t.chartPalette.treemap,       icon: Network },
+  { id: "mapaBrasil",    kind: "chart", chartType: "mapaBrasil",    label: t.chartPalette.mapaBrasil,    icon: MapIcon },
+  { id: "radar",         kind: "chart", chartType: "radar",         label: t.chartPalette.radar,         icon: RadarIcon },
+  { id: "boxplot",       kind: "chart", chartType: "boxplot",       label: t.chartPalette.boxplot,       icon: BoxIcon },
+  { id: "histogram",     kind: "chart", chartType: "histogram",     label: t.chartPalette.histogram,     icon: BarChart2 },
+  { id: "waterfall",     kind: "chart", chartType: "waterfall",     label: t.chartPalette.waterfall,     icon: GitBranch },
+  { id: "table",         kind: "table", label: t.chartPalette.table,                                    icon: TableIcon },
+  { id: "kpi",           kind: "kpi",   label: t.chartPalette.kpi,                                       icon: Hash },
 ];
 
 // Group 2 ? Visual elements
 const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon: Icon }[] = [
-  { id: "title",  kind: "title",  label: "Título",      icon: TypeIcon },
-  { id: "text",   kind: "text",   label: "Texto",       icon: AlignLeft },
-  { id: "image",  kind: "image",  label: "Imagem",      icon: ImageIcon },
-  { id: "shape",  kind: "shape",  label: "Forma",       icon: Square },
-  { id: "topSku", kind: "topSku", label: "Top Ranking", icon: Trophy },
-  { id: "dre",    kind: "dre",    label: "DRE",         icon: TableIcon },
+  { id: "title",  kind: "title",  label: t.elementPalette.title,   icon: TypeIcon },
+  { id: "text",   kind: "text",   label: t.elementPalette.text,    icon: AlignLeft },
+  { id: "image",  kind: "image",  label: t.elementPalette.image,   icon: ImageIcon },
+  { id: "shape",  kind: "shape",  label: t.elementPalette.shape,   icon: Square },
+  { id: "topSku", kind: "topSku", label: t.elementPalette.topSku,  icon: Trophy },
+  { id: "dre",    kind: "dre",    label: t.elementPalette.dre,     icon: TableIcon },
 ];
 
 // Group 3 ? Omni Analytics
 type OmniPaletteEntry = { id: string; kind: CustomBlockKind; label: string; icon: Icon; group: string };
 const OMNI_PALETTE: OmniPaletteEntry[] = [
   // Visão Geral
-  { id: "omni_evolucao_mensal",      kind: "omni_evolucao_mensal",      label: "Evolução Mensal",      icon: TrendingUp,        group: "Visão Geral" },
-  { id: "omni_positivacao",          kind: "omni_positivacao",          label: "Positivação",          icon: LineChartIcon,     group: "Visão Geral" },
-  { id: "omni_heatmap_sazonalidade", kind: "omni_heatmap_sazonalidade", label: "Heatmap Sazonalidade", icon: Grid3x3,           group: "Visão Geral" },
-  { id: "omni_herois_ofensores",     kind: "omni_herois_ofensores",     label: "Heróis/Ofensores",     icon: Zap,               group: "Visão Geral" },
+  { id: "omni_evolucao_mensal",      kind: "omni_evolucao_mensal",      label: t.omniPalette.evolucaoMensal,      icon: TrendingUp,        group: t.omniGroups.visaoGeral },
+  { id: "omni_positivacao",          kind: "omni_positivacao",          label: t.omniPalette.positivacao,         icon: LineChartIcon,     group: t.omniGroups.visaoGeral },
+  { id: "omni_heatmap_sazonalidade", kind: "omni_heatmap_sazonalidade", label: t.omniPalette.heatmapSazonalidade, icon: Grid3x3,           group: t.omniGroups.visaoGeral },
+  { id: "omni_herois_ofensores",     kind: "omni_herois_ofensores",     label: t.omniPalette.heroisOfensores,     icon: Zap,               group: t.omniGroups.visaoGeral },
   // Canais
-  { id: "omni_canal_trend",          kind: "omni_canal_trend",          label: "Tendência Canal",       icon: Activity,          group: "Canais" },
-  { id: "omni_canal_mix",            kind: "omni_canal_mix",            label: "Mix por Canal",         icon: LayersIcon,        group: "Canais" },
+  { id: "omni_canal_trend",          kind: "omni_canal_trend",          label: t.omniPalette.canalTrend,          icon: Activity,          group: t.omniGroups.canais },
+  { id: "omni_canal_mix",            kind: "omni_canal_mix",            label: t.omniPalette.canalMix,            icon: LayersIcon,        group: t.omniGroups.canais },
   // Custos
-  { id: "omni_custo_evolucao",       kind: "omni_custo_evolucao",       label: "Evolução Custos",       icon: BarChart2,         group: "Custos" },
-  { id: "omni_custo_composicao",     kind: "omni_custo_composicao",     label: "Composição Custos",     icon: BarChart3,         group: "Custos" },
-  { id: "omni_custo_pressao",        kind: "omni_custo_pressao",        label: "Pressão de Custo",      icon: Activity,          group: "Custos" },
+  { id: "omni_custo_evolucao",       kind: "omni_custo_evolucao",       label: t.omniPalette.custoEvolucao,       icon: BarChart2,         group: t.omniGroups.custos },
+  { id: "omni_custo_composicao",     kind: "omni_custo_composicao",     label: t.omniPalette.custoComposicao,     icon: BarChart3,         group: t.omniGroups.custos },
+  { id: "omni_custo_pressao",        kind: "omni_custo_pressao",        label: t.omniPalette.custoPressao,        icon: Activity,          group: t.omniGroups.custos },
   // Preço / Bridge
-  { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: "Decomp. Preço",         icon: PanelTop,          group: "Preço" },
-  { id: "omni_uf_map",               kind: "omni_uf_map",               label: "Mapa por UF",           icon: Network,           group: "Preço" },
-  { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: "Bridge PVM",            icon: GitBranch,         group: "Preço" },
+  { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: t.omniPalette.priceDecomp,         icon: PanelTop,          group: t.omniGroups.preco },
+  { id: "omni_uf_map",               kind: "omni_uf_map",               label: t.omniPalette.ufMap,               icon: Network,           group: t.omniGroups.preco },
+  { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: t.omniPalette.bridgePvm,           icon: GitBranch,         group: t.omniGroups.preco },
   // ABC / Farol
-  { id: "omni_farol",                kind: "omni_farol",                label: "Farol Positivação",     icon: Gauge,             group: "ABC/Farol" },
-  { id: "omni_abc_curva",            kind: "omni_abc_curva",            label: "Curva ABC",             icon: Network,           group: "ABC/Farol" },
-  { id: "omni_portfolio_matrix",     kind: "omni_portfolio_matrix",     label: "Matriz Portfólio",      icon: ScatterIcon,       group: "ABC/Farol" },
-  { id: "omni_abc_bars",             kind: "omni_abc_bars",             label: "Barras ABC",            icon: BarChartHorizontal, group: "ABC/Farol" },
+  { id: "omni_farol",                kind: "omni_farol",                label: t.omniPalette.farol,               icon: Gauge,             group: t.omniGroups.abcFarol },
+  { id: "omni_abc_curva",            kind: "omni_abc_curva",            label: t.omniPalette.abcCurva,            icon: Network,           group: t.omniGroups.abcFarol },
+  { id: "omni_portfolio_matrix",     kind: "omni_portfolio_matrix",     label: t.omniPalette.portfolioMatrix,     icon: ScatterIcon,       group: t.omniGroups.abcFarol },
+  { id: "omni_abc_bars",             kind: "omni_abc_bars",             label: t.omniPalette.abcBars,             icon: BarChartHorizontal, group: t.omniGroups.abcFarol },
 ];
-const OMNI_GROUPS = ["Visão Geral", "Canais", "Custos", "Preço", "ABC/Farol"] as const;
+const OMNI_GROUPS = [t.omniGroups.visaoGeral, t.omniGroups.canais, t.omniGroups.custos, t.omniGroups.preco, t.omniGroups.abcFarol] as const;
 
 interface Props {
   /** ID estável do slide ? usado para registrar o canvas no exporter */
@@ -495,7 +498,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   })();
   const multiSelectionBounds = multiSelected.length >= 2 ? groupBounds(multiSelected) : null;
   const notifyReadOnly = useCallback(() => {
-    toast.info("Modo somente leitura");
+    toast.info(t.toasts.readOnly);
   }, []);
   const canEdit = useCallback(() => {
     if (!readOnly) return true;
@@ -545,11 +548,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const isResize = keys.some((k) => k === "w" || k === "h");
     const isOrder = keys.length === 1 && keys[0] === "z";
     const isLock = keys.length === 1 && keys[0] === "locked";
-    const label = isLock ? "Bloquear / Desbloquear"
-      : isOrder ? "Alterar ordem"
-      : isResize ? "Redimensionar bloco"
-      : isMove ? "Mover bloco"
-      : "Alterar dados";
+    const label = isLock ? t.blockActionLabels.lockToggle
+      : isOrder ? t.blockActionLabels.reorder
+      : isResize ? t.blockActionLabels.resize
+      : isMove ? t.blockActionLabels.move
+      : t.blockActionLabels.edit;
     patchBlockAction(id, patch, label);
   }, [canEdit]);
 
@@ -620,8 +623,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const rejected = files.length - imageFiles.length;
     if (rejected > 0) {
       toast.warning(rejected === 1
-        ? "O arquivo arrastado não é uma imagem."
-        : `${rejected} arquivos ignorados porque não são imagens.`);
+        ? t.toasts.notAnImage
+        : t.toasts.filesIgnored(rejected));
     }
     if (imageFiles.length === 0) return;
 
@@ -638,13 +641,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           ...bounds,
         } as ImageBlock;
       }));
-      const ids = insertBlocksAction(blocks as CustomBlock[], imageFiles.length > 1 ? "Inserir imagens" : "Inserir imagem");
+      const ids = insertBlocksAction(blocks as CustomBlock[], imageFiles.length > 1 ? t.blockActionLabels.insertImages : t.blockActionLabels.insertImage);
       if (ids.length > 0) setSelection(ids);
       toast.success(imageFiles.length === 1
-        ? "Imagem inserida no slide."
-        : `${imageFiles.length} imagens inseridas no slide.`);
+        ? t.toasts.imageInserted
+        : t.toasts.imagesInserted(imageFiles.length));
     } catch {
-      toast.error("Não foi possível inserir a imagem arrastada.");
+      toast.error(t.toasts.imageInsertError);
     }
   }, [canEdit, insertBlocksAction, isImageFile, readFileAsDataUrl, readImageBounds, setSelection]);
 
@@ -659,7 +662,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       fit: "contain",
       ...bounds,
     };
-    const id = insertBlockAction(block, "Colar imagem");
+    const id = insertBlockAction(block, t.blockActionLabels.pasteImage);
     if (id) setSelection([id]);
   }, [canEdit, insertBlockAction, readImageBounds, setSelection]);
 
@@ -708,7 +711,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       text,
       ...(style?.patch ?? {}),
     } as TextBlock;
-    const id = insertBlockAction(block as CustomBlock, "Adicionar bloco");
+    const id = insertBlockAction(block as CustomBlock, t.blockActionLabels.addBlock);
     if (id) setSelection([id]);
   }, [canEdit]);
   const insertQuickLayout = useCallback((layout: "kpis" | "chartInsight" | "table" | "heroNumber" | "bridgeComment") => {
@@ -731,45 +734,45 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }) as CustomBlock;
     const chart = (x: number, y: number, w: number, h: number, chartType: CustomChartType = "line") => ({
       ...(newChartBlock(chartType, 0) as ChartBlock),
-      id: localId(), x, y, w, h, title: "Evolucao do indicador", measure: "cmPct",
+      id: localId(), x, y, w, h, title: t.quickLayouts.chartSeedTitle, measure: "cmPct",
     }) as CustomBlock;
     const table = () => ({
       ...(newBlock("table", 0) as TableBlock),
-      id: localId(), x: 60, y: 150, w: 1210, h: 500, title: "Tabela executiva", rowDims: ["categoria"], measures: ["rol_real", "cm_real", "cmPct_real"],
+      id: localId(), x: 60, y: 150, w: 1210, h: 500, title: t.quickLayouts.tableTitle, rowDims: ["categoria"], measures: ["rol_real", "cm_real", "cmPct_real"],
     }) as CustomBlock;
 
     const blocksByLayout: Record<typeof layout, CustomBlock[]> = {
       kpis: [
-        title("Titulo da analise", 60, 45, 940, 60),
-        kpi("ROL", "rol", 60),
-        kpi("CM%", "cmPct", 370),
-        kpi("Volume", "volume", 680),
-        kpi("MB%", "mbPct", 990),
+        title(t.quickLayouts.kpisTitle, 60, 45, 940, 60),
+        kpi(t.quickLayouts.kpiRol, "rol", 60),
+        kpi(t.quickLayouts.kpiCmPct, "cmPct", 370),
+        kpi(t.quickLayouts.kpiVolume, "volume", 680),
+        kpi(t.quickLayouts.kpiMbPct, "mbPct", 990),
       ],
       chartInsight: [
-        title("Evolucao e insight", 60, 45, 940, 60),
+        title(t.quickLayouts.chartInsightTitle, 60, 45, 940, 60),
         chart(60, 145, 770, 500, "line"),
         shape(870, 145, 390, 250, "FFF7F8"),
-        text("Insight executivo\n\nExplique a causa, impacto e proxima acao.", 900, 180, 330, 170, 20),
+        text(t.quickLayouts.chartInsightNote, 900, 180, 330, 170, 20),
       ],
       table: [
-        title("Tabela executiva", 60, 45, 940, 60),
+        title(t.quickLayouts.tableTitle, 60, 45, 940, 60),
         table(),
       ],
       heroNumber: [
-        title("Numero em destaque", 60, 45, 940, 60),
+        title(t.quickLayouts.heroNumberTitle, 60, 45, 940, 60),
         shape(80, 165, 520, 330, "FFF1F2"),
-        text("R$ 0,0 mi", 120, 220, 440, 110, 62),
-        text("Resumo do principal indicador e leitura executiva.", 125, 345, 410, 80, 22),
+        text(t.quickLayouts.heroNumberValue, 120, 220, 440, 110, 62),
+        text(t.quickLayouts.heroNumberCaption, 125, 345, 410, 80, 22),
       ],
       bridgeComment: [
-        title("Bridge de margem", 60, 45, 940, 60),
+        title(t.quickLayouts.bridgeTitle, 60, 45, 940, 60),
         { ...(newBlock("omniBridgePvm", 0) as OmniBridgePvmBlock), id: localId(), x: 60, y: 145, w: 790, h: 500 } as CustomBlock,
         shape(890, 145, 360, 260, "F8FAFC"),
-        text("Comentario\n\nDestaque os principais ofensores e alavancas.", 920, 180, 300, 160, 20),
+        text(t.quickLayouts.bridgeNote, 920, 180, 300, 160, 20),
       ],
     };
-    const ids = insertBlocksAction(blocksByLayout[layout], "Adicionar layout rapido");
+    const ids = insertBlocksAction(blocksByLayout[layout], t.blockActionLabels.addQuickLayout);
     if (ids.length > 0) setSelection(ids);
   }, [canEdit]);
   const addInsightCard = () => {
@@ -801,7 +804,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "title",
         x: x + 28, y: y + 22, w: 460, h: 38, z: 2,
-        text: "Insight executivo",
+        text: t.storyCards.insight.title,
         size: 24,
         bold: true,
         italic: false,
@@ -817,7 +820,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 28, y: y + 74, w: 462, h: 88, z: 3,
-        text: "O que aconteceu: descreva o movimento principal.\nPor que importa: conecte com margem, volume ou preco.\nAcao sugerida: indique a decisao esperada.",
+        text: t.storyCards.insight.body,
         size: 17,
         italic: false,
         color: "1C2430",
@@ -832,7 +835,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 28, y: y + 178, w: 462, h: 34, z: 4,
-        text: "Proxima acao: validar plano com Comercial",
+        text: t.storyCards.insight.nextAction,
         size: 16,
         italic: false,
         color: "7F1022",
@@ -845,7 +848,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ]);
-    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    const ids = insertBlocksAction(blocks, t.blockActionLabels.addBlock);
     if (ids.length > 0) {
       setSelection(ids);
     }
@@ -879,7 +882,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "title",
         x: x + 30, y: y + 24, w: 430, h: 42, z: 2,
-        text: "Resumo executivo",
+        text: t.storyCards.summary.title,
         size: 28,
         bold: true,
         italic: false,
@@ -895,7 +898,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 30, y: y + 78, w: 1100, h: 38, z: 3,
-        text: "Mensagem-chave: escreva em uma frase o principal recado do slide.",
+        text: t.storyCards.summary.message,
         size: 22,
         italic: false,
         color: "1C2430",
@@ -910,7 +913,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 30, y: y + 135, w: 340, h: 68, z: 4,
-        text: "1. Resultado\nO indicador principal ficou acima/abaixo do esperado.",
+        text: t.storyCards.summary.point1,
         size: 16,
         italic: false,
         color: "334155",
@@ -925,7 +928,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 420, y: y + 135, w: 340, h: 68, z: 5,
-        text: "2. Causa\nExplique o driver: preco, volume, mix, custo ou canal.",
+        text: t.storyCards.summary.point2,
         size: 16,
         italic: false,
         color: "334155",
@@ -940,7 +943,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 810, y: y + 135, w: 320, h: 68, z: 6,
-        text: "3. Acao\nIndique a decisao ou o proximo passo recomendado.",
+        text: t.storyCards.summary.point3,
         size: 16,
         italic: false,
         color: "334155",
@@ -953,7 +956,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 10,
       } as CustomBlock,
     ]);
-    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    const ids = insertBlocksAction(blocks, t.blockActionLabels.addBlock);
     if (ids.length > 0) {
       setSelection(ids);
     }
@@ -987,7 +990,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "title",
         x: x + 28, y: y + 22, w: 460, h: 38, z: 2,
-        text: "Decisao requerida",
+        text: t.storyCards.decision.title,
         size: 24,
         bold: true,
         italic: false,
@@ -1003,7 +1006,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 28, y: y + 76, w: 462, h: 70, z: 3,
-        text: "Recomendacao: descreva a decisao em uma frase.\nImpacto esperado: margem, volume ou preco.\nTrade-off: o que abrimos mao para capturar o ganho.",
+        text: t.storyCards.decision.body,
         size: 16,
         italic: false,
         color: "334155",
@@ -1018,7 +1021,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 28, y: y + 168, w: 142, h: 42, z: 4,
-        text: "Dono\nComercial",
+        text: t.storyCards.decision.owner,
         size: 14,
         italic: false,
         color: "0F172A",
@@ -1033,7 +1036,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 190, y: y + 168, w: 142, h: 42, z: 5,
-        text: "Prazo\n30 dias",
+        text: t.storyCards.decision.deadline,
         size: 14,
         italic: false,
         color: "0F172A",
@@ -1048,7 +1051,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 352, y: y + 168, w: 138, h: 42, z: 6,
-        text: "Status\nAberto",
+        text: t.storyCards.decision.status,
         size: 14,
         italic: false,
         color: "7F1022",
@@ -1061,7 +1064,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 8,
       } as CustomBlock,
     ]);
-    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    const ids = insertBlocksAction(blocks, t.blockActionLabels.addBlock);
     if (ids.length > 0) {
       setSelection(ids);
     }
@@ -1095,7 +1098,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 24, y: y + 22, w: 216, h: 130, z: 2,
-        text: "Risco\n\nO que pode piorar o resultado se nada for feito.",
+        text: t.storyCards.risk.risk,
         size: 17,
         italic: false,
         color: "991B1B",
@@ -1110,7 +1113,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 280, y: y + 22, w: 216, h: 130, z: 3,
-        text: "Oportunidade\n\nO que pode capturar ganho de margem, volume ou mix.",
+        text: t.storyCards.risk.opportunity,
         size: 17,
         italic: false,
         color: "075985",
@@ -1125,7 +1128,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {
         id: localId(), kind: "text",
         x: x + 24, y: y + 160, w: 472, h: 20, z: 4,
-        text: "Priorize pelo impacto financeiro e pela velocidade de execucao.",
+        text: t.storyCards.risk.footer,
         size: 14,
         italic: false,
         color: "64748B",
@@ -1138,7 +1141,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         borderRadius: 0,
       } as CustomBlock,
     ]);
-    const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    const ids = insertBlocksAction(blocks, t.blockActionLabels.addBlock);
     if (ids.length > 0) {
       setSelection(ids);
     }
@@ -1205,10 +1208,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     return normalizePaletteText(parts.filter(Boolean).join(" ")).includes(paletteQuery);
   }, [paletteQuery]);
   const storytellingPalette = [
-    { id: "story:summary", icon: ListChecks, label: "Resumo Exec.", keywords: "resumo executivo leitura abertura resultado causa acao", onClick: addExecutiveSummaryCard },
-    { id: "story:insight", icon: StickyNote, label: "Insight", keywords: "insight executivo storytelling narrativa acao", onClick: addInsightCard },
-    { id: "story:decision", icon: Target, label: "Decisao", keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
-    { id: "story:risk", icon: Gauge, label: "Risco/Oportun.", keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
+    { id: "story:summary", icon: ListChecks, label: t.storyCards.summary.menuLabel, keywords: "resumo executivo leitura abertura resultado causa acao", onClick: addExecutiveSummaryCard },
+    { id: "story:insight", icon: StickyNote, label: t.storyCards.insight.menuLabel, keywords: "insight executivo storytelling narrativa acao", onClick: addInsightCard },
+    { id: "story:decision", icon: Target, label: t.storyCards.decision.menuLabel, keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
+    { id: "story:risk", icon: Gauge, label: t.storyCards.risk.menuLabel, keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
   ];
   const paletteActions = [
     ...storytellingPalette,
@@ -1303,7 +1306,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       if (selectedIds.length === 1) removeBlock(selectedIds[0]);
       else removeBlocks(selectedIds);
     } else {
-      toast.success("Bloco copiado");
+      toast.success(t.toasts.blockCopied);
     }
   }, [canEdit, config.blocks, removeBlock, removeBlocks, selectedIds]);
 
@@ -1322,7 +1325,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     clone.x = x;
     clone.y = y;
-    const newId = insertBlockAction(clone, "Adicionar bloco");
+    const newId = insertBlockAction(clone, t.blockActionLabels.addBlock);
     if (newId) {
       setSelection([newId]);
     }
@@ -1333,7 +1336,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (selectedIds.length !== 1) return;
     const b = config.blocks.find((x) => x.id === selectedIds[0]);
     if (!b) return;
-    patchBlockAction(b.id, { x: Math.round((CANVAS_W - b.w) / 2) } as Partial<CustomBlock>, "Mover bloco");
+    patchBlockAction(b.id, { x: Math.round((CANVAS_W - b.w) / 2) } as Partial<CustomBlock>, t.blockActionLabels.move);
   }, [canEdit, selectedIds, config.blocks]);
 
   const centerSelectedV = useCallback(() => {
@@ -1341,7 +1344,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     if (selectedIds.length !== 1) return;
     const b = config.blocks.find((x) => x.id === selectedIds[0]);
     if (!b) return;
-    patchBlockAction(b.id, { y: Math.round((CANVAS_H - b.h) / 2) } as Partial<CustomBlock>, "Mover bloco");
+    patchBlockAction(b.id, { y: Math.round((CANVAS_H - b.h) / 2) } as Partial<CustomBlock>, t.blockActionLabels.move);
   }, [canEdit, selectedIds, config.blocks]);
 
   // Atalhos de teclado
@@ -1455,7 +1458,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         nudgeBlocksAction(
           selectedIds,
           dx, dy,
-          selectedIds.length > 1 ? "Mover blocos" : "Mover bloco",
+          selectedIds.length > 1 ? t.blockActionLabels.moveMultiple : t.blockActionLabels.move,
         );
       }
     }
@@ -1490,8 +1493,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
       void readFileAsDataUrl(file)
         .then((dataUrl) => insertImageDataUrl(dataUrl))
-        .then(() => toast.success("Imagem colada no slide."))
-        .catch(() => toast.error("Não foi possível colar a imagem."));
+        .then(() => toast.success(t.toasts.imagePasted))
+        .catch(() => toast.error(t.toasts.imagePasteError));
     };
 
     window.addEventListener("paste", handlePaste);
@@ -1515,7 +1518,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     const reordered = arrayMove(layersSorted, oldIndex, newIndex);
     patchBlocksAction(
       reordered.map((blk, i) => ({ id: blk.id, patch: { z: reordered.length - i } as Partial<CustomBlock> })),
-      "Reordenar camadas",
+      t.blockActionLabels.reorderLayers,
     );
   }, [canEdit, layersSorted]);
 
@@ -1534,8 +1537,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           <div className="surface-overlay flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div>
-              <div className="slides-type-section">Aplicando modelo</div>
-              <div className="slides-type-helper">Atualizando blocos do canvas.</div>
+              <div className="slides-type-section">{t.applyingTemplate.title}</div>
+              <div className="slides-type-helper">{t.applyingTemplate.hint}</div>
             </div>
           </div>
         </div>
@@ -1545,21 +1548,21 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <div ref={paletteRailRef} className="surface-panel flex h-full flex-col items-center gap-1 rounded-lg border border-border/40 p-1.5">
           <TooltipProvider delayDuration={180}>
           {([
-            { label: "Favoritos", icon: Star },
-            { label: "Modelos", icon: BookOpen },
-            { label: "Gráficos", icon: BarChart3 },
-            { label: "Elementos", icon: Square },
-            { label: "Story", icon: StickyNote },
-            { label: "Omni", icon: LayersIcon },
-            { label: "Assets", icon: Images },
+            { label: t.paletteRail.categories.favoritos, icon: Star },
+            { label: t.paletteRail.categories.modelos, icon: BookOpen },
+            { label: t.paletteRail.categories.graficos, icon: BarChart3 },
+            { label: t.paletteRail.categories.elementos, icon: Square },
+            { label: t.paletteRail.categories.story, icon: StickyNote },
+            { label: t.paletteRail.categories.omni, icon: LayersIcon },
+            { label: t.paletteRail.categories.assets, icon: Images },
           ]).map((item) => {
             const Icon = item.icon;
-            const category: PaletteCategory = item.label === "Favoritos" ? "favorites"
-              : item.label === "Modelos" ? "models"
-              : item.label.startsWith("Gr") ? "charts"
-              : item.label === "Elementos" ? "elements"
-              : item.label === "Story" ? "story"
-              : item.label === "Omni" ? "omni"
+            const category: PaletteCategory = item.label === t.paletteRail.categories.favoritos ? "favorites"
+              : item.label === t.paletteRail.categories.modelos ? "models"
+              : item.label === t.paletteRail.categories.graficos ? "charts"
+              : item.label === t.paletteRail.categories.elementos ? "elements"
+              : item.label === t.paletteRail.categories.story ? "story"
+              : item.label === t.paletteRail.categories.omni ? "omni"
               : "assets";
             const isActive = palettePanelOpen && activePaletteCategory === category;
             return (
@@ -1572,7 +1575,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                       isActive && "bg-primary/15 text-primary shadow-sm ring-1 ring-primary/25",
                     )}
                     onClick={() => openPaletteCategory(category)}
-                    aria-label={`Abrir categoria ${item.label}`}
+                    aria-label={t.paletteRail.openCategoryAria(item.label)}
                     aria-pressed={isActive}
                   >
                     {isActive && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary" aria-hidden="true" />}
@@ -1593,14 +1596,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             )}
           >
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-              <span className="slides-type-label">Blocos</span>
+              <span className="slides-type-label">{t.paletteRail.blocksHeader}</span>
               <Button
                 size="icon"
                 variant="ghost"
                 className="h-7 w-7"
                 onClick={() => setPalettePanelOpen(false)}
-                aria-label="Fechar painel de blocos"
-                title="Fechar painel de blocos"
+                aria-label={t.paletteRail.closeAria}
+                title={t.paletteRail.closeAria}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -1610,29 +1613,29 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           {showPaletteCategory("models") && !isPaletteSearching && (
             <>
               <div className="px-2 py-1 slides-type-label">
-                Modelos
+                {t.paletteRail.modelosHeader}
               </div>
               <Button size="sm" variant="outline" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => { if (canEdit()) setTplOpen(true); }}
                 disabled={readOnly}>
-                <BookOpen className="h-3.5 w-3.5" /> Aplicar modelo
+                <BookOpen className="h-3.5 w-3.5" /> {t.paletteRail.applyTemplate}
               </Button>
               <Button size="sm" variant="ghost" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => setSaveTplOpen(true)}
                 disabled={config.blocks.length === 0 || readOnly}>
-                <Save className="h-3.5 w-3.5" /> Salvar como modelo
+                <Save className="h-3.5 w-3.5" /> {t.paletteRail.saveAsTemplate}
               </Button>
             </>
           )}
           {showPaletteCategory("assets") && !isPaletteSearching && (
             <>
               <div className="px-2 py-1 slides-type-label">
-                Assets
+                {t.paletteRail.assetsHeader}
               </div>
               <Button size="sm" variant="outline" className="h-7 justify-start gap-2 slides-type-badge"
                 onClick={() => { if (canEdit()) setAssetsOpen(true); }}
                 disabled={readOnly}>
-                <Images className="h-3.5 w-3.5" /> Abrir biblioteca
+                <Images className="h-3.5 w-3.5" /> {t.paletteRail.openLibrary}
               </Button>
             </>
           )}
@@ -1647,7 +1650,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   setPaletteSearch("");
                 }
               }}
-              placeholder="Buscar blocos..."
+              placeholder={t.paletteRail.searchPlaceholder}
               className="h-8 pl-7 pr-7 text-xs"
             />
             {paletteSearch && (
@@ -1655,8 +1658,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 type="button"
                 onClick={() => setPaletteSearch("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                aria-label="Limpar busca"
-                title="Limpar busca"
+                aria-label={t.paletteRail.clearSearchAria}
+                title={t.paletteRail.clearSearchAria}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1666,13 +1669,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {!hasPaletteResults && (
             <div className="rounded-md border border-dashed border-border/70 p-3 text-center slides-type-helper">
-              Nenhum bloco encontrado.
+              {t.paletteRail.noneFound}
             </div>
           )}
 
           {showPaletteCategory("favorites") && favoritePalette.length > 0 && (
             <>
-              <PaletteGroup title="Favoritos" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupFavorites} defaultOpen>
                 {favoritePalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1690,7 +1693,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("favorites") && recentPalette.length > 0 && (
             <>
-              <PaletteGroup title="Recentes" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupRecents} defaultOpen>
                 {recentPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1708,12 +1711,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("models") && !isPaletteSearching && (
             <>
-              <PaletteGroup title="Layouts rapidos" defaultOpen>
-                <QuickLayoutButton label="Titulo + KPIs" description="Titulo executivo com quatro indicadores." onClick={() => insertQuickLayout("kpis")} />
-                <QuickLayoutButton label="Grafico + insight" description="Grafico grande com caixa de leitura." onClick={() => insertQuickLayout("chartInsight")} />
-                <QuickLayoutButton label="Tabela executiva" description="Titulo e tabela pronta para analise." onClick={() => insertQuickLayout("table")} />
-                <QuickLayoutButton label="Numero em destaque" description="Hero number com comentario curto." onClick={() => insertQuickLayout("heroNumber")} />
-                <QuickLayoutButton label="Bridge + comentario" description="Bridge PVM com bloco de narrativa." onClick={() => insertQuickLayout("bridgeComment")} />
+              <PaletteGroup title={t.paletteRail.groupQuickLayouts} defaultOpen>
+                <QuickLayoutButton label={t.quickLayouts.buttons.kpis.label} description={t.quickLayouts.buttons.kpis.description} onClick={() => insertQuickLayout("kpis")} />
+                <QuickLayoutButton label={t.quickLayouts.buttons.chartInsight.label} description={t.quickLayouts.buttons.chartInsight.description} onClick={() => insertQuickLayout("chartInsight")} />
+                <QuickLayoutButton label={t.quickLayouts.buttons.table.label} description={t.quickLayouts.buttons.table.description} onClick={() => insertQuickLayout("table")} />
+                <QuickLayoutButton label={t.quickLayouts.buttons.heroNumber.label} description={t.quickLayouts.buttons.heroNumber.description} onClick={() => insertQuickLayout("heroNumber")} />
+                <QuickLayoutButton label={t.quickLayouts.buttons.bridgeComment.label} description={t.quickLayouts.buttons.bridgeComment.description} onClick={() => insertQuickLayout("bridgeComment")} />
               </PaletteGroup>
               <Separator className="my-2" />
             </>
@@ -1721,21 +1724,21 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("elements") && !isPaletteSearching && (
             <>
-              <PaletteGroup title="Texto" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupText} defaultOpen>
                 <TextStyleButton
-                  label="Adicionar titulo"
+                  label={t.textStyles.addTitle}
                   className="text-[20px] font-bold text-primary"
-                  onClick={() => insertTextStyle("text-executive-title", "Adicionar titulo", 80, 70, 760, 70)}
+                  onClick={() => insertTextStyle("text-executive-title", t.textStyles.addTitle, 80, 70, 760, 70)}
                 />
                 <TextStyleButton
-                  label="Adicionar subtitulo"
+                  label={t.textStyles.addSubtitle}
                   className="text-[15px] font-semibold text-foreground"
-                  onClick={() => insertTextStyle("text-support-copy", "Adicionar subtitulo", 80, 150, 700, 48)}
+                  onClick={() => insertTextStyle("text-support-copy", t.textStyles.addSubtitle, 80, 150, 700, 48)}
                 />
                 <TextStyleButton
-                  label="Corpo de texto"
+                  label={t.textStyles.bodyText}
                   className="text-[12px] text-muted-foreground"
-                  onClick={() => insertTextStyle("text-support-copy", "Corpo de texto", 80, 220, 560, 90)}
+                  onClick={() => insertTextStyle("text-support-copy", t.textStyles.bodyText, 80, 220, 560, 90)}
                 />
               </PaletteGroup>
               <Separator className="my-2" />
@@ -1744,7 +1747,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("charts") && visibleChartPalette.length > 0 && (
             <>
-              <PaletteGroup title="Gráficos" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupCharts} defaultOpen>
                 {visibleChartPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1762,7 +1765,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("story") && visibleStorytellingPalette.length > 0 && (
             <>
-              <PaletteGroup title="Storytelling" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupStorytelling} defaultOpen>
                 {visibleStorytellingPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1780,7 +1783,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("elements") && visibleElementPalette.length > 0 && (
             <>
-              <PaletteGroup title="Elementos" defaultOpen>
+              <PaletteGroup title={t.paletteRail.groupElements} defaultOpen>
                 {visibleElementPalette.map((it) => (
                   <PaletteButton
                     key={it.id}
@@ -1798,7 +1801,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
           {showPaletteCategory("omni") && visibleOmniPalette.length > 0 && (
             <>
-              <PaletteGroup title="Omni Analytics">
+              <PaletteGroup title={t.paletteRail.groupOmni}>
                 {OMNI_GROUPS.map((group) => {
                   const groupItems = visibleOmniPalette.filter((it) => it.group === group);
                   if (groupItems.length === 0) return null;
@@ -1827,12 +1830,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           {showPaletteCategory("models") && !isPaletteSearching && (
             <>
               <div className="px-2">
-                <Label className="text-[10px] uppercase text-muted-foreground">Fundo do slide</Label>
+                <Label className="text-[10px] uppercase text-muted-foreground">{t.paletteRail.backgroundLabel}</Label>
                 <BgField label="" value={config.background}
                   onChange={(v) => { if (canEdit()) setBackgroundAction(v); }} />
               </div>
               <div className="mt-2 flex items-center justify-between px-2 text-[11px]">
-                <span className="text-muted-foreground">Faixa Harald</span>
+                <span className="text-muted-foreground">{t.paletteRail.haraldStripe}</span>
                 <Switch
                   checked={config.showHaraldFooter}
                   disabled={readOnly}
@@ -1842,7 +1845,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
           <p className="mt-2 px-2 text-[10px] leading-relaxed text-muted-foreground">
-            Atalhos: <kbd>Ctrl+Z</kbd> desfazer · <kbd>Ctrl+Shift+Z</kbd> refazer · <kbd>Del</kbd> excluir · <kbd>Ctrl+D</kbd> duplicar · <kbd>Ctrl+]</kbd>/<kbd>Ctrl+[</kbd> ordem · <kbd>setas</kbd> mover (Shift = 10px)
+            {t.paletteRail.shortcutsHintPrefix} <kbd>Ctrl+Z</kbd> {t.paletteRail.shortcutUndo} · <kbd>Ctrl+Shift+Z</kbd> {t.paletteRail.shortcutRedo} · <kbd>Del</kbd> {t.paletteRail.shortcutDelete} · <kbd>Ctrl+D</kbd> {t.paletteRail.shortcutDuplicate} · <kbd>Ctrl+]</kbd>/<kbd>Ctrl+[</kbd> {t.paletteRail.shortcutOrder} · <kbd>setas</kbd> {t.paletteRail.shortcutMove}
           </p>
         </div>
       </ScrollArea>
@@ -1855,9 +1858,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <div className="flex min-h-0 flex-col rounded-lg border border-border/40 bg-card/40">
           <div className="shrink-0 border-b border-border/40 px-2 py-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Camadas</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t.layers.header}</span>
               <Badge variant="secondary" className="text-[9px] uppercase">
-                {config.blocks.length} itens
+                {t.layers.itemsCount(config.blocks.length)}
               </Badge>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
@@ -1871,11 +1874,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     if (!canEdit()) return;
                     patchBlocksAction(
                       config.blocks.filter((b) => b.hidden).map((b) => ({ id: b.id, patch: { hidden: false } as Partial<CustomBlock> })),
-                      "Mostrar blocos",
+                      t.blockActionLabels.showBlocks,
                     );
                   }}
                 >
-                  <Eye className="h-3 w-3" /> Mostrar {hiddenCount}
+                  <Eye className="h-3 w-3" /> {t.layers.showN(hiddenCount)}
                 </Button>
               )}
               {lockedCount > 0 && (
@@ -1888,11 +1891,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     if (!canEdit()) return;
                     patchBlocksAction(
                       config.blocks.filter((b) => b.locked).map((b) => ({ id: b.id, patch: { locked: false } as Partial<CustomBlock> })),
-                      "Desbloquear blocos",
+                      t.blockActionLabels.unlockBlocks,
                     );
                   }}
                 >
-                  <Unlock className="h-3 w-3" /> Desbloquear {lockedCount}
+                  <Unlock className="h-3 w-3" /> {t.layers.unlockN(lockedCount)}
                 </Button>
               )}
             </div>
@@ -1911,7 +1914,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         canEdit() && patchBlockAction(
                           blk.id,
                           { hidden: !blk.hidden } as Partial<CustomBlock>,
-                          blk.hidden ? "Mostrar bloco" : "Ocultar bloco",
+                          blk.hidden ? t.blockActionLabels.showBlock : t.blockActionLabels.hideBlock,
                         )
                       }
                       onToggleLock={() => toggleLock(blk.id)}
@@ -2109,7 +2112,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   const w = 360, h = 220;
                   const x = pos ? Math.max(0, pos.x - w / 2) : 60;
                   const y = pos ? Math.max(0, pos.y - h / 2) : 60;
-                  patchBlockAction(id, { src, w, h, x, y } as Partial<CustomBlock>, "Alterar dados");
+                  patchBlockAction(id, { src, w, h, x, y } as Partial<CustomBlock>, t.blockActionLabels.edit);
                   setSelection([id]);
                 }
               }}
@@ -2135,7 +2138,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     borderRadius: 4, fontSize: 10, whiteSpace: "nowrap",
                     letterSpacing: "0.02em",
                   }}>
-                    {fileDragOverCanvas ? "Solte para inserir imagem" : "Ctrl+V para colar imagem"}
+                    {fileDragOverCanvas ? t.canvas.dropToInsert : t.canvas.pasteHint}
                   </div>
                 </div>
               )}
@@ -2167,17 +2170,17 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                       <Sparkles className="h-5 w-5" />
                     </div>
-                    <div className="text-sm font-semibold">Canvas em branco</div>
+                    <div className="text-sm font-semibold">{t.canvas.emptyTitle}</div>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Use a paleta ao lado ou comece com um bloco rápido para montar o slide.
+                      {t.canvas.emptyHint}
                     </p>
                     {!readOnly && (
                       <div className="mt-4 flex justify-center gap-2">
                         <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => addBlock("title")}>
-                          <TypeIcon className="h-3.5 w-3.5" /> Título
+                          <TypeIcon className="h-3.5 w-3.5" /> {t.canvas.addTitleButton}
                         </Button>
                         <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => addChart("line")}>
-                          <LineChartIcon className="h-3.5 w-3.5" /> Gráfico
+                          <LineChartIcon className="h-3.5 w-3.5" /> {t.canvas.addChartButton}
                         </Button>
                       </div>
                     )}
@@ -2192,7 +2195,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
-                const blockAriaLabel = `${isSelected ? "Selecionado: " : ""}${BLOCK_LABELS[blk.kind]}`;
+                const blockAriaLabel = `${isSelected ? t.canvas.selectedPrefix : ""}${BLOCK_LABELS[blk.kind]}`;
                 // Shape-specific resize config; contextual overlays own special geometry handles.
                 let shapeResize: boolean | Record<string, boolean> = !blk.locked && !readOnly;
                 let shapeDisableDrag = !!blk.locked || readOnly;
@@ -2253,7 +2256,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           selectBlock(blk.id, { additive: !!additive });
                           if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
                           if (blk.locked && wasSelected && !additive) {
-                            toast("Bloco bloqueado. Clique com botão direito para desbloquear.", { duration: 1800 });
+                            toast(t.toasts.blockLockedHint, { duration: 1800 });
                           }
                         }}
                         onDoubleClick={isInlineEditable ? () => {
@@ -2294,7 +2297,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         {isEditing && (
                           <InlineTextEditor
                             block={blk as TitleBlock | TextBlock}
-                            onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
+                            onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, t.blockActionLabels.style); }}
                             onExit={() => setInlineEditId(null)}
                           />
                         )}
@@ -2310,7 +2313,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                               display: "flex", alignItems: "center", justifyContent: "center",
                               zIndex: 999990, pointerEvents: "none",
                             }}
-                            title="Duplo-clique para editar"
+                            title={t.canvas.doubleClickToEdit}
                           >
                             <Pencil className="h-3 w-3 text-muted-foreground" />
                           </div>
@@ -2327,7 +2330,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                               display: "flex", alignItems: "center", justifyContent: "center",
                               zIndex: 999990, pointerEvents: "none",
                             }}
-                            title="Bloco bloqueado"
+                            title={t.canvas.blockLocked}
                           >
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           </div>
@@ -2336,7 +2339,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           <BlockRotationHandle
                             block={blk as TitleBlock | TextBlock | ImageBlock}
                             onRotate={(id, rotationValue) => {
-                              patchBlockAction(id, { rotation: rotationValue } as Partial<CustomBlock>, "Rotacionar");
+                              patchBlockAction(id, { rotation: rotationValue } as Partial<CustomBlock>, t.blockActionLabels.rotate);
                             }}
                           />
                         )}
@@ -2345,52 +2348,52 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   </ContextMenuTrigger>
                   <ContextMenuContent className="w-56">
                     <ContextMenuItem disabled={readOnly} onSelect={() => duplicateBlock(blk.id)}>
-                      Duplicar <ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
+                      {t.contextMenu.duplicate} <ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
                     </ContextMenuItem>
                     <ContextMenuItem disabled={readOnly} onSelect={() => removeBlock(blk.id)} className="text-destructive focus:text-destructive">
-                      Excluir <ContextMenuShortcut>Del</ContextMenuShortcut>
+                      {t.contextMenu.delete} <ContextMenuShortcut>Del</ContextMenuShortcut>
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem disabled={readOnly} onSelect={() => bringForward(blk.id)}>
-                      Trazer para frente <ContextMenuShortcut>Ctrl+]</ContextMenuShortcut>
+                      {t.contextMenu.bringForward} <ContextMenuShortcut>Ctrl+]</ContextMenuShortcut>
                     </ContextMenuItem>
                     <ContextMenuItem disabled={readOnly} onSelect={() => bringToFront(blk.id)}>
-                      Trazer para a frente de tudo
+                      {t.contextMenu.bringToFront}
                     </ContextMenuItem>
                     <ContextMenuItem disabled={readOnly} onSelect={() => sendBack(blk.id)}>
-                      Enviar para trás <ContextMenuShortcut>Ctrl+[</ContextMenuShortcut>
+                      {t.contextMenu.sendBack} <ContextMenuShortcut>Ctrl+[</ContextMenuShortcut>
                     </ContextMenuItem>
                     <ContextMenuItem disabled={readOnly} onSelect={() => sendToBack(blk.id)}>
-                      Enviar para o fundo
+                      {t.contextMenu.sendToBack}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem disabled={readOnly} onSelect={() => toggleLock(blk.id)}>
-                      {blk.locked ? "Desbloquear posição" : "Bloquear posição"}
+                      {blk.locked ? t.contextMenu.unlockPosition : t.contextMenu.lockPosition}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onSelect={() => {
-                      if (copyElementStyleAction(blk.id)) toast.success("Estilo copiado");
+                      if (copyElementStyleAction(blk.id)) toast.success(t.toasts.styleCopied);
                     }}>
-                      Copiar estilo
+                      {t.contextMenu.copyStyle}
                     </ContextMenuItem>
                     <ContextMenuItem
                       disabled={readOnly || !canPasteElementStyleAction(blk.id)}
                       onSelect={() => {
-                        if (canEdit() && pasteElementStyleAction(blk.id)) toast.success("Estilo colado");
+                        if (canEdit() && pasteElementStyleAction(blk.id)) toast.success(t.toasts.stylePasted);
                       }}>
-                      Colar estilo
+                      {t.contextMenu.pasteStyle}
                     </ContextMenuItem>
                     {selectedIds.length >= 2 && (
                       <>
                         <ContextMenuSeparator />
                         <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) groupBlocksAction(selectedIds); }}>
-                          Agrupar <ContextMenuShortcut>Ctrl+G</ContextMenuShortcut>
+                          {t.contextMenu.group} <ContextMenuShortcut>Ctrl+G</ContextMenuShortcut>
                         </ContextMenuItem>
                       </>
                     )}
                     {blk.groupId && (
                       <ContextMenuItem disabled={readOnly} onSelect={() => { if (canEdit()) ungroupBlocksAction([blk.id]); }}>
-                        Desagrupar <ContextMenuShortcut>Ctrl+Shift+G</ContextMenuShortcut>
+                        {t.contextMenu.ungroup} <ContextMenuShortcut>Ctrl+Shift+G</ContextMenuShortcut>
                       </ContextMenuItem>
                     )}
                   </ContextMenuContent>
@@ -2421,7 +2424,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   <InlineTextToolbar
                     block={blk as TitleBlock | TextBlock}
                     scale={scale}
-                    onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, "Alterar estilo"); }}
+                    onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, t.blockActionLabels.style); }}
                   />
                 );
               })()}
@@ -2552,14 +2555,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <div className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border/40 bg-card/40 px-2 py-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => { if (canEdit()) handleUndo(); }} disabled={!undoRedo.canUndo || readOnly}
-            title={undoRedo.undoLabel ? `Desfazer: ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer (Ctrl+Z)"}
-            aria-label={undoRedo.undoLabel ? `Desfazer ${undoRedo.undoLabel.toLowerCase()}` : "Desfazer"}>
+            title={undoRedo.undoLabel ? t.toolbar.undoWithLabel(undoRedo.undoLabel.toLowerCase()) : t.toolbar.undoDefault}
+            aria-label={undoRedo.undoLabel ? t.toolbar.undoAriaWithLabel(undoRedo.undoLabel.toLowerCase()) : t.toolbar.undoAriaDefault}>
             <Undo2 className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => { if (canEdit()) handleRedo(); }} disabled={!undoRedo.canRedo || readOnly}
-            title={undoRedo.redoLabel ? `Refazer: ${undoRedo.redoLabel.toLowerCase()}` : "Refazer (Ctrl+Shift+Z)"}
-            aria-label={undoRedo.redoLabel ? `Refazer ${undoRedo.redoLabel.toLowerCase()}` : "Refazer"}>
+            title={undoRedo.redoLabel ? t.toolbar.redoWithLabel(undoRedo.redoLabel.toLowerCase()) : t.toolbar.redoDefault}
+            aria-label={undoRedo.redoLabel ? t.toolbar.redoAriaWithLabel(undoRedo.redoLabel.toLowerCase()) : t.toolbar.redoAriaDefault}>
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
           <Separator orientation="vertical" className="mx-1 h-5" />
@@ -2600,14 +2603,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <button
                 className="min-w-[42px] rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
                 onClick={() => setZoomEditing(true)}
-                title="Editar zoom"
-                aria-label={`Editar zoom atual: ${Math.round(prefs.zoom * 100)}%`}
+                title={t.toolbar.editZoom}
+                aria-label={t.toolbar.editZoomAria(Math.round(prefs.zoom * 100))}
               >
                 {Math.round(prefs.zoom * 100)}%
               </button>
             )}
             <Button size="icon" variant="ghost" className="h-6 w-6"
-              onClick={() => prefs.setZoom(1.0)} title="Ajustar à tela (Ctrl+0)" aria-label="Ajustar zoom à tela">
+              onClick={() => prefs.setZoom(1.0)} title={t.toolbar.fitToScreen} aria-label={t.toolbar.fitToScreenAria}>
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -2615,8 +2618,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           <Button size="icon" variant={prefs.gridEnabled ? "default" : "ghost"}
             className="h-7 w-7"
             onClick={() => prefs.setGridEnabled(!prefs.gridEnabled)}
-            title={prefs.gridEnabled ? "Grade ligada - clique para desligar" : "Ativar grade"}
-            aria-label={prefs.gridEnabled ? "Desativar grade" : "Ativar grade"}
+            title={prefs.gridEnabled ? t.toolbar.gridOn : t.toolbar.gridOff}
+            aria-label={prefs.gridEnabled ? t.toolbar.gridOnAria : t.toolbar.gridOffAria}
             aria-pressed={prefs.gridEnabled}>
             <Grid3x3 className="h-3.5 w-3.5" />
           </Button>
@@ -2635,8 +2638,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="sm" variant="default" className="h-7 gap-1 px-2 text-[11px]"
             onClick={() => setPresentOpen(true)}
-            title="Apresentar (F5)">
-            <Play className="h-3 w-3" /> Apresentar
+            title={t.toolbar.presentTitle}>
+            <Play className="h-3 w-3" /> {t.toolbar.present}
           </Button>
           {onMinimize && (
             <>
@@ -2648,13 +2651,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     variant="ghost"
                     className="h-7 w-7 transition-transform hover:-translate-x-0.5"
                     onClick={onMinimize}
-                    title="Minimizar Slides"
-                    aria-label="Minimizar editor de Slides em standby"
+                    title={t.toolbar.minimize}
+                    aria-label={t.toolbar.minimizeAria}
                   >
                     <PanelRightClose className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Minimizar Slides e manter este canvas em standby</TooltipContent>
+                <TooltipContent>{t.toolbar.minimizeTooltip}</TooltipContent>
               </Tooltip>
             </>
           )}
@@ -2664,8 +2667,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             variant={showLayers ? "default" : "ghost"}
             className="relative h-7 w-7"
             onClick={() => setShowLayers((s) => !s)}
-            title="Painel de camadas"
-            aria-label={showLayers ? "Ocultar painel de camadas" : "Mostrar painel de camadas"}
+            title={t.toolbar.layersPanel}
+            aria-label={showLayers ? t.toolbar.hideLayersAria : t.toolbar.showLayersAria}
             aria-pressed={showLayers}
           >
             <LayersIcon className="h-3.5 w-3.5" />
@@ -2678,8 +2681,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="icon" variant="ghost" className="h-7 w-7"
             onClick={() => setShortcutsOpen(true)}
-            title="Atalhos de teclado (?)"
-            aria-label="Abrir ajuda de atalhos de teclado">
+            title={t.toolbar.shortcutsTitle}
+            aria-label={t.toolbar.shortcutsAria}>
             <HelpCircle className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -2703,20 +2706,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               </div>
               <span className="flex-1 truncate text-[12px] font-medium">
                 {multiSelected.length >= 2
-                  ? `${multiSelected.length} blocos selecionados`
+                  ? t.inspector.multiSelected(multiSelected.length)
                   : BLOCK_LABELS[selected!.kind]}
               </span>
               <button
                 className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
                 onClick={() => clearSelection()}
-                title="Fechar seleção"
-                aria-label="Limpar selecao"
+                title={t.inspector.closeSelectionTitle}
+                aria-label={t.inspector.closeSelectionAria}
               >
                 <X className="h-3 w-3" />
               </button>
             </>
           ) : (
-            <span className="text-[11px] text-muted-foreground">Nenhum bloco selecionado</span>
+            <span className="text-[11px] text-muted-foreground">{t.inspector.noneSelected}</span>
           )}
         </div>
         {/* Scrollable content */}
@@ -2734,10 +2737,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             />
           ) : !selected ? (
             <div className="space-y-2 px-1 text-[12px] text-muted-foreground">
-              <p className="font-medium text-foreground">Slide personalizado</p>
-              <p>Adicione blocos pela paleta à esquerda. Clique em um bloco para editar suas propriedades aqui.</p>
-              <p>Arraste pelas bordas para mover, use os cantos para redimensionar. Linhas azuis mostram alinhamento com outros blocos.</p>
-              <p>Segure <kbd>Shift</kbd> e clique para selecionar vários blocos. Arraste no fundo para selecionar com retângulo.</p>
+              <p className="font-medium text-foreground">{t.inspector.emptyStateTitle}</p>
+              <p>{t.inspector.emptyStateLine1}</p>
+              <p>{t.inspector.emptyStateLine2}</p>
+              <p>{t.inspector.emptyStateLine3Prefix} <kbd>Shift</kbd> {t.inspector.emptyStateLine3Suffix}</p>
             </div>
           ) : (
             <>
@@ -2746,12 +2749,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   <Badge variant="secondary" className="slides-type-badge">{BLOCK_LABELS[selected.kind]}</Badge>
                   {selected.locked && (
                     <Badge variant="outline" className="slides-type-badge gap-1">
-                      <Lock className="h-3 w-3" /> Bloqueado
+                      <Lock className="h-3 w-3" /> {t.inspector.lockedBadge}
                     </Badge>
                   )}
                 </div>
                 <p className="slides-type-helper">
-                  Configure o bloco aqui. Acoes rapidas como duplicar, camadas e excluir ficam na toolbar sobre o bloco.
+                  {t.inspector.blockHint}
                 </p>
               </div>
 
@@ -2790,7 +2793,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           window.setTimeout(() => {
             onChange(cfg);
             setTemplateApplying(false);
-            toast.success("Modelo aplicado");
+            toast.success(t.toasts.templateApplied);
           }, 180);
         }}
         onApplyDeck={(configs, mode, name) => {
@@ -2800,7 +2803,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             const replacement = applyTemplateDeckToSlidesFlow({ currentSlideId: slideId, configs, mode, name });
             if (replacement) onChange(replacement);
             setTemplateApplying(false);
-            toast.success(`Deck aplicado — ${configs.length} slides criados`);
+            toast.success(t.toasts.deckApplied(configs.length));
           }, 180);
         }}
       />
@@ -2808,22 +2811,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       {/* Save template dialog */}
       <Dialog open={saveTplOpen} onOpenChange={setSaveTplOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Salvar modelo</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t.saveTemplateDialog.title}</DialogTitle></DialogHeader>
           <div className="space-y-2">
-            <Label>Nome</Label>
+            <Label>{t.saveTemplateDialog.name}</Label>
             <Input autoFocus value={tplName} onChange={(e) => setTplName(e.target.value)}
-              placeholder="Ex.: Resumo mensal" />
+              placeholder={t.saveTemplateDialog.placeholder} />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setSaveTplOpen(false)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setSaveTplOpen(false)}>{strings.slides.beta.common.cancelar}</Button>
             <Button disabled={!tplName.trim()}
               onClick={() => {
                 saveUserTemplate(tplName.trim(), config);
                 refreshUserTpls();
                 setSaveTplOpen(false);
                 setTplName("");
-                toast.success("Modelo salvo");
-              }}>Salvar</Button>
+                toast.success(t.toasts.templateSaved);
+              }}>{strings.slides.beta.common.salvar}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2901,15 +2904,15 @@ function FloatingBlockToolbar({
       style={{ left: x, top: y, width: toolbarW }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      aria-label="Acoes rapidas do bloco selecionado"
+      aria-label={t.floatingToolbar.ariaLabel}
     >
-      {iconButton("Editar estilo do bloco", onStyle, <Paintbrush className="h-3.5 w-3.5" />)}
+      {iconButton(t.floatingToolbar.editStyle, onStyle, <Paintbrush className="h-3.5 w-3.5" />)}
       <Separator orientation="vertical" className="h-5" />
-      <span className="px-1 text-[10px] font-semibold uppercase text-muted-foreground">Camada</span>
-      {iconButton("Enviar uma camada para tras", onBack, <ArrowDown className="h-3.5 w-3.5" />)}
-      {iconButton("Trazer uma camada para frente", onForward, <ArrowUp className="h-3.5 w-3.5" />)}
+      <span className="px-1 text-[10px] font-semibold uppercase text-muted-foreground">{t.floatingToolbar.layerLabel}</span>
+      {iconButton(t.floatingToolbar.sendBack, onBack, <ArrowDown className="h-3.5 w-3.5" />)}
+      {iconButton(t.floatingToolbar.bringForward, onForward, <ArrowUp className="h-3.5 w-3.5" />)}
       <Separator orientation="vertical" className="h-5" />
-      {iconButton("Duplicar bloco", onDuplicate, <CopyIcon className="h-3.5 w-3.5" />)}
+      {iconButton(t.floatingToolbar.duplicate, onDuplicate, <CopyIcon className="h-3.5 w-3.5" />)}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -2917,30 +2920,30 @@ function FloatingBlockToolbar({
             variant="ghost"
             className="h-7 w-7"
             onClick={onToggleLock}
-            title={block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
-            aria-label={block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}
+            title={block.locked ? t.floatingToolbar.unlockPosition : t.floatingToolbar.lockPosition}
+            aria-label={block.locked ? t.floatingToolbar.unlockPosition : t.floatingToolbar.lockPosition}
             aria-pressed={!!block.locked}
           >
             {block.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{block.locked ? "Desbloquear posicao do bloco" : "Bloquear posicao do bloco"}</TooltipContent>
+        <TooltipContent>{block.locked ? t.floatingToolbar.unlockPosition : t.floatingToolbar.lockPosition}</TooltipContent>
       </Tooltip>
       <Popover>
         <PopoverTrigger asChild>
-          <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações" aria-label="Abrir mais ações do bloco">
+          <Button size="icon" variant="ghost" className="h-7 w-7" title={t.floatingToolbar.moreActions} aria-label={t.floatingToolbar.moreActionsAria}>
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="center" className="w-48 p-1">
           <button className="w-full rounded px-2 py-1.5 text-left text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onToFront}>
-            Trazer para a frente de tudo
+            {t.floatingToolbar.bringToFront}
           </button>
           <button className="w-full rounded px-2 py-1.5 text-left text-xs outline-none hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary/60" onClick={onToBack}>
-            Enviar para o fundo
+            {t.floatingToolbar.sendToBack}
           </button>
           <button className="w-full rounded px-2 py-1.5 text-left text-xs text-destructive outline-none hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive/60" onClick={onDelete}>
-            Excluir bloco
+            {t.floatingToolbar.deleteBlock}
           </button>
         </PopoverContent>
       </Popover>
@@ -2956,7 +2959,7 @@ function blockLayerName(blk: CustomBlock): string {
   }
   if (blk.kind === "chart") {
     const cb = blk as ChartBlock;
-    return cb.title || CHART_TYPE_LABELS[cb.chartType] || "Gráfico";
+    return cb.title || CHART_TYPE_LABELS[cb.chartType] || t.layerItem.fallbackChartLabel;
   }
   return BLOCK_LABELS[blk.kind];
 }
@@ -2987,7 +2990,7 @@ function SortableLayerItem({
       onClick={onSelect}
       tabIndex={0}
       role="button"
-      aria-label={`Camada ${blockLayerName(blk)}`}
+      aria-label={t.layerItem.layerAria(blockLayerName(blk))}
       aria-pressed={isSelected}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -3002,7 +3005,7 @@ function SortableLayerItem({
           {...listeners}
           className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
           onClick={(e) => e.stopPropagation()}
-          title="Arrastar camada"
+          title={t.layerItem.dragTitle}
         >
           <GripVertical className="h-3.5 w-3.5" />
         </span>
@@ -3016,8 +3019,8 @@ function SortableLayerItem({
           </div>
           <div className="mt-0.5 flex items-center gap-1 text-[9px] text-muted-foreground">
             <span className="truncate">{BLOCK_LABELS[blk.kind]}</span>
-            {blk.locked && <span className="rounded bg-amber-500/15 px-1 text-amber-700 dark:text-amber-200">bloq.</span>}
-            {blk.hidden && <span className="rounded bg-slate-500/15 px-1">oculto</span>}
+            {blk.locked && <span className="rounded bg-amber-500/15 px-1 text-amber-700 dark:text-amber-200">{t.layerItem.locked}</span>}
+            {blk.hidden && <span className="rounded bg-slate-500/15 px-1">{t.layerItem.hidden}</span>}
           </div>
         </div>
       </div>
@@ -3028,8 +3031,8 @@ function SortableLayerItem({
           variant="ghost"
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
-          title={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
-          aria-label={blk.hidden ? "Mostrar bloco" : "Ocultar bloco"}
+          title={blk.hidden ? t.layerItem.showBlock : t.layerItem.hideBlock}
+          aria-label={blk.hidden ? t.layerItem.showBlock : t.layerItem.hideBlock}
           aria-pressed={!blk.hidden}
         >
           {blk.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -3040,8 +3043,8 @@ function SortableLayerItem({
           variant="ghost"
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
-          title={blk.locked ? "Desbloquear posicao" : "Bloquear posicao"}
-          aria-label={blk.locked ? "Desbloquear posição do bloco" : "Bloquear posição do bloco"}
+          title={blk.locked ? t.layerItem.unlockPosition : t.layerItem.lockPosition}
+          aria-label={blk.locked ? t.layerItem.unlockPositionAria : t.layerItem.lockPositionAria}
           aria-pressed={!!blk.locked}
         >
           {blk.locked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
@@ -3052,8 +3055,8 @@ function SortableLayerItem({
           variant="ghost"
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToFront(); }}
-          title="Trazer para frente de tudo"
-          aria-label="Trazer bloco para a frente de tudo"
+          title={t.layerItem.bringToFrontTitle}
+          aria-label={t.layerItem.bringToFrontAria}
         >
           <ChevronsUp className="h-3 w-3" />
         </Button>
@@ -3063,8 +3066,8 @@ function SortableLayerItem({
           variant="ghost"
           className="h-6 w-6"
           onClick={(e) => { e.stopPropagation(); onToBack(); }}
-          title="Enviar para o fundo"
-          aria-label="Enviar bloco para o fundo"
+          title={t.layerItem.sendToBackTitle}
+          aria-label={t.layerItem.sendToBackAria}
         >
           <ChevronsDown className="h-3 w-3" />
         </Button>
@@ -3073,8 +3076,8 @@ function SortableLayerItem({
           size="icon"
           variant="ghost"
           className="h-6 w-6 hover:bg-destructive/20 hover:text-destructive"
-          title="Excluir bloco"
-          aria-label="Excluir bloco"
+          title={t.layerItem.deleteTitle}
+          aria-label={t.layerItem.deleteTitle}
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         >
           <Trash2 className="h-3 w-3" />
@@ -3103,7 +3106,7 @@ function SpeakerNotesBar({
         className="flex w-full items-center gap-2 px-3 py-1.5 slides-type-helper font-medium hover:bg-secondary/40"
       >
         <StickyNote className="h-3.5 w-3.5" />
-        Anotações do apresentador
+        {t.speakerNotes.label}
         {value.trim() && <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[9px] font-semibold">{value.length}</Badge>}
         <ChevronUp className={cn("ml-auto h-3 w-3 transition-transform", !open && "rotate-180")} />
       </button>
@@ -3113,7 +3116,7 @@ function SpeakerNotesBar({
             value={trimmed}
             normalize={(next) => next.slice(0, MAX)}
             onCommit={onChange}
-            placeholder="Adicione notas para o apresentador..."
+            placeholder={t.speakerNotes.placeholder}
             className="h-[80px] resize-none text-xs"
             maxLength={MAX}
           />
@@ -3132,64 +3135,64 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const mod = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
   const sections: { title: string; items: [string, string][] }[] = [
     {
-      title: "Edicao",
+      title: t.shortcuts.sections.edicao,
       items: [
-        [`${mod} + Z`, "Desfazer"],
-        [`${mod} + Y  ?  ${mod} + Shift + Z`, "Refazer"],
-        [`${mod} + D`, "Duplicar bloco selecionado"],
-        ["Delete  ?  Backspace", "Excluir bloco selecionado"],
-        [`${mod} + A`, "Selecionar todos os blocos"],
-        ["Esc", "Desselecionar / sair da edicao inline"],
+        [`${mod} + Z`, t.shortcuts.items.undo],
+        [`${mod} + Y  /  ${mod} + Shift + Z`, t.shortcuts.items.redo],
+        [`${mod} + D`, t.shortcuts.items.duplicateSelected],
+        ["Delete  /  Backspace", t.shortcuts.items.deleteSelected],
+        [`${mod} + A`, t.shortcuts.items.selectAll],
+        ["Esc", t.shortcuts.items.deselect],
       ],
     },
     {
-      title: "Area de transferencia",
+      title: t.shortcuts.sections.areaTransferencia,
       items: [
-        [`${mod} + C`, "Copiar bloco"],
-        [`${mod} + V`, "Colar bloco (mant?m ao mudar de slide)"],
-        [`${mod} + X`, "Cortar bloco"],
+        [`${mod} + C`, t.shortcuts.items.copy],
+        [`${mod} + V`, t.shortcuts.items.paste],
+        [`${mod} + X`, t.shortcuts.items.cut],
       ],
     },
     {
-      title: "Camadas",
+      title: t.shortcuts.sections.camadas,
       items: [
-        [`${mod} + ]`, "Trazer para frente"],
-        [`${mod} + [`, "Enviar para tras"],
-        [`${mod} + Shift + ]`, "Trazer para a frente de tudo"],
-        [`${mod} + Shift + [`, "Enviar para o fundo"],
+        [`${mod} + ]`, t.shortcuts.items.bringForward],
+        [`${mod} + [`, t.shortcuts.items.sendBack],
+        [`${mod} + Shift + ]`, t.shortcuts.items.bringToFront],
+        [`${mod} + Shift + [`, t.shortcuts.items.sendToBack],
       ],
     },
     {
-      title: "Alinhamento",
+      title: t.shortcuts.sections.alinhamento,
       items: [
-        [`${mod} + Shift + H`, "Centralizar horizontalmente"],
-        [`${mod} + Shift + V`, "Centralizar verticalmente"],
+        [`${mod} + Shift + H`, t.shortcuts.items.centerH],
+        [`${mod} + Shift + V`, t.shortcuts.items.centerV],
       ],
     },
     {
-      title: "Mover",
+      title: t.shortcuts.sections.mover,
       items: [
-        ["? ? ? ?", "Mover 10 px"],
-        ["Shift + setas", "Mover 40 px"],
+        ["↑ ↓ ← →", t.shortcuts.items.move10],
+        ["Shift + setas", t.shortcuts.items.move40],
       ],
     },
     {
-      title: "Canvas",
+      title: t.shortcuts.sections.canvas,
       items: [
-        [`${mod} + 0`, "Resetar zoom para 100%"],
-        [`${mod} + scroll`, "Dar zoom mantendo o cursor no mesmo ponto"],
-        ["Espaco + arrastar", "Navegar pelo canvas"],
-        ["Shift + redimensionar", "Travar proporcao do bloco"],
-        ["Tab", "Navegar por blocos e pain?is"],
-        ["Enter / Espa?o", "Selecionar bloco focado"],
+        [`${mod} + 0`, t.shortcuts.items.resetZoom],
+        [`${mod} + scroll`, t.shortcuts.items.zoomAtCursor],
+        ["Espaco + arrastar", t.shortcuts.items.panCanvas],
+        ["Shift + redimensionar", t.shortcuts.items.lockAspect],
+        ["Tab", t.shortcuts.items.tabPanels],
+        ["Enter / Espaço", t.shortcuts.items.selectFocused],
       ],
     },
     {
-      title: "Apresentacao & ajuda",
+      title: t.shortcuts.sections.apresentacaoAjuda,
       items: [
-        ["F5", "Iniciar apresentacao"],
-        [`${mod} + Shift + P`, "Iniciar apresentacao"],
-        ["?", "Abrir este painel"],
+        ["F5", t.shortcuts.items.startPresentation],
+        [`${mod} + Shift + P`, t.shortcuts.items.startPresentation],
+        ["?", t.shortcuts.items.openPanel],
       ],
     },
   ];
@@ -3198,7 +3201,7 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Keyboard className="h-4 w-4" /> Atalhos de teclado
+            <Keyboard className="h-4 w-4" /> {t.shortcuts.dialogTitle}
           </DialogTitle>
         </DialogHeader>
         <div className="grid max-h-[60vh] grid-cols-1 gap-4 overflow-y-auto pr-1 sm:grid-cols-2">
