@@ -31,6 +31,8 @@
 //
 // MIGRADO ATÉ AGORA (ver Fase 2 na memória do projeto para o que falta):
 //   - src/components/pricing/custom/ShapeInspector.tsx
+//   - src/components/pricing/custom/chart/ChartInspector.tsx
+//   - src/components/pricing/custom/inspectors/BlockInspectors.tsx
 // Isto é uma fatia, não a extração completa do editor — o resto continua
 // com string cravada no JSX até ser migrado incrementalmente.
 

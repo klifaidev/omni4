@@ -105,6 +105,10 @@ import {
   type RelativeMonthRangePreset,
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
+import { strings } from "@/lib/i18n";
+
+const t = strings.slides.editor.inspectors.blocks;
+const tc = t.common;
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
@@ -131,7 +135,7 @@ function relativeOptionsForMode(mode: "month" | "fy") {
 function PeriodModeBadge({ mode }: { mode: PeriodSelectionMode }) {
   return (
     <Badge variant={mode === "relative" ? "default" : "secondary"} className="h-4 px-1.5 text-[9px]">
-      {mode === "relative" ? "Relativo" : "Fixo"}
+      {mode === "relative" ? tc.relative : tc.fixed}
     </Badge>
   );
 }
@@ -183,7 +187,7 @@ export function BlockAppearanceControls({ block, onChange }: {
 }) {
   return (
     <div className="rounded-md border border-border/40 bg-secondary/20 p-2">
-      <Label className="mb-1 block text-[10px] uppercase text-muted-foreground">Opacidade do bloco</Label>
+      <Label className="mb-1 block text-[10px] uppercase text-muted-foreground">{t.blockAppearance.opacity}</Label>
       <SliderWithInput
         value={block.opacity ?? 100}
         min={0}
@@ -232,7 +236,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "image":
       return (
         <div className="space-y-2">
-          <Label className="text-[10px] uppercase text-muted-foreground">Upload</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground">{t.image.upload}</Label>
           <input type="file" accept="image/*"
             className="text-[11px]"
             onChange={async (e) => {
@@ -244,12 +248,12 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
             }}
           />
           <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Ajuste</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.image.fit}</Label>
             <Select value={block.fit} onValueChange={(v) => onChange({ fit: v as "contain"|"cover" } as never)}>
               <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="contain">Conter</SelectItem>
-                <SelectItem value="cover">Cobrir</SelectItem>
+                <SelectItem value="contain">{t.image.fitOptions.contain}</SelectItem>
+                <SelectItem value="cover">{t.image.fitOptions.cover}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -313,13 +317,13 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "omni_evolucao_mensal":
       return <OmniEvolucaoInspector block={block as OmniEvolucaoMensalBlock} onChange={onChange as (p: Partial<OmniEvolucaoMensalBlock>) => void} />;
     case "omni_heatmap_sazonalidade":
-      return <OmniMetricInspector block={block as OmniHeatmapSazonalidadeBlock} onChange={onChange as (p: Partial<OmniHeatmapSazonalidadeBlock>) => void} label="Heatmap Sazonalidade" />;
+      return <OmniMetricInspector block={block as OmniHeatmapSazonalidadeBlock} onChange={onChange as (p: Partial<OmniHeatmapSazonalidadeBlock>) => void} label={t.omni.defaultTitles.heatmapSazonalidade} />;
     case "omni_herois_ofensores":
       return <OmniHeroisInspector block={block as OmniHeroisOfensoresBlock} onChange={onChange as (p: Partial<OmniHeroisOfensoresBlock>) => void} />;
     case "omni_canal_trend":
       return <OmniCanalTrendInspector block={block as OmniCanalTrendBlock} onChange={onChange as (p: Partial<OmniCanalTrendBlock>) => void} />;
     case "omni_canal_mix":
-      return <OmniMetricInspector block={block as OmniCanalMixBlock} onChange={onChange as (p: Partial<OmniCanalMixBlock>) => void} label="Mix por Canal" />;
+      return <OmniMetricInspector block={block as OmniCanalMixBlock} onChange={onChange as (p: Partial<OmniCanalMixBlock>) => void} label={t.omni.defaultTitles.canalMix} />;
     case "omni_custo_evolucao":
       return <OmniCustoInspector block={block as OmniCustoEvolucaoBlock} onChange={onChange as (p: Partial<OmniCustoEvolucaoBlock>) => void} />;
     case "omni_custo_composicao":
@@ -339,7 +343,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "omni_abc_curva":
       return <OmniAbcCurvaInspector block={block as OmniAbcCurvaBlock} onChange={onChange as (p: Partial<OmniAbcCurvaBlock>) => void} />;
     case "omni_portfolio_matrix":
-      return <OmniDimMetricInspector block={block as OmniPortfolioMatrixBlock} onChange={onChange as (p: Partial<OmniPortfolioMatrixBlock>) => void} label="Matriz Portfólio" />;
+      return <OmniDimMetricInspector block={block as OmniPortfolioMatrixBlock} onChange={onChange as (p: Partial<OmniPortfolioMatrixBlock>) => void} label={t.omni.defaultTitles.portfolioMatrix} />;
     case "omni_abc_bars":
       return <OmniHeroisInspector block={block as OmniAbcBarsBlock} onChange={onChange as (p: Partial<OmniAbcBarsBlock>) => void} />;
   }
@@ -450,7 +454,7 @@ function FilteredInspector({
       onChange(patch);
       setPendingSource(null);
       setRecalculating(false);
-      toast.success(`Fonte alterada para ${nextLabel}.`);
+      toast.success(t.dataSourcePicker.sourceChanged(nextLabel));
     }, 180);
   };
 
@@ -466,12 +470,12 @@ function FilteredInspector({
   const dsDesc = ds === "personalizado"
     ? dataSourceDescription(ds)
     : ds === "forecast"
-    ? "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto."
+    ? t.dataSourcePicker.descriptions.forecast
     : ds === "ke30"
-    ? "Detalhada (KE30): receita, custos, margens, frete, comissão."
+    ? t.dataSourcePicker.descriptions.ke30
     : ds === "budget"
-      ? "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissão."
-      : "Realizado da planilha Budget (linhas com kind=real). Sem MB/Frete/Comissão.";
+      ? t.dataSourcePicker.descriptions.budget
+      : t.dataSourcePicker.descriptions.budgetReal;
 
   return (
     <div className="space-y-2">
@@ -481,13 +485,13 @@ function FilteredInspector({
             <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/70 backdrop-blur-sm">
               <div className="flex items-center gap-2 text-xs font-medium text-primary">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Recalculando bloco...
+                {t.dataSourcePicker.recalculating}
               </div>
             </div>
           )}
           <div className="mb-1.5 flex items-center justify-between">
             <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
-              Fonte de Dados
+              {tc.dataSource}
             </Label>
             <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
               {dsBadgeLabel}
@@ -509,7 +513,7 @@ function FilteredInspector({
                   "bg-blue-500/20 text-blue-700 dark:text-blue-200",
                 )}>KE30</button>
               <p className="mt-1 text-[9px] text-muted-foreground italic">
-                Carregue Budget ou Forecast para mais opcoes.
+                {t.dataSourcePicker.onlyKe30Hint}
               </p>
             </div>
           )}
@@ -519,8 +523,8 @@ function FilteredInspector({
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid h-8 w-full grid-cols-2">
-          <TabsTrigger value="design" className="text-[11px]">Design</TabsTrigger>
-          <TabsTrigger value="filters" className="text-[11px]">Filtros</TabsTrigger>
+          <TabsTrigger value="design" className="text-[11px]">{t.dataSourcePicker.design}</TabsTrigger>
+          <TabsTrigger value="filters" className="text-[11px]">{t.dataSourcePicker.filters}</TabsTrigger>
         </TabsList>
         <TabsContent value="design" className="mt-2 space-y-2">
           <div data-style-panel-target="true">{design}</div>
@@ -533,15 +537,14 @@ function FilteredInspector({
       <Dialog open={!!pendingSource} onOpenChange={(v) => !v && setPendingSource(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Trocar fonte de dados?</DialogTitle>
+            <DialogTitle>{t.dataSourcePicker.switchSourceTitle}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Trocar a fonte de dados irá redefinir os filtros deste bloco
-            (e a medida, se ela não existir na nova base). Deseja continuar?
+            {t.dataSourcePicker.switchSourceBody}
           </p>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setPendingSource(null)}>Cancelar</Button>
-            <Button onClick={confirmSwitch}>Trocar para {dataSourceLabel(pendingSource ?? "ke30")}</Button>
+            <Button variant="ghost" onClick={() => setPendingSource(null)}>{t.dataSourcePicker.cancel}</Button>
+            <Button onClick={confirmSwitch}>{t.dataSourcePicker.switchTo(dataSourceLabel(pendingSource ?? "ke30"))}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -607,7 +610,7 @@ export function BgField({ label, value, onChange }: {
     <div>
       <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
       <label className="mt-1 mb-1 flex cursor-pointer items-center justify-between text-[10px] text-muted-foreground">
-        <span>Sem fundo</span>
+        <span>{t.bgField.noFill}</span>
         <Switch checked={isT} className="scale-75"
           onCheckedChange={(c) => onChange(c ? "transparent" : "FFFFFF")} />
       </label>
@@ -647,28 +650,28 @@ function KpiInspector({ block, onChange }: {
 
   return (
     <div className="space-y-2">
-      <Field label="Rótulo" value={block.label}
+      <Field label={t.kpi.label} value={block.label}
         onChange={(v) => onChange({ label: v } as never)} />
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Origem do valor</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.valueSource}</Label>
         <Select value={block.source}
           onValueChange={(v) => onChange({ source: v as "manual"|"dynamic" } as never)}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="dynamic">Dinâmico (calcular da base)</SelectItem>
-            <SelectItem value="manual">Manual (digitar valor)</SelectItem>
+            <SelectItem value="dynamic">{t.kpi.dynamic}</SelectItem>
+            <SelectItem value="manual">{t.kpi.manual}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {block.source === "manual" ? (
-        <Field label="Valor" value={block.manualValue ?? ""}
+        <Field label={t.kpi.value} value={block.manualValue ?? ""}
           onChange={(v) => onChange({ manualValue: v } as never)} />
       ) : (
         <>
           <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Medida</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.measure}</Label>
             <Select value={block.measure ?? "rol"}
               onValueChange={(v) => onChange({ measure: v as never } as never)}>
               <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -680,7 +683,7 @@ function KpiInspector({ block, onChange }: {
                   return (
                     <SelectItem key={m.id} value={m.id} disabled={disabled}
                       title={disabled ? hint : undefined}>
-                      {m.label}{disabled ? " ? indisponível" : ""}
+                      {m.label}{disabled ? ` ${t.table.unavailableSuffix}` : ""}
                     </SelectItem>
                   );
                 })}
@@ -694,7 +697,7 @@ function KpiInspector({ block, onChange }: {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Período</Label>
+              <Label className="text-[10px] uppercase text-muted-foreground">{tc.period}</Label>
               <Select value={periodMode}
                 onValueChange={(v) => {
                   const nextMode = v as "all" | "month" | "fy";
@@ -707,16 +710,16 @@ function KpiInspector({ block, onChange }: {
                 }}>
                 <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="month">Mês</SelectItem>
-                  <SelectItem value="fy">Ano fiscal</SelectItem>
+                  <SelectItem value="all">{tc.all}</SelectItem>
+                  <SelectItem value="month">{tc.month}</SelectItem>
+                  <SelectItem value="fy">{tc.fiscalYear}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {periodMode !== "all" && (
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <Label className="text-[10px] uppercase text-muted-foreground">Valor</Label>
+                  <Label className="text-[10px] uppercase text-muted-foreground">{tc.value}</Label>
                   <PeriodModeBadge mode={periodSelectionMode} />
                 </div>
                 {periodSelectionMode === "relative" ? (
@@ -754,22 +757,22 @@ function KpiInspector({ block, onChange }: {
                       : block.relativePeriod,
                   } as never)}
                 >
-                  {mode === "relative" ? "Relativo" : "Fixo"}
+                  {mode === "relative" ? tc.relative : tc.fixed}
                 </Button>
               ))}
             </div>
           )}
           <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">Formato</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.format}</Label>
             <Select value={block.format ?? "auto"}
               onValueChange={(v) => onChange({ format: v as never } as never)}>
               <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Automático</SelectItem>
-                <SelectItem value="currency">Moeda (R$)</SelectItem>
-                <SelectItem value="percent">Percentual</SelectItem>
-                <SelectItem value="tons">Toneladas</SelectItem>
-                <SelectItem value="number">Número</SelectItem>
+                <SelectItem value="auto">{t.kpi.formatOptions.auto}</SelectItem>
+                <SelectItem value="currency">{t.kpi.formatOptions.currency}</SelectItem>
+                <SelectItem value="percent">{t.kpi.formatOptions.percent}</SelectItem>
+                <SelectItem value="tons">{t.kpi.formatOptions.tons}</SelectItem>
+                <SelectItem value="number">{t.kpi.formatOptions.number}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -778,19 +781,19 @@ function KpiInspector({ block, onChange }: {
 
       <Separator />
       <div className="grid grid-cols-2 gap-2">
-        <NumField label="Tamanho do valor" value={block.valueSize}
+        <NumField label={t.kpi.valueSize} value={block.valueSize}
           onChange={(v) => onChange({ valueSize: v } as never)} />
-        <Field label="Cor (hex)" value={block.color}
+        <Field label={t.kpi.colorHex} value={block.color}
           normalize={(v) => v.replace("#", "").toUpperCase()}
           onChange={(v) => onChange({ color: v } as never)} />
       </div>
-      <BgField label="Fundo do card"
+      <BgField label={t.kpi.cardBg}
         value={block.cardBg ?? "F8FAFC"}
         onChange={(v) => onChange({ cardBg: v } as never)} />
       <Separator />
       <div className="flex items-center justify-between">
         <Label className="text-[10px] uppercase text-muted-foreground">
-          Reagir a filtros do slide
+          {t.kpi.reactToFilters}
         </Label>
         <Switch
           checked={block.participatesInCrossFilter !== false}
@@ -824,7 +827,7 @@ export function ComparePeriodField({
   }) => void;
 }) {
   const activeMode = selectionMode ?? "fixed";
-  const defaultPreset = label === "Base" && mode === "month"
+  const defaultPreset = label === tc.base && mode === "month"
     ? DEFAULT_BASE_RELATIVE_MONTH_PRESET
     : defaultRelativePresetForMode(mode);
   return (
@@ -847,7 +850,7 @@ export function ComparePeriodField({
               relativePeriod: m === "relative" ? relativeValue ?? defaultPreset : relativeValue,
             })}
           >
-            {m === "relative" ? "Relativo" : "Fixo"}
+            {m === "relative" ? tc.relative : tc.fixed}
           </Button>
         ))}
       </div>
@@ -882,7 +885,7 @@ function BridgeBlockEditor({ block, onChange }: {
   return (
     <div className="space-y-2">
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Modo</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{tc.mode}</Label>
         <Select value={block.mode}
           onValueChange={(v) => {
             const nextMode = v as "fy" | "month";
@@ -898,14 +901,14 @@ function BridgeBlockEditor({ block, onChange }: {
           }}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="month">Mês a mês</SelectItem>
-            <SelectItem value="fy">Ano fiscal</SelectItem>
+            <SelectItem value="month">{t.bridge.modeOptions.month}</SelectItem>
+            <SelectItem value="fy">{t.bridge.modeOptions.fy}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <ComparePeriodField
-          label="Base"
+          label={tc.base}
           mode={block.mode}
           fixedValue={block.base}
           selectionMode={block.baseSelectionMode}
@@ -918,7 +921,7 @@ function BridgeBlockEditor({ block, onChange }: {
           } as never)}
         />
         <ComparePeriodField
-          label="Comparação"
+          label={tc.comparison}
           mode={block.mode}
           fixedValue={block.comp}
           selectionMode={block.compSelectionMode}
@@ -1097,16 +1100,16 @@ function TableBlockEditor({ block, onChange }: {
     <div className="space-y-3">
       <TruncationAlert blockId={block.id} fit={fit} unitPlural="linhas" />
 
-      <Section title="Titulo da tabela" defaultOpen>
-        <Row label="Texto">
+      <Section title={t.table.titleSection} defaultOpen>
+        <Row label={t.table.titleText}>
           <DraftInput
             value={block.title ?? ""}
             onCommit={(value) => onChange({ title: value } as never)}
-            placeholder="Ex.: Tabela executiva"
+            placeholder={t.table.titlePlaceholder}
             className="h-7 text-xs"
           />
         </Row>
-        <Row label="Tamanho">
+        <Row label={t.table.titleSizeLabel}>
           <NumberStepper
             value={block.titleSize ?? 18}
             min={10}
@@ -1115,7 +1118,7 @@ function TableBlockEditor({ block, onChange }: {
             suffix="px"
           />
         </Row>
-        <Row label="Cor">
+        <Row label={t.table.titleColorLabel}>
           <ColorField
             value={`#${block.titleColor ?? "1C2430"}`}
             onChange={(c) => onChange({ titleColor: c.replace("#", "") } as never)}
@@ -1124,11 +1127,11 @@ function TableBlockEditor({ block, onChange }: {
       </Section>
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Linhas (dimensões)</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.table.rowDims}</Label>
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-7 w-full justify-start text-xs">
-              {block.rowDims.length ? block.rowDims.map((d) => dims.find((x) => x.id === d)?.label).join(", ") : "Selecionar..."}
+              {block.rowDims.length ? block.rowDims.map((d) => dims.find((x) => x.id === d)?.label).join(", ") : tc.select}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="max-h-72 w-64 overflow-auto p-2" align="start">
@@ -1149,27 +1152,27 @@ function TableBlockEditor({ block, onChange }: {
       </div>
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Coluna (opcional)</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.table.colDim}</Label>
         <Select value={block.colDim ?? "__none__"}
           onValueChange={(v) => onChange({ colDim: v === "__none__" ? null : v } as never)}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__">? Sem coluna ?</SelectItem>
+            <SelectItem value="__none__">{t.table.noColumn}</SelectItem>
             {dims.map((d) => <SelectItem key={d.id as string} value={d.id as string}>{d.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      <Section title="Periodos da tabela">
+      <Section title={t.table.periodsSection}>
         <div className="space-y-2">
-          <Row label="Modo">
+          <Row label={tc.mode}>
             <Segmented
               value={monthFilterMode}
               onChange={(v) => patchMonthFilterMode(v as "all" | PeriodSelectionMode)}
               options={[
-                { value: "all", label: "Todos" },
-                { value: "relative", label: "Rapido" },
-                { value: "fixed", label: "Manual" },
+                { value: "all", label: t.table.periodModeOptions.all },
+                { value: "relative", label: t.table.periodModeOptions.relative },
+                { value: "fixed", label: t.table.periodModeOptions.fixed },
               ]}
             />
           </Row>
@@ -1187,7 +1190,7 @@ function TableBlockEditor({ block, onChange }: {
                       : "border-border/50 bg-background/50 text-muted-foreground hover:bg-secondary",
                   )}
                 >
-                  {preset.months} meses
+                  {t.table.monthsSuffix(preset.months)}
                 </button>
               ))}
             </div>
@@ -1197,68 +1200,68 @@ function TableBlockEditor({ block, onChange }: {
               options={periodOptions}
               selected={block.monthFilter?.periods ?? []}
               onChange={patchManualMonthSelection}
-              placeholder="Selecionar meses"
+              placeholder={t.table.selectMonths}
             />
           )}
           <p className="text-[10px] leading-snug text-muted-foreground">
-            Os atalhos usam o mes mais recente disponivel depois dos filtros da tabela.
+            {t.table.relativeHint}
           </p>
         </div>
       </Section>
 
       <div className="rounded-md border border-border/40 bg-muted/20 p-2">
         <ToggleRow
-          label="Última coluna: variação % vs anterior"
+          label={t.table.lastColumnVariation}
           value={!!block.showLastColumnVariation}
           onChange={(v) => onChange({ showLastColumnVariation: v } as never)}
         />
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-          Adiciona no fim da tabela a variação percentual da última coluna contra a penúltima.
+          {t.table.lastColumnVariationHint}
         </p>
       </div>
 
-      <Section title="Quebra de texto">
+      <Section title={t.table.wrapTextSection}>
         <div className="space-y-2">
           <ToggleRow
-            label="Quebrar texto das linhas"
+            label={t.table.wrapRows}
             value={!!block.wrapRowText}
             onChange={(v) => onChange({ wrapRowText: v } as never)}
           />
           <ToggleRow
-            label="Quebrar texto das colunas"
+            label={t.table.wrapColumns}
             value={!!block.wrapColumnText}
             onChange={(v) => onChange({ wrapColumnText: v } as never)}
           />
           <p className="text-[10px] leading-snug text-muted-foreground">
-            Use quando nomes longos estiverem sendo cortados. A tabela preserva o tamanho do bloco e distribui o texto dentro da célula.
+            {t.table.wrapHint}
           </p>
         </div>
       </Section>
 
-      <Section title="Colunas de gap">
+      <Section title={t.table.gapColumnsSection}>
         <div className="space-y-2">
           {gapColumns.length === 0 ? (
             <p className="text-[10px] leading-snug text-muted-foreground">
-              Adicione colunas para comparar o KPI do mes mais recente contra M-1, Bench, LY ou um mes manual.
+              {t.table.gapColumnsEmpty}
             </p>
           ) : gapColumns.map((gap, index) => {
             const mode = gap.comparisonMode;
             return (
               <div key={gap.id} className="space-y-2 rounded-md border border-border/50 bg-background/40 p-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold">Gap {index + 1}</span>
+                  <span className="text-[11px] font-semibold">{t.table.gapLabel(index + 1)}</span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                     onClick={() => removeGapColumn(gap.id)}
-                    title="Remover coluna de gap"
+                    title={t.table.removeGapColumn}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                <Row label="KPI">
+                <Row label={t.table.kpi}>
                   <Select value={gap.measureId} onValueChange={(v) => patchGapColumn(gap.id, {
                     measureId: v,
                     benchMeasureId: gap.benchMeasureId ?? v,
@@ -1269,19 +1272,19 @@ function TableBlockEditor({ block, onChange }: {
                     </SelectContent>
                   </Select>
                 </Row>
-                <Row label="Referencia">
+                <Row label={t.table.reference}>
                   <Select value={mode} onValueChange={(v) => patchGapColumn(gap.id, { comparisonMode: v as TableGapComparisonMode })}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="prev-month">M-1</SelectItem>
-                      <SelectItem value="bench">Bench</SelectItem>
-                      <SelectItem value="prev-year-month">LY</SelectItem>
-                      <SelectItem value="manual">Manual</SelectItem>
+                      <SelectItem value="prev-month">{t.table.referenceOptions.prevMonth}</SelectItem>
+                      <SelectItem value="bench">{t.table.referenceOptions.bench}</SelectItem>
+                      <SelectItem value="prev-year-month">{t.table.referenceOptions.prevYearMonth}</SelectItem>
+                      <SelectItem value="manual">{t.table.referenceOptions.manual}</SelectItem>
                     </SelectContent>
                   </Select>
                 </Row>
                 {mode === "bench" && selectedMeasures.length > 1 && (
-                  <Row label="Bench por">
+                  <Row label={t.table.benchBy}>
                     <Select value={gap.benchMeasureId ?? gap.measureId} onValueChange={(v) => patchGapColumn(gap.id, { benchMeasureId: v })}>
                       <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1291,9 +1294,9 @@ function TableBlockEditor({ block, onChange }: {
                   </Row>
                 )}
                 {mode === "manual" && (
-                  <Row label="Mes base">
+                  <Row label={t.table.baseMonth}>
                     <Select value={gap.manualPeriod ?? periodOptions[0]?.value ?? ""} onValueChange={(v) => patchGapColumn(gap.id, { manualPeriod: v })}>
-                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder={t.table.selectPlaceholder} /></SelectTrigger>
                       <SelectContent>
                         {periodOptions.map((period) => <SelectItem key={period.value} value={period.value}>{period.label}</SelectItem>)}
                       </SelectContent>
@@ -1312,13 +1315,13 @@ function TableBlockEditor({ block, onChange }: {
             disabled={selectedMeasures.length === 0}
           >
             <Plus className="h-3.5 w-3.5" />
-            Adicionar gap
+            {t.table.addGap}
           </Button>
         </div>
       </Section>
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Medidas</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.table.measures}</Label>
         <div className="space-y-1">
           {CUSTOM_TABLE_MEASURES.map((m) => {
             const unavailable = unavailableMeasuresForSource(block.dataSource);
@@ -1335,7 +1338,7 @@ function TableBlockEditor({ block, onChange }: {
                   disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
                 )}
               >
-                <span>{m.label}{disabled ? " ? indisponível" : ""}</span>
+                <span>{m.label}{disabled ? t.table.unavailableSuffix : ""}</span>
                 {block.measures.includes(m.id) && !disabled && <span className="text-[9px]">✓</span>}
               </button>
             );
@@ -1349,24 +1352,24 @@ function TableBlockEditor({ block, onChange }: {
       </div>
 
       {block.measures.length > 0 && (
-        <Section title="Ordenacao das linhas" defaultOpen>
-          <Row label="Modo">
+        <Section title={t.table.sortSection} defaultOpen>
+          <Row label={tc.mode}>
             <Segmented
               value={block.sortMode ?? "kpi"}
               onChange={(v) => onChange({ sortMode: v as TableBlock["sortMode"] } as never)}
               options={[
-                { value: "kpi", label: "KPI" },
-                { value: "gap", label: "Gap" },
-                { value: "az", label: "A-Z" },
-                { value: "za", label: "Z-A" },
-                { value: "manual", label: "Manual" },
+                { value: "kpi", label: t.table.sortModeOptions.kpi },
+                { value: "gap", label: t.table.sortModeOptions.gap },
+                { value: "az", label: t.table.sortModeOptions.az },
+                { value: "za", label: t.table.sortModeOptions.za },
+                { value: "manual", label: t.table.sortModeOptions.manual },
               ]}
             />
           </Row>
 
           {(block.sortMode ?? "kpi") === "kpi" && (
             <>
-              <Row label="KPI">
+              <Row label={t.table.kpi}>
                 <Select value={block.sortMeasure ?? block.measures[0]}
                   onValueChange={(v) => onChange({ sortMeasure: v } as never)}>
                   <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -1376,13 +1379,13 @@ function TableBlockEditor({ block, onChange }: {
                   </SelectContent>
                 </Select>
               </Row>
-              <Row label="Direcao">
+              <Row label={t.table.direction}>
                 <Segmented
                   value={block.sortDirection ?? "desc"}
                   onChange={(v) => onChange({ sortDirection: v as TableBlock["sortDirection"] } as never)}
                   options={[
-                    { value: "desc", label: "Maior" },
-                    { value: "asc", label: "Menor" },
+                    { value: "desc", label: t.table.directionOptions.desc },
+                    { value: "asc", label: t.table.directionOptions.asc },
                   ]}
                 />
               </Row>
@@ -1391,43 +1394,43 @@ function TableBlockEditor({ block, onChange }: {
 
           {(block.sortMode ?? "kpi") === "gap" && (
             <>
-              <Row label="Coluna">
+              <Row label={t.table.column}>
                 <Select value={block.sortGapColumnId ?? gapColumns[0]?.id ?? "__none__"}
                   onValueChange={(v) => onChange({ sortGapColumnId: v } as never)}>
                   <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {gapColumns.length === 0 && <SelectItem value="__none__">Nenhum gap configurado</SelectItem>}
+                    {gapColumns.length === 0 && <SelectItem value="__none__">{t.table.noGapConfigured}</SelectItem>}
                     {gapColumns.map((gap, index) => {
                       const measure = selectedMeasures.find((m) => m.id === gap.measureId);
                       const modeLabel = gap.comparisonMode === "prev-month"
-                        ? "M-1"
+                        ? t.table.referenceOptions.prevMonth
                         : gap.comparisonMode === "prev-year-month"
-                        ? "LY"
+                        ? t.table.referenceOptions.prevYearMonth
                         : gap.comparisonMode === "bench"
-                        ? "Bench"
-                        : "Manual";
+                        ? t.table.referenceOptions.bench
+                        : t.table.referenceOptions.manual;
                       return (
                         <SelectItem key={gap.id} value={gap.id}>
-                          {measure?.label ?? `Gap ${index + 1}`} vs {modeLabel}
+                          {t.table.gapVs(measure?.label ?? t.table.gapLabel(index + 1), modeLabel)}
                         </SelectItem>
                       );
                     })}
                   </SelectContent>
                 </Select>
               </Row>
-              <Row label="Direcao">
+              <Row label={t.table.direction}>
                 <Segmented
                   value={block.sortDirection ?? "desc"}
                   onChange={(v) => onChange({ sortDirection: v as TableBlock["sortDirection"] } as never)}
                   options={[
-                    { value: "desc", label: "Maior" },
-                    { value: "asc", label: "Menor" },
+                    { value: "desc", label: t.table.directionOptions.desc },
+                    { value: "asc", label: t.table.directionOptions.asc },
                   ]}
                 />
               </Row>
               {gapColumns.length === 0 && (
                 <p className="text-[10px] leading-snug text-muted-foreground">
-                  Adicione uma coluna de gap para ordenar por ela.
+                  {t.table.noGapToSort}
                 </p>
               )}
             </>
@@ -1436,14 +1439,14 @@ function TableBlockEditor({ block, onChange }: {
           {(block.sortMode ?? "kpi") === "manual" && (
             <div className="space-y-2">
               <p className="text-[10px] leading-snug text-muted-foreground">
-                Arraste as linhas para definir a ordem de exibicao. Linhas novas entram no final.
+                {t.table.manualOrderHint}
               </p>
               <DndContext collisionDetection={closestCenter} onDragEnd={handleManualRowDragEnd}>
                 <SortableContext items={manualRowOrder} strategy={verticalListSortingStrategy}>
                   <div className="max-h-48 space-y-1 overflow-auto rounded-md border border-border/50 bg-background/40 p-1">
                     {manualRowOrder.length === 0 ? (
                       <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
-                        Configure dimensoes e medidas para ordenar manualmente.
+                        {t.table.manualOrderEmpty}
                       </div>
                     ) : manualRowOrder.map((key) => (
                       <SortableManualTableRow key={key} id={key} label={rowLabelByKey.get(key) ?? key} />
@@ -1457,7 +1460,7 @@ function TableBlockEditor({ block, onChange }: {
       )}
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Alinhamento dos valores</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.table.valueAlign}</Label>
         <div className="mt-1 flex gap-1">
           {(["left", "center", "right"] as const).map((a) => (
             <Button
@@ -1475,7 +1478,7 @@ function TableBlockEditor({ block, onChange }: {
 
       {block.measures.length > 0 && (
         <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Formatação condicional</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground">{t.table.conditionalFormat}</Label>
           {CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id)).map((m) => {
             const rule = block.conditionalFormats?.[m.id] ?? { mode: "none" as ConditionalFormatMode };
             const setRule = (patch: Partial<ConditionalFormatRule>) =>
@@ -1492,25 +1495,25 @@ function TableBlockEditor({ block, onChange }: {
                   <Select value={rule.mode} onValueChange={(v) => setRule({ mode: v as ConditionalFormatMode })}>
                     <SelectTrigger className="h-6 w-28 text-[10px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Nenhuma</SelectItem>
-                      <SelectItem value="heatmap">Heatmap</SelectItem>
-                      <SelectItem value="above_avg">Acima/Abaixo da média</SelectItem>
-                      <SelectItem value="data_bar">Barra de dados</SelectItem>
+                      <SelectItem value="none">{t.table.conditionalModeOptions.none}</SelectItem>
+                      <SelectItem value="heatmap">{t.table.conditionalModeOptions.heatmap}</SelectItem>
+                      <SelectItem value="above_avg">{t.table.conditionalModeOptions.aboveAvg}</SelectItem>
+                      <SelectItem value="data_bar">{t.table.conditionalModeOptions.dataBar}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 {rule.mode === "heatmap" && (
                   <div className="space-y-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-8 text-[10px] text-muted-foreground">Mín</span>
+                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMin}</span>
                       <input type="color" value={`#${rule.colorMin ?? "F8696B"}`}
                         onChange={(e) => setRule({ colorMin: e.target.value.slice(1) })}
                         className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
-                      <span className="w-8 text-[10px] text-muted-foreground">Meio</span>
+                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMid}</span>
                       <input type="color" value={`#${rule.colorMid ?? "FFEB84"}`}
                         onChange={(e) => setRule({ colorMid: e.target.value.slice(1) })}
                         className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
-                      <span className="w-8 text-[10px] text-muted-foreground">Máx</span>
+                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMax}</span>
                       <input type="color" value={`#${rule.colorMax ?? "63BE7B"}`}
                         onChange={(e) => setRule({ colorMax: e.target.value.slice(1) })}
                         className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
@@ -1519,9 +1522,9 @@ function TableBlockEditor({ block, onChange }: {
                       onValueChange={(v) => setRule({ scope: v as "table" | "column" | "row" })}>
                       <SelectTrigger className="h-6 text-[10px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="table">Escala global (tabela inteira)</SelectItem>
-                        <SelectItem value="column">Escala por coluna</SelectItem>
-                        <SelectItem value="row">Escala por linha</SelectItem>
+                        <SelectItem value="table">{t.table.heatmapScopeOptions.table}</SelectItem>
+                        <SelectItem value="column">{t.table.heatmapScopeOptions.column}</SelectItem>
+                        <SelectItem value="row">{t.table.heatmapScopeOptions.row}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1534,7 +1537,7 @@ function TableBlockEditor({ block, onChange }: {
 
       <Separator />
       <div className="space-y-1.5">
-        <Row label="Altura das linhas">
+        <Row label={t.table.rowHeight}>
           <Segmented
             value={block.autoFit === false ? "manual" : "auto"}
             onChange={(v) => {
@@ -1545,25 +1548,25 @@ function TableBlockEditor({ block, onChange }: {
               }
             }}
             options={[
-              { value: "auto", label: "Auto" },
-              { value: "manual", label: "Fixas" },
+              { value: "auto", label: t.table.rowHeightOptions.auto },
+              { value: "manual", label: t.table.rowHeightOptions.manual },
             ]}
           />
         </Row>
         <NumField
-          label={block.autoFit === false ? "Linhas visíveis" : "Fixar linhas visíveis"}
+          label={block.autoFit === false ? t.table.rowsVisible : t.table.rowsVisibleFixed}
           value={block.maxRows ?? fit.shown}
           onChange={(v) => onChange({ autoFit: false, maxRows: Math.max(1, v) } as never)}
         />
         <p className="text-[10px] leading-snug text-muted-foreground">
-          Em Manual, redimensionar a tabela muda só a altura das linhas, sem alterar a quantidade exibida.
+          {t.table.manualHint}
         </p>
-        <ToggleRow label="Linha ?Outros?" value={!!block.showOthers}
+        <ToggleRow label={t.table.showOthersRow} value={!!block.showOthers}
           onChange={handleShowOthers} />
-        <ToggleRow label="Nota no slide exportado" value={!!block.exportNote}
+        <ToggleRow label={t.table.exportNote} value={!!block.exportNote}
           onChange={(v) => onChange({ exportNote: v } as never)} />
         <p className="text-[10px] text-muted-foreground">
-          Mostrando {fit.shown} de {fit.total}
+          {t.table.showingOf(fit.shown, fit.total)}
         </p>
       </div>
     </div>
@@ -1584,7 +1587,7 @@ function SortableManualTableRow({ id, label }: { id: string; label: string }) {
       <button
         type="button"
         className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-secondary active:cursor-grabbing"
-        aria-label={`Reordenar ${label}`}
+        aria-label={t.table.reorderRow(label)}
         {...attributes}
         {...listeners}
       >
@@ -1616,26 +1619,26 @@ function TopSkuBlockEditor({ block, onChange }: {
       : [];
   return (
     <div className="space-y-2">
-      <Field label="Título" value={block.title ?? ""}
+      <Field label={t.topSku.title} value={block.title ?? ""}
         onChange={(v) => onChange({ title: v } as never)} />
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Ranquear por</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground">{t.topSku.rankBy}</Label>
           <Select value={block.dim}
             onValueChange={(v) => onChange({ dim: v as never } as never)}>
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="skuDesc">Descrição SKU</SelectItem>
-              <SelectItem value="sku">SKU</SelectItem>
-              <SelectItem value="cliente">Cliente</SelectItem>
-              <SelectItem value="marca">Marca</SelectItem>
-              <SelectItem value="categoria">Categoria</SelectItem>
-              <SelectItem value="canalAjustado">Canal Ajustado</SelectItem>
+              <SelectItem value="skuDesc">{t.topSku.rankByOptions.skuDesc}</SelectItem>
+              <SelectItem value="sku">{t.topSku.rankByOptions.sku}</SelectItem>
+              <SelectItem value="cliente">{t.topSku.rankByOptions.cliente}</SelectItem>
+              <SelectItem value="marca">{t.topSku.rankByOptions.marca}</SelectItem>
+              <SelectItem value="categoria">{t.topSku.rankByOptions.categoria}</SelectItem>
+              <SelectItem value="canalAjustado">{t.topSku.rankByOptions.canalAjustado}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">Medida</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground">{tc.metric}</Label>
           <Select value={block.measure}
             onValueChange={(v) => onChange({ measure: v as never } as never)}>
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -1647,7 +1650,7 @@ function TopSkuBlockEditor({ block, onChange }: {
                 return (
                   <SelectItem key={m.id} value={m.id} disabled={disabled}
                     title={disabled ? hint : undefined}>
-                    {m.label}{disabled ? " ? indisponível" : ""}
+                    {m.label}{disabled ? t.table.unavailableSuffix : ""}
                   </SelectItem>
                 );
               })}
@@ -1661,7 +1664,7 @@ function TopSkuBlockEditor({ block, onChange }: {
         </div>
       </div>
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Período</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{tc.period}</Label>
         <Select value={block.periodMode}
           onValueChange={(v) => {
             const nextMode = v as "all" | "month" | "fy";
@@ -1674,16 +1677,16 @@ function TopSkuBlockEditor({ block, onChange }: {
           }}>
           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="month">Mês</SelectItem>
-            <SelectItem value="fy">Ano fiscal</SelectItem>
+            <SelectItem value="all">{t.topSku.periodOptions.all}</SelectItem>
+            <SelectItem value="month">{t.topSku.periodOptions.month}</SelectItem>
+            <SelectItem value="fy">{t.topSku.periodOptions.fy}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       {block.periodMode !== "all" && (
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <Label className="text-[10px] uppercase text-muted-foreground">Valor do período</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.topSku.periodValue}</Label>
             <PeriodModeBadge mode={periodSelectionMode} />
           </div>
           {periodSelectionMode === "relative" ? (
@@ -1720,29 +1723,29 @@ function TopSkuBlockEditor({ block, onChange }: {
                   : block.relativePeriod,
               } as never)}
             >
-              {mode === "relative" ? "Relativo" : "Fixo"}
+              {mode === "relative" ? tc.relative : tc.fixed}
             </Button>
           ))}
         </div>
       )}
-      <Row label="Itens exibidos">
+      <Row label={t.topSku.itemsShown}>
         <Segmented
           value={block.autoFit === false ? "manual" : "auto"}
           onChange={(v) => onChange({ autoFit: v !== "manual" } as never)}
           options={[
-            { value: "auto", label: "Auto" },
-            { value: "manual", label: "Top N" },
+            { value: "auto", label: t.topSku.itemsShownOptions.auto },
+            { value: "manual", label: t.topSku.itemsShownOptions.manual },
           ]}
         />
       </Row>
-      <NumField label="Top N" value={block.topN}
+      <NumField label={tc.topN} value={block.topN}
         onChange={(v) => onChange({ autoFit: false, topN: Math.max(1, Math.min(50, v)) } as never)} />
       {block.autoFit !== false && (
         <p className="text-[10px] leading-snug text-muted-foreground">
-          Em Auto, a quantidade exibida se ajusta à altura do bloco. Mude para "Top N" para fixar exatamente {block.topN} itens.
+          {t.topSku.autoHint(block.topN)}
         </p>
       )}
-      <ToggleRow label="Mostrar % do total" value={block.showShare}
+      <ToggleRow label={t.topSku.showShare} value={block.showShare}
         onChange={(v) => onChange({ showShare: v } as never)} />
     </div>
   );
@@ -1828,7 +1831,7 @@ function TextTitleInspector({ block, onChange }: {
   const isTitle = block.kind === "title";
   return (
     <div className="space-y-2">
-      <Section title="Conteúdo" defaultOpen>
+      <Section title={t.textTitle.content} defaultOpen>
         <DraftTextarea
           rows={isTitle ? 2 : 4}
           value={block.text}
@@ -1837,8 +1840,8 @@ function TextTitleInspector({ block, onChange }: {
         />
       </Section>
 
-      <Section title="Tipografia" defaultOpen>
-        <Row label="Fonte">
+      <Section title={t.textTitle.typography} defaultOpen>
+        <Row label={t.textTitle.font}>
           <Select value={block.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY}
             onValueChange={(v) => onChange({ fontFamily: v })}>
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -1849,95 +1852,99 @@ function TextTitleInspector({ block, onChange }: {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Tamanho (px)">
+        <Row label={t.textTitle.sizePx}>
           <SliderWithInput value={block.size} min={8} max={200} unit="px"
             onChange={(v) => onChange({ size: v })} />
         </Row>
-        <Row label="Cor">
+        <Row label={t.textTitle.color}>
           <ColorField value={`#${block.color}`} onChange={(c) => onChange({ color: c.replace("#", "") })} />
         </Row>
-        <Row label="Alinhamento">
+        <Row label={t.textTitle.align}>
           <Segmented
             value={block.align}
             onChange={(v) => onChange({ align: v as "left" | "center" | "right" })}
-            options={[{ value: "left", label: "Esq" }, { value: "center", label: "Centro" }, { value: "right", label: "Dir" }]}
+            options={[
+              { value: "left", label: t.textTitle.alignOptions.left },
+              { value: "center", label: t.textTitle.alignOptions.center },
+              { value: "right", label: t.textTitle.alignOptions.right },
+            ]}
           />
         </Row>
         {isTitle && (
-          <ToggleField label="Negrito" value={(block as TitleBlock).bold}
+          <ToggleField label={t.textTitle.bold} value={(block as TitleBlock).bold}
             onChange={(v) => onChange({ bold: v } as Partial<TitleBlock>)} />
         )}
-        <ToggleField label="Itálico" value={block.italic ?? false}
+        <ToggleField label={t.textTitle.italic} value={block.italic ?? false}
           onChange={(v) => onChange({ italic: v })} />
-        <Row label="Transform">
+        <Row label={t.textTitle.transform}>
           <Segmented
             value={block.textTransform ?? "none"}
             onChange={(v) => onChange({ textTransform: v as TitleBlock["textTransform"] })}
             options={[
-              { value: "none", label: "Aa" },
-              { value: "uppercase", label: "AA" },
-              { value: "lowercase", label: "aa" },
-              { value: "capitalize", label: "Ab" },
+              { value: "none", label: t.textTitle.transformOptions.none },
+              { value: "uppercase", label: t.textTitle.transformOptions.uppercase },
+              { value: "lowercase", label: t.textTitle.transformOptions.lowercase },
+              { value: "capitalize", label: t.textTitle.transformOptions.capitalize },
             ]}
           />
         </Row>
-        <Row label="Espaç. letras">
+        <Row label={t.textTitle.letterSpacing}>
           <SliderWithInput value={block.letterSpacing ?? 0} min={-0.1} max={0.5} step={0.01} unit="em"
             onChange={(v) => onChange({ letterSpacing: v })} />
         </Row>
-        <Row label="Altura linha">
+        <Row label={t.textTitle.lineHeight}>
           <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="x"
             onChange={(v) => onChange({ lineHeight: v })} />
         </Row>
       </Section>
 
-      <Section title="Rotação" defaultOpen={false}>
-        <Row label="Girar">
+      <Section title={t.textTitle.rotationSection} defaultOpen={false}>
+        <Row label={t.textTitle.rotate}>
           <SliderWithInput value={block.rotation ?? 0} min={-180} max={180} unit="deg"
             onChange={(v) => onChange({ rotation: v })} />
         </Row>
         <Row label="">
           <button className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
-            onClick={() => onChange({ rotation: 0 })} title="Resetar rotação">
-            ? Zerar rotação
+            onClick={() => onChange({ rotation: 0 })} title={t.textTitle.resetRotationTitle}>
+            {t.textTitle.resetRotation}
           </button>
         </Row>
       </Section>
 
-      <Section title="Aparência" defaultOpen={false}>
-        <Row label="Sombra texto">
+      <Section title={t.textTitle.appearance} defaultOpen={false}>
+        <Row label={t.textTitle.textShadow}>
           <DraftInput className="h-7 text-xs" placeholder="2px 2px 4px #000000"
             value={block.textShadow ?? ""}
             onCommit={(value) => onChange({ textShadow: value })} />
         </Row>
-        <Row label="Padding (px)">
+        <Row label={t.textTitle.padding}>
           <SliderWithInput value={block.padding ?? 0} min={0} max={60} unit="px"
             onChange={(v) => onChange({ padding: v })} />
         </Row>
-        <Row label="Fundo (hex)">
+        <Row label={t.textTitle.backgroundHex}>
           <DraftInput className="h-7 text-xs" placeholder="transparent"
             value={block.backgroundColor ?? ""}
             normalize={(value) => value.replace("#", "").toUpperCase()}
             onCommit={(value) => onChange({ backgroundColor: value || undefined })} />
         </Row>
-        <Row label="Borda arred.">
+        <Row label={t.textTitle.borderRadius}>
           <SliderWithInput value={block.borderRadius ?? 0} min={0} max={40} unit="px"
             onChange={(v) => onChange({ borderRadius: v })} />
         </Row>
       </Section>
 
-      <Section title="Animação" defaultOpen={false}>
-        <Row label="Entrada">
+      <Section title={t.textTitle.animation} defaultOpen={false}>
+        <Row label={t.textTitle.entrance}>
           <Select
             value={(block as { enterAnimation?: string }).enterAnimation ?? "none"}
             onValueChange={(v) => onChange({ enterAnimation: v } as never)}
           >
             <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Nenhuma</SelectItem>
-              <SelectItem value="fade">Fade</SelectItem>
-              <SelectItem value="slide-up">Subir</SelectItem>
-              <SelectItem value="pop">Pop</SelectItem>
+              <SelectItem value="none">{t.textTitle.entranceOptions.none}</SelectItem>
+              <SelectItem value="fade">{t.textTitle.entranceOptions.fade}</SelectItem>
+              <SelectItem value="slide-up">{t.textTitle.entranceOptions.slideUp}</SelectItem>
+              <SelectItem value="pop">{t.textTitle.entranceOptions.pop}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
@@ -1968,7 +1975,7 @@ function DreSourcePicker({ block, onChange }: {
     <div className="rounded-md border border-border/60 bg-secondary/30 p-2">
       <div className="mb-1.5 flex items-center justify-between">
         <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
-          Fonte de Dados
+          {tc.dataSource}
         </Label>
         <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
           {dsBadgeLabel}
@@ -2004,8 +2011,8 @@ function DreBlockInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <DreSourcePicker block={block} onChange={onChange} />
-      <Section title="Períodos" defaultOpen>
-        <Row label="Modo">
+      <Section title={t.dre.periodsSection} defaultOpen>
+        <Row label={tc.mode}>
           <Segmented
             value={block.periodMode}
             onChange={(v) => onChange({
@@ -2013,10 +2020,13 @@ function DreBlockInspector({ block, onChange }: {
               periodos: null,
               periodosRelativePeriod: v === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
             })}
-            options={[{ value: "month", label: "Mês" }, { value: "fy", label: "Ano" }]}
+            options={[
+              { value: "month", label: t.dre.periodModeOptions.month },
+              { value: "fy", label: t.dre.periodModeOptions.fy },
+            ]}
           />
         </Row>
-        <Row label="Tipo">
+        <Row label={t.dre.typeLabel}>
           <div className="flex items-center gap-1">
             <Segmented
               value={periodosSelectionMode}
@@ -2027,12 +2037,15 @@ function DreBlockInspector({ block, onChange }: {
                   ? block.periodosRelativePeriod ?? defaultRelativePresetForMode(block.periodMode)
                   : block.periodosRelativePeriod,
               })}
-              options={[{ value: "relative", label: "Relativo" }, { value: "fixed", label: "Fixo" }]}
+              options={[
+                { value: "relative", label: t.dre.typeOptions.relative },
+                { value: "fixed", label: t.dre.typeOptions.fixed },
+              ]}
             />
             <PeriodModeBadge mode={periodosSelectionMode} />
           </div>
         </Row>
-        <Row label="Períodos">
+        <Row label={tc.periods}>
           {periodosSelectionMode === "relative" ? (
             <RelativePresetSelect
               mode={block.periodMode}
@@ -2044,13 +2057,13 @@ function DreBlockInspector({ block, onChange }: {
               options={allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
               selected={block.periodos ?? []}
               onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
-              placeholder="Últimos 6 meses"
+              placeholder={t.dre.periodsPlaceholder}
             />
           )}
         </Row>
       </Section>
 
-      <Section title="Linhas exibidas" defaultOpen>
+      <Section title={t.dre.linesSection} defaultOpen>
         <div className="space-y-0.5">
           {DRE_LINES.map((line) => (
             <div key={line.id} className="flex items-center justify-between py-0.5">
@@ -2073,47 +2086,47 @@ function DreBlockInspector({ block, onChange }: {
             className="mt-1 text-[10px] text-primary hover:underline"
             onClick={() => onChange({ linhas: null })}
           >
-            Mostrar todas
+            {t.dre.showAll}
           </button>
         </div>
       </Section>
 
-      <Section title="Aparência" defaultOpen>
-        <Row label="Fonte (px)">
+      <Section title={t.dre.appearance} defaultOpen>
+        <Row label={t.dre.fontPx}>
           <NumberStepper value={block.fontSize} min={8} max={18}
             onChange={(v) => onChange({ fontSize: v })} />
         </Row>
-        <Row label="Cor header">
+        <Row label={t.dre.headerColor}>
           <ColorField value={block.headerColor}
             onChange={(c) => onChange({ headerColor: c })} />
         </Row>
-        <Row label="Cor texto">
+        <Row label={t.dre.textColor}>
           <ColorField value={block.textColor}
             onChange={(c) => onChange({ textColor: c })} />
         </Row>
-        <ToggleField label="Mostrar Budget" value={block.showBudget}
+        <ToggleField label={t.dre.showBudget} value={block.showBudget}
           onChange={(v) => onChange({ showBudget: v })} />
         <ToggleField
-          label="Mostrar variação (último vs penúltimo)"
+          label={t.dre.showVariation}
           value={block.showVariacao ?? false}
           onChange={(v) => onChange({ showVariacao: v })}
         />
         {(block.showVariacao ?? false) && (
-          <Row label="Tipo de variação">
+          <Row label={t.dre.variationType}>
             <Segmented
               value={block.variacaoTipo ?? "percentual"}
               onChange={(v) => onChange({ variacaoTipo: v as "absoluta" | "percentual" | "ambas" })}
               options={[
-                { value: "percentual", label: "%" },
-                { value: "absoluta", label: "Î”" },
-                { value: "ambas", label: "Ambas" },
+                { value: "percentual", label: t.dre.variationOptions.percentual },
+                { value: "absoluta", label: t.dre.variationOptions.absoluta },
+                { value: "ambas", label: t.dre.variationOptions.ambas },
               ]}
             />
           </Row>
         )}
       </Section>
 
-      <Section title="Formatação Condicional" defaultOpen={false}>
+      <Section title={t.dre.conditionalFormat} defaultOpen={false}>
         {(() => {
           const cf = block.conditionalFormat ?? {
             enabled: false, scope: "row" as const, colorMin: SLIDE_HEX.danger,
@@ -2124,29 +2137,35 @@ function DreBlockInspector({ block, onChange }: {
             onChange({ conditionalFormat: { ...cf, ...patch } });
           return (
             <>
-              <ToggleField label="Ativar" value={cf.enabled}
+              <ToggleField label={t.dre.enable} value={cf.enabled}
                 onChange={(v) => upd({ enabled: v })} />
               {cf.enabled && (
                 <>
-                  <Row label="Escopo">
+                  <Row label={t.dre.scope}>
                     <Segmented value={cf.scope} onChange={(v) => upd({ scope: v as "row" | "table" })}
-                      options={[{ value: "row", label: "Linha" }, { value: "table", label: "Tabela" }]} />
+                      options={[
+                        { value: "row", label: t.dre.scopeOptions.row },
+                        { value: "table", label: t.dre.scopeOptions.table },
+                      ]} />
                   </Row>
-                  <Row label="Aplicar em">
+                  <Row label={t.dre.applyTo}>
                     <Segmented value={cf.applyTo} onChange={(v) => upd({ applyTo: v as "cell" | "text" })}
-                      options={[{ value: "cell", label: "Fundo" }, { value: "text", label: "Texto" }]} />
+                      options={[
+                        { value: "cell", label: t.dre.applyToOptions.cell },
+                        { value: "text", label: t.dre.applyToOptions.text },
+                      ]} />
                   </Row>
-                  <Row label="Cor mín">
+                  <Row label={t.dre.colorMin}>
                     <ColorField value={cf.colorMin} onChange={(c) => upd({ colorMin: c })} />
                   </Row>
-                  <Row label="Cor meio">
+                  <Row label={t.dre.colorMid}>
                     <ColorField value={cf.colorMid} onChange={(c) => upd({ colorMid: c })} />
                   </Row>
-                  <Row label="Cor máx">
+                  <Row label={t.dre.colorMax}>
                     <ColorField value={cf.colorMax} onChange={(c) => upd({ colorMax: c })} />
                   </Row>
                   <div className="space-y-0.5">
-                    <span className="text-[10px] uppercase text-muted-foreground">Linhas ativas</span>
+                    <span className="text-[10px] uppercase text-muted-foreground">{t.dre.activeLines}</span>
                     {DRE_LINES.map((line) => (
                       <div key={line.id} className="flex items-center justify-between py-0.5">
                         <span className="text-[11px] text-muted-foreground">{line.label}</span>
@@ -2172,26 +2191,26 @@ function DreBlockInspector({ block, onChange }: {
 }
 
 const OMNI_METRIC_OPTIONS: { value: OmniMetric; label: string }[] = [
-  { value: "cm", label: "Contrib. Marginal" },
-  { value: "mb", label: "Margem Bruta" },
-  { value: "rol", label: "ROL" },
-  { value: "volume", label: "Volume (Kg)" },
-  { value: "margemPct", label: "Margem %" },
+  { value: "cm", label: t.omni.metricOptions.cm },
+  { value: "mb", label: t.omni.metricOptions.mb },
+  { value: "rol", label: t.omni.metricOptions.rol },
+  { value: "volume", label: t.omni.metricOptions.volume },
+  { value: "margemPct", label: t.omni.metricOptions.margemPct },
 ];
 
 const OMNI_DIM_OPTIONS: { value: OmniDim; label: string }[] = [
-  { value: "skuDesc", label: "SKU" },
-  { value: "marca", label: "Marca" },
-  { value: "categoria", label: "Categoria" },
-  { value: "canalAjustado", label: "Canal" },
-  { value: "cliente", label: "Cliente" },
-  { value: "sku", label: "SKU (código)" },
+  { value: "skuDesc", label: t.omni.dimOptions.skuDesc },
+  { value: "marca", label: t.omni.dimOptions.marca },
+  { value: "categoria", label: t.omni.dimOptions.categoria },
+  { value: "canalAjustado", label: t.omni.dimOptions.canalAjustado },
+  { value: "cliente", label: t.omni.dimOptions.cliente },
+  { value: "sku", label: t.omni.dimOptions.sku },
 ];
 
 const OMNI_SORTBY_OPTIONS: { value: OmniAbcSortBy; label: string }[] = [
-  { value: "margem", label: "CM Absoluto" },
-  { value: "margemPct", label: "CM %" },
-  { value: "volume", label: "Volume" },
+  { value: "margem", label: t.omni.sortByOptions.margem },
+  { value: "margemPct", label: t.omni.sortByOptions.margemPct },
+  { value: "volume", label: t.omni.sortByOptions.volume },
 ];
 
 function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
@@ -2201,12 +2220,12 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
   onChange: (patch: { showTitle?: boolean; title?: string }) => void;
 }) {
   return (
-    <Section label="Título">
-      <Row label="Mostrar">
+    <Section label={t.omni.titleSectionLabel}>
+      <Row label={tc.show}>
         <ToggleField value={showTitle} onChange={(v) => onChange({ showTitle: v })} label="" />
       </Row>
       {showTitle && (
-        <Row label="Texto">
+        <Row label={tc.text}>
           <DraftInput
             className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs"
             value={title ?? ""}
@@ -2230,24 +2249,25 @@ function OmniFiltersSection({ block, onChange }: {
     { value: "", label: placeholder },
     ...unique(field).map((v) => ({ value: v, label: v })),
   ];
+  const f = t.omni.filterFields;
 
   return (
-    <Section label="Filtros">
-      <Row label="Períodos">
+    <Section label={t.omni.filters}>
+      <Row label={f.periods}>
         <MultiSelectFilter
           selected={block.periodos ?? []}
           options={unique("periodo").map((v) => ({ value: v, label: v }))}
           onChange={(v) => onChange({ periodos: v.length ? v : null })}
-          placeholder="Todos"
+          placeholder={f.periodsAll}
         />
       </Row>
-      <Row label="Canal"><SelectField value={block.canalAjustado ?? ""} options={dimOpt("canalAjustado", "Todos")} onChange={(v) => onChange({ canalAjustado: v || null })} /></Row>
-      <Row label="Categoria"><SelectField value={block.categoria ?? ""} options={dimOpt("categoria", "Todas")} onChange={(v) => onChange({ categoria: v || null })} /></Row>
-      <Row label="Subcategoria"><SelectField value={block.subcategoria ?? ""} options={dimOpt("subcategoria", "Todas")} onChange={(v) => onChange({ subcategoria: v || null })} /></Row>
-      <Row label="Marca"><SelectField value={block.marca ?? ""} options={dimOpt("marca", "Todas")} onChange={(v) => onChange({ marca: v || null })} /></Row>
-      <Row label="Formato"><SelectField value={block.formato ?? ""} options={dimOpt("formato", "Todos")} onChange={(v) => onChange({ formato: v || null })} /></Row>
-      <Row label="Regional"><SelectField value={block.regional ?? ""} options={dimOpt("regional", "Todas")} onChange={(v) => onChange({ regional: v || null })} /></Row>
-      <Row label="UF"><SelectField value={block.uf ?? ""} options={dimOpt("uf", "Todas")} onChange={(v) => onChange({ uf: v || null })} /></Row>
+      <Row label={f.canal}><SelectField value={block.canalAjustado ?? ""} options={dimOpt("canalAjustado", f.canalAll)} onChange={(v) => onChange({ canalAjustado: v || null })} /></Row>
+      <Row label={f.categoria}><SelectField value={block.categoria ?? ""} options={dimOpt("categoria", f.categoriaAll)} onChange={(v) => onChange({ categoria: v || null })} /></Row>
+      <Row label={f.subcategoria}><SelectField value={block.subcategoria ?? ""} options={dimOpt("subcategoria", f.subcategoriaAll)} onChange={(v) => onChange({ subcategoria: v || null })} /></Row>
+      <Row label={f.marca}><SelectField value={block.marca ?? ""} options={dimOpt("marca", f.marcaAll)} onChange={(v) => onChange({ marca: v || null })} /></Row>
+      <Row label={f.formato}><SelectField value={block.formato ?? ""} options={dimOpt("formato", f.formatoAll)} onChange={(v) => onChange({ formato: v || null })} /></Row>
+      <Row label={f.regional}><SelectField value={block.regional ?? ""} options={dimOpt("regional", f.regionalAll)} onChange={(v) => onChange({ regional: v || null })} /></Row>
+      <Row label={f.uf}><SelectField value={block.uf ?? ""} options={dimOpt("uf", f.ufAll)} onChange={(v) => onChange({ uf: v || null })} /></Row>
     </Section>
   );
 }
@@ -2260,8 +2280,8 @@ function OmniMetricInspector({ block, onChange, label }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+      <Section label={t.omni.data}>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange} />
     </div>
@@ -2274,11 +2294,15 @@ function OmniEvolucaoInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Evolução Mensal" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
-        <Row label="Tipo"><SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as "line" | "bar" | "area" })} options={[{ value: "line", label: "Linha" }, { value: "bar", label: "Barra" }, { value: "area", label: "Área" }]} /></Row>
-        <Row label="Legenda"><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.evolucaoMensal} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+        <Row label={t.omni.evolucao.chartType}><SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as "line" | "bar" | "area" })} options={[
+          { value: "line", label: t.omni.evolucao.chartTypeOptions.line },
+          { value: "bar", label: t.omni.evolucao.chartTypeOptions.bar },
+          { value: "area", label: t.omni.evolucao.chartTypeOptions.area },
+        ]} /></Row>
+        <Row label={t.omni.evolucao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2289,16 +2313,20 @@ function OmniHeroisInspector({ block, onChange }: {
   block: OmniHeroisOfensoresBlock | OmniAbcBarsBlock;
   onChange: (p: Partial<OmniHeroisOfensoresBlock & OmniAbcBarsBlock>) => void;
 }) {
-  const label = block.kind === "omni_herois_ofensores" ? "Heróis/Ofensores" : "Barras ABC";
+  const label = block.kind === "omni_herois_ofensores" ? t.omni.defaultTitles.heroisOfensores : t.omni.defaultTitles.abcBars;
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Dimensão"><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
-        <Row label="Ordenar por"><SelectField value={block.sortBy} onChange={(v) => onChange({ sortBy: v as OmniAbcSortBy })} options={OMNI_SORTBY_OPTIONS} /></Row>
-        <Row label="Exibir"><SelectField value={block.variant} onChange={(v) => onChange({ variant: v as OmniHeroesVariant })} options={[{ value: "both", label: "Ambos" }, { value: "hero", label: "Apenas Heróis" }, { value: "villain", label: "Apenas Ofensores" }]} /></Row>
-        <Row label="Top N"><NumberStepper value={block.topN} min={3} max={20} step={1} onChange={(v) => onChange({ topN: v })} /></Row>
+      <Section label={t.omni.data}>
+        <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+        <Row label={t.omni.heroisOfensores.sortBy}><SelectField value={block.sortBy} onChange={(v) => onChange({ sortBy: v as OmniAbcSortBy })} options={OMNI_SORTBY_OPTIONS} /></Row>
+        <Row label={t.omni.heroisOfensores.variant}><SelectField value={block.variant} onChange={(v) => onChange({ variant: v as OmniHeroesVariant })} options={[
+          { value: "both", label: t.omni.heroisOfensores.variantOptions.both },
+          { value: "hero", label: t.omni.heroisOfensores.variantOptions.hero },
+          { value: "villain", label: t.omni.heroisOfensores.variantOptions.villain },
+        ]} /></Row>
+        <Row label={t.omni.heroisOfensores.topN}><NumberStepper value={block.topN} min={3} max={20} step={1} onChange={(v) => onChange({ topN: v })} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2311,10 +2339,10 @@ function OmniCanalTrendInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Tendência Canal" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
-        <Row label="Legenda"><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.canalTrend} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+        <Row label={t.omni.custo.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2325,13 +2353,17 @@ function OmniCustoInspector({ block, onChange }: {
   block: OmniCustoEvolucaoBlock | OmniCustoComposicaoBlock;
   onChange: (p: Partial<OmniCustoEvolucaoBlock & OmniCustoComposicaoBlock>) => void;
 }) {
-  const label = block.kind === "omni_custo_evolucao" ? "Evolução de Custos" : "Composição de Custos";
+  const label = block.kind === "omni_custo_evolucao" ? t.omni.defaultTitles.custoEvolucao : t.omni.defaultTitles.custoComposicao;
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Visão"><SelectField value={block.viewMode} onChange={(v) => onChange({ viewMode: v as "pct" | "abs" | "kg" })} options={[{ value: "pct", label: "% do ROL" }, { value: "abs", label: "Absoluto" }, ...(block.kind === "omni_custo_evolucao" ? [{ value: "kg" as const, label: "Por Kg" }] : [])]} /></Row>
-        <Row label="Legenda"><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
+      <Section label={t.omni.data}>
+        <Row label={t.omni.custo.view}><SelectField value={block.viewMode} onChange={(v) => onChange({ viewMode: v as "pct" | "abs" | "kg" })} options={[
+          { value: "pct", label: t.omni.custo.viewOptions.pct },
+          { value: "abs", label: t.omni.custo.viewOptions.abs },
+          ...(block.kind === "omni_custo_evolucao" ? [{ value: "kg" as const, label: t.omni.custo.viewOptions.kg }] : []),
+        ]} /></Row>
+        <Row label={t.omni.custo.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2344,11 +2376,11 @@ function OmniCustoPressaoInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Pressão de Custo sobre Receita" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Custo Variável"><ToggleField value={block.showCustoVariavel} onChange={(v) => onChange({ showCustoVariavel: v })} label="" /></Row>
-        <Row label="Custo Fixo"><ToggleField value={block.showCustoFixo} onChange={(v) => onChange({ showCustoFixo: v })} label="" /></Row>
-        <Row label="Legenda"><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.custoPressao} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={t.omni.custoPressao.custoVariavel}><ToggleField value={block.showCustoVariavel} onChange={(v) => onChange({ showCustoVariavel: v })} label="" /></Row>
+        <Row label={t.omni.custoPressao.custoFixo}><ToggleField value={block.showCustoFixo} onChange={(v) => onChange({ showCustoFixo: v })} label="" /></Row>
+        <Row label={t.omni.custoPressao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2361,12 +2393,23 @@ function OmniPositivacaoInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Positivação" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Dimensão"><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniPositivacaoBlock["dim"] })} options={[{ value: "categoria", label: "Categoria" }, { value: "marca", label: "Marca" }, { value: "canalAjustado", label: "Canal" }, { value: "gestorResp", label: "Gestor Resp." }, { value: "sku", label: "SKU" }, { value: "skuDesc", label: "SKU Desc." }]} /></Row>
-        <Row label="Tipo"><SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as OmniPositivacaoBlock["chartType"] })} options={[{ value: "line", label: "Linha" }, { value: "bar", label: "Barra" }, { value: "area", label: "Área" }]} /></Row>
-        <Row label="Top N"><NumberStepper value={block.topN ?? 8} min={3} max={12} step={1} onChange={(v) => onChange({ topN: v })} /></Row>
-        <Row label="Legenda"><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.positivacao} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniPositivacaoBlock["dim"] })} options={[
+          { value: "categoria", label: t.omni.positivacao.dimOptions.categoria },
+          { value: "marca", label: t.omni.positivacao.dimOptions.marca },
+          { value: "canalAjustado", label: t.omni.positivacao.dimOptions.canalAjustado },
+          { value: "gestorResp", label: t.omni.positivacao.dimOptions.gestorResp },
+          { value: "sku", label: t.omni.positivacao.dimOptions.sku },
+          { value: "skuDesc", label: t.omni.positivacao.dimOptions.skuDesc },
+        ]} /></Row>
+        <Row label={t.omni.positivacao.chartType}><SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as OmniPositivacaoBlock["chartType"] })} options={[
+          { value: "line", label: t.omni.positivacao.chartTypeOptions.line },
+          { value: "bar", label: t.omni.positivacao.chartTypeOptions.bar },
+          { value: "area", label: t.omni.positivacao.chartTypeOptions.area },
+        ]} /></Row>
+        <Row label={t.omni.positivacao.topN}><NumberStepper value={block.topN ?? 8} min={3} max={12} step={1} onChange={(v) => onChange({ topN: v })} /></Row>
+        <Row label={t.omni.positivacao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2379,10 +2422,14 @@ function OmniUfMapInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Mapa por UF" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
-        <Row label="Rótulo"><SelectField value={block.labelMode} onChange={(v) => onChange({ labelMode: v as OmniUfMapBlock["labelMode"] })} options={[{ value: "uf", label: "UF" }, { value: "value", label: "Valor" }, { value: "both", label: "UF + valor" }]} /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.ufMap} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+        <Row label={t.omni.ufMap.labelMode}><SelectField value={block.labelMode} onChange={(v) => onChange({ labelMode: v as OmniUfMapBlock["labelMode"] })} options={[
+          { value: "uf", label: t.omni.ufMap.labelModeOptions.uf },
+          { value: "value", label: t.omni.ufMap.labelModeOptions.value },
+          { value: "both", label: t.omni.ufMap.labelModeOptions.both },
+        ]} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2398,14 +2445,17 @@ function OmniPriceDecompInspector({ block, onChange }: {
   const opts = block.periodMode === "fy" ? fyList.map((f) => ({ value: f, label: f })) : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Decomposição de Preço" onChange={onChange} />
-      <Section label="Períodos">
-        <Row label="Modo"><SelectField value={block.periodMode} onChange={(v) => {
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.priceDecomp} onChange={onChange} />
+      <Section label={t.omni.priceDecompBridge.periodsSection}>
+        <Row label={tc.mode}><SelectField value={block.periodMode} onChange={(v) => {
           const nextMode = v as "fy" | "month";
           onChange({ periodMode: nextMode, base: null, comp: null, baseSelectionMode: block.baseSelectionMode ?? "relative", baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2", compSelectionMode: block.compSelectionMode ?? "relative", compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1" });
-        }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }]} /></Row>
-        <Row label="Base"><ComparePeriodField label="Base" mode={block.periodMode} fixedValue={block.base} selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts} onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} /></Row>
-        <Row label="Comp."><ComparePeriodField label="Comparação" mode={block.periodMode} fixedValue={block.comp} selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts} onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} /></Row>
+        }} options={[
+          { value: "month", label: t.omni.priceDecompBridge.modeOptions.month },
+          { value: "fy", label: t.omni.priceDecompBridge.modeOptions.fy },
+        ]} /></Row>
+        <Row label={tc.base}><ComparePeriodField label={tc.base} mode={block.periodMode} fixedValue={block.base} selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts} onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} /></Row>
+        <Row label={t.omni.priceDecompBridge.comparisonLabel}><ComparePeriodField label={tc.comparison} mode={block.periodMode} fixedValue={block.comp} selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts} onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2421,18 +2471,22 @@ function OmniBridgePvmInspector({ block, onChange }: {
   const opts = block.periodMode === "fy" ? fyList.map((f) => ({ value: f, label: f })) : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Bridge PVM" onChange={onChange} />
-      <Section label="Períodos">
-        <Row label="Modo"><SelectField value={block.periodMode} onChange={(v) => {
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.bridgePvm} onChange={onChange} />
+      <Section label={t.omni.priceDecompBridge.periodsSection}>
+        <Row label={tc.mode}><SelectField value={block.periodMode} onChange={(v) => {
           const nextMode = v as "fy" | "month" | "ytd_budget";
           onChange({ periodMode: nextMode, base: null, comp: null, baseSelectionMode: block.baseSelectionMode ?? "relative", baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2", compSelectionMode: block.compSelectionMode ?? "relative", compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1" });
-        }} options={[{ value: "month", label: "Mensal" }, { value: "fy", label: "Anual (FY)" }, { value: "ytd_budget", label: "YTD Real vs Budget" }]} /></Row>
+        }} options={[
+          { value: "month", label: t.omni.priceDecompBridge.modeOptions.month },
+          { value: "fy", label: t.omni.priceDecompBridge.modeOptions.fy },
+          { value: "ytd_budget", label: t.omni.priceDecompBridge.ytdBudgetOption },
+        ]} /></Row>
         {block.periodMode === "ytd_budget" ? (
-          <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">Real acumulado do FY atual contra o Budget dos mesmos meses realizados.</div>
+          <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">{t.omni.priceDecompBridge.ytdBudgetHint}</div>
         ) : (
           <>
-            <Row label="Base"><ComparePeriodField label="Base" mode={block.periodMode} fixedValue={block.base} selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts} onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} /></Row>
-            <Row label="Comp."><ComparePeriodField label="Comparação" mode={block.periodMode} fixedValue={block.comp} selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts} onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} /></Row>
+            <Row label={tc.base}><ComparePeriodField label={tc.base} mode={block.periodMode} fixedValue={block.base} selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts} onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} /></Row>
+            <Row label={t.omni.priceDecompBridge.comparisonLabel}><ComparePeriodField label={tc.comparison} mode={block.periodMode} fixedValue={block.comp} selectionMode={block.compSelectionMode} relativeValue={block.compRelativePeriod} options={opts} onChange={(p) => onChange({ comp: p.value, compSelectionMode: p.selectionMode, compRelativePeriod: p.relativePeriod })} /></Row>
           </>
         )}
       </Section>
@@ -2480,18 +2534,25 @@ function OmniFarolInspector({ block, onChange }: {
   const skuOptions = useMemo(() => buildFarolSkuOptions(rows), [rows]);
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Farol de Positivação" onChange={onChange} />
-      <Section label="Comparação">
-        <Row label="SKU base"><FarolSkuField id={`farol-sku-ref-${block.id}`} value={block.skuRef ?? null} options={skuOptions} onChange={(skuRef) => onChange({ skuRef })} /></Row>
-        <Row label="SKU comparado"><FarolSkuField id={`farol-sku-comp-${block.id}`} value={block.skuComp ?? null} options={skuOptions} onChange={(skuComp) => onChange({ skuComp })} /></Row>
-        <Row label="Janela"><SelectField value={String(block.periodoMeses ?? 3)} options={[{ value: "3", label: "Últimos 3 meses" }, { value: "6", label: "Últimos 6 meses" }, { value: "12", label: "Últimos 12 meses" }]} onChange={(v) => onChange({ periodoMeses: Number(v) || 3 })} /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.farol} onChange={onChange} />
+      <Section label={t.omni.farol.comparisonSection}>
+        <Row label={t.omni.farol.baseSku}><FarolSkuField id={`farol-sku-ref-${block.id}`} value={block.skuRef ?? null} options={skuOptions} onChange={(skuRef) => onChange({ skuRef })} /></Row>
+        <Row label={t.omni.farol.comparedSku}><FarolSkuField id={`farol-sku-comp-${block.id}`} value={block.skuComp ?? null} options={skuOptions} onChange={(skuComp) => onChange({ skuComp })} /></Row>
+        <Row label={t.omni.farol.window}><SelectField value={String(block.periodoMeses ?? 3)} options={[
+          { value: "3", label: t.omni.farol.windowOptions.m3 },
+          { value: "6", label: t.omni.farol.windowOptions.m6 },
+          { value: "12", label: t.omni.farol.windowOptions.m12 },
+        ]} onChange={(v) => onChange({ periodoMeses: Number(v) || 3 })} /></Row>
       </Section>
-      <Section label="Exibição">
-        <Row label="Gauge"><ToggleField value={block.showGauge} onChange={(v) => onChange({ showGauge: v })} label="" /></Row>
-        <Row label="Legenda"><ToggleField value={block.showCaption ?? true} onChange={(v) => onChange({ showCaption: v })} label="" /></Row>
-        <Row label="Números"><ToggleField value={block.showStats ?? true} onChange={(v) => onChange({ showStats: v })} label="" /></Row>
-        <Row label="Tema"><Segmented value={block.gaugeTheme ?? "dark"} onChange={(v) => onChange({ gaugeTheme: v as "dark" | "light" })} options={[{ value: "dark", label: "Escuro" }, { value: "light", label: "Claro" }]} /></Row>
-        <Row label="Tamanho"><Slider value={block.gaugeScale ?? 55} min={40} max={75} step={5} onChange={(v) => onChange({ gaugeScale: v })} suffix="%" /></Row>
+      <Section label={t.omni.farol.displaySection}>
+        <Row label={t.omni.farol.gauge}><ToggleField value={block.showGauge} onChange={(v) => onChange({ showGauge: v })} label="" /></Row>
+        <Row label={t.omni.farol.legend}><ToggleField value={block.showCaption ?? true} onChange={(v) => onChange({ showCaption: v })} label="" /></Row>
+        <Row label={t.omni.farol.numbers}><ToggleField value={block.showStats ?? true} onChange={(v) => onChange({ showStats: v })} label="" /></Row>
+        <Row label={t.omni.farol.theme}><Segmented value={block.gaugeTheme ?? "dark"} onChange={(v) => onChange({ gaugeTheme: v as "dark" | "light" })} options={[
+          { value: "dark", label: t.omni.farol.themeOptions.dark },
+          { value: "light", label: t.omni.farol.themeOptions.light },
+        ]} /></Row>
+        <Row label={t.omni.farol.size}><Slider value={block.gaugeScale ?? 55} min={40} max={75} step={5} onChange={(v) => onChange({ gaugeScale: v })} suffix="%" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2504,10 +2565,10 @@ function OmniAbcCurvaInspector({ block, onChange }: {
 }) {
   return (
     <div className="space-y-2">
-      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle="Curva ABC" onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Dimensão"><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
-        <Row label="Tabela"><ToggleField value={block.showTable} onChange={(v) => onChange({ showTable: v })} label="" /></Row>
+      <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.abcCurva} onChange={onChange} />
+      <Section label={t.omni.data}>
+        <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
+        <Row label={t.omni.abcCurva.table}><ToggleField value={block.showTable} onChange={(v) => onChange({ showTable: v })} label="" /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2522,9 +2583,9 @@ function OmniDimMetricInspector({ block, onChange, label }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label="Dados">
-        <Row label="Dimensão"><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
-        <Row label="Métrica"><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
+      <Section label={t.omni.data}>
+        <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
+        <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
@@ -2557,14 +2618,13 @@ function TruncationAlert({ blockId, fit, unitPlural }: {
     <Alert className="relative border-amber-300 bg-amber-50 py-2 pr-7 dark:bg-amber-950/30">
       <Info className="h-3.5 w-3.5 text-amber-600" />
       <AlertDescription className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
-        Mostrando {fit.shown} de {fit.total} {unitPlural} ? aumente a altura do bloco para ver mais
-        {" ou ative ?Linha Outros? para agregar o restante."}
+        {t.truncationAlert.message(fit.shown, fit.total, unitPlural)}
       </AlertDescription>
       <button
         onClick={() => { dismissedTruncations.set(blockId, key); force((n) => n + 1); }}
         className="absolute right-1 top-1 rounded p-0.5 hover:bg-amber-100"
-        aria-label="Fechar"
-        title="Fechar aviso"
+        aria-label={t.truncationAlert.close}
+        title={t.truncationAlert.closeTitle}
       >
         <X className="h-3 w-3 text-amber-700" />
       </button>
@@ -2611,8 +2671,8 @@ export function PaletteButton({
       {onToggleFavorite && (
         <button
           type="button"
-          title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-          aria-label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+          title={favorite ? t.paletteButton.removeFavorite : t.paletteButton.addFavorite}
+          aria-label={favorite ? t.paletteButton.removeFavorite : t.paletteButton.addFavorite}
           onClick={(e) => {
             e.stopPropagation();
             onToggleFavorite();
@@ -2718,16 +2778,16 @@ export function ClearFiltersToolbar() {
   const { filters, clearAll } = useSlideFilters();
   if (filters.length === 0) return null;
   const summary = filters
-    .map((f) => `${dimensionLabel(f.dimension)}: ${f.values.join(", ")}`)
+    .map((f) => t.clearFiltersToolbar.summary(dimensionLabel(f.dimension), f.values.join(", ")))
     .join(" · ");
   return (
     <div className="flex shrink-0 items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5">
       <FunnelIcon className="h-3.5 w-3.5 text-primary" />
       <span className="flex-1 truncate text-[11px] text-foreground/90" title={summary}>
-        Filtros cruzados ativos · {summary}
+        {t.clearFiltersToolbar.activeFilters(summary)}
       </span>
       <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={clearAll}>
-        Limpar filtros ({filters.length})
+        {t.clearFiltersToolbar.clear(filters.length)}
       </Button>
     </div>
   );
@@ -2770,21 +2830,21 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <Badge variant="secondary" className="text-[10px]">
-          Multi-seleção ({blocks.length} blocos)
+          {t.multiSelect.title(blocks.length)}
         </Badge>
         <div className="flex gap-1">
           <Button size="icon" variant="ghost" className="h-7 w-7"
             disabled={readOnly}
             onClick={onDuplicate}
-            title="Duplicar todos (Ctrl+D)"
-            aria-label="Duplicar blocos selecionados">
+            title={t.multiSelect.duplicateAll}
+            aria-label={t.multiSelect.duplicateAllAria}>
             <CopyIcon className="h-3.5 w-3.5" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7 hover:text-destructive"
             disabled={readOnly}
             onClick={onDelete}
-            title="Excluir todos (Del)"
-            aria-label="Excluir blocos selecionados">
+            title={t.multiSelect.deleteAll}
+            aria-label={t.multiSelect.deleteAllAria}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -2793,41 +2853,41 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
       <Separator />
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Alinhamento</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.multiSelect.alignment}</Label>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          <Button size="icon" variant="outline" className="h-8" title="Esquerda" aria-label="Alinhar à esquerda" onClick={() => align("left")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignLeft} aria-label={t.multiSelect.alignLeftAria} onClick={() => align("left")}>
             <AlignStartVertical className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Centro horizontal" aria-label="Centralizar horizontalmente" onClick={() => align("centerH")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignCenterH} aria-label={t.multiSelect.alignCenterHAria} onClick={() => align("centerH")}>
             <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Direita" aria-label="Alinhar à direita" onClick={() => align("right")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignRight} aria-label={t.multiSelect.alignRightAria} onClick={() => align("right")}>
             <AlignEndVertical className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Topo" aria-label="Alinhar ao topo" onClick={() => align("top")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignTop} aria-label={t.multiSelect.alignTopAria} onClick={() => align("top")}>
             <AlignStartHorizontal className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Centro vertical" aria-label="Centralizar verticalmente" onClick={() => align("centerV")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignCenterV} aria-label={t.multiSelect.alignCenterVAria} onClick={() => align("centerV")}>
             <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="outline" className="h-8" title="Base" aria-label="Alinhar à base" onClick={() => align("bottom")}>
+          <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignBottom} aria-label={t.multiSelect.alignBottomAria} onClick={() => align("bottom")}>
             <AlignEndHorizontal className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
       <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">Distribuir</Label>
+        <Label className="text-[10px] uppercase text-muted-foreground">{t.multiSelect.distribute}</Label>
         <div className="mt-1 grid grid-cols-2 gap-1">
           <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
             disabled={readOnly || blocks.length < 3}
             onClick={() => align("distH")}>
-            <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" /> Horizontal
+            <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" /> {t.multiSelect.distributeH}
           </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
             disabled={readOnly || blocks.length < 3}
             onClick={() => align("distV")}>
-            <AlignVerticalDistributeCenter className="h-3.5 w-3.5" /> Vertical
+            <AlignVerticalDistributeCenter className="h-3.5 w-3.5" /> {t.multiSelect.distributeV}
           </Button>
         </div>
       </div>
@@ -2838,19 +2898,19 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly}
           onClick={() => { if (canEdit()) groupBlocksAction(selectedIds); }}
-          aria-label="Agrupar blocos selecionados">
-          <GroupIcon className="h-3.5 w-3.5" /> Agrupar
+          aria-label={t.multiSelect.groupAria}>
+          <GroupIcon className="h-3.5 w-3.5" /> {t.multiSelect.group}
         </Button>
         <Button size="sm" variant="outline" className="h-8 gap-1 text-[11px]"
           disabled={readOnly || !hasGroup}
           onClick={() => { if (canEdit()) ungroupBlocksAction(selectedIds); }}
-          aria-label="Desagrupar blocos selecionados">
-          <UngroupIcon className="h-3.5 w-3.5" /> Desagrupar
+          aria-label={t.multiSelect.ungroupAria}>
+          <UngroupIcon className="h-3.5 w-3.5" /> {t.multiSelect.ungroup}
         </Button>
       </div>
 
       <p className="text-[10px] leading-snug text-muted-foreground">
-        Atalhos: <kbd>Ctrl+A</kbd> selecionar tudo · <kbd>Ctrl+G</kbd> agrupar · <kbd>Ctrl+Shift+G</kbd> desagrupar · <kbd>setas</kbd> mover (Shift = 40px)
+        {t.multiSelect.shortcutsPrefix} <kbd>Ctrl+A</kbd> {t.multiSelect.shortcutSelectAll} · <kbd>Ctrl+G</kbd> {t.multiSelect.shortcutGroup} · <kbd>Ctrl+Shift+G</kbd> {t.multiSelect.shortcutUngroup} · <kbd>setas</kbd> {t.multiSelect.shortcutMove}
       </p>
     </div>
   );
@@ -3054,11 +3114,11 @@ export function BrandKitPopover({
   const apply = (style: SlideBrandStyle) => {
     if (!canEdit()) return;
     if (!selected) {
-      toast.info("Selecione um bloco para aplicar um estilo.");
+      toast.info(t.brandKit.selectBlockToast);
       return;
     }
     patchBlockAction(selected.id, buildBrandStylePatch(style, selected), "Alterar estilo");
-    toast.success(`Estilo aplicado: ${style.name}`);
+    toast.success(t.brandKit.appliedToast(style.name));
   };
 
   return (
@@ -3069,27 +3129,27 @@ export function BrandKitPopover({
           variant="ghost"
           className="h-7 gap-1 px-2 text-[11px]"
           disabled={readOnly}
-          title="Brand Kit"
+          title={t.brandKit.trigger}
         >
-          <Sparkles className="h-3.5 w-3.5" /> Brand Kit
+          <Sparkles className="h-3.5 w-3.5" /> {t.brandKit.trigger}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-3" align="start">
         <div className="space-y-3">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Estilos oficiais
+              {t.brandKit.officialStyles}
             </div>
             <div className="text-xs text-muted-foreground">
               {selected
-                ? `${brandStyleTargetLabel(target)} selecionado`
-                : "Selecione um texto, KPI, forma, tabela ou DRE."}
+                ? t.brandKit.selectedSuffix(brandStyleTargetLabel(target))
+                : t.brandKit.selectPrompt}
             </div>
           </div>
 
           {styles.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
-              Este tipo de bloco ainda nao tem estilos de Brand Kit.
+              {t.brandKit.noStyles}
             </div>
           ) : (
             <div className="space-y-2">
@@ -3161,7 +3221,7 @@ export function PalettePopover({
   const apply = (hex: string) => {
     if (!canEdit()) return;
     if (!selected) {
-      toast.info("Selecione um bloco para aplicar a cor.");
+      toast.info(t.palette.selectBlockToast);
       return;
     }
     if (selected.kind === "shape") {
@@ -3171,7 +3231,7 @@ export function PalettePopover({
     ) {
       patchBlockAction(selected.id, { color: hex } as Partial<CustomBlock>, "Alterar estilo");
     } else {
-      toast.info("Este bloco não suporta cor direta.");
+      toast.info(t.palette.unsupportedToast);
     }
   };
 
@@ -3182,19 +3242,19 @@ export function PalettePopover({
           size="sm" variant="ghost"
           className="h-7 gap-1 px-2 text-[11px]"
           disabled={readOnly}
-          title="Paleta de cores"
+          title={t.palette.title}
         >
-          <Paintbrush className="h-3.5 w-3.5" /> Paleta
+          <Paintbrush className="h-3.5 w-3.5" /> {t.palette.trigger}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3" align="start">
         <div className="space-y-3">
           <div>
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Cores deste slide
+              {t.palette.usedColors}
             </div>
             {used.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">Nenhuma cor usada ainda.</p>
+              <p className="text-[11px] text-muted-foreground">{t.palette.noColorsUsed}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {used.map((hex) => (
@@ -3205,7 +3265,7 @@ export function PalettePopover({
                     className="h-6 w-6 rounded-md border border-border/50 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: `#${hex}` }}
                     title={`#${hex}`}
-                    aria-label={`Aplicar cor #${hex}`}
+                    aria-label={t.palette.applyColor(hex)}
                   />
                 ))}
               </div>
@@ -3213,7 +3273,7 @@ export function PalettePopover({
           </div>
           <div>
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Tema · {theme.name}
+              {t.palette.themeLabel(theme.name)}
             </div>
             <div className="grid grid-cols-8 gap-1.5">
               {theme.swatches.map((hex, i) => (
@@ -3224,14 +3284,14 @@ export function PalettePopover({
                   className="h-6 w-6 rounded-md border border-border/50 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: `#${hex}` }}
                   title={`#${hex}`}
-                  aria-label={`Aplicar cor #${hex}`}
+                  aria-label={t.palette.applyColor(hex)}
                 />
               ))}
             </div>
           </div>
           {!canApply && (
             <p className="text-[10px] text-muted-foreground">
-              Selecione um título, texto, KPI ou forma para aplicar.
+              {t.palette.selectPrompt}
             </p>
           )}
         </div>
