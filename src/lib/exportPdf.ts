@@ -11,6 +11,7 @@ import type { SlideItem } from "@/lib/slidesFlow";
 import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
+import { waitForCaptureReady } from "@/lib/exportCaptureReady";
 
 const SLIDE_W = 1333;
 const SLIDE_H = 750;
@@ -57,8 +58,11 @@ async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> 
 
     root.render(node);
 
-    // Wait for Recharts / images / fonts to settle.
-    await new Promise((r) => setTimeout(r, 350));
+    // Espera fontes/imagens/gráfico terminarem de pintar antes de capturar —
+    // mesma lógica do export de PPTX (ver exportCaptureReady.ts). Antes era
+    // um setTimeout fixo de 350ms, que arriscava capturar um gráfico ainda
+    // em branco como se fosse sucesso.
+    await waitForCaptureReady(host, 350);
 
     const canvas = await html2canvas(host, {
       scale: 3,

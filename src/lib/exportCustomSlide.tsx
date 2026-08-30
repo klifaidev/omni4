@@ -12,6 +12,7 @@ import { fitCanvasScale } from "./canvasFit";
 import { PPT_COLORS } from "./slideColors";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
+import { waitForCaptureReady } from "./exportCaptureReady";
 
 const SLIDE_W_IN = 13.33;
 const SLIDE_H_IN = 7.5;
@@ -120,57 +121,6 @@ async function prepareConfigForExport(config: CustomSlideConfig): Promise<Custom
   return { ...config, blocks, backgroundImage };
 }
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
-async function waitForFonts(): Promise<void> {
-  const fonts = (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts;
-  if (fonts?.ready) await fonts.ready;
-}
-
-async function waitForImages(root: HTMLElement): Promise<void> {
-  const images = Array.from(root.querySelectorAll("img"));
-  await Promise.all(images.map(async (img) => {
-    if (img.complete && img.naturalWidth > 0) return;
-    if (typeof img.decode === "function") {
-      try {
-        await img.decode();
-        return;
-      } catch {
-        // Algumas imagens data/blob rejeitam decode, mas ainda pintam no browser.
-      }
-    }
-    await new Promise<void>((resolve) => {
-      const done = () => resolve();
-      img.addEventListener("load", done, { once: true });
-      img.addEventListener("error", done, { once: true });
-      setTimeout(done, 1500);
-    });
-  }));
-}
-
-function hasRenderableSvgGeometry(root: HTMLElement): boolean {
-  const svgs = Array.from(root.querySelectorAll("svg"));
-  if (svgs.length === 0) return true;
-  return svgs.every((svg) => {
-    const box = svg.getBoundingClientRect();
-    if (box.width <= 0 || box.height <= 0) return false;
-    return !!svg.querySelector(
-      "path[d], rect, circle, ellipse, line, polyline, polygon, text, tspan",
-    );
-  });
-}
-
-async function waitForChartPaint(root: HTMLElement): Promise<void> {
-  // Recharts e blocos Omni dependem de ResizeObserver + paint assíncrono.
-  for (let i = 0; i < 50; i++) {
-    await nextFrame();
-    if (hasRenderableSvgGeometry(root)) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
 function canvasLooksBlank(canvas: HTMLCanvasElement): boolean {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return false;
@@ -240,12 +190,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
       );
     });
 
-    await new Promise((r) => setTimeout(r, 500));
-    await waitForFonts();
-    await waitForImages(host);
-    await waitForChartPaint(host);
-    await nextFrame();
-    await nextFrame();
+    await waitForCaptureReady(host);
 
     let canvas = await captureHost(host, EXPORT_SCALE);
     if (exportConfig.blocks.length > 0 && canvasLooksBlank(canvas)) {
@@ -310,12 +255,7 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
       );
     });
 
-    await new Promise((r) => setTimeout(r, 500));
-    await waitForFonts();
-    await waitForImages(host);
-    await waitForChartPaint(host);
-    await nextFrame();
-    await nextFrame();
+    await waitForCaptureReady(host);
 
     return captureHost(host, 1);
   } finally {
@@ -330,11 +270,17 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
   }
 }
 
+/** Renderiza o slide personalizado no PPTX. O retorno é o único jeito de
+ *  quem chama (exportSlideFlow) saber se este slide falhou, pra avisar o
+ *  usuário em vez de deixar um "Erro ao renderizar slide" silencioso
+ *  escondido no meio do deck. Retorna `false` em falha — o slide ainda é
+ *  inserido no PPTX com o texto de erro, pra nunca quebrar a
+ *  numeração/contagem de slides do deck. */
 export async function addCustomSlide(
   pptx: PptxGenJS,
   config: CustomSlideConfig,
   opts?: { slideId?: string },
-): Promise<void> {
+): Promise<boolean> {
   const slide = pptx.addSlide();
 
   try {
@@ -346,6 +292,7 @@ export async function addCustomSlide(
       w: SLIDE_W_IN,
       h: SLIDE_H_IN,
     });
+    return true;
   } catch (err) {
     console.error("[customSlide export] falha ao renderizar slide:", opts?.slideId, err);
     slide.addText("Erro ao renderizar slide", {
@@ -359,5 +306,6 @@ export async function addCustomSlide(
       align: "center",
       valign: "middle",
     });
+    return false;
   }
 }

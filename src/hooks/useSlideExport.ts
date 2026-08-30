@@ -57,8 +57,16 @@ export function useSlideExport({
     try {
       const flow = items.map((i) => itemToFlow(i, { pricingRows, budgetRows, metric }));
       const bridgeIdx = items.findIndex((i) => i.kind === "bridge_pvm");
-      await exportSlideFlow(flow, normalizeExportFileName(fileName, "pptx"), bridgeIdx >= 0 ? bridgeIdx + 1 : undefined);
-      toast.success(`PPTX gerado com ${items.length} slide(s).`);
+      const { failedSlides } = await exportSlideFlow(
+        flow, normalizeExportFileName(fileName, "pptx"), bridgeIdx >= 0 ? bridgeIdx + 1 : undefined,
+      );
+      if (failedSlides.length > 0) {
+        toast.warning(
+          `PPTX gerado, mas ${failedSlides.length} slide(s) não renderizaram a tempo: ${failedSlides.join(", ")}. Abra o arquivo e revise antes de apresentar.`,
+        );
+      } else {
+        toast.success(`PPTX gerado com ${items.length} slide(s).`);
+      }
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Falha ao gerar PPTX.");

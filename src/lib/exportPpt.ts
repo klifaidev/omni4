@@ -7,6 +7,7 @@ import { monthLabel } from "./format";
 import { PPT_COLORS } from "./slideColors";
 import haraldFooterPng from "@/assets/harald-footer.png";
 import haraldFooterBarPng from "@/assets/harald-footer-bar.png";
+import { withTimeout } from "./exportCaptureReady";
 
 // Slide widescreen 13.33" x 7.5". Imagem original 1222x78 (~15.67:1).
 // Altura calculada para preencher toda a largura mantendo proporção.
@@ -20,7 +21,15 @@ const HARALD_FOOTER_Y = 7.5 - HARALD_FOOTER_H;
 let haraldFooterDataUri: string | null = null;
 async function getHaraldFooterDataUri(): Promise<string> {
   if (haraldFooterDataUri) return haraldFooterDataUri;
-  const res = await fetch(haraldFooterBarPng);
+  // Sem timeout aqui, uma rede instável trava TODO export (mesmo o de
+  // slides que nem usam esse rodapé) num spinner infinito, sem erro nenhum
+  // — o board esperando e ninguém sabe por quê. 15s é generoso pra um
+  // asset local pequeno já servido pelo bundle.
+  const res = await withTimeout(
+    fetch(haraldFooterBarPng),
+    15000,
+    "Tempo esgotado carregando o rodapé Harald — verifique a conexão e tente novamente.",
+  );
   const blob = await res.blob();
   haraldFooterDataUri = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1366,14 +1375,25 @@ export async function addCoverSlide(pptx: PptxGenJS, opts: CoverSlideOptions) {
 // Multi-slide flow exporter — usado pela aba "Slides (Beta)"
 // ===========================================================================
 export interface SlideFlowItem {
-  build: (pptx: PptxGenJS) => Promise<void> | void;
+  /** Nome amigável usado para identificar este slide se `build` reportar falha. */
+  label?: string;
+  /** `false` sinaliza que o slide foi inserido em modo degradado (ex.: o
+   *  bloco personalizado não renderizou a tempo) — o deck continua sendo
+   *  gerado normalmente, mas exportSlideFlow reporta isso pra quem chamou
+   *  em vez de deixar passar como sucesso silencioso. */
+  build: (pptx: PptxGenJS) => Promise<void | boolean> | void | boolean;
+}
+
+export interface ExportSlideFlowResult {
+  /** Nomes dos slides que foram inseridos em modo degradado (ver SlideFlowItem.build). */
+  failedSlides: string[];
 }
 
 export async function exportSlideFlow(
   items: SlideFlowItem[],
   fileName = "apresentacao.pptx",
   bridgeSlideIndex?: number,
-) {
+): Promise<ExportSlideFlowResult> {
   if (items.length === 0) throw new Error("Nenhum slide no fluxo.");
   await getHaraldFooterDataUri();
   const pptx = new PptxGenJS();
@@ -1383,11 +1403,14 @@ export async function exportSlideFlow(
   pptx.title = "Apresentação Pricing Analytics";
   pptx.theme = { headFontFace: "Calibri", bodyFontFace: "Calibri" };
 
-  for (const item of items) {
-    await item.build(pptx);
+  const failedSlides: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const result = await items[i].build(pptx);
+    if (result === false) failedSlides.push(items[i].label ?? `Slide ${i + 1}`);
   }
 
   const rawBlob = (await pptx.write({ outputType: "blob" })) as Blob;
   const grouped = await groupBridgeElements(rawBlob, bridgeSlideIndex ?? 1);
   triggerDownload(grouped, fileName);
+  return { failedSlides };
 }

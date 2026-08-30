@@ -227,9 +227,10 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
       const cfg = item.config;
       const id = item.id;
       return {
+        label: item.label ?? "Slide personalizado",
         build: async (pptx) => {
           const { addCustomSlide } = await import("./exportCustomSlide");
-          await addCustomSlide(pptx, cfg, { slideId: id });
+          return addCustomSlide(pptx, cfg, { slideId: id });
         },
       };
     }
