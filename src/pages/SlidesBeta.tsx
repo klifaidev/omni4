@@ -109,6 +109,9 @@ import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlide
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useThumbnailVisibilityScheduler } from "@/components/pricing/slides/useThumbnailVisibilityScheduler";
 import { useSlideExport } from "@/hooks/useSlideExport";
+import { strings } from "@/lib/i18n";
+
+const t = strings.slides.beta;
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
@@ -141,12 +144,12 @@ function useSlideConfirm() {
           <AlertDialogDescription>{options?.description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => close(false)}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel onClick={() => close(false)}>{t.common.cancelar}</AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={() => close(true)}
           >
-            {options?.confirmLabel ?? "Excluir"}
+            {options?.confirmLabel ?? t.common.excluir}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -168,7 +171,7 @@ function LocalSaveStatusBadge({ status }: { status: SlidesFlowSaveStatus }) {
         : "border-success/35 bg-success/10 text-success",
     )}>
       {status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}
-      {status === "saving" ? "Salvando..." : status === "error" ? "Erro ao salvar" : "Salvo localmente"}
+      {status === "saving" ? t.localSaveStatus.saving : status === "error" ? t.localSaveStatus.error : t.localSaveStatus.saved}
     </span>
   );
 }
@@ -220,15 +223,15 @@ function deckPreparationSignature(items: SlideItem[]): string {
 }
 
 function formatDeckPreparationEta(startedAt: number, done: number, total: number): string {
-  if (done <= 0 || done >= total) return done >= total ? "Concluindo..." : "Calculando tempo restante...";
+  if (done <= 0 || done >= total) return done >= total ? t.deckPreparation.concluding : t.deckPreparation.calculatingEta;
   const elapsed = Date.now() - startedAt;
   const remainingMs = Math.max(0, Math.round((elapsed / done) * (total - done)));
   const seconds = Math.ceil(remainingMs / 1000);
-  if (seconds <= 1) return "Menos de 1s restante";
-  if (seconds < 60) return `${seconds}s restantes`;
+  if (seconds <= 1) return t.deckPreparation.lessThanOneSecond;
+  if (seconds < 60) return t.deckPreparation.secondsRemaining(seconds);
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  return rest > 0 ? `${minutes}min ${rest}s restantes` : `${minutes}min restantes`;
+  return t.deckPreparation.minutesRemaining(minutes, rest);
 }
 
 function yieldDeckPreparationFrame(): Promise<void> {
@@ -314,41 +317,23 @@ const FILTER_GROUPS: Array<{
   keys: FilterKey[];
 }> = [
   {
-    title: "Comercial",
+    title: t.filterGroups.comercial,
     variant: "comercial",
     keys: ["canal", "canalAjustado", "regiao", "uf", "regional", "mercado", "mercadoAjustado"],
   },
   {
-    title: "Produto",
+    title: t.filterGroups.produto,
     variant: "sku",
     keys: ["marca", "categoria", "subcategoria", "formato", "sabor", "tecnologia", "faixaPeso", "sku"],
   },
   {
-    title: "Inovação",
+    title: t.filterGroups.inovacao,
     variant: "inovacao",
     keys: ["inovacao", "legado"],
   },
 ];
 
-const FILTER_LABEL: Record<FilterKey, string> = {
-  marca: "Marca",
-  canal: "Canal",
-  canalAjustado: "Canal Ajustado",
-  categoria: "Categoria",
-  subcategoria: "Subcategoria",
-  formato: "Formato",
-  sku: "SKU",
-  regiao: "Região",
-  uf: "UF",
-  regional: "Regional",
-  mercado: "Mercado",
-  mercadoAjustado: "Mercado Ajustado",
-  sabor: "Sabor",
-  tecnologia: "Tecnologia",
-  faixaPeso: "Faixa de Peso",
-  inovacao: "Inovação",
-  legado: "Legado",
-};
+const FILTER_LABEL: Record<FilterKey, string> = t.filterLabels;
 
 function uniqueValues(
   pricing: PricingRow[],
@@ -384,7 +369,7 @@ function FiltersPanel({
 }) {
   const setKey = (k: FilterKey, vals: string[]) => {
     if (readOnly) {
-      toast.info("Modo somente leitura");
+      toast.info(t.common.readOnlyToast);
       return;
     }
     const next = { ...value };
@@ -400,16 +385,16 @@ function FiltersPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <FilterIcon className="h-4 w-4 text-primary" />
-          Filtros do slide
+          {t.filtersPanel.title}
           {activeCount > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {activeCount} ativo(s)
+              {t.filtersPanel.activeCount(activeCount)}
             </Badge>
           )}
         </div>
         {activeCount > 0 && (
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" disabled={readOnly} onClick={() => onChange({})}>
-            <X className="h-3 w-3" /> Limpar
+            <X className="h-3 w-3" /> {t.filtersPanel.clear}
           </Button>
         )}
       </div>
@@ -469,7 +454,7 @@ function BridgePvmConfigPanel({
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Modo</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.bridgePvmPanel.mode}</Label>
         <Select
           disabled={readOnly}
           value={cfg.mode}
@@ -477,27 +462,27 @@ function BridgePvmConfigPanel({
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="month">Mês a mês</SelectItem>
-            <SelectItem value="fy">Ano fiscal</SelectItem>
-            <SelectItem value="ytd_budget">YTD Real vs Budget</SelectItem>
+            <SelectItem value="month">{t.bridgePvmPanel.modeOptions.month}</SelectItem>
+            <SelectItem value="fy">{t.bridgePvmPanel.modeOptions.fy}</SelectItem>
+            <SelectItem value="ytd_budget">{t.bridgePvmPanel.modeOptions.ytdBudget}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {cfg.mode === "ytd_budget" ? (
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-          Compara o Real acumulado do ano fiscal atual contra o Budget dos mesmos meses realizados.
+          {t.bridgePvmPanel.ytdBudgetHint}
         </div>
       ) : (
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
         <div className="space-y-1.5">
-          <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Base</Label>
+          <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.bridgePvmPanel.base}</Label>
           <Select
             disabled={readOnly}
             value={cfg.base ?? undefined}
             onValueChange={(v) => onChange({ ...item, config: { ...cfg, base: v } })}
           >
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Escolha..." /></SelectTrigger>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t.bridgePvmPanel.choosePlaceholder} /></SelectTrigger>
             <SelectContent>
               {options.map((o) => (
                 <SelectItem key={o.value} value={o.value} disabled={o.value === cfg.comp}>
@@ -509,13 +494,13 @@ function BridgePvmConfigPanel({
         </div>
         <ArrowRight className="mb-2 h-4 w-4 text-muted-foreground" />
         <div className="space-y-1.5">
-          <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Comparação</Label>
+          <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.bridgePvmPanel.comparison}</Label>
           <Select
             disabled={readOnly}
             value={cfg.comp ?? undefined}
             onValueChange={(v) => onChange({ ...item, config: { ...cfg, comp: v } })}
           >
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Escolha..." /></SelectTrigger>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t.bridgePvmPanel.choosePlaceholder} /></SelectTrigger>
             <SelectContent>
               {options.map((o) => (
                 <SelectItem key={o.value} value={o.value} disabled={o.value === cfg.base}>
@@ -543,7 +528,7 @@ function BudgetEvoConfigPanel({
     const map = new Map<string, { periodo: string; mes: number; ano: number; label: string }>();
     for (const r of budgetRows) {
       if (!map.has(r.periodo)) {
-        map.set(r.periodo, { periodo: r.periodo, mes: r.mes, ano: r.ano, label: `${["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][r.mes-1]}/${String(r.ano).slice(-2)}` });
+        map.set(r.periodo, { periodo: r.periodo, mes: r.mes, ano: r.ano, label: `${strings.slides.editor.blockRenderer.dre.months[r.mes-1]}/${String(r.ano).slice(-2)}` });
       }
     }
     return Array.from(map.values()).sort((a, b) => a.ano - b.ano || a.mes - b.mes);
@@ -553,7 +538,7 @@ function BudgetEvoConfigPanel({
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mês inicial</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.budgetEvoPanel.startMonth}</Label>
         <Select
           disabled={readOnly}
           value={cfg.start ?? "__auto__"}
@@ -561,13 +546,13 @@ function BudgetEvoConfigPanel({
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__auto__">Automático (FY anterior)</SelectItem>
+            <SelectItem value="__auto__">{t.budgetEvoPanel.autoStart}</SelectItem>
             {months.map((m) => <SelectItem key={m.periodo} value={m.periodo}>{m.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Mês final</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.budgetEvoPanel.endMonth}</Label>
         <Select
           disabled={readOnly}
           value={cfg.end ?? "__auto__"}
@@ -575,7 +560,7 @@ function BudgetEvoConfigPanel({
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__auto__">Automático (último disponível)</SelectItem>
+            <SelectItem value="__auto__">{t.budgetEvoPanel.autoEnd}</SelectItem>
             {months.map((m) => <SelectItem key={m.periodo} value={m.periodo}>{m.label}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -595,7 +580,7 @@ function CoverConfigPanel({
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Estilo</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.coverPanel.style}</Label>
         <Select
           disabled={readOnly}
           value={cfg.variant}
@@ -603,13 +588,13 @@ function CoverConfigPanel({
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="cover">Capa principal (vermelha)</SelectItem>
-            <SelectItem value="divider">Divisor de seção (branco)</SelectItem>
+            <SelectItem value="cover">{t.coverPanel.styleOptions.cover}</SelectItem>
+            <SelectItem value="divider">{t.coverPanel.styleOptions.divider}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Título</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.coverPanel.title}</Label>
         <Input
           value={cfg.title}
           readOnly={readOnly}
@@ -618,7 +603,7 @@ function CoverConfigPanel({
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Subtítulo (opcional)</Label>
+        <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.coverPanel.subtitle}</Label>
         <Textarea
           value={cfg.subtitle ?? ""}
           readOnly={readOnly}
@@ -638,12 +623,11 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="space-y-2">
       <div className="rounded-lg border border-border/40 bg-card/40 p-3 text-[12px] text-muted-foreground">
-        O editor de slide personalizado abre em tela cheia, com strip lateral
-        para navegar entre os slides do deck.
+        {t.fullscreenTrigger.hint}
       </div>
       <Button onClick={onOpen} className="w-full gap-2" size="sm">
         <LayoutTemplate className="h-4 w-4" />
-        Abrir editor em tela cheia
+        {t.fullscreenTrigger.button}
       </Button>
     </div>
   );
@@ -700,7 +684,7 @@ function StripThumbnail({
       {!ready.ok && (
         <div
           className="absolute right-1 top-1 z-10 flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-destructive/50 bg-destructive/10 px-1 text-[9px] font-semibold text-destructive shadow-sm"
-          title={`Incompleto: ${ready.reason}`}
+          title={t.stripThumbnail.incompleteTitle(ready.reason)}
         >
           <AlertTriangle className="h-3 w-3" />
           1
@@ -709,7 +693,7 @@ function StripThumbnail({
       {hasNotes && (
         <div
           className="absolute right-1 top-7 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-sm"
-          title="Possui anotações do apresentador"
+          title={t.stripThumbnail.hasNotesTitle}
         >
           <StickyNote className="h-3 w-3" />
         </div>
@@ -749,7 +733,7 @@ function StripThumbnail({
               "absolute bottom-1 right-1 z-10 flex h-5 items-center gap-0.5 rounded-full border border-background/70 bg-card/95 px-1 text-muted-foreground shadow-sm transition-opacity hover:text-foreground",
               unresolvedCount > 0 ? "opacity-100" : "opacity-0 group-hover:opacity-100",
             )}
-            aria-label="Comentários do slide"
+            aria-label={t.stripThumbnail.commentsAriaLabel}
           >
             <MessageSquare className="h-3 w-3" />
             {unresolvedCount > 0 && (
@@ -794,16 +778,16 @@ function CommentsThread({
   const [text, setText] = useState("");
 
   const send = () => {
-    const t = text.trim();
-    if (!t) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
     const c: SlideComment = {
       id: typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `c_${Math.random().toString(36).slice(2, 10)}`,
       slideId,
-      author: currentUser.name || "Convidado",
+      author: currentUser.name || t.commentsThread.guestAuthor,
       authorColor: currentUser.color,
-      text: t,
+      text: trimmed,
       createdAt: Date.now(),
       resolved: false,
     };
@@ -820,12 +804,12 @@ function CommentsThread({
   return (
     <div className="flex max-h-[60vh] flex-col">
       <div className="border-b border-border/40 px-3 py-2 text-xs font-semibold">
-        Comentários ? <span className="text-muted-foreground">{slideLabel}</span>
+        {t.commentsThread.headerPrefix} <span className="text-muted-foreground">{slideLabel}</span>
       </div>
       <ScrollArea className="max-h-72 flex-1">
         <div className="space-y-3 p-3">
           {comments.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">Sem comentários ainda.</p>
+            <p className="text-[11px] text-muted-foreground">{t.commentsThread.empty}</p>
           ) : comments.map((c) => (
             <div key={c.id} className="flex gap-2">
               <div
@@ -849,9 +833,9 @@ function CommentsThread({
                         emitCommentChange("comment_resolve", updated);
                       }}
                       className="ml-auto inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                      title="Marcar como resolvido"
+                      title={t.commentsThread.resolveTitle}
                     >
-                      <CheckCheck className="h-3 w-3" /> Resolver
+                      <CheckCheck className="h-3 w-3" /> {t.commentsThread.resolve}
                     </button>
                   ) : (
                     <button
@@ -862,9 +846,9 @@ function CommentsThread({
                         emitCommentChange("comment_reopen", updated);
                       }}
                       className="ml-auto inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                      title="Reabrir comentario"
+                      title={t.commentsThread.reopenTitle}
                     >
-                      Reabrir
+                      {t.commentsThread.reopen}
                     </button>
                   )}
                   <button
@@ -874,9 +858,9 @@ function CommentsThread({
                       emitCommentChange("comment_delete", c);
                     }}
                     className="inline-flex items-center rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    title="Excluir comentario"
+                    title={t.commentsThread.deleteTitle}
                   >
-                    Excluir
+                    {t.commentsThread.delete}
                   </button>
                 </div>
                 <p className={cn(
@@ -894,7 +878,7 @@ function CommentsThread({
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Escreva um comentário?"
+          placeholder={t.commentsThread.placeholder}
           rows={2}
           className="min-h-[40px] resize-none text-xs"
           onKeyDown={(e) => {
@@ -984,7 +968,7 @@ function FullscreenCustomEditor({
   const stripSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const guardReadOnly = () => {
     if (!readOnly) return false;
-    toast.info("Modo somente leitura");
+    toast.info(t.common.readOnlyToast);
     return true;
   };
   const onStripDragEnd = (e: DragEndEvent) => {
@@ -1013,9 +997,9 @@ function FullscreenCustomEditor({
     const hasContent = current.kind === "custom" && current.config.blocks.length > 0;
     if (hasContent) {
       const confirmed = await requestConfirm({
-        title: "Excluir slide?",
-        description: `"${current.label ?? "Slide"}" tem ${current.config.blocks.length} bloco(s). Essa ação remove o slide e seu conteúdo da esteira local.`,
-        confirmLabel: "Excluir slide",
+        title: t.fullscreenEditor.deleteConfirm.title,
+        description: t.fullscreenEditor.deleteConfirm.description(current.label ?? "Slide", current.config.blocks.length),
+        confirmLabel: t.fullscreenEditor.deleteConfirm.confirmLabel,
       });
       if (!confirmed) return;
     }
@@ -1043,23 +1027,23 @@ function FullscreenCustomEditor({
         <DialogHeader className="flex flex-row items-center justify-between gap-3 space-y-0 px-1">
           <div className="flex items-center gap-1.5">
             <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => goRel(-1)} disabled={!hasPrev}>
-              <ChevronLeft className="h-3.5 w-3.5" /> Anterior
+              <ChevronLeft className="h-3.5 w-3.5" /> {t.fullscreenEditor.prev}
             </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => goRel(1)} disabled={!hasNext}>
-              Próximo <ChevronRight className="h-3.5 w-3.5" />
+              {t.fullscreenEditor.next} <ChevronRight className="h-3.5 w-3.5" />
             </Button>
             <span className="hidden text-[10px] text-muted-foreground/70 lg:inline">
-              Ctrl + ? / ?
+              {t.fullscreenEditor.shortcutHint}
             </span>
           </div>
           {readOnly && (
             <Badge variant="outline" className="h-6 border-amber-500/50 bg-amber-500/10 px-2 text-[10px] font-semibold text-amber-600">
-              Somente leitura
+              {t.fullscreenEditor.readOnlyBadge}
             </Badge>
           )}
           <div className="flex flex-1 flex-col items-center gap-0.5">
             <DialogTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {idx >= 0 ? `Slide ${idx + 1} de ${items.length}` : "Editor de slide"}
+              {idx >= 0 ? t.fullscreenEditor.titleWithIndex(idx + 1, items.length) : t.fullscreenEditor.titleFallback}
             </DialogTitle>
             {current && (
               <Input
@@ -1069,13 +1053,13 @@ function FullscreenCustomEditor({
                   if (guardReadOnly()) return;
                   updateItem(current.id, (it) => ({ ...it, label: e.target.value } as SlideItem))
                 }}
-                placeholder="Nome do slide"
+                placeholder={t.fullscreenEditor.slideNamePlaceholder}
                 className="h-8 w-72 border-transparent bg-transparent text-center text-sm font-medium hover:border-border/60 focus-visible:bg-card"
               />
             )}
           </div>
           <DialogDescription className="sr-only">
-            Editor de slide personalizado com strip lateral de navegação.
+            {t.fullscreenEditor.dialogDescription}
           </DialogDescription>
           <div className="flex w-[200px] items-center justify-end gap-2" />
         </DialogHeader>
@@ -1084,7 +1068,7 @@ function FullscreenCustomEditor({
           {/* Strip lateral */}
           <aside className="flex w-[120px] shrink-0 flex-col overflow-hidden rounded-lg border border-border/40 bg-card/30">
             <div className="border-b border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Slides ({items.length})
+              {t.fullscreenEditor.stripHeader(items.length)}
             </div>
             <div
               ref={stripPreviewWindow.viewportRef}
@@ -1120,7 +1104,7 @@ function FullscreenCustomEditor({
                 variant="ghost" size="sm" className="h-7 flex-1 px-1"
                 onClick={handleAddBlank}
                 disabled={readOnly}
-                title="Adicionar slide em branco"
+                title={t.fullscreenEditor.addBlankTitle}
               >
                 <Plus className="h-3 w-3" />
               </Button>
@@ -1128,7 +1112,7 @@ function FullscreenCustomEditor({
                 variant="ghost" size="sm" className="h-7 flex-1 px-1 text-destructive hover:text-destructive"
                 onClick={handleRemoveCurrent}
                 disabled={!current || readOnly}
-                title="Remover slide atual"
+                title={t.fullscreenEditor.removeCurrentTitle}
               >
                 <X className="h-3 w-3" />
               </Button>
@@ -1143,7 +1127,7 @@ function FullscreenCustomEditor({
                 config={(current as Extract<SlideItem, { kind: "custom" }>).config}
                 onChange={(cfg) => {
                   if (readOnly) {
-                    toast.info("Modo somente leitura");
+                    toast.info(t.common.readOnlyToast);
                     return;
                   }
                   updateItem(current.id, (it) =>
@@ -1156,7 +1140,7 @@ function FullscreenCustomEditor({
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Selecione um slide personalizado na strip ao lado.
+                {t.fullscreenEditor.emptySelection}
               </div>
             )}
           </div>
@@ -1217,9 +1201,9 @@ function Inspector({
           <Layers className="h-5 w-5" />
         </div>
         <div className="space-y-1">
-          <p className="slides-type-section">Nenhum slide selecionado</p>
+          <p className="slides-type-section">{t.inspector.emptyTitle}</p>
           <p className="slides-type-helper">
-            Selecione um slide na esteira para ver a prévia e ajustar filtros.
+            {t.inspector.emptyHint}
           </p>
         </div>
       </div>
@@ -1230,11 +1214,11 @@ function Inspector({
   const Icon = ICON_MAP[meta.icon];
   const ready = isItemReady(item);
   const statusItems = [
-    ...(!ready.ok ? [{ title: "Config incompleta", detail: ready.reason }] : []),
+    ...(!ready.ok ? [{ title: t.inspector.health.incompleteConfig, detail: ready.reason }] : []),
   ];
   const guardedUpdateItem = (updater: Parameters<typeof updateItem>[1]) => {
     if (readOnly) {
-      toast.info("Modo somente leitura");
+      toast.info(t.common.readOnlyToast);
       return;
     }
     updateItem(item.id, updater);
@@ -1264,16 +1248,16 @@ function Inspector({
 
         <Tabs defaultValue="status" className="space-y-4">
           <TabsList className="grid h-9 w-full grid-cols-4 rounded-lg bg-surface-raised p-1">
-            <TabsTrigger value="status" className="text-[11px]">Status</TabsTrigger>
-            <TabsTrigger value="preview" className="text-[11px]">Previa</TabsTrigger>
-            <TabsTrigger value="config" className="text-[11px]">Config.</TabsTrigger>
-            <TabsTrigger value="notes" className="text-[11px]">Notas</TabsTrigger>
+            <TabsTrigger value="status" className="text-[11px]">{t.inspector.tabs.status}</TabsTrigger>
+            <TabsTrigger value="preview" className="text-[11px]">{t.inspector.tabs.preview}</TabsTrigger>
+            <TabsTrigger value="config" className="text-[11px]">{t.inspector.tabs.config}</TabsTrigger>
+            <TabsTrigger value="notes" className="text-[11px]">{t.inspector.tabs.notes}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="status" className="mt-0 space-y-3">
             <div className="space-y-1">
-              <div className="slides-type-section">Saude do slide</div>
-              <p className="slides-type-helper">Mostra se o slide tem a configuração mínima necessária para exibição e exportação.</p>
+              <div className="slides-type-section">{t.inspector.health.section}</div>
+              <p className="slides-type-helper">{t.inspector.health.description}</p>
             </div>
             <div className={cn(
               "min-w-0 rounded-lg border p-3",
@@ -1284,17 +1268,17 @@ function Inspector({
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2 slides-type-section">
                   {ready.ok ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
-                  {ready.ok ? "Pronto" : "Incompleto"}
+                  {ready.ok ? t.inspector.health.ready : t.inspector.health.incomplete}
                 </div>
                 {statusItems.length > 0 && (
                   <Badge variant="outline" className="h-5 shrink-0 border-current/30 bg-background/50 px-1.5 slides-type-badge text-current">
-                    {statusItems.length} ponto(s)
+                    {t.inspector.health.pointsCount(statusItems.length)}
                   </Badge>
                 )}
               </div>
               <div className="mt-2 min-w-0 space-y-1.5 slides-type-helper leading-snug">
                 {statusItems.length === 0 ? (
-                  <p>Todos os campos essenciais estao preenchidos.</p>
+                  <p>{t.inspector.health.allGood}</p>
                 ) : (
                   statusItems.map((statusItem, idx) => (
                     <div key={`${statusItem.title}-${idx}`} className="min-w-0 rounded-md bg-surface-base/70 px-2 py-1.5 [overflow-wrap:anywhere]">
@@ -1309,8 +1293,8 @@ function Inspector({
 
           <TabsContent value="preview" className="mt-0 space-y-3">
             <div className="space-y-1">
-              <div className="slides-type-section">Previa do slide</div>
-              <p className="slides-type-helper">Mostra como este slide vai entrar na apresentacao.</p>
+              <div className="slides-type-section">{t.inspector.preview.section}</div>
+              <p className="slides-type-helper">{t.inspector.preview.description}</p>
             </div>
             <div className="surface-raised rounded-lg border border-border/50 p-3">
               <SlidePreview item={item} />
@@ -1319,15 +1303,15 @@ function Inspector({
 
           <TabsContent value="config" className="mt-0 space-y-3">
             <div className="space-y-1">
-              <div className="slides-type-section">Configuracao</div>
-              <p className="slides-type-helper">Ajusta periodo, filtros e aparencia especificos deste slide.</p>
+              <div className="slides-type-section">{t.inspector.config.section}</div>
+              <p className="slides-type-helper">{t.inspector.config.description}</p>
             </div>
             <Accordion type="multiple" defaultValue={["period", "filters", "appearance"]} className="space-y-3">
               {(item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
                 <InspectorSection
                   value="period"
-                  title="Periodo do slide"
-                  description="Define a janela de dados usada somente neste slide."
+                  title={t.inspector.config.period.title}
+                  description={t.inspector.config.period.description}
                 >
                   {item.kind === "bridge_pvm" && (
                     <BridgePvmConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
@@ -1341,8 +1325,8 @@ function Inspector({
               {item.kind === "cover" && (
                 <InspectorSection
                   value="appearance"
-                  title="Aparencia"
-                  description="Controla textos e estilo visual da capa ou divisor."
+                  title={t.inspector.config.appearanceCover.title}
+                  description={t.inspector.config.appearanceCover.description}
                 >
                   <CoverConfigPanel item={item} readOnly={readOnly} onChange={(next) => guardedUpdateItem(() => next)} />
                 </InspectorSection>
@@ -1351,8 +1335,8 @@ function Inspector({
               {item.kind === "custom" && (
                 <InspectorSection
                   value="appearance"
-                  title="Aparencia"
-                  description="Abre o Canva para ajustar blocos, layout e visual do slide."
+                  title={t.inspector.config.appearanceCustom.title}
+                  description={t.inspector.config.appearanceCustom.description}
                 >
                   <CustomSlideFullscreenTrigger onOpen={onOpenFullscreen} />
                 </InspectorSection>
@@ -1361,8 +1345,8 @@ function Inspector({
               {meta.supportsFilters && (item.kind === "bridge_pvm" || item.kind === "budget_evo") && (
                 <InspectorSection
                   value="filters"
-                  title="Filtros do slide"
-                  description="Refina os dados deste slide sem alterar o restante do deck."
+                  title={t.inspector.config.filters.title}
+                  description={t.inspector.config.filters.description}
                 >
                   <FiltersPanel
                     value={item.config.filters}
@@ -1381,8 +1365,8 @@ function Inspector({
 
           <TabsContent value="notes" className="mt-0 space-y-3">
             <div className="space-y-1">
-              <div className="slides-type-section">Notas do apresentador</div>
-              <p className="slides-type-helper">Guarda lembretes visiveis durante a apresentacao em modo apresentador.</p>
+              <div className="slides-type-section">{t.inspector.notes.section}</div>
+              <p className="slides-type-helper">{t.inspector.notes.description}</p>
             </div>
             <div className="surface-raised rounded-lg border border-border/50 p-3">
               <SpeakerNotesInspector item={item} readOnly={readOnly} onChange={(notes) => guardedUpdateItem((it) => ({
@@ -1404,7 +1388,7 @@ function SpeakerNotesInspector({ item, onChange, readOnly = false }: { item: Sli
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Anotações do apresentador
+          {t.speakerNotes.label}
         </Label>
         <span className="text-[10px] tabular-nums text-muted-foreground">{value.length}/{MAX}</span>
       </div>
@@ -1413,7 +1397,7 @@ function SpeakerNotesInspector({ item, onChange, readOnly = false }: { item: Sli
         value={value.slice(0, MAX)}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value.slice(0, MAX))}
-        placeholder="Adicione notas para o apresentador..."
+        placeholder={t.speakerNotes.placeholder}
         className="resize-none text-xs"
         maxLength={MAX}
       />
@@ -1445,8 +1429,8 @@ function SavePresetDialog({
           size={triggerLabel ? "sm" : "icon"}
           className={triggerClassName}
           disabled={items.length === 0}
-          aria-label="Salvar pré-definição"
-          title="Salvar pré-definição"
+          aria-label={t.savePresetDialog.triggerAriaLabel}
+          title={t.savePresetDialog.triggerAriaLabel}
         >
           <Save className="h-4 w-4" />
           {triggerLabel}
@@ -1454,43 +1438,43 @@ function SavePresetDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Salvar pré-definição</DialogTitle>
+          <DialogTitle>{t.savePresetDialog.dialogTitle}</DialogTitle>
           <DialogDescription>
-            Capture esta esteira de {items.length} slide(s) para reutilizar em apresentações futuras.
+            {t.savePresetDialog.description(items.length)}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Nome</Label>
+            <Label>{t.savePresetDialog.name}</Label>
             <Input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex.: Check semanal de resultado"
+              placeholder={t.savePresetDialog.namePlaceholder}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Descrição (opcional)</Label>
+            <Label>{t.savePresetDialog.descriptionLabel}</Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              placeholder="Notas sobre quando usar esta pré-definição"
+              placeholder={t.savePresetDialog.descriptionPlaceholder}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>{t.common.cancelar}</Button>
           <Button
             onClick={() => {
               const p = savePreset(name, description);
-              toast.success(`Pré-definição "${p.name}" salva.`);
+              toast.success(t.savePresetDialog.savedToast(p.name));
               setName(""); setDescription("");
               setOpen(false);
             }}
             disabled={!name.trim()}
           >
-            Salvar
+            {t.common.salvar}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1541,10 +1525,10 @@ async function readPresetModelFile(file: File): Promise<SlidesPreset> {
     preset?: Partial<SlidesPreset>;
   };
   if (payload.schema !== "omni4.slidesPresetExport.v1") {
-    throw new Error("Arquivo de modelo invalido.");
+    throw new Error(t.presets.invalidFile);
   }
   if (!payload.preset || !Array.isArray(payload.preset.items)) {
-    throw new Error("O arquivo nao contem os slides do modelo.");
+    throw new Error(t.presets.missingItems);
   }
   const now = Date.now();
   return {
@@ -1591,7 +1575,7 @@ function ResizeHandle({
   return (
     <button
       type="button"
-      aria-label="Redimensionar painel"
+      aria-label={t.resizeHandleAriaLabel}
       className={cn(
         "absolute top-0 z-30 h-full w-2 cursor-col-resize bg-transparent transition-colors hover:bg-primary/20",
         side === "right" ? "-right-1" : "-left-1",
@@ -1628,16 +1612,16 @@ function QuickAddSlideButton({
         <button
           type="button"
           className="mx-auto mt-5 flex min-h-16 w-[172px] items-center justify-center gap-2 rounded-2xl border border-primary/35 bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_45px_-22px_hsl(var(--primary)/0.9)] transition hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_22px_52px_-24px_hsl(var(--primary)/0.95)] disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Adicionar slide"
-          title="Adicionar slide"
+          aria-label={t.quickAdd.ariaLabel}
+          title={t.quickAdd.ariaLabel}
         >
           <Plus className="h-5 w-5" />
-          Novo slide
+          {t.quickAdd.button}
         </button>
       </PopoverTrigger>
       <PopoverContent align="center" className="w-56 p-2">
         <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Adicionar slide
+          {t.quickAdd.popoverHeader}
         </div>
         {common.map((kind) => {
           const meta = metaOf(kind);
@@ -1702,9 +1686,9 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
     try {
       const preset = await readPresetModelFile(file);
       const imported = importPreset(preset);
-      toast.success(`Modelo "${imported.name}" importado.`);
+      toast.success(t.presets.importedToast(imported.name));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel importar o modelo.");
+      toast.error(error instanceof Error ? error.message : t.presets.importError);
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
@@ -1727,7 +1711,7 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
         onClick={() => importInputRef.current?.click()}
       >
         <Upload className="h-3.5 w-3.5" />
-        Importar modelo
+        {t.presets.importButton}
       </Button>
     </>
   );
@@ -1736,7 +1720,7 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
     return (
       <div className="rounded-xl border border-dashed border-border/50 bg-secondary/10 px-4 py-6 text-center text-xs text-muted-foreground">
         <div className="mb-3">{importControl}</div>
-        Nenhuma pré-definição salva ainda.
+        {t.presets.empty}
       </div>
     );
   }
@@ -1761,40 +1745,40 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
             <div className="ml-auto flex shrink-0 items-center gap-1">
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                title="Carregar"
+                title={t.presets.loadTitle}
                 onClick={() => {
                   loadPreset(p.id);
                   onLoadedDeck?.(useSlidesFlow.getState().items, p.name);
-                  toast.success(`"${p.name}" carregado.`);
+                  toast.success(t.presets.loadedToast(p.name));
                 }}
               >
                 <RotateCcw className="h-3 w-3" />
               </Button>
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                title="Sobrescrever com a esteira atual"
-                onClick={() => { overwritePreset(p.id); toast.success(`"${p.name}" atualizado.`); }}
+                title={t.presets.overwriteTitle}
+                onClick={() => { overwritePreset(p.id); toast.success(t.presets.overwrittenToast(p.name)); }}
               >
                 <Save className="h-3 w-3" />
               </Button>
               <Button
                 variant="ghost" size="icon" className="h-6 w-6"
-                title="Exportar modelo"
+                title={t.presets.exportTitle}
                 onClick={() => {
                   exportPresetModel(p);
-                  toast.success(`Modelo "${p.name}" exportado.`);
+                  toast.success(t.presets.exportedToast(p.name));
                 }}
               >
                 <Download className="h-3 w-3" />
               </Button>
               <Button
                 variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive"
-                title="Excluir"
+                title={t.presets.deleteTitle}
                 onClick={async () => {
                   const confirmed = await requestConfirm({
-                    title: "Excluir pré-definição?",
-                    description: `"${p.name}" tem ${p.items.length} slide(s). A pré-definição salva será removida deste computador.`,
-                    confirmLabel: "Excluir pré-definição",
+                    title: t.presets.deleteConfirm.title,
+                    description: t.presets.deleteConfirm.description(p.name, p.items.length),
+                    confirmLabel: t.presets.deleteConfirm.confirmLabel,
                   });
                   if (confirmed) deletePreset(p.id);
                 }}
@@ -1819,7 +1803,7 @@ interface SlidesBetaProps {
 }
 
 export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBetaProps) {
-  usePageTitle("Slides", !isStandby);
+  usePageTitle(t.page.title, !isStandby);
   const reduceMotion = useReducedMotion();
   const items = useSlidesFlow((s) => s.items);
   const selectedId = useSlidesFlow((s) => s.selectedId);
@@ -1908,7 +1892,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     });
   }, [catalogSearch]);
 
-  const startDeckPreparation = useCallback((deckItems: SlideItem[], title = "Preparando deck") => {
+  const startDeckPreparation = useCallback((deckItems: SlideItem[], title: string = t.deckPreparation.defaultTitle) => {
     if (deckItems.length <= DECK_PREP_THRESHOLD) return false;
     if (typeof window === "undefined") return false;
     const signature = deckPreparationSignature(deckItems);
@@ -1933,8 +1917,8 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
       title,
       total,
       done: 0,
-      currentLabel: `Preparando slide 1 de ${total}`,
-      etaLabel: "Calculando tempo restante...",
+      currentLabel: t.deckPreparation.preparingSlideN(total),
+      etaLabel: t.deckPreparation.calculatingEta,
       skipped: false,
     });
 
@@ -1947,7 +1931,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           ? {
               ...previous,
               visible: !deckPreparationSkippedRef.current,
-              currentLabel: `Preparando slide ${index + 1} de ${total}: ${slideName}`,
+              currentLabel: t.deckPreparation.preparingSlideNOf(index + 1, total, slideName),
               etaLabel: formatDeckPreparationEta(startedAt, index, total),
               skipped: deckPreparationSkippedRef.current,
             }
@@ -1976,7 +1960,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               ...previous,
               visible: !deckPreparationSkippedRef.current,
               done,
-              currentLabel: done >= total ? "Deck preparado" : `Preparando slide ${Math.min(done + 1, total)} de ${total}`,
+              currentLabel: done >= total ? t.deckPreparation.done : t.deckPreparation.preparingNextOf(Math.min(done + 1, total), total),
               etaLabel: formatDeckPreparationEta(startedAt, done, total),
               skipped: deckPreparationSkippedRef.current,
             }
@@ -1995,7 +1979,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const skipDeckPreparationOverlay = useCallback(() => {
     deckPreparationSkippedRef.current = true;
     setDeckPreparation((previous) => previous ? { ...previous, visible: false, skipped: true } : previous);
-    slideToastInfo("Preparacao continua em segundo plano.");
+    slideToastInfo(t.deckPreparation.skippedToast);
   }, []);
 
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
@@ -2044,12 +2028,12 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
       updateItem(created.id, () => ({ ...slide, id: created.id } as SlideItem));
     }
         const nextDeck = useSlidesFlow.getState().items;
-        slideToastSuccess(`Template "${tpl.name}" aplicado`);
+        slideToastSuccess(t.page.templateAppliedToast(tpl.name));
         setTemplateApplying(false);
-        startDeckPreparation(nextDeck, `Preparando template "${tpl.name}"`);
+        startDeckPreparation(nextDeck, t.deckPreparation.preparingTemplate(tpl.name));
         return;
       } catch {
-        slideToastError("Não foi possível aplicar o template.");
+        slideToastError(t.page.templateApplyError);
       } finally {
         setTemplateApplying(false);
       }
@@ -2062,7 +2046,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   useEffect(() => {
     if (initialDeckPreparationCheckedRef.current || items.length === 0) return;
     initialDeckPreparationCheckedRef.current = true;
-    startDeckPreparation(items, "Preparando deck");
+    startDeckPreparation(items, t.deckPreparation.defaultTitle);
   }, [items, startDeckPreparation]);
   const readyAll = items.every((i) => isItemReady(i).ok);
   const {
@@ -2080,10 +2064,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   });
 
   const exportDisabledReason = useMemo(() => {
-    if (items.length === 0) return "Adicione ao menos um slide para exportar.";
+    if (items.length === 0) return t.page.exportDisabledReason.noSlides;
     const incomplete = items.filter((i) => !isItemReady(i).ok).length;
     if (incomplete > 0) {
-      return `Existem ${incomplete} slide${incomplete > 1 ? "s" : ""} incompleto${incomplete > 1 ? "s" : ""}.`;
+      return t.page.exportDisabledReason.incomplete(incomplete);
     }
     return null;
   }, [items]);
@@ -2133,9 +2117,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   return (
     <>
       <Topbar
-        title="Slides"
+        title={t.page.title}
         showPeriodStrip={false}
-        subtitle="Monte uma apresentação combinando slides com filtros independentes"
+        subtitle={t.page.subtitle}
       />
       {localSaveStatus === "error" && (
         <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 md:px-8">
@@ -2143,11 +2127,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
             <div className="flex min-w-0 items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
               <div className="space-y-0.5">
-                <p className="font-medium">Suas ultimas alteracoes NAO foram salvas.</p>
+                <p className="font-medium">{t.page.saveErrorBanner.message}</p>
                 <p className="text-destructive/80">
-                  A esteira continua funcionando nesta sessao, mas o salvamento local esta falhando.
-                  Exporte como PPTX/PDF agora para nao correr risco de perder o progresso ao fechar o app.
-                  {localSaveError ? ` Detalhe tecnico: ${localSaveError}` : ""}
+                  {t.page.saveErrorBanner.detail}
+                  {localSaveError ? t.page.saveErrorBanner.technicalDetail(localSaveError) : ""}
                 </p>
               </div>
             </div>
@@ -2159,7 +2142,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               disabled={items.length === 0}
             >
               <Download className="h-3.5 w-3.5" />
-              Exportar agora
+              {t.page.saveErrorBanner.exportNow}
             </Button>
           </div>
         </div>
@@ -2188,7 +2171,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               <div className="min-w-0 space-y-1">
                 <div className="slides-type-section text-sm">{deckPreparation.title}</div>
                 <p className="slides-type-helper leading-snug">
-                  Estamos preparando miniaturas e os dados iniciais do deck para deixar a navegacao mais fluida.
+                  {t.deckPreparation.dialogHint}
                 </p>
               </div>
             </div>
@@ -2212,7 +2195,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               className="mt-4 w-full text-muted-foreground"
               onClick={skipDeckPreparationOverlay}
             >
-              Pular e continuar em segundo plano
+              {t.deckPreparation.skipButton}
             </Button>
           </motion.div>
           </motion.div>
@@ -2235,10 +2218,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         <aside className="surface-panel relative z-50 flex min-h-0 border-r border-border/40">
           <div className="flex w-14 flex-col items-center gap-1 border-r border-border/40 bg-surface-panel/80 py-3">
             {([
-              { id: "catalog" as const, label: "Catálogo", icon: LayoutTemplate },
-              { id: "templates" as const, label: "Templates", icon: Sparkles },
-              { id: "assets" as const, label: "Assets", icon: ImageIcon },
-              { id: "presets" as const, label: "Modelos", icon: Bookmark },
+              { id: "catalog" as const, label: t.page.railTabs.catalog, icon: LayoutTemplate },
+              { id: "templates" as const, label: t.page.railTabs.templates, icon: Sparkles },
+              { id: "assets" as const, label: t.page.railTabs.assets, icon: ImageIcon },
+              { id: "presets" as const, label: t.page.railTabs.presets, icon: Bookmark },
             ]).map((tab) => {
               const Icon = tab.icon;
               const active = activeRailTab === tab.id;
@@ -2279,7 +2262,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   {activeRailTab === "assets" && <ImageIcon className="h-4 w-4 text-primary" />}
                   {activeRailTab === "presets" && <Bookmark className="h-4 w-4 text-primary" />}
                   <span className="slides-type-section">
-                    {activeRailTab === "catalog" ? "Catálogo" : activeRailTab === "templates" ? "Templates" : activeRailTab === "assets" ? "Assets" : "Modelos"}
+                    {activeRailTab === "catalog" ? t.page.railTabs.catalog : activeRailTab === "templates" ? t.page.railTabs.templates : activeRailTab === "assets" ? t.page.railTabs.assets : t.page.railTabs.presets}
                   </span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setActiveRailTab(null)}>
@@ -2295,7 +2278,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         <Input
                           value={catalogSearch}
                           onChange={(e) => setCatalogSearch(e.target.value)}
-                          placeholder="Buscar slides..."
+                          placeholder={t.page.catalog.searchPlaceholder}
                           className="h-9 bg-surface-base pl-8 text-sm"
                         />
                       </div>
@@ -2305,12 +2288,12 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       >
                         <Plus className="h-4 w-4" />
                         <span className="flex flex-col items-start leading-tight">
-                          <span className="slides-type-section">Slide em branco</span>
-                          <span className="slides-type-helper font-normal opacity-80">Canvas livre para montar sua analise.</span>
+                          <span className="slides-type-section">{t.page.catalog.blankSlide}</span>
+                          <span className="slides-type-helper font-normal opacity-80">{t.page.catalog.blankSlideHint}</span>
                         </span>
                       </Button>
                       <div className="slides-type-label text-muted-foreground/60">
-                        Slides disponíveis
+                        {t.page.catalog.availableSlides}
                       </div>
                       <div className="flex flex-col gap-1.5">
                         {filteredSlideCatalog.map((s) => (
@@ -2323,7 +2306,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       </div>
                       {filteredSlideCatalog.length === 0 && (
                         <div className="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
-                          Nenhum slide encontrado.
+                          {t.page.catalog.noneFound}
                         </div>
                       )}
                     </>
@@ -2331,26 +2314,26 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   {activeRailTab === "templates" && (
                     <div className="space-y-2">
                       <Button className="w-full justify-start gap-2" variant="outline" onClick={() => setGalleryOpen(true)}>
-                        <Sparkles className="h-4 w-4" /> Abrir galeria
+                        <Sparkles className="h-4 w-4" /> {t.page.templates.openGallery}
                       </Button>
                       <p className="text-xs leading-relaxed text-muted-foreground">
-                        A galeria abre sem empurrar o canvas e permite aplicar apresentações prontas.
+                        {t.page.templates.hint}
                       </p>
                     </div>
                   )}
                   {activeRailTab === "assets" && (
                     <div className="space-y-2 rounded-xl border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
                       <ImageIcon className="mx-auto h-6 w-6 text-muted-foreground/70" />
-                      Importe PPTX ou use imagens dentro do slide personalizado.
+                      {t.page.assets.hint}
                       <Button className="mt-2 w-full gap-2" size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-                        <Upload className="h-3.5 w-3.5" /> Importar PPTX
+                        <Upload className="h-3.5 w-3.5" /> {t.page.assets.importButton}
                       </Button>
                     </div>
                   )}
                   {activeRailTab === "presets" && (
                     <PresetsPanel
                       onLoadedDeck={(loadedItems, name) => {
-                        startDeckPreparation(loadedItems, `Preparando modelo "${name}"`);
+                        startDeckPreparation(loadedItems, t.deckPreparation.preparingModel(name));
                       }}
                     />
                   )}
@@ -2366,18 +2349,18 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           {/* Header da esteira */}
           <div className="surface-panel flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5">
             <div className="flex items-center gap-2.5">
-              <h2 className="slides-type-section">Esteira</h2>
+              <h2 className="slides-type-section">{t.page.esteira.title}</h2>
               <Badge variant="secondary" className="h-5 px-2 slides-type-badge tabular-nums">
-                {items.length} {items.length === 1 ? "slide" : "slides"}
+                {items.length} {t.page.esteira.slideCount(items.length)}
               </Badge>
               {items.length > 0 && (
                  <span className="slides-type-label text-muted-foreground/70 tabular-nums">
-                  ~{Math.max(1, Math.round((items.length * 30) / 60))} min
+                  {t.page.esteira.minutesEstimate(Math.max(1, Math.round((items.length * 30) / 60)))}
                 </span>
               )}
               {!readyAll && items.length > 0 && (
                  <Badge variant="outline" className="h-5 border-warning/40 px-2 slides-type-badge text-warning">
-                  Incompleto
+                  {t.page.esteira.incomplete}
                 </Badge>
               )}
               <LocalSaveStatusBadge status={localSaveStatus} />
@@ -2389,13 +2372,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     <Button
                       variant="outline" size="sm" className="h-8 gap-1.5"
                       onClick={() => setGalleryOpen(true)}
-                      aria-label="Abrir galeria de templates"
+                      aria-label={t.page.esteira.templatesAriaLabel}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
-                      Templates
+                      {t.page.esteira.templatesButton}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Galeria de templates</TooltipContent>
+                  <TooltipContent>{t.page.esteira.templatesTooltip}</TooltipContent>
                 </Tooltip>
                 {onMinimize && (
                   <Tooltip>
@@ -2405,20 +2388,20 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         size="sm"
                         className="h-8 gap-1.5"
                         onClick={onMinimize}
-                        aria-label="Minimizar editor de Slides"
+                        aria-label={t.page.esteira.minimizeAriaLabel}
                       >
                         <PanelRightClose className="h-3.5 w-3.5" />
-                        Minimizar
+                        {t.page.esteira.minimizeButton}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Manter o deck em standby e consultar outra aba</TooltipContent>
+                    <TooltipContent>{t.page.esteira.minimizeTooltip}</TooltipContent>
                   </Tooltip>
                 )}
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label="Abrir menu de compartilhamento">
+                    <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label={t.page.esteira.shareAriaLabel}>
                       <Share2 className="h-3.5 w-3.5" />
-                      Compartilhar
+                      {t.page.esteira.shareButton}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="surface-overlay w-[360px] p-4">
@@ -2426,7 +2409,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       <div className="grid grid-cols-3 gap-2">
                         <ShareActionButton icon={Download} label="PPTX" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pptx")} />
                         <ShareActionButton icon={FileText} label="PDF" disabled={!!exportDisabledReason || exporting} onClick={() => setExportConfirm("pdf")} />
-                        <ShareActionButton icon={Play} label="Apresentar" disabled={items.length === 0} onClick={() => openPresentation(false)} />
+                        <ShareActionButton icon={Play} label={t.page.esteira.present} disabled={items.length === 0} onClick={() => openPresentation(false)} />
                       </div>
                       {exportDisabledReason && (
                         <p className="text-[11px] leading-relaxed text-muted-foreground">{exportDisabledReason}</p>
@@ -2436,33 +2419,33 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 </Popover>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" aria-label="Mais opcoes da apresentacao">
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" aria-label={t.page.esteira.moreAriaLabel}>
                       <MoreHorizontal className="h-4 w-4" />
-                      Mais
+                      {t.page.esteira.moreButton}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="surface-overlay w-72 p-2">
-                    <div className="px-2 pb-1 slides-type-label text-muted-foreground/70">Mais opcoes</div>
+                    <div className="px-2 pb-1 slides-type-label text-muted-foreground/70">{t.page.esteira.moreOptions}</div>
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
                       onClick={() => setImportOpen(true)}
                     >
                       <Upload className="h-4 w-4 text-muted-foreground" />
-                      Importar PPTX
+                      {t.page.esteira.importPptx}
                     </button>
-                    <SavePresetDialog triggerClassName="h-8 w-full justify-start gap-2 px-2 text-xs text-muted-foreground" triggerLabel="Salvar pre-definicao" />
+                    <SavePresetDialog triggerClassName="h-8 w-full justify-start gap-2 px-2 text-xs text-muted-foreground" triggerLabel={t.page.esteira.savePreset} />
                     {items.length > 0 && (
                       <button
                         type="button"
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           duplicateDeck();
-                          toast.success(`Deck duplicado (${items.length} slides)`);
+                          toast.success(t.page.esteira.duplicatedToast(items.length));
                         }}
                       >
                         <Copy className="h-4 w-4 text-muted-foreground" />
-                        Duplicar deck inteiro
+                        {t.page.esteira.duplicateDeck}
                       </button>
                     )}
                     {items.length > 0 && (
@@ -2471,25 +2454,25 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => {
                           void requestConfirm({
-                            title: "Excluir todos os slides?",
-                            description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
-                            confirmLabel: "Excluir slides",
+                            title: t.page.esteira.clearConfirm.title,
+                            description: t.page.esteira.clearConfirm.description(items.length),
+                            confirmLabel: t.page.esteira.clearConfirm.confirmLabel,
                           }).then((confirmed) => {
                             if (confirmed) clearItems();
                           });
                         }}
                       >
                         <X className="h-4 w-4" />
-                        Limpar esteira
+                        {t.page.esteira.clearDeck}
                       </button>
                     )}
                     <div className="mt-2 border-t border-border/40 px-2 pt-2">
-                      <Label className="slides-type-label">Nome do arquivo</Label>
+                      <Label className="slides-type-label">{t.page.esteira.fileName}</Label>
                       <Input
                         value={fileName}
                         onChange={(e) => setFileName(e.target.value)}
                         className="mt-1.5 h-8 text-xs"
-                        placeholder="apresentacao.pptx"
+                        placeholder={t.page.esteira.fileNamePlaceholder}
                       />
                     </div>
                   </DropdownMenuContent>
@@ -2499,13 +2482,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     <Button
                       variant="outline" size="sm" className="hidden"
                       onClick={() => setImportOpen(true)}
-                      aria-label="Importar slides de PowerPoint"
+                      aria-label={t.page.esteira.importPptxAriaLabel}
                     >
                       <Upload className="h-3.5 w-3.5" />
-                      Importar PPTX
+                      {t.page.esteira.importPptx}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Importar slides de um arquivo .pptx</TooltipContent>
+                  <TooltipContent>{t.page.esteira.importPptxTooltip}</TooltipContent>
                 </Tooltip>
                 <SavePresetDialog triggerClassName="hidden" />
                 {items.length > 0 && (
@@ -2515,14 +2498,14 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         variant="ghost" size="icon" className="hidden"
                         onClick={() => {
                           duplicateDeck();
-                          toast.success(`Deck duplicado (${items.length} slides)`);
+                          toast.success(t.page.esteira.duplicatedToast(items.length));
                         }}
-                        aria-label="Duplicar deck"
+                        aria-label={t.page.esteira.duplicateDeckAriaLabel}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Duplicar deck inteiro</TooltipContent>
+                    <TooltipContent>{t.page.esteira.duplicateDeckTooltip}</TooltipContent>
                   </Tooltip>
                 )}
                 {items.length > 0 && (
@@ -2532,19 +2515,19 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         variant="ghost" size="icon" className="hidden"
                         onClick={() => {
                           void requestConfirm({
-                            title: "Excluir todos os slides?",
-                            description: `A esteira atual tem ${items.length} slide(s). Essa ação remove todos os slides locais do deck.`,
-                            confirmLabel: "Excluir slides",
+                            title: t.page.esteira.clearConfirm.title,
+                            description: t.page.esteira.clearConfirm.description(items.length),
+                            confirmLabel: t.page.esteira.clearConfirm.confirmLabel,
                           }).then((confirmed) => {
                             if (confirmed) clearItems();
                           });
                         }}
-                        aria-label="Limpar esteira"
+                        aria-label={t.page.esteira.clearDeckAriaLabel}
                       >
                         <X className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Limpar esteira</TooltipContent>
+                    <TooltipContent>{t.page.esteira.clearDeckTooltip}</TooltipContent>
                   </Tooltip>
                 )}
                 <div className="mx-2 h-6 w-px bg-border/50" />
@@ -2556,13 +2539,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       variant="default" size="sm" className="h-10 gap-2 rounded-r-none px-4 text-sm font-semibold shadow-[0_14px_34px_-20px_hsl(var(--primary)/0.9)]"
                       disabled={items.length === 0}
                       onClick={() => openPresentation(false)}
-                      aria-label="Iniciar apresentação"
+                      aria-label={t.page.esteira.startPresentationAriaLabel}
                     >
                       <Play className="h-4 w-4" />
-                      Apresentar
+                      {t.page.esteira.present}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Iniciar apresentação</TooltipContent>
+                  <TooltipContent>{t.page.esteira.startPresentation}</TooltipContent>
                 </Tooltip>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2571,7 +2554,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       size="sm"
                       className="-ml-1.5 h-10 rounded-l-none border-l border-primary-foreground/20 px-2 shadow-[0_14px_34px_-20px_hsl(var(--primary)/0.9)]"
                       disabled={items.length === 0}
-                      aria-label="Escolher modo de apresentacao"
+                      aria-label={t.page.esteira.presentationModeAriaLabel}
                     >
                       <ChevronDown className="h-4 w-4" />
                     </Button>
@@ -2580,15 +2563,15 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(false)}>
                       <MonitorPlay className="mt-0.5 h-4 w-4 text-primary" />
                       <span className="space-y-0.5">
-                        <span className="block slides-type-section">Tela cheia</span>
-                        <span className="block slides-type-helper">Apresente o deck no modo atual de tela cheia.</span>
+                        <span className="block slides-type-section">{t.page.esteira.fullscreenMode.title}</span>
+                        <span className="block slides-type-helper">{t.page.esteira.fullscreenMode.description}</span>
                       </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem className="items-start gap-3 rounded-md p-3" onClick={() => openPresentation(true)}>
                       <Timer className="mt-0.5 h-4 w-4 text-primary" />
                       <span className="space-y-0.5">
-                        <span className="block slides-type-section">Visao do apresentador</span>
-                        <span className="block slides-type-helper">Ja abre com notas do apresentador e timer ativos.</span>
+                        <span className="block slides-type-section">{t.page.esteira.presenterMode.title}</span>
+                        <span className="block slides-type-helper">{t.page.esteira.presenterMode.description}</span>
                       </span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -2598,21 +2581,21 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   <PopoverTrigger asChild>
                     <Button
                       variant="ghost" size="icon" className="hidden"
-                      aria-label="Nome do arquivo"
-                      title={`Nome do arquivo: ${fileName}`}
+                      aria-label={t.page.esteira.fileNameAriaLabel}
+                      title={t.page.esteira.fileNameTitle(fileName)}
                     >
                       <FileText className="h-4 w-4" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="surface-overlay w-72 p-3">
                     <Label className="slides-type-label">
-                      Nome do arquivo
+                      {t.page.esteira.fileName}
                     </Label>
                     <Input
                       value={fileName}
                       onChange={(e) => setFileName(e.target.value)}
                       className="mt-1.5 h-9 text-sm"
-                      placeholder="apresentacao.pptx"
+                      placeholder={t.page.esteira.fileNamePlaceholder}
                     />
                   </PopoverContent>
                 </Popover>
@@ -2659,10 +2642,10 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
                 <div>
                   <div className="slides-type-section">
-                    {exporting ? "Preparando exportação" : importApplying ? "Inserindo slides no deck" : "Aplicando template"}
+                    {exporting ? t.page.esteira.loadingExporting : importApplying ? t.page.esteira.loadingImporting : t.page.esteira.loadingTemplate}
                   </div>
                   <div className="slides-type-helper">
-                    {exporting ? "Renderizando os slides e gerando o arquivo." : "Organizando os slides e atualizando a esteira."}
+                    {exporting ? t.page.esteira.loadingExportingHint : t.page.esteira.loadingDefaultHint}
                   </div>
                 </div>
               </div>
@@ -2679,8 +2662,8 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
             type="button"
             onClick={() => setInspectorOpen((v) => !v)}
             className="surface-raised absolute left-0 top-20 z-10 flex h-9 w-7 -translate-x-1/2 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-all hover:scale-105 hover:text-foreground"
-            aria-label={inspectorOpen ? "Recolher painel" : "Expandir painel"}
-            title={inspectorOpen ? "Recolher prévia e filtros" : "Expandir prévia e filtros"}
+            aria-label={inspectorOpen ? t.page.inspectorAside.collapseAriaLabel : t.page.inspectorAside.expandAriaLabel}
+            title={inspectorOpen ? t.page.inspectorAside.collapseTitle : t.page.inspectorAside.expandTitle}
           >
             {inspectorOpen ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
@@ -2692,7 +2675,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
             />
           ) : (
             <div className="flex h-full items-center justify-center px-1 text-[10px] font-medium uppercase tracking-[0.25em] text-muted-foreground/70 [writing-mode:vertical-rl]">
-              Prévia & Filtros
+              {t.page.inspectorAside.collapsedLabel}
             </div>
           )}
         </aside>
@@ -2717,31 +2700,31 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="h-4 w-4 text-primary" />
-              Confirmar exportação
+              {t.page.exportConfirm.title}
             </DialogTitle>
             <DialogDescription>
-              Revise o resumo antes de gerar o arquivo.
+              {t.page.exportConfirm.description}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Arquivo</span>
+              <span className="text-muted-foreground">{t.page.exportConfirm.file}</span>
               <span className="text-right font-medium">{fileName.replace(/\.(pptx?|pdf)$/i, "")}.{exportConfirm ?? "pptx"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Formato</span>
+              <span className="text-muted-foreground">{t.page.exportConfirm.format}</span>
               <span className="font-medium uppercase">{exportConfirm ?? "pptx"}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Slides</span>
+              <span className="text-muted-foreground">{t.page.exportConfirm.slides}</span>
               <span className="font-medium">{items.length}</span>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setExportConfirm(null)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setExportConfirm(null)}>{t.common.cancelar}</Button>
             <Button onClick={confirmExport} disabled={exporting || !!exportDisabledReason} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Confirmar exportação
+              {t.page.exportConfirm.confirmButton}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2780,7 +2763,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   it.kind === "custom"
                     ? {
                         ...it,
-                        label: `Slide ${slide.numero} (importado)`,
+                        label: t.page.importDialog.importedSlideLabel(slide.numero),
                         config: {
                           background: "FFFFFF",
                           showHaraldFooter: false,
@@ -2790,15 +2773,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     : it,
                 );
               }
-              slideToastSuccess(
-                `${selectedIndices.length} slide${selectedIndices.length > 1 ? "s" : ""} importado${selectedIndices.length > 1 ? "s" : ""} com sucesso.`,
-              );
+              slideToastSuccess(t.page.importDialog.successToast(selectedIndices.length));
               const nextDeck = useSlidesFlow.getState().items;
               setImportApplying(false);
-              startDeckPreparation(nextDeck, "Preparando slides importados");
+              startDeckPreparation(nextDeck, t.deckPreparation.preparingImported);
               return;
             } catch {
-              slideToastError("Não foi possível inserir os slides importados.");
+              slideToastError(t.page.importDialog.errorToast);
             } finally {
               setImportApplying(false);
             }

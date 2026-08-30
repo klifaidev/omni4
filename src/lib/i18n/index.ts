@@ -34,6 +34,7 @@
 //   - src/components/pricing/custom/chart/ChartInspector.tsx
 //   - src/components/pricing/custom/inspectors/BlockInspectors.tsx
 //   - src/components/pricing/custom/BlockRenderer.tsx
+//   - src/pages/SlidesBeta.tsx
 // Isto é uma fatia, não a extração completa do editor — o resto continua
 // com string cravada no JSX até ser migrado incrementalmente.
 
