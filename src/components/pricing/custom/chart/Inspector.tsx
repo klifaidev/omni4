@@ -1,7 +1,7 @@
 // Reusable inspector primitives for the chart editor — Apple-style refresh.
 // Sentence-case labels, h-8 inputs, p-3 cards, popover color picker.
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ChevronDown, Minus, Plus, RotateCcw } from "lucide-react";
 import { HexColorPicker } from "react-colorful";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,9 @@ import {
 import { cn } from "@/lib/utils";
 import { BRAND_COLORS } from "./types";
 import { DraftInput, DraftNumberInput } from "../DraftInput";
+import { strings } from "@/lib/i18n";
+
+const tc = strings.slides.editor.inspectors.chart.common;
 
 export function Section({
   title, defaultOpen = false, children, onReset,
@@ -46,20 +49,34 @@ export function Section({
 }
 
 export function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  // O controle dentro de `children` varia (NumberStepper, SelectField,
+  // Segmented, ColorField, Slider, campos custom...) e nenhum deles aceita
+  // `id` hoje, então associar o <Label> via htmlFor exigiria mudar cada um.
+  // `role="group"` + `aria-labelledby` faz a mesma associação pra qualquer
+  // conteúdo, sem precisar tocar nos componentes filhos — é assim que um
+  // leitor de tela anuncia "label, em foco no controle" pros ~180 usos
+  // deste componente nos inspectors.
+  const labelId = useId();
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <Label className="min-w-0 flex-1 truncate slides-type-helper">{label}</Label>
-      <div className="min-w-0 flex-1 max-w-[62%]">{children}</div>
+      <Label id={labelId} className="min-w-0 flex-1 truncate slides-type-helper">{label}</Label>
+      <div className="min-w-0 flex-1 max-w-[62%]" role="group" aria-labelledby={labelId}>{children}</div>
     </div>
   );
 }
 
 export function ToggleField({ label, value, onChange }:
   { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  // ToggleField também é usado sozinho (fora de Row), com label de verdade
+  // — precisa da própria associação, não só a do Row acima. Quando é usado
+  // DENTRO de um Row (label="" — o Row já mostra o rótulo de verdade), não
+  // criamos um <label for> vazio: isso poderia virar o nome acessível do
+  // Switch e SUPRIMIR o fallback pro aria-labelledby do grupo do Row.
+  const id = useId();
   return (
     <div className="flex items-center justify-between">
-      <Label className="slides-type-helper">{label}</Label>
-      <Switch checked={value} onCheckedChange={onChange} />
+      <Label htmlFor={label ? id : undefined} className="slides-type-helper">{label}</Label>
+      <Switch id={label ? id : undefined} checked={value} onCheckedChange={onChange} />
     </div>
   );
 }
@@ -77,7 +94,7 @@ export function NumberStepper({
   };
   return (
     <div className="flex h-8 items-center rounded-md border border-input bg-surface-base">
-      <button type="button" className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+      <button type="button" aria-label={tc.decrease} className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
         onClick={() => onChange(clamp(value - step))}>
         <Minus className="h-3 w-3" />
       </button>
@@ -91,7 +108,7 @@ export function NumberStepper({
         className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-[13px] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
       />
       {suffix && <span className="px-1 text-[11px] font-normal text-muted-foreground/70">{suffix}</span>}
-      <button type="button" className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+      <button type="button" aria-label={tc.increase} className="px-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
         onClick={() => onChange(clamp(value + step))}>
         <Plus className="h-3 w-3" />
       </button>

@@ -45,6 +45,8 @@ export const ptBR = {
           // a cor de algum elemento do gráfico), por isso compartilhado em
           // vez de repetido por seção.
           common: {
+            decrease: "Diminuir",
+            increase: "Aumentar",
             color: "Cor",
             borderColor: "Cor borda",
             border: "Borda",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -164,19 +164,33 @@ function RelativePresetSelect({
 export function PositionInputs({ block, onChange }: {
   block: CustomBlock; onChange: (p: Partial<CustomBlock>) => void;
 }) {
+  // useId() aqui daria o mesmo id pras 4 colunas (chamado 1x fora do map) —
+  // por isso é gerado dentro do próprio .map, um id por campo.
   return (
     <div className="grid grid-cols-4 gap-1.5">
       {(["x", "y", "w", "h"] as const).map((k) => (
-        <div key={k}>
-          <Label className="text-[9px] uppercase text-muted-foreground">{k}</Label>
-          <DraftNumberInput
-            className="h-7 px-1.5 text-[11px]"
-            value={block[k]}
-            fallback={0}
-            onCommit={(next) => onChange({ [k]: next ?? 0 } as never)}
-          />
-        </div>
+        <PositionInputField key={k} axis={k} value={block[k]} onChange={onChange} />
       ))}
+    </div>
+  );
+}
+
+function PositionInputField({ axis, value, onChange }: {
+  axis: "x" | "y" | "w" | "h";
+  value: number;
+  onChange: (p: Partial<CustomBlock>) => void;
+}) {
+  const id = useId();
+  return (
+    <div>
+      <Label htmlFor={id} className="text-[9px] uppercase text-muted-foreground">{axis}</Label>
+      <DraftNumberInput
+        id={id}
+        className="h-7 px-1.5 text-[11px]"
+        value={value}
+        fallback={0}
+        onCommit={(next) => onChange({ [axis]: next ?? 0 } as never)}
+      />
     </div>
   );
 }
@@ -185,16 +199,19 @@ export function BlockAppearanceControls({ block, onChange }: {
   block: CustomBlock;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
+  const id = useId();
   return (
     <div className="rounded-md border border-border/40 bg-secondary/20 p-2">
-      <Label className="mb-1 block text-[10px] uppercase text-muted-foreground">{t.blockAppearance.opacity}</Label>
-      <SliderWithInput
-        value={block.opacity ?? 100}
-        min={0}
-        max={100}
-        unit="%"
-        onChange={(v) => onChange({ opacity: v })}
-      />
+      <Label id={id} className="mb-1 block text-[10px] uppercase text-muted-foreground">{t.blockAppearance.opacity}</Label>
+      <div role="group" aria-labelledby={id}>
+        <SliderWithInput
+          value={block.opacity ?? 100}
+          min={0}
+          max={100}
+          unit="%"
+          onChange={(v) => onChange({ opacity: v })}
+        />
+      </div>
     </div>
   );
 }
@@ -2066,7 +2083,7 @@ function DreBlockInspector({ block, onChange }: {
       <Section title={t.dre.linesSection} defaultOpen>
         <div className="space-y-0.5">
           {DRE_LINES.map((line) => (
-            <div key={line.id} className="flex items-center justify-between py-0.5">
+            <label key={line.id} className="flex items-center justify-between py-0.5 cursor-pointer">
               <span className="text-[11px] text-muted-foreground">{line.label}</span>
               <input
                 type="checkbox"
@@ -2080,7 +2097,7 @@ function DreBlockInspector({ block, onChange }: {
                   onChange({ linhas: next.length === DRE_LINES.length ? null : next });
                 }}
               />
-            </div>
+            </label>
           ))}
           <button
             className="mt-1 text-[10px] text-primary hover:underline"
@@ -2167,7 +2184,7 @@ function DreBlockInspector({ block, onChange }: {
                   <div className="space-y-0.5">
                     <span className="text-[10px] uppercase text-muted-foreground">{t.dre.activeLines}</span>
                     {DRE_LINES.map((line) => (
-                      <div key={line.id} className="flex items-center justify-between py-0.5">
+                      <label key={line.id} className="flex items-center justify-between py-0.5 cursor-pointer">
                         <span className="text-[11px] text-muted-foreground">{line.label}</span>
                         <input type="checkbox" className="h-3.5 w-3.5"
                           checked={cf.linhasAtivas.includes(line.id)}
@@ -2177,7 +2194,7 @@ function DreBlockInspector({ block, onChange }: {
                               : cf.linhasAtivas.filter((id) => id !== line.id);
                             upd({ linhasAtivas: next });
                           }} />
-                      </div>
+                      </label>
                     ))}
                   </div>
                 </>
