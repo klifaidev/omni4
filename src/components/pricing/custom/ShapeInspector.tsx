@@ -12,6 +12,9 @@ import {
   SHAPE_GROUPS, SHAPE_LABELS, ensureShapeBlock, isLineFamily, deriveLineEndpoints,
 } from "@/lib/customSlide";
 import { ShapeMiniPreview } from "./ShapeRenderer";
+import { strings } from "@/lib/i18n";
+
+const t = strings.slides.editor.inspectors.shape;
 
 type Patch = Partial<ShapeBlock>;
 
@@ -24,7 +27,7 @@ export function ShapeInspector({ block, onChange }: {
   return (
     <div className="space-y-3">
       {/* Picker */}
-      <Section title="Forma">
+      <Section title={t.sections.shape}>
         <div className="space-y-2">
           {SHAPE_GROUPS.map((g) => (
             <div key={g.label}>
@@ -48,14 +51,14 @@ export function ShapeInspector({ block, onChange }: {
 
       {/* Preenchimento — hidden for line family */}
       {!isLine && (
-        <Section title="Preenchimento">
+        <Section title={t.sections.fill}>
           <Row>
-            <ColorField label="Cor" value={b.fill} allowTransparent
-              onTransparentChange={(t) => onChange(t
+            <ColorField label={t.color} value={b.fill} allowTransparent
+              onTransparentChange={(transparent) => onChange(transparent
                 ? { fill: "transparent", fillOpacity: 0 }
                 : { fill: "EEF2F6", fillOpacity: 100 })}
               onChange={(v) => onChange({ fill: v })} />
-            <SliderField label={`Opacidade ${b.fillOpacity}%`} min={0} max={100} step={1}
+            <SliderField label={t.opacityPct(b.fillOpacity)} min={0} max={100} step={1}
               value={b.fillOpacity} disabled={b.fill === "transparent"}
               onChange={(v) => onChange({ fillOpacity: v })} />
           </Row>
@@ -64,19 +67,23 @@ export function ShapeInspector({ block, onChange }: {
 
       {/* Contorno OR Linha */}
       {isLine ? (
-        <Section title="Linha">
+        <Section title={t.sections.line}>
           <Row>
-            <ColorField label="Cor" value={b.fill} onChange={(v) => onChange({ fill: v })} />
-            <NumStepper label="Espessura" value={b.lineThickness} min={1} max={20}
+            <ColorField label={t.color} value={b.fill} onChange={(v) => onChange({ fill: v })} />
+            <NumStepper label={t.thickness} value={b.lineThickness} min={1} max={20}
               onChange={(v) => onChange({ lineThickness: v })} />
           </Row>
           <Row>
-            <SegField<ShapeStrokeStyle> label="Estilo" value={b.strokeStyle}
-              options={[{ v: "solid", l: "Sólido" }, { v: "dashed", l: "Tracejado" }, { v: "dotted", l: "Pontilhado" }]}
+            <SegField<ShapeStrokeStyle> label={t.style} value={b.strokeStyle}
+              options={[
+                { v: "solid", l: t.strokeStyle.solid },
+                { v: "dashed", l: t.strokeStyle.dashed },
+                { v: "dotted", l: t.strokeStyle.dotted },
+              ]}
               onChange={(v) => onChange({ strokeStyle: v })} />
           </Row>
           <Row>
-            <SegField<ShapeLineDirection> label="Direção" value={b.lineDirection}
+            <SegField<ShapeLineDirection> label={t.direction} value={b.lineDirection}
               options={[
                 { v: "horizontal", l: "→" },
                 { v: "vertical", l: "↓" },
@@ -89,20 +96,24 @@ export function ShapeInspector({ block, onChange }: {
               })} />
           </Row>
           <Row>
-            <ToggleField label="Ponta inicial" value={b.arrowStart} onChange={(v) => onChange({ arrowStart: v })} />
-            <ToggleField label="Ponta final" value={b.arrowEnd} onChange={(v) => onChange({ arrowEnd: v })} />
+            <ToggleField label={t.arrowStart} value={b.arrowStart} onChange={(v) => onChange({ arrowStart: v })} />
+            <ToggleField label={t.arrowEnd} value={b.arrowEnd} onChange={(v) => onChange({ arrowEnd: v })} />
           </Row>
         </Section>
       ) : (
-        <Section title="Contorno">
+        <Section title={t.sections.outline}>
           <Row>
-            <ColorField label="Cor da borda" value={b.strokeColor} onChange={(v) => onChange({ strokeColor: v })} />
-            <NumStepper label="Espessura" value={b.strokeWidth} min={0} max={20}
+            <ColorField label={t.borderColor} value={b.strokeColor} onChange={(v) => onChange({ strokeColor: v })} />
+            <NumStepper label={t.thickness} value={b.strokeWidth} min={0} max={20}
               onChange={(v) => onChange({ strokeWidth: v })} />
           </Row>
           <Row>
-            <SegField<ShapeStrokeStyle> label="Estilo" value={b.strokeStyle}
-              options={[{ v: "solid", l: "Sólido" }, { v: "dashed", l: "Tracejado" }, { v: "dotted", l: "Pontilhado" }]}
+            <SegField<ShapeStrokeStyle> label={t.style} value={b.strokeStyle}
+              options={[
+                { v: "solid", l: t.strokeStyle.solid },
+                { v: "dashed", l: t.strokeStyle.dashed },
+                { v: "dotted", l: t.strokeStyle.dotted },
+              ]}
               onChange={(v) => onChange({ strokeStyle: v })} />
           </Row>
         </Section>
@@ -110,37 +121,37 @@ export function ShapeInspector({ block, onChange }: {
 
       {/* Geometria — hide for line family */}
       {!isLine && (
-        <Section title="Geometria">
+        <Section title={t.sections.geometry}>
           <Row>
             {(b.shape === "rect" || b.shape === "roundRect" || b.shape === "callout-rect" || b.shape === "callout-rounded") && (
-              <NumStepper label="Raio" value={b.radius} min={0} max={200}
+              <NumStepper label={t.radius} value={b.radius} min={0} max={200}
                 onChange={(v) => onChange({ radius: v })} />
             )}
-            <NumStepper label="Rotação°" value={b.rotation} min={0} max={359}
+            <NumStepper label={t.rotationDeg} value={b.rotation} min={0} max={359}
               onChange={(v) => onChange({ rotation: v })} />
           </Row>
         </Section>
       )}
 
       {/* Sombra */}
-      <Section title="Sombra">
-        <ToggleField label="Mostrar sombra" value={b.shadowEnabled}
+      <Section title={t.sections.shadow}>
+        <ToggleField label={t.showShadow} value={b.shadowEnabled}
           onChange={(v) => onChange({ shadowEnabled: v })} />
         {b.shadowEnabled && (
           <>
             <Row>
-              <ColorField label="Cor" value={b.shadowColor} onChange={(v) => onChange({ shadowColor: v })} />
-              <SliderField label={`Opacidade ${b.shadowOpacity}%`} min={0} max={100} step={1}
+              <ColorField label={t.color} value={b.shadowColor} onChange={(v) => onChange({ shadowColor: v })} />
+              <SliderField label={t.opacityPct(b.shadowOpacity)} min={0} max={100} step={1}
                 value={b.shadowOpacity} onChange={(v) => onChange({ shadowOpacity: v })} />
             </Row>
             <Row>
-              <NumStepper label="Desfoque" value={b.shadowBlur} min={0} max={40}
+              <NumStepper label={t.blur} value={b.shadowBlur} min={0} max={40}
                 onChange={(v) => onChange({ shadowBlur: v })} />
             </Row>
             <Row>
-              <NumStepper label="X" value={b.shadowX} min={-40} max={40}
+              <NumStepper label={t.axisX} value={b.shadowX} min={-40} max={40}
                 onChange={(v) => onChange({ shadowX: v })} />
-              <NumStepper label="Y" value={b.shadowY} min={-40} max={40}
+              <NumStepper label={t.axisY} value={b.shadowY} min={-40} max={40}
                 onChange={(v) => onChange({ shadowY: v })} />
             </Row>
           </>
@@ -173,7 +184,7 @@ function ColorField({ label, value, onChange, allowTransparent = false, onTransp
       <Label className="slides-type-label">{label}</Label>
       {allowTransparent && (
         <label className="mb-1 mt-0.5 flex cursor-pointer items-center justify-between text-[10px] text-muted-foreground">
-          <span>Sem fundo</span>
+          <span>{t.noFill}</span>
           <Switch checked={isTransparent} className="scale-75"
             onCheckedChange={(c) => onTransparentChange?.(c)} />
         </label>
