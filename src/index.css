@@ -46,7 +46,12 @@
     --accent: 263 70% 65%;
     --accent-foreground: 220 20% 96%;
 
-    --destructive: 0 84% 65%;
+    /* L reduzido de 65%->46% em relação ao valor original: no L65 a
+       combinação com --destructive-foreground só chegava a 3.00:1 de
+       contraste, abaixo do mínimo de 4.5:1 do WCAG AA para texto normal
+       (ver auditoria da Doutrina do Editor, Fase 2). Mesmo H/S, um
+       vermelho um pouco mais escuro — 4.76:1 depois do ajuste. */
+    --destructive: 0 84% 46%;
     --destructive-foreground: 220 20% 96%;
 
     --success: 158 64% 52%;
@@ -154,7 +159,9 @@
     --accent: 263 70% 55%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 55%;
+    /* L reduzido de 55%->49% (mesmo motivo do tema escuro acima): 4.21:1
+       de contraste no valor original, agora 4.70:1. */
+    --destructive: 0 84% 49%;
     --destructive-foreground: 0 0% 100%;
 
     --success: 158 64% 42%;
