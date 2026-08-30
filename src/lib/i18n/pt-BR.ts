@@ -761,6 +761,111 @@ export const ptBR = {
           },
         },
       },
+      // Textos do BlockRenderer.tsx — não é um inspector (não edita nada), é
+      // quem desenha o bloco de verdade na tela e no export. Fica fora de
+      // `inspectors` por isso, mas mesma convenção de acesso.
+      blockRenderer: {
+        errorBoundary: "Não foi possível renderizar este bloco com os filtros atuais.",
+        resizeHandleTitle: "Arrastar para ajustar largura",
+        // Rótulos de CUSTOM_TABLE_MEASURES (exportado deste arquivo e também
+        // consumido por BlockInspectors.tsx no checklist "Medidas" da tabela —
+        // migrar aqui localiza os dois lugares de uma vez.
+        measures: {
+          rol: "ROL",
+          volume: "Volume (Kg)",
+          contribMarginal: "Contrib. Marg.",
+          custoVariavel: "Custo Variável",
+          frete: "Frete",
+          comissao: "Comissão",
+          margemBruta: "Margem Bruta",
+        },
+        kpi: {
+          fallbackLabel: "KPI",
+          allPeriods: "Todos os períodos",
+          relative: (label: string) => `Relativo: ${label}`,
+        },
+        bridge: {
+          calculating: "Calculando Bridge...",
+          unconfigured: "Configure base e comparação para a Bridge",
+          error: "Erro ao calcular Bridge",
+        },
+        table: {
+          unconfigured: "Configure dimensões e medidas da tabela",
+          totalFallback: "Total",
+          gapVsPrevMonth: (prefix: string) => `${prefix} vs M-1`,
+          gapVsPrevYear: (prefix: string) => `${prefix} vs LY`,
+          gapVsBench: (prefix: string) => `${prefix} vs Bench`,
+          gapVsManual: (prefix: string) => `${prefix} vs Manual`,
+          variationHeaderSingle: "Var. % vs mês ant.",
+          variationHeaderMulti: (measureLabel: string) => `Var. % ${measureLabel}`,
+          others: (count: number) => `Outros (${count})`,
+          truncatedCaption: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
+        },
+        topSku: {
+          rankHeader: "#",
+          itemHeader: "Item",
+          valueHeader: "Valor",
+          others: (count: number) => `Outros (${count})`,
+        },
+        dre: {
+          unconfigured: "Configure os períodos para exibir o DRE",
+          months: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
+          indicator: "Indicador",
+          budget: "Budget",
+          volumeTons: "Volume (Tons)",
+        },
+        omni: {
+          emptyDefault: "Sem dados.",
+          emptyUf: "Sem dados por UF.",
+          emptyPeriodCompare: "Selecione dois períodos para comparar.",
+          metricLabels: { cm: "CM", mb: "MB", rol: "ROL", volume: "Volume", margemPct: "Margem %" },
+          monthLabels: ["Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"],
+          // Título de fallback quando o bloco não tem b.title definido. Nao é
+          // o mesmo texto do placeholder mostrado no campo de título do
+          // inspector (inspectors.blocks.omni.defaultTitles) — os dois já
+          // divergiam um pouco antes desta migração (ex.: "Heróis/Ofensores"
+          // vs "Heróis e Ofensores"); preservado como estava, sem unificar.
+          defaultTitles: {
+            evolucaoMensal: "Evolução Mensal",
+            heatmapSazonalidade: "Heatmap Sazonalidade",
+            heroisOfensores: "Heróis e Ofensores",
+            canalTrend: "Tendência por Canal",
+            canalMix: "Mix por Canal",
+            custoEvolucao: "Evolução de Custos",
+            positivacao: "Positivação",
+            ufMap: "Mapa por UF",
+            custoComposicao: "Composição de Custos",
+            priceDecomp: "Decomposição de Preço",
+            bridgePvm: "Bridge PVM",
+            farol: "Farol de Positivação",
+            abcCurva: "Curva ABC",
+            portfolioMatrix: "Matriz de Portfólio",
+            abcBars: "Barras ABC",
+            custoPressao: "Pressão de Custo sobre Receita",
+          },
+          heroisOfensores: { heroes: "Heróis", villains: "Ofensores" },
+          abcBars: { top: "Top", bottom: "Bottom" },
+          custoSeries: {
+            custoVariavel: "Custo Variável",
+            custoFixo: "Custo Fixo",
+            custoVariavelPctRol: "Custo Variável % ROL",
+            custoFixoPctRol: "Custo Fixo % ROL",
+          },
+          clientesTooltip: "Clientes",
+          ufMapAriaLabel: "Mapa do Brasil por UF",
+          ufMapNoData: " - sem dados",
+          priceDecomp: {
+            precoMedioBase: "Preço Médio Base",
+            precoMedioComp: "Preço Médio Comp",
+            variacaoTotal: "Variação Total",
+            efeitoPreco: "Efeito Preço",
+            efeitoMix: "Efeito Mix",
+          },
+          farolEmpty: "Escolha SKU base e SKU comparado com dados suficientes para exibir o velocímetro.",
+          farolCaptionMiddle: "positivado nos clientes do",
+          farolStats: { base: "Base", comparado: "Comparado", comum: "Comum" },
+        },
+      },
     },
   },
 } as const;

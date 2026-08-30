@@ -64,6 +64,9 @@ import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { buildSimpleBlockLayout, type CustomSlideLayoutNode } from "@/lib/customSlideLayout";
 import brMapRaw from "@/assets/br.svg?raw";
+import { strings } from "@/lib/i18n";
+
+const t = strings.slides.editor.blockRenderer;
 
 function useDataSource(
   dataSource: BlockDataSource | undefined,
@@ -163,13 +166,13 @@ function useAsyncBlockCalc<T>(
 }
 
 export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
-  { id: "rol_real",  label: "ROL",            field: "rol_real",         agg: "sum", format: "currency", tone: "real" },
-  { id: "vol_real",  label: "Volume (Kg)",    field: "volumeKg_real",    agg: "sum", format: "tons",     tone: "real" },
-  { id: "cm_real",   label: "Contrib. Marg.", field: "cm_real",          agg: "sum", format: "currency", tone: "real" },
-  { id: "cv_real",   label: "Custo Variável", field: "custoVariavel_real", agg: "sum", format: "currency", tone: "real" },
-  { id: "frete_real",label: "Frete",          field: "frete_real",       agg: "sum", format: "currency", tone: "real" },
-  { id: "com_real",  label: "Comissão",       field: "comissao_real",    agg: "sum", format: "currency", tone: "real" },
-  { id: "mb_real",   label: "Margem Bruta",   field: "mb_real",          agg: "sum", format: "currency", tone: "real" },
+  { id: "rol_real",  label: t.measures.rol,            field: "rol_real",         agg: "sum", format: "currency", tone: "real" },
+  { id: "vol_real",  label: t.measures.volume,         field: "volumeKg_real",    agg: "sum", format: "tons",     tone: "real" },
+  { id: "cm_real",   label: t.measures.contribMarginal,field: "cm_real",          agg: "sum", format: "currency", tone: "real" },
+  { id: "cv_real",   label: t.measures.custoVariavel,  field: "custoVariavel_real", agg: "sum", format: "currency", tone: "real" },
+  { id: "frete_real",label: t.measures.frete,          field: "frete_real",       agg: "sum", format: "currency", tone: "real" },
+  { id: "com_real",  label: t.measures.comissao,       field: "comissao_real",    agg: "sum", format: "currency", tone: "real" },
+  { id: "mb_real",   label: t.measures.margemBruta,    field: "mb_real",          agg: "sum", format: "currency", tone: "real" },
 ];
 
 export const CUSTOM_TABLE_DIMS = ALL_DIMENSIONS;
@@ -422,7 +425,7 @@ class BlockErrorBoundary extends React.Component<
         fontSize: 12,
         textAlign: "center",
       }}>
-        Nao foi possivel renderizar este bloco com os filtros atuais.
+        {t.errorBoundary}
       </div>
     );
   }
@@ -633,9 +636,9 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     : null;
   const periodDescriptor = b.periodMode && b.periodMode !== "all"
     ? b.periodSelectionMode === "relative"
-      ? `Relativo: ${relativePeriodLabel(b.relativePeriod)}`
+      ? t.kpi.relative(relativePeriodLabel(b.relativePeriod))
       : b.periodValue ?? ""
-    : b.periodMode === "all" ? "Todos os períodos" : "";
+    : b.periodMode === "all" ? t.kpi.allPeriods : "";
 
   const cardBg = b.cardBg ?? "F8FAFC";
   const isTransparent = cardBg === "transparent";
@@ -644,7 +647,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   if (readOnly) {
     const fill = isTransparent ? "transparent" : `#${cardBg}`;
     const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
-    const labelText = b.label || measureLabel || "KPI";
+    const labelText = b.label || measureLabel || t.kpi.fallbackLabel;
     const footerText = b.source === "dynamic"
       ? `${measureLabel ?? ""}${periodDescriptor ? ` · ${periodDescriptor}` : ""}`
       : "";
@@ -705,7 +708,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       fontFamily: "Calibri, sans-serif",
     }}>
       <div style={{ fontSize: 14, color: SLIDE_HEX.slate500, textTransform: "uppercase", letterSpacing: 1 }}>
-        {b.label || measureLabel || "KPI"}
+        {b.label || measureLabel || t.kpi.fallbackLabel}
       </div>
       <div style={{
         fontSize: valueSize, fontWeight: 700, color: `#${b.color}`,
@@ -789,10 +792,10 @@ function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSli
         color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
         {pvmResult.kind === "loading"
-          ? "Calculando Bridge..."
+          ? t.bridge.calculating
           : pvmResult.kind === "unconfigured"
-          ? "Configure base e comparação para a Bridge"
-          : "Erro ao calcular Bridge"}
+          ? t.bridge.unconfigured
+          : t.bridge.error}
       </div>
     );
   }
@@ -983,11 +986,11 @@ function resolveTableGapReferencePeriod(
 }
 
 function tableGapLabel(gap: TableGapColumn, measure: PivotMeasure | undefined) {
-  const prefix = measure?.label ?? "KPI";
-  if (gap.comparisonMode === "prev-month") return `${prefix} vs M-1`;
-  if (gap.comparisonMode === "prev-year-month") return `${prefix} vs LY`;
-  if (gap.comparisonMode === "bench") return `${prefix} vs Bench`;
-  return `${prefix} vs Manual`;
+  const prefix = measure?.label ?? t.kpi.fallbackLabel;
+  if (gap.comparisonMode === "prev-month") return t.table.gapVsPrevMonth(prefix);
+  if (gap.comparisonMode === "prev-year-month") return t.table.gapVsPrevYear(prefix);
+  if (gap.comparisonMode === "bench") return t.table.gapVsBench(prefix);
+  return t.table.gapVsManual(prefix);
 }
 
 function buildTableGapValues(
@@ -1041,7 +1044,7 @@ function TableColumnResizeHandle({
       className={TABLE_COLUMN_RESIZE_HANDLE_CLASS}
       data-table-column-resize-handle="true"
       data-export-hide="true"
-      title="Arrastar para ajustar largura"
+      title={t.resizeHandleTitle}
       onPointerDown={onPointerDown}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -1111,7 +1114,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     };
     const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
 
-    const rowLabel = (header: { values: string[] }) => header.values.join(" / ") || "Total";
+    const rowLabel = (header: { values: string[] }) => header.values.join(" / ") || t.table.totalFallback;
     const sortKey = b.sortMeasure && measures.find((m) => m.id === b.sortMeasure)
       ? b.sortMeasure
       : measures[0].id;
@@ -1162,8 +1165,8 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   );
   const firstColumnLabelTexts = useMemo(() => {
     if (!data) return [];
-    const headerLabel = b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total";
-    return [headerLabel, ...data.sortedHeaders.map((rh) => rh.values.join(" / ") || "Total")];
+    const headerLabel = b.rowDims.map((d) => labelOfDim(d)).join(" / ") || t.table.totalFallback;
+    return [headerLabel, ...data.sortedHeaders.map((rh) => rh.values.join(" / ") || t.table.totalFallback)];
   }, [data, b.rowDims]);
   const tableColumnMinWidths = useMemo(
     () => computeTableColumnMinWidths({
@@ -1246,7 +1249,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         background: SLIDE_HEX.paper, border: `1px dashed ${SLIDE_HEX.slate300}`,
         color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
       }}>
-        Configure dimensões e medidas da tabela
+        {t.table.unconfigured}
       </div>
     );
   }
@@ -1411,7 +1414,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     return formatted;
   };
   const variationHeaderLabel = (measureLabel: string) =>
-    measures.length === 1 ? "Var. % vs mês ant." : `Var. % ${measureLabel}`;
+    measures.length === 1 ? t.table.variationHeaderSingle : t.table.variationHeaderMulti(measureLabel);
   const getRowVariation = (rhKey: string, mId: string): number | null => {
     if (!previousCol || !lastCol) return null;
     const previous = result.cells.get(rhKey)?.get(previousCol.key)?.[mId] ?? 0;
@@ -1526,7 +1529,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
 
   const headerCells = [
       <ExportPositionedCell key="row-head" style={renderCellHead} left={firstCol.left} top={0} width={firstCol.width} height={rowH} padX={8}>
-        {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || "Total"}
+        {b.rowDims.map((d) => labelOfDim(d)).join(" / ") || t.table.totalFallback}
       </ExportPositionedCell>,
       ...(showCols
         ? [
@@ -1576,7 +1579,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
 
     const bodyCells = visibleHeaders.flatMap((rh, ri) => [
       <ExportPositionedCell key={`${rh.key}-label`} style={renderCellLabel} left={firstCol.left} top={(ri + 1) * rowH} width={firstCol.width} height={rowH} padX={8}>
-        {rh.values.join(" / ") || "Total"}
+        {rh.values.join(" / ") || t.table.totalFallback}
       </ExportPositionedCell>,
       ...(showCols
         ? [
@@ -1661,7 +1664,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
             height={rowH}
             padX={8}
           >
-            Outros ({hiddenHeaders.length})
+            {t.table.others(hiddenHeaders.length)}
           </ExportPositionedCell>,
           ...(showCols
             ? [
@@ -1770,7 +1773,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
             fontStyle: "italic",
             color: SLIDE_HEX.slate400,
           }}>
-            Mostrando {fit.shown} de {fit.total}
+            {t.table.truncatedCaption(fit.shown, fit.total)}
           </div>
         )}
       </div>
@@ -1821,7 +1824,7 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const hidden = allItems.slice(fit.shown);
   const items = b.showOthers && hidden.length > 0
     ? [...visible, {
-        name: `Outros (${hidden.length})`,
+        name: t.topSku.others(hidden.length),
         value: hidden.reduce((s, x) => s + x.value, 0),
         share: hidden.reduce((s, x) => s + x.share, 0),
       }]
@@ -1858,9 +1861,9 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
       fontFamily: "Calibri",
     };
     const headerCells = [
-      <ExportPositionedCell key="rank-head" style={headerStyle} left={0} top={0} width={rankColW} height={rowH} padX={topManualPadX}>#</ExportPositionedCell>,
-      <ExportPositionedCell key="item-head" style={{ ...headerStyle, textAlign: "left" }} left={rankColW} top={0} width={itemColW} height={rowH} padX={topManualPadX}>Item</ExportPositionedCell>,
-      <ExportPositionedCell key="value-head" style={{ ...headerStyle, textAlign: "right" }} left={rankColW + itemColW} top={0} width={valueColW} height={rowH} padX={topManualPadX}>Valor</ExportPositionedCell>,
+      <ExportPositionedCell key="rank-head" style={headerStyle} left={0} top={0} width={rankColW} height={rowH} padX={topManualPadX}>{t.topSku.rankHeader}</ExportPositionedCell>,
+      <ExportPositionedCell key="item-head" style={{ ...headerStyle, textAlign: "left" }} left={rankColW} top={0} width={itemColW} height={rowH} padX={topManualPadX}>{t.topSku.itemHeader}</ExportPositionedCell>,
+      <ExportPositionedCell key="value-head" style={{ ...headerStyle, textAlign: "right" }} left={rankColW + itemColW} top={0} width={valueColW} height={rowH} padX={topManualPadX}>{t.topSku.valueHeader}</ExportPositionedCell>,
       ...(b.showShare
         ? [<ExportPositionedCell key="share-head" style={{ ...headerStyle, textAlign: "right" }} left={rankColW + itemColW + valueColW} top={0} width={shareColW} height={rowH} padX={topManualPadX}>%</ExportPositionedCell>]
         : []),
@@ -1976,7 +1979,7 @@ function computeDreColumnWidths(args: {
   const valPadX = Math.round(fontPx * 0.36) * 2;
 
   const indicatorTextWidth = Math.max(
-    measureCanvasTextWidth("Indicador", fontPx + 1, true),
+    measureCanvasTextWidth(t.dre.indicator, fontPx + 1, true),
     ...indicatorLabels.map((l) => measureCanvasTextWidth(l.text, fontPx, l.bold)),
   );
   const indicatorTargetUnits = indicatorTextWidth + labelPadX;
@@ -2049,7 +2052,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
     return map;
   }, [blk.showBudget, budgetRows, blk.filters, cols]);
 
-  const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  const MESES = t.dre.months;
 
   const visibleLines = useMemo(() => {
     if (!blk.linhas) return LINES;
@@ -2095,7 +2098,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
         width: "100%", height: "100%", color: SLIDE_HEX.slate400,
         fontSize: blk.fontSize, fontFamily: "Calibri, Arial, sans-serif",
       }}>
-        Configure os períodos para exibir o DRE
+        {t.dre.unconfigured}
       </div>
     );
   }
@@ -2104,7 +2107,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const pad = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.55)}px`;
   const padVal = `${Math.round(fs * 0.27)}px ${Math.round(fs * 0.36)}px`;
   const dreLineLabel = (line: (typeof visibleLines)[number]) =>
-    line.id === "vol" ? "Volume (Tons)" : line.label;
+    line.id === "vol" ? t.dre.volumeTons : line.label;
   const fmtDreValue = (line: (typeof visibleLines)[number], value: number | null) =>
     line.id === "vol" && value !== null ? formatNum(value, 0) : fmt(value, line.kind);
 
@@ -2135,7 +2138,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
 
     const headerCells = [
       <ExportPositionedCell key="indicador" style={{ ...headerBase, padding: pad, textAlign: "left" }} left={0} top={0} width={firstColW} height={rowH} padX={Math.round(fs * 0.55)}>
-        Indicador
+        {t.dre.indicator}
       </ExportPositionedCell>,
       ...cols.flatMap((col, ci) => [
         <ExportPositionedCell
@@ -2168,7 +2171,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
                 height={rowH}
                 padX={Math.round(fs * 0.36)}
               >
-                Budget
+                {t.dre.budget}
               </ExportPositionedCell>,
             ]
           : []),
@@ -2347,7 +2350,7 @@ const OMNI_COLORS = [
   SLIDE_HEX.pinkDark,
 ];
 
-function omniEmpty(msg = "Sem dados.") {
+function omniEmpty(msg: string = t.omni.emptyDefault) {
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <span style={{ fontSize: 13, color: "hsl(var(--muted-foreground))" }}>{msg}</span>
@@ -2366,11 +2369,11 @@ function omniTitle(title: string) {
 /** Maps OmniMetric to display info */
 function omniMetricInfo(metric: OmniMetric): { label: string; fmt: (v: number) => string } {
   switch (metric) {
-    case "cm":        return { label: "CM",       fmt: (v) => formatBRL(v, { compact: true }) };
-    case "mb":        return { label: "MB",       fmt: (v) => formatBRL(v, { compact: true }) };
-    case "rol":       return { label: "ROL",      fmt: (v) => formatBRL(v, { compact: true }) };
-    case "volume":    return { label: "Volume",   fmt: (v) => formatTon(v) };
-    case "margemPct": return { label: "Margem %", fmt: (v) => formatPct(v) };
+    case "cm":        return { label: t.omni.metricLabels.cm,        fmt: (v) => formatBRL(v, { compact: true }) };
+    case "mb":        return { label: t.omni.metricLabels.mb,        fmt: (v) => formatBRL(v, { compact: true }) };
+    case "rol":       return { label: t.omni.metricLabels.rol,       fmt: (v) => formatBRL(v, { compact: true }) };
+    case "volume":    return { label: t.omni.metricLabels.volume,    fmt: (v) => formatTon(v) };
+    case "margemPct": return { label: t.omni.metricLabels.margemPct, fmt: (v) => formatPct(v) };
   }
 }
 
@@ -2473,7 +2476,7 @@ function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Evolução Mensal")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.evolucaoMensal)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -2492,7 +2495,7 @@ function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock
 
 // ---- omni_heatmap_sazonalidade ----
 const FY_MONTHS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
-const MONTH_LABELS = ["Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
+const MONTH_LABELS = t.omni.monthLabels;
 
 function heatColorOmni(v: number | null, min: number, max: number): { bg: string; color: string } {
   if (v === null) return { bg: "hsl(var(--muted) / 0.3)", color: "hsl(var(--muted-foreground))" };
@@ -2557,7 +2560,7 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
-      {b.showTitle && omniTitle(b.title || "Heatmap Sazonalidade")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.heatmapSazonalidade)}
       <div style={{ fontSize: 10, color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{info.label}</div>
       <table style={{ borderCollapse: "collapse", fontSize: fs }}>
         <thead>
@@ -2602,17 +2605,17 @@ function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlo
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8 }}>
-      {b.showTitle && omniTitle(b.title || "Heróis e Ofensores")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.heroisOfensores)}
       <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden", paddingTop: 2 }}>
         {showHero && (
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>Heróis</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>{t.omni.heroisOfensores.heroes}</div>
             <AbcBar rows={rows} variant="hero" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
         {showVillain && (
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>Ofensores</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>{t.omni.heroisOfensores.villains}</div>
             <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
@@ -2657,7 +2660,7 @@ function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Tendência por Canal")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.canalTrend)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -2704,7 +2707,7 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Mix por Canal")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.canalMix)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -2743,7 +2746,7 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Evolução de Custos")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoEvolucao)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -2752,8 +2755,8 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
-            <Line type="monotone" dataKey="cv" name="Custo Variável" stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="cf" name="Custo Fixo" stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
+            <Line type="monotone" dataKey="cv" name={t.omni.custoSeries.custoVariavel} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="cf" name={t.omni.custoSeries.custoFixo} stroke={OMNI_COLORS[1]} strokeWidth={2} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -2783,14 +2786,14 @@ function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Positivação")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.positivacao)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={series.chartData} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
             <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={44} />
-            <Tooltip formatter={(v: number) => [formatNum(Number(v), 0), "Clientes"]} />
+            <Tooltip formatter={(v: number) => [formatNum(Number(v), 0), t.omni.clientesTooltip]} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {series.chartKeys.slice(0, b.topN ?? 8).map(DataElement)}
           </ComposedChart>
@@ -2834,7 +2837,7 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
   }, [filtered, b.metric, states, labelPointByUf]);
 
   const active = data.filter((point) => point.value !== null && point.volumeKg > 0 && point.x > 0 && point.y > 0);
-  if (active.length === 0) return omniEmpty("Sem dados por UF.");
+  if (active.length === 0) return omniEmpty(t.omni.emptyUf);
 
   const values = active.map((point) => point.value!).filter(Number.isFinite);
   const min = Math.min(...values);
@@ -2849,8 +2852,8 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 6, overflow: "hidden" }}>
-      {b.showTitle && omniTitle(b.title || "Mapa por UF")}
-      <svg viewBox="0 0 1000 912" role="img" aria-label="Mapa do Brasil por UF" style={{ flex: 1, minHeight: 0, width: "100%" }}>
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.ufMap)}
+      <svg viewBox="0 0 1000 912" role="img" aria-label={t.omni.ufMapAriaLabel} style={{ flex: 1, minHeight: 0, width: "100%" }}>
         {states.map((state) => {
           const stateData = dataByUf.get(state.uf);
           const hasValue = stateData?.value !== null && (stateData?.volumeKg ?? 0) > 0;
@@ -2863,7 +2866,7 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
               stroke={SLIDE_HEX.white}
               strokeWidth={0.9}
             >
-              <title>{state.name}{hasValue ? ` - ${info.fmt(stateData!.value!)}` : " - sem dados"}</title>
+              <title>{state.name}{hasValue ? ` - ${info.fmt(stateData!.value!)}` : t.omni.ufMapNoData}</title>
             </path>
           );
         })}
@@ -2924,7 +2927,7 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Composição de Custos")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoComposicao)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -2933,8 +2936,8 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
             <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
-            <Bar dataKey="cv" name="Custo Variável" stackId="a" fill={OMNI_COLORS[0]} isAnimationActive={false} />
-            <Bar dataKey="cf" name="Custo Fixo"     stackId="a" fill={OMNI_COLORS[1]} isAnimationActive={false} />
+            <Bar dataKey="cv" name={t.omni.custoSeries.custoVariavel} stackId="a" fill={OMNI_COLORS[0]} isAnimationActive={false} />
+            <Bar dataKey="cf" name={t.omni.custoSeries.custoFixo}     stackId="a" fill={OMNI_COLORS[1]} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -2965,21 +2968,21 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
     [filtered, baseKey, compKey, b.periodMode],
   );
 
-  if (!result) return omniEmpty("Selecione dois períodos para comparar.");
+  if (!result) return omniEmpty(t.omni.emptyPeriodCompare);
 
   const signColor = (v: number) => v >= 0 ? SLIDE_HEX.success : SLIDE_HEX.chart1;
   const fmtBRL2 = (v: number) => formatBRL(v, { compact: false, digits: 2 });
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8, overflow: "auto" }}>
-      {b.showTitle && omniTitle(b.title || "Decomposição de Preço")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.priceDecomp)}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {[
-          { label: "Preço Médio Base", value: fmtBRL2(result.precoMedioBase), color: SLIDE_HEX.chart2 },
-          { label: "Preço Médio Comp", value: fmtBRL2(result.precoMedioComp), color: SLIDE_HEX.chart2 },
-          { label: "Variação Total",   value: `${formatPct(result.variacaoPct)}`, color: signColor(result.variacaoPct) },
-          { label: "Efeito Preço",     value: `${formatPct(result.pctPreco)}`,    color: signColor(result.pctPreco) },
-          { label: "Efeito Mix",       value: `${formatPct(result.pctMix)}`,      color: signColor(result.pctMix) },
+          { label: t.omni.priceDecomp.precoMedioBase, value: fmtBRL2(result.precoMedioBase), color: SLIDE_HEX.chart2 },
+          { label: t.omni.priceDecomp.precoMedioComp, value: fmtBRL2(result.precoMedioComp), color: SLIDE_HEX.chart2 },
+          { label: t.omni.priceDecomp.variacaoTotal,  value: `${formatPct(result.variacaoPct)}`, color: signColor(result.variacaoPct) },
+          { label: t.omni.priceDecomp.efeitoPreco,    value: `${formatPct(result.pctPreco)}`,    color: signColor(result.pctPreco) },
+          { label: t.omni.priceDecomp.efeitoMix,      value: `${formatPct(result.pctMix)}`,      color: signColor(result.pctMix) },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ flex: "1 1 120px", background: "hsl(var(--card))", borderRadius: 8, border: "1px solid hsl(var(--border) / 0.5)", padding: "10px 12px" }}>
             <div style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{label}</div>
@@ -3018,11 +3021,11 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
     return calcPVM(filtered, metric, baseKey, compKey, b.periodMode);
   }, [budget, b.filters, b.periodMode, filtered, baseKey, compKey, metric]);
 
-  if (!result) return omniEmpty("Selecione dois períodos para comparar.");
+  if (!result) return omniEmpty(t.omni.emptyPeriodCompare);
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Bridge PVM")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.bridgePvm)}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <Waterfall result={result} height="100%" />
       </div>
@@ -3063,9 +3066,9 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
   if (!result) {
     return (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 10 }}>
-        {b.showTitle && omniTitle(b.title || "Farol de Positivação")}
+        {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.farol)}
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "hsl(var(--muted-foreground))", fontSize: 12, padding: 16 }}>
-          Escolha SKU base e SKU comparado com dados suficientes para exibir o velocímetro.
+          {t.omni.farolEmpty}
         </div>
       </div>
     );
@@ -3073,7 +3076,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 10, gap: 6 }}>
-      {b.showTitle && omniTitle(b.title || "Farol de Positivação")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.farol)}
       {b.showGauge && (
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <FarolGauge
@@ -3090,16 +3093,16 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
       {b.showCaption && (
         <div style={{ maxWidth: "92%", fontSize: 11, lineHeight: 1.25, color: "hsl(var(--muted-foreground))", textAlign: "center" }}>
           <strong style={{ color: "hsl(var(--foreground))" }}>{result.skuComp.skuDesc || skuCompLabel}</strong>
-          {" "}positivado nos clientes do{" "}
+          {" "}{t.omni.farolCaptionMiddle}{" "}
           <strong style={{ color: "hsl(var(--foreground))" }}>{result.skuRef.skuDesc || skuRefLabel}</strong>
         </div>
       )}
       {b.showStats && (
         <div style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, fontSize: 10 }}>
           {[
-            ["Base", result.skuRef.clientesAtivos],
-            ["Comparado", result.skuComp.clientesAtivos],
-            ["Comum", result.clientesAmbos.length],
+            [t.omni.farolStats.base, result.skuRef.clientesAtivos],
+            [t.omni.farolStats.comparado, result.skuComp.clientesAtivos],
+            [t.omni.farolStats.comum, result.clientesAmbos.length],
           ].map(([label, value]) => (
             <div key={label} style={{ border: "1px solid hsl(var(--border))", borderRadius: 6, padding: "5px 6px", textAlign: "center", background: "hsl(var(--card) / 0.38)" }}>
               <div style={{ color: "hsl(var(--muted-foreground))" }}>{label}</div>
@@ -3125,7 +3128,7 @@ function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
-      {b.showTitle && omniTitle(b.title || "Curva ABC")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.abcCurva)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <AbcPareto rows={rows} />
       </div>
@@ -3147,7 +3150,7 @@ function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlo
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "hidden" }}>
-      {b.showTitle && omniTitle(b.title || "Matriz de Portfólio")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.portfolioMatrix)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <PortfolioMatrix rows={rows} metricLabel={info.label} />
       </div>
@@ -3172,17 +3175,17 @@ function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 8 }}>
-      {b.showTitle && omniTitle(b.title || "Barras ABC")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.abcBars)}
       <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, overflow: "hidden" }}>
         {showHero && (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>Top</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--success))", marginBottom: 4 }}>{t.omni.abcBars.top}</div>
             <AbcBar rows={rows} variant="hero" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
         {showVillain && (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>Bottom</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "hsl(var(--destructive))", marginBottom: 4 }}>{t.omni.abcBars.bottom}</div>
             <AbcBar rows={rows} variant="villain" limit={b.topN} sortBy={b.sortBy} minRolForPct={minRolForPct} />
           </div>
         )}
@@ -3207,7 +3210,7 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
-      {b.showTitle && omniTitle(b.title || "Pressão de Custo sobre Receita")}
+      {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoPressao)}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} stackOffset="none" margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
@@ -3217,10 +3220,10 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
             <Tooltip formatter={(v: number) => formatPct(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {b.showCustoVariavel && (
-              <Area type="monotone" dataKey="cv" name="Custo Variável % ROL" stroke={SLIDE_HEX.chart1} fill={SLIDE_HEX.chart1} fillOpacity={0.7} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="cv" name={t.omni.custoSeries.custoVariavelPctRol} stroke={SLIDE_HEX.chart1} fill={SLIDE_HEX.chart1} fillOpacity={0.7} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
             {b.showCustoFixo && (
-              <Area type="monotone" dataKey="cf" name="Custo Fixo % ROL" stroke={SLIDE_HEX.chart2} fill={SLIDE_HEX.chart2} fillOpacity={0.5} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Area type="monotone" dataKey="cf" name={t.omni.custoSeries.custoFixoPctRol} stroke={SLIDE_HEX.chart2} fill={SLIDE_HEX.chart2} fillOpacity={0.5} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             )}
           </ComposedChart>
         </ResponsiveContainer>
