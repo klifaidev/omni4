@@ -219,7 +219,7 @@ export const FlowCard = React.memo(function FlowCard({
             ref={setNodeRef}
             style={style}
             className={cn(
-              "group relative flex items-center gap-2 rounded-xl border bg-card/60 px-2.5 py-2 transition-all duration-200 animate-fade-in",
+              "group relative flex items-center gap-2 rounded-xl border bg-card/60 px-2.5 py-2 transition-all duration-200 animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               selected
                 ? "border-primary/60 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.35),_0_8px_24px_-12px_hsl(var(--primary)/0.35)]"
                 : "border-border/40 hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_16px_-8px_hsl(0_0%_0%/0.4)]",
@@ -228,6 +228,16 @@ export const FlowCard = React.memo(function FlowCard({
               preflightSeverity === "info" && !selected && "border-primary/35",
             )}
             onClick={onSelect}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect();
+              }
+            }}
+            tabIndex={0}
+            role="button"
+            aria-label={displayName}
+            aria-pressed={selected}
             onMouseEnter={resetHoverPreviewDelay}
             onMouseMove={resetHoverPreviewDelay}
             onMouseLeave={clearHoverPreviewDelay}

@@ -675,8 +675,14 @@ function StripThumbnail({
       {...attributes}
       {...listeners}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
-        "surface-raised group relative cursor-pointer rounded-md border transition-colors",
+        "surface-raised group relative cursor-pointer rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active ? "border-primary ring-2 ring-primary/40" : "border-border/40 hover:border-border/80",
         !ready.ok && !active && "border-destructive/50",
       )}
