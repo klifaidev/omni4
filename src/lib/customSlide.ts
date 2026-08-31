@@ -555,6 +555,18 @@ export interface OmniBaseBlock extends BaseBlock {
   showLegend: boolean;
   /** Título customizado — se vazio usa label padrão do tipo */
   title?: string;
+  // ---- Estilo mínimo compartilhado (Fase 4/execução da análise
+  // "Elementos do Editor de Slides", achado 01: os 17 blocos Omni
+  // Analytics não tinham NENHUMA customização visual — cor vinha 100%
+  // hardcoded de OMNI_COLORS[0], fonte de eixo fixa em 9px). Campos aqui
+  // em OmniBaseBlock ficam disponíveis pra todo bloco Omni de uma vez,
+  // sem precisar declarar em cada interface — cada renderer decide se e
+  // como usa (nem todo Omni tem uma "cor principal" única, ex. mapas/
+  // gauges). Adicionados incrementalmente, um bloco por vez, não em lote.
+  /** Cor principal (série/barra/linha). Sem valor = paleta padrão do Omni. */
+  color?: string;
+  /** Tamanho de fonte dos rótulos de eixo/categoria. Default 9px. */
+  fontSize?: number;
   // Filtros dimensionais completos
   periodos: string[] | null;
   canal: string | null;

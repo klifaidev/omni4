@@ -2304,7 +2304,7 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
   onChange: (patch: { showTitle?: boolean; title?: string }) => void;
 }) {
   return (
-    <Section label={t.omni.titleSectionLabel}>
+    <Section title={t.omni.titleSectionLabel}>
       <Row label={tc.show}>
         <ToggleField value={showTitle} onChange={(v) => onChange({ showTitle: v })} label="" />
       </Row>
@@ -2336,7 +2336,7 @@ function OmniFiltersSection({ block, onChange }: {
   const f = t.omni.filterFields;
 
   return (
-    <Section label={t.omni.filters}>
+    <Section title={t.omni.filters}>
       <Row label={f.periods}>
         <MultiSelectFilter
           selected={block.periodos ?? []}
@@ -2356,6 +2356,29 @@ function OmniFiltersSection({ block, onChange }: {
   );
 }
 
+/** Estilo mínimo compartilhado pros blocos Omni Analytics — cor principal
+ * + tamanho de fonte dos rótulos. Ligado incrementalmente, um bloco por
+ * vez (cada renderer decide como aplicar `color`/`fontSize`, já que os
+ * 17 blocos têm formas de desenho bem diferentes entre si). Ver
+ * OmniBaseBlock em customSlide.ts pro porquê dos campos ficarem lá. */
+function OmniStyleSection({ block, onChange, defaultColor }: {
+  block: OmniBaseBlock;
+  onChange: (p: Partial<OmniBaseBlock>) => void;
+  defaultColor: string;
+}) {
+  return (
+    <Section title={t.omni.style.sectionLabel}>
+      <Row label={tc.color}>
+        <ColorField value={block.color ?? defaultColor} onChange={(c) => onChange({ color: c })} />
+      </Row>
+      <Row label={t.omni.style.fontSize}>
+        <NumberStepper value={block.fontSize ?? 9} min={7} max={16}
+          onChange={(v) => onChange({ fontSize: v })} suffix="px" />
+      </Row>
+    </Section>
+  );
+}
+
 function OmniMetricInspector({ block, onChange, label }: {
   block: OmniBaseBlock & { metric: OmniMetric };
   onChange: (p: Partial<OmniBaseBlock> & { metric?: OmniMetric }) => void;
@@ -2364,7 +2387,7 @@ function OmniMetricInspector({ block, onChange, label }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
       </Section>
       <OmniFiltersSection block={block} onChange={onChange} />
@@ -2379,7 +2402,7 @@ function OmniEvolucaoInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.evolucaoMensal} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
         <Row label={t.omni.evolucao.chartType}><SelectField value={block.chartType} onChange={(v) => onChange({ chartType: v as "line" | "bar" | "area" })} options={[
           { value: "line", label: t.omni.evolucao.chartTypeOptions.line },
@@ -2388,6 +2411,7 @@ function OmniEvolucaoInspector({ block, onChange }: {
         ]} /></Row>
         <Row label={t.omni.evolucao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} defaultColor={SLIDE_HEX.chart1} />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
@@ -2401,7 +2425,7 @@ function OmniHeroisInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
         <Row label={t.omni.heroisOfensores.sortBy}><SelectField value={block.sortBy} onChange={(v) => onChange({ sortBy: v as OmniAbcSortBy })} options={OMNI_SORTBY_OPTIONS} /></Row>
@@ -2424,7 +2448,7 @@ function OmniCanalTrendInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.canalTrend} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
         <Row label={t.omni.custo.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
@@ -2441,7 +2465,7 @@ function OmniCustoInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={t.omni.custo.view}><SelectField value={block.viewMode} onChange={(v) => onChange({ viewMode: v as "pct" | "abs" | "kg" })} options={[
           { value: "pct", label: t.omni.custo.viewOptions.pct },
           { value: "abs", label: t.omni.custo.viewOptions.abs },
@@ -2461,7 +2485,7 @@ function OmniCustoPressaoInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.custoPressao} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={t.omni.custoPressao.custoVariavel}><ToggleField value={block.showCustoVariavel} onChange={(v) => onChange({ showCustoVariavel: v })} label="" /></Row>
         <Row label={t.omni.custoPressao.custoFixo}><ToggleField value={block.showCustoFixo} onChange={(v) => onChange({ showCustoFixo: v })} label="" /></Row>
         <Row label={t.omni.custoPressao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
@@ -2478,7 +2502,7 @@ function OmniPositivacaoInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.positivacao} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniPositivacaoBlock["dim"] })} options={[
           { value: "categoria", label: t.omni.positivacao.dimOptions.categoria },
           { value: "marca", label: t.omni.positivacao.dimOptions.marca },
@@ -2507,7 +2531,7 @@ function OmniUfMapInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.ufMap} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
         <Row label={t.omni.ufMap.labelMode}><SelectField value={block.labelMode} onChange={(v) => onChange({ labelMode: v as OmniUfMapBlock["labelMode"] })} options={[
           { value: "uf", label: t.omni.ufMap.labelModeOptions.uf },
@@ -2530,7 +2554,7 @@ function OmniPriceDecompInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.priceDecomp} onChange={onChange} />
-      <Section label={t.omni.priceDecompBridge.periodsSection}>
+      <Section title={t.omni.priceDecompBridge.periodsSection}>
         <Row label={tc.mode}><SelectField value={block.periodMode} onChange={(v) => {
           const nextMode = v as "fy" | "month";
           onChange({ periodMode: nextMode, base: null, comp: null, baseSelectionMode: block.baseSelectionMode ?? "relative", baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2", compSelectionMode: block.compSelectionMode ?? "relative", compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1" });
@@ -2556,7 +2580,7 @@ function OmniBridgePvmInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.bridgePvm} onChange={onChange} />
-      <Section label={t.omni.priceDecompBridge.periodsSection}>
+      <Section title={t.omni.priceDecompBridge.periodsSection}>
         <Row label={tc.mode}><SelectField value={block.periodMode} onChange={(v) => {
           const nextMode = v as "fy" | "month" | "ytd_budget";
           onChange({ periodMode: nextMode, base: null, comp: null, baseSelectionMode: block.baseSelectionMode ?? "relative", baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2", compSelectionMode: block.compSelectionMode ?? "relative", compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1" });
@@ -2619,7 +2643,7 @@ function OmniFarolInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.farol} onChange={onChange} />
-      <Section label={t.omni.farol.comparisonSection}>
+      <Section title={t.omni.farol.comparisonSection}>
         <Row label={t.omni.farol.baseSku}><FarolSkuField id={`farol-sku-ref-${block.id}`} value={block.skuRef ?? null} options={skuOptions} onChange={(skuRef) => onChange({ skuRef })} /></Row>
         <Row label={t.omni.farol.comparedSku}><FarolSkuField id={`farol-sku-comp-${block.id}`} value={block.skuComp ?? null} options={skuOptions} onChange={(skuComp) => onChange({ skuComp })} /></Row>
         <Row label={t.omni.farol.window}><SelectField value={String(block.periodoMeses ?? 3)} options={[
@@ -2628,7 +2652,7 @@ function OmniFarolInspector({ block, onChange }: {
           { value: "12", label: t.omni.farol.windowOptions.m12 },
         ]} onChange={(v) => onChange({ periodoMeses: Number(v) || 3 })} /></Row>
       </Section>
-      <Section label={t.omni.farol.displaySection}>
+      <Section title={t.omni.farol.displaySection}>
         <Row label={t.omni.farol.gauge}><ToggleField value={block.showGauge} onChange={(v) => onChange({ showGauge: v })} label="" /></Row>
         <Row label={t.omni.farol.legend}><ToggleField value={block.showCaption ?? true} onChange={(v) => onChange({ showCaption: v })} label="" /></Row>
         <Row label={t.omni.farol.numbers}><ToggleField value={block.showStats ?? true} onChange={(v) => onChange({ showStats: v })} label="" /></Row>
@@ -2650,7 +2674,7 @@ function OmniAbcCurvaInspector({ block, onChange }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.abcCurva} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
         <Row label={t.omni.abcCurva.table}><ToggleField value={block.showTable} onChange={(v) => onChange({ showTable: v })} label="" /></Row>
       </Section>
@@ -2667,7 +2691,7 @@ function OmniDimMetricInspector({ block, onChange, label }: {
   return (
     <div className="space-y-2">
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={label} onChange={onChange} />
-      <Section label={t.omni.data}>
+      <Section title={t.omni.data}>
         <Row label={tc.dimension}><SelectField value={block.dim} onChange={(v) => onChange({ dim: v as OmniDim })} options={OMNI_DIM_OPTIONS} /></Row>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
       </Section>

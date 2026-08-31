@@ -605,6 +605,13 @@ export const ptBR = {
             titleSectionLabel: "Título",
             data: "Dados",
             filters: "Filtros",
+            // Estilo mínimo compartilhado (execução da análise "Elementos
+            // do Editor de Slides" — os blocos Omni não tinham NENHUMA
+            // customização visual). Reaproveita tc.color pra própria cor.
+            style: {
+              sectionLabel: "Estilo",
+              fontSize: "Tamanho da fonte",
+            },
             metricOptions: {
               cm: "Contrib. Marginal", mb: "Margem Bruta", rol: "ROL",
               volume: "Volume (Kg)", margemPct: "Margem %",

@@ -2477,12 +2477,18 @@ function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock
   if (series.length === 0) return omniEmpty();
 
   const data = series.map((pt) => ({ label: pt.label, value: canalTrendValue(pt, b.metric) }));
+  // Estilo mínimo (execução da análise "Elementos do Editor de Slides"):
+  // b.color/b.fontSize vêm de OmniBaseBlock, opcionais — sem valor, cai no
+  // mesmo hardcoded de sempre (OMNI_COLORS[0]/9px), zero mudança visual
+  // pra quem nunca abrir a nova seção "Estilo" do inspector.
+  const color = b.color ?? OMNI_COLORS[0];
+  const fontSize = b.fontSize ?? 9;
 
   const DataElement = b.chartType === "bar"
-    ? <Bar dataKey="value" name={info.label} fill={OMNI_COLORS[0]} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+    ? <Bar dataKey="value" name={info.label} fill={color} radius={[3, 3, 0, 0]} isAnimationActive={false} />
     : b.chartType === "area"
-    ? <Area type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} fill={`${OMNI_COLORS[0]}33`} strokeWidth={2} dot={false} isAnimationActive={false} />
-    : <Line type="monotone" dataKey="value" name={info.label} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />;
+    ? <Area type="monotone" dataKey="value" name={info.label} stroke={color} fill={`${color}33`} strokeWidth={2} dot={false} isAnimationActive={false} />
+    : <Line type="monotone" dataKey="value" name={info.label} stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />;
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
@@ -2491,8 +2497,8 @@ function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
             <Tooltip formatter={(v: number) => [info.fmt(v), info.label]} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {DataElement}
