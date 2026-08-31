@@ -162,6 +162,7 @@ export const ptBR = {
             mode: "Modo",
             modeOptions: { grouped: "Agrupado", stacked: "Empilhado", stacked100: "100% empilhado" },
             corners: "Cantos",
+            colorHint: "A cor de preenchimento de cada série fica em “Séries”, logo abaixo.",
           },
           pie: {
             title: "Pizza/Rosca",
@@ -178,6 +179,11 @@ export const ptBR = {
           },
           bubble: {
             title: "Bolhas",
+            // Dispersão reaproveita a mesma seção de estilo (o render já usa
+            // style.bubble.fillOpacity/borderColor/borderWidth pros pontos —
+            // só não tem tamanho variável). Título próprio pra não chamar
+            // "Bolhas" quando o tipo escolhido foi Dispersão.
+            titleScatter: "Pontos",
             minSize: "Tam. mín",
             maxSize: "Tam. máx",
             opacity: "Opacidade",
@@ -889,7 +895,13 @@ export const ptBR = {
           noneDetected: "Nenhuma fonte detectada nos blocos deste slide.",
         },
         chartPalette: {
-          line: "Linha", positivacao: "Positivação", column: "Coluna", stackedColumn: "Coluna Empilhada",
+          // "positivacao" aqui é um preset de estilo sobre um gráfico de
+          // Linha nativo (edita tudo) — nome deliberadamente diferente do
+          // bloco Omni Analytics "Positivação" (mesmo nome antes, capacidade
+          // de edição visual bem diferente — ver análise "Elementos do
+          // Editor de Slides", achado 02). "Linha (Positivação)" deixa claro
+          // que é uma variante de Linha, não um recurso concorrente.
+          line: "Linha", positivacao: "Linha (Positivação)", column: "Coluna", stackedColumn: "Coluna Empilhada",
           hbar: "Barra", stackedBar: "Barra Empilhada", area: "Área", stackedArea: "Área Empilhada",
           pie: "Pizza", donut: "Rosca", scatter: "Dispersão", bubble: "Bolha", funnel: "Funil",
           combo: "Combinado", treemap: "Mapa de Árvore", mapaBrasil: "Mapa do Brasil", radar: "Radar",

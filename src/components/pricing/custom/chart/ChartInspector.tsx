@@ -864,6 +864,7 @@ export function ChartInspector({
             <NumberStepper value={style.bar.borderWidth} min={0} max={5}
               onChange={(v) => updPath("bar", { borderWidth: v })} suffix="px" />
           </Row>
+          <p className="text-[11px] leading-snug text-muted-foreground">{t.bar.colorHint}</p>
         </Section>
       )}
 
@@ -923,17 +924,26 @@ export function ChartInspector({
         </Section>
       )}
 
-      {/* ===== Type-specific: Bubble ===== */}
-      {ct === "bubble" && (
-        <Section title={t.bubble.title} onReset={() => resetPath("bubble")}>
-          <Row label={t.bubble.minSize}>
-            <NumberStepper value={style.bubble.minSize} min={20} max={500}
-              onChange={(v) => updPath("bubble", { minSize: v })} suffix="px" />
-          </Row>
-          <Row label={t.bubble.maxSize}>
-            <NumberStepper value={style.bubble.maxSize} min={50} max={2000}
-              onChange={(v) => updPath("bubble", { maxSize: v })} suffix="px" />
-          </Row>
+      {/* ===== Type-specific: Bubble / Scatter =====
+          Dispersão renderiza os pontos com os MESMOS campos de style.bubble
+          (fillOpacity/borderColor/borderWidth — ver ChartCanvas.tsx, o
+          <Scatter> de bubble e scatter é o mesmo elemento) — só não tem
+          tamanho variável (sem ZAxis). Por isso reaproveita a seção inteira,
+          só escondendo os 2 campos que não fazem sentido sem essa dimensão. */}
+      {(ct === "bubble" || ct === "scatter") && (
+        <Section title={ct === "scatter" ? t.bubble.titleScatter : t.bubble.title} onReset={() => resetPath("bubble")}>
+          {ct === "bubble" && (
+            <>
+              <Row label={t.bubble.minSize}>
+                <NumberStepper value={style.bubble.minSize} min={20} max={500}
+                  onChange={(v) => updPath("bubble", { minSize: v })} suffix="px" />
+              </Row>
+              <Row label={t.bubble.maxSize}>
+                <NumberStepper value={style.bubble.maxSize} min={50} max={2000}
+                  onChange={(v) => updPath("bubble", { maxSize: v })} suffix="px" />
+              </Row>
+            </>
+          )}
           <Row label={t.bubble.opacity}>
             <Slider value={Math.round(style.bubble.fillOpacity * 100)}
               onChange={(v) => updPath("bubble", { fillOpacity: v / 100 })} />
@@ -944,9 +954,11 @@ export function ChartInspector({
             <NumberStepper value={style.bubble.borderWidth} min={0} max={5}
               onChange={(v) => updPath("bubble", { borderWidth: v })} suffix="px" />
           </Row>
-          <ToggleField label={t.bubble.showSizeLabel}
-            value={style.bubble.showSizeLabel}
-            onChange={(v) => updPath("bubble", { showSizeLabel: v })} />
+          {ct === "bubble" && (
+            <ToggleField label={t.bubble.showSizeLabel}
+              value={style.bubble.showSizeLabel}
+              onChange={(v) => updPath("bubble", { showSizeLabel: v })} />
+          )}
         </Section>
       )}
 
@@ -1282,9 +1294,14 @@ export function ChartInspector({
         </Row>
       </Section>
 
-      {/* ===== Series (moved up — frequently used) ===== */}
+      {/* ===== Series (moved up — frequently used) =====
+          defaultOpen: é aqui que a cor de preenchimento mora pra todo tipo
+          que passa por S.showSeries (barra/coluna/linha/área/combo/radar)
+          — a seção com o nome do tipo escolhido (ex. "Barras") só tem
+          geometria/borda, sem isso a cor fica achada só depois de abrir
+          uma seção sem relação óbvia com "mudar a cor do gráfico". */}
       {S.showSeries && (
-        <Section title={t.series.title} onReset={() => updStyle({ series: [] })}>
+        <Section title={t.series.title} defaultOpen onReset={() => updStyle({ series: [] })}>
           <p className="text-[12px] text-muted-foreground">
             {t.series.hint} {detectedSeries.length === 0 && t.series.noneDetected}
           </p>
@@ -1484,8 +1501,11 @@ export function ChartInspector({
 
         {/* ============================ ANÁLISES TAB ============================ */}
         <TabsContent value="analises" className="mt-3 space-y-3">
-      {/* B.2 — Conditional formatting */}
-      {["bar", "column", "hbar", "waterfall", "treemap"].includes(ct) && (
+      {/* B.2 — Conditional formatting. Pizza/Rosca entraram aqui porque já
+          tinham a infraestrutura de "cor por fatia" (style.pie.slices) —
+          faltava só ligar a regra condicional como alternativa/fallback à
+          cor manual, não construir do zero (ver ChartCanvas.tsx). */}
+      {["bar", "column", "hbar", "waterfall", "treemap", "pie", "donut"].includes(ct) && (
         <ConditionalSection
           rules={style.conditionalRules ?? []}
           defaultColor={style.conditionalDefault ?? ""}
@@ -1499,7 +1519,7 @@ export function ChartInspector({
           analytics={style.analytics!}
           onChange={(p) => updPath("analytics", p as never)} />
       )}
-      {!["bar", "column", "hbar", "waterfall", "treemap", "line", "area", "combo", "scatter", "bubble"].includes(ct) && (
+      {!["bar", "column", "hbar", "waterfall", "treemap", "line", "area", "combo", "scatter", "bubble", "pie", "donut"].includes(ct) && (
         <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-[12px] text-muted-foreground">
           {t.analytics.noneAvailable}
         </div>

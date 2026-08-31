@@ -1679,7 +1679,13 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         >
           {ranking.map((r, i) => {
             const sl = style.pie.slices[r.name];
-            const color = sl?.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
+            const paletteColor = DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
+            // Prioridade: cor manual da fatia (se o usuário escolheu uma) >
+            // regra de formatação condicional (cor-por-valor) > paleta padrão.
+            const conditionalColor = (style.conditionalRules?.length ?? 0) > 0
+              ? evalCondColor(r.value, style.conditionalRules, paletteColor)
+              : paletteColor;
+            const color = sl?.color ?? conditionalColor;
             const op = isDimmed(r.name) ? 0.4 : 1;
             return <Cell key={r.name} fill={color} fillOpacity={op} />;
           })}
