@@ -1,14 +1,6 @@
-import type {
-  CustomBlock,
-  DreBlock,
-  KpiBlock,
-  ShapeBlock,
-  TableBlock,
-  TextBlock,
-  TitleBlock,
-} from "./customSlide";
+import type { CustomBlock } from "./customSlide";
 
-export type SlideBrandStyleTarget = "text" | "kpi" | "shape" | "table" | "dre";
+export type SlideBrandStyleTarget = "text" | "kpi" | "shape" | "table" | "dre" | "image";
 
 export const SLIDE_DEFAULT_FONT_LABEL = "Calibri";
 export const SLIDE_DEFAULT_FONT_FAMILY = "Calibri, sans-serif";
@@ -23,7 +15,16 @@ export interface SlideBrandStyle {
     fg: string;
     accent: string;
   };
-  patch: Partial<TitleBlock & TextBlock & KpiBlock & ShapeBlock & TableBlock & DreBlock>;
+  // Partial<CustomBlock> (união discriminada), não uma interseção dos 7
+  // tipos de bloco — a interseção de várias interfaces com `kind`
+  // mutuamente exclusivo ainda compila (TS resolve o campo "kind" como
+  // `never` e segue em frente), mas empurrar de 6 pra 7 tipos intersectados
+  // derrubou a inferência de tipo em outro lugar do arquivo (TS2322 em
+  // ChartStyle, sem relação nenhuma com Brand Kit — sintoma de interseção
+  // grande demais pro compilador). Partial<CustomBlock> é o mesmo tipo já
+  // usado no retorno de buildBrandStylePatch logo abaixo — mais correto e
+  // mais barato pro compilador.
+  patch: Partial<CustomBlock>;
 }
 
 export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
@@ -223,6 +224,55 @@ export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
       showTotal: true,
     },
   },
+  {
+    id: "image-framed",
+    name: "Imagem com moldura",
+    description: "Borda fina neutra, para fotos e prints soltos no slide.",
+    target: "image",
+    preview: { bg: "FFFFFF", fg: "1C2430", accent: "E2E8F0" },
+    patch: {
+      strokeColor: "#E2E8F0",
+      strokeWidth: 1,
+      radius: 4,
+      shadowEnabled: false,
+    },
+  },
+  {
+    id: "image-elevated",
+    name: "Imagem elevada",
+    description: "Sombra suave para dar profundidade sem borda visível.",
+    target: "image",
+    preview: { bg: "FFFFFF", fg: "1C2430", accent: "C8102E" },
+    patch: {
+      strokeColor: "#FFFFFF",
+      strokeWidth: 0,
+      radius: 8,
+      shadowEnabled: true,
+      shadowColor: "#000000",
+      shadowOpacity: 18,
+      shadowBlur: 20,
+      shadowX: 0,
+      shadowY: 8,
+    },
+  },
+  {
+    id: "image-card",
+    name: "Cartão Harald",
+    description: "Moldura vermelha e sombra — para logos e destaques.",
+    target: "image",
+    preview: { bg: "FFFFFF", fg: "C8102E", accent: "C8102E" },
+    patch: {
+      strokeColor: "#C8102E",
+      strokeWidth: 2,
+      radius: 8,
+      shadowEnabled: true,
+      shadowColor: "#000000",
+      shadowOpacity: 12,
+      shadowBlur: 16,
+      shadowX: 0,
+      shadowY: 6,
+    },
+  },
 ];
 
 export function getBrandStyleTarget(block: CustomBlock | null | undefined): SlideBrandStyleTarget | null {
@@ -232,6 +282,7 @@ export function getBrandStyleTarget(block: CustomBlock | null | undefined): Slid
   if (block.kind === "shape") return "shape";
   if (block.kind === "table") return "table";
   if (block.kind === "dre") return "dre";
+  if (block.kind === "image") return "image";
   return null;
 }
 
@@ -264,5 +315,6 @@ export function brandStyleTargetLabel(target: SlideBrandStyleTarget | null): str
   if (target === "shape") return "Forma";
   if (target === "table") return "Tabela";
   if (target === "dre") return "DRE";
+  if (target === "image") return "Imagem";
   return "Bloco";
 }

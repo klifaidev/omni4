@@ -40,11 +40,24 @@ export type CustomSlideLayoutNode =
         fontSize: number;
         text: string;
       };
+      frame: {
+        border?: string;
+        borderRadius?: number;
+        boxShadow?: string;
+      };
     }
   | {
       kind: "shape";
       block: ReturnType<typeof ensureShapeBlock>;
     };
+
+function hexToRgba(hex: string, alphaPct: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16) || 0;
+  const g = parseInt(clean.slice(2, 4), 16) || 0;
+  const b = parseInt(clean.slice(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(100, alphaPct)) / 100})`;
+}
 
 const justifyMap: Record<"left" | "center" | "right", "flex-start" | "center" | "flex-end"> = {
   left: "flex-start",
@@ -84,6 +97,7 @@ export function buildSimpleBlockLayout(block: SimpleLayoutBlock): CustomSlideLay
   if (block.kind === "title") return textCommon(block, "title");
   if (block.kind === "text") return textCommon(block, "body");
   if (block.kind === "image") {
+    const hasBorder = !!block.strokeColor && (block.strokeWidth ?? 0) > 0;
     return {
       kind: "image",
       src: block.src || null,
@@ -95,6 +109,13 @@ export function buildSimpleBlockLayout(block: SimpleLayoutBlock): CustomSlideLay
         fontFamily: "Calibri",
         fontSize: 14,
         text: "Faça upload de uma imagem",
+      },
+      frame: {
+        border: hasBorder ? `${block.strokeWidth}px solid ${block.strokeColor}` : undefined,
+        borderRadius: block.radius || undefined,
+        boxShadow: block.shadowEnabled
+          ? `${block.shadowX ?? 0}px ${block.shadowY ?? 4}px ${block.shadowBlur ?? 12}px ${hexToRgba(block.shadowColor ?? "#000000", block.shadowOpacity ?? 30)}`
+          : undefined,
       },
     };
   }

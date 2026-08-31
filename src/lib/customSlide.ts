@@ -164,6 +164,23 @@ export interface ImageBlock extends BaseBlock {
   src: string;
   fit: "contain" | "cover";
   rotation?: number;
+  // Borda — mesmos nomes de campo do ShapeBlock, pra craft visual
+  // consistente entre tipos de bloco (Fase 4 da Doutrina do Editor). Única
+  // diferença: aqui o valor de cor vem com "#" (mesma convenção do
+  // ColorField compartilhado de chart/Inspector.tsx, usado também pelo
+  // DRE) — o ShapeBlock guarda strokeColor SEM "#" (inspector próprio,
+  // convenção antiga). Mesmos nomes de campo, formato de valor não migrado
+  // entre os dois (fora de escopo — mudaria dado já salvo).
+  strokeColor?: string;
+  strokeWidth?: number;
+  radius?: number;
+  // Sombra — idem, espelha ShapeBlock (mesma ressalva de formato de cor).
+  shadowEnabled?: boolean;
+  shadowColor?: string;
+  shadowOpacity?: number;
+  shadowBlur?: number;
+  shadowX?: number;
+  shadowY?: number;
 }
 
 export type ShapeType =

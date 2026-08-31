@@ -552,9 +552,19 @@ function SimpleLayoutRender({
       );
     }
     return (
-      <img src={node.src} alt=""
-        style={{ width: "100%", height: "100%", objectFit: node.fit, display: "block" }}
-      />
+      <div style={{
+        width: "100%",
+        height: "100%",
+        border: node.frame.border,
+        borderRadius: node.frame.borderRadius,
+        boxShadow: node.frame.boxShadow,
+        overflow: node.frame.borderRadius ? "hidden" : undefined,
+        boxSizing: "border-box",
+      }}>
+        <img src={node.src} alt=""
+          style={{ width: "100%", height: "100%", objectFit: node.fit, display: "block" }}
+        />
+      </div>
     );
   }
 

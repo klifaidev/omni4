@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,12 +63,12 @@ import {
 import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import type { Filters, PricingRow } from "@/lib/types";
 import {
-  BLOCK_LABELS, KPI_MEASURES, CHART_TYPE_LABELS,
+  BLOCK_LABELS, KPI_MEASURES, CHART_TYPE_LABELS, CANVAS_H,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
   FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
   ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
   isFromBudgetBase, isFromForecastBase, isFromRollingBase,
-  type BlockDataSource, type CustomBlock, type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
+  type BlockDataSource, type CustomBlock, type CustomBlockKind, type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type CustomChartType, type ConditionalFormatMode, type ConditionalFormatRule,
   type TableGapColumn, type TableGapComparisonMode, type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
   type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock, type OmniCustoEvolucaoBlock,
@@ -76,6 +76,18 @@ import {
   type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock, type OmniAbcCurvaBlock,
   type OmniBaseBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock, type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
 } from "@/lib/customSlide";
+import { newId } from "@/lib/slidesFlow";
+import {
+  patchBlockAction, alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
+  resizeGroupAction, type AlignKind,
+} from "../editorStore";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+// Alias: este arquivo já tem cssEscapeId() usando o CSS global do browser
+// (window.CSS.escape) — importar o CSS do dnd-kit sem alias sombrearia esse
+// identificador e quebraria aquela função (ela compilava só porque "CSS"
+// resolvia pro global antes desta importação existir).
+import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
 import { recordSlidePerfEvent, isSlidePerfEnabled } from "@/lib/slidesPerfCounters";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -108,7 +120,16 @@ import {
 import { strings } from "@/lib/i18n";
 
 const t = strings.slides.editor.inspectors.blocks;
+// Reaproveita o vocabulário de Borda/Sombra do inspector de Forma pro novo
+// controle de borda/sombra de Imagem (Fase 4 — craft visual consistente:
+// mesmas palavras, mesmos componentes, não uma cópia com nomes diferentes).
+const ts = strings.slides.editor.inspectors.shape;
 const tc = t.common;
+
+// Mesmo alias usado em CustomSlideEditor.tsx pro tipo de ícone dos itens da
+// paleta (não exportado de lá — declarado aqui de novo, igual ao padrão já
+// usado nesse arquivo pra outros tipos locais).
+type Icon = ComponentType<{ className?: string }>;
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
@@ -252,28 +273,74 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
 
     case "image":
       return (
-        <div className="space-y-2">
-          <Label className="text-[10px] uppercase text-muted-foreground">{t.image.upload}</Label>
-          <input type="file" accept="image/*"
-            className="text-[11px]"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              const reader = new FileReader();
-              reader.onload = () => onChange({ src: String(reader.result) } as never);
-              reader.readAsDataURL(f);
-            }}
-          />
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">{t.image.fit}</Label>
-            <Select value={block.fit} onValueChange={(v) => onChange({ fit: v as "contain"|"cover" } as never)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contain">{t.image.fitOptions.contain}</SelectItem>
-                <SelectItem value="cover">{t.image.fitOptions.cover}</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.image.upload}</Label>
+            <input type="file" accept="image/*"
+              className="text-[11px]"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const reader = new FileReader();
+                reader.onload = () => onChange({ src: String(reader.result) } as never);
+                reader.readAsDataURL(f);
+              }}
+            />
+            <div>
+              <Label className="text-[10px] uppercase text-muted-foreground">{t.image.fit}</Label>
+              <Select value={block.fit} onValueChange={(v) => onChange({ fit: v as "contain"|"cover" } as never)}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contain">{t.image.fitOptions.contain}</SelectItem>
+                  <SelectItem value="cover">{t.image.fitOptions.cover}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          <Section title={ts.sections.outline}>
+            <Row label={ts.borderColor}>
+              <ColorField value={block.strokeColor ?? "#000000"}
+                onChange={(c) => onChange({ strokeColor: c } as never)} />
+            </Row>
+            <Row label={ts.thickness}>
+              <NumberStepper value={block.strokeWidth ?? 0} min={0} max={20}
+                onChange={(v) => onChange({ strokeWidth: v } as never)} />
+            </Row>
+            <Row label={ts.radius}>
+              <NumberStepper value={block.radius ?? 0} min={0} max={200}
+                onChange={(v) => onChange({ radius: v } as never)} />
+            </Row>
+          </Section>
+
+          <Section title={ts.sections.shadow}>
+            <ToggleField label={ts.showShadow} value={!!block.shadowEnabled}
+              onChange={(v) => onChange({ shadowEnabled: v } as never)} />
+            {block.shadowEnabled && (
+              <>
+                <Row label={ts.color}>
+                  <ColorField value={block.shadowColor ?? "#000000"}
+                    onChange={(c) => onChange({ shadowColor: c } as never)} />
+                </Row>
+                <Row label={ts.opacityPct(block.shadowOpacity ?? 30)}>
+                  <Slider value={block.shadowOpacity ?? 30} min={0} max={100} step={1}
+                    onChange={(v) => onChange({ shadowOpacity: v } as never)} />
+                </Row>
+                <Row label={ts.blur}>
+                  <NumberStepper value={block.shadowBlur ?? 12} min={0} max={40}
+                    onChange={(v) => onChange({ shadowBlur: v } as never)} />
+                </Row>
+                <Row label={ts.axisX}>
+                  <NumberStepper value={block.shadowX ?? 0} min={-40} max={40}
+                    onChange={(v) => onChange({ shadowX: v } as never)} />
+                </Row>
+                <Row label={ts.axisY}>
+                  <NumberStepper value={block.shadowY ?? 4} min={-40} max={40}
+                    onChange={(v) => onChange({ shadowY: v } as never)} />
+                </Row>
+              </>
+            )}
+          </Section>
         </div>
       );
 
@@ -1595,7 +1662,7 @@ function SortableManualTableRow({ id, label }: { id: string; label: string }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: DndCSS.Transform.toString(transform), transition }}
       className={cn(
         "flex items-center gap-2 rounded border border-border/40 bg-card px-2 py-1.5 text-xs shadow-sm",
         isDragging && "z-10 opacity-80 shadow-md",
