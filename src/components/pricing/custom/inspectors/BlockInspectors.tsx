@@ -2509,6 +2509,8 @@ function OmniCustoPressaoInspector({ block, onChange }: {
         <Row label={t.omni.custoPressao.custoFixo}><ToggleField value={block.showCustoFixo} onChange={(v) => onChange({ showCustoFixo: v })} label="" /></Row>
         <Row label={t.omni.custoPressao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
+      {/* Sem "Cor": 2 séries fixas com cor própria (chart1/chart2). */}
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} hideColor />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
@@ -2538,6 +2540,8 @@ function OmniPositivacaoInspector({ block, onChange }: {
         <Row label={t.omni.positivacao.topN}><NumberStepper value={block.topN ?? 8} min={3} max={12} step={1} onChange={(v) => onChange({ topN: v })} /></Row>
         <Row label={t.omni.positivacao.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
+      {/* Sem "Cor": multi-série (até topN linhas/barras/áreas simultâneas). */}
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} hideColor />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );

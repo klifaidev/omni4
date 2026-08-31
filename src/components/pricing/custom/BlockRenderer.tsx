@@ -2803,6 +2803,9 @@ function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
 
   if (series.chartData.length === 0 || series.chartKeys.length === 0) return omniEmpty();
 
+  // Estilo mínimo: só fontSize (sem "Cor" — multi-série, até topN linhas).
+  const fontSize = b.fontSize ?? 9;
+
   const DataElement = (key: string, i: number) => {
     const color = OMNI_COLORS[i % OMNI_COLORS.length];
     if (b.chartType === "bar") {
@@ -2821,8 +2824,8 @@ function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={series.chartData} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={44} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} width={44} />
             <Tooltip formatter={(v: number) => [formatNum(Number(v), 0), t.omni.clientesTooltip]} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {series.chartKeys.slice(0, b.topN ?? 8).map(DataElement)}
@@ -3241,6 +3244,9 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
     cf: b.showCustoFixo ? r.custoFixoPctRol : undefined,
   }));
 
+  // Estilo mínimo: só fontSize (sem "Cor" — 2 séries fixas com cor própria).
+  const fontSize = b.fontSize ?? 9;
+
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
       {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoPressao)}
@@ -3248,8 +3254,8 @@ function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) 
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} stackOffset="none" margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} width={40} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} width={40} />
             <Tooltip formatter={(v: number) => formatPct(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {b.showCustoVariavel && (
