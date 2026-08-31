@@ -2572,7 +2572,9 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
 
   const cellW = 36;
   const cellH = 22;
-  const fs = 9;
+  // Estilo mínimo: só fontSize (sem "Cor" — a cor da célula é a própria
+  // escala de calor pelo valor, um campo único não se aplicaria aqui).
+  const fs = b.fontSize ?? 9;
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
@@ -2726,6 +2728,10 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
 
   if (data.length === 0) return omniEmpty();
 
+  // Estilo mínimo: só fontSize, sem "Cor" (barras empilhadas multi-série —
+  // ver comentário em OmniMetricInspector/BlockInspectors.tsx).
+  const fontSize = b.fontSize ?? 9;
+
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
       {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.canalMix)}
@@ -2733,8 +2739,8 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} tickFormatter={info.fmt} width={56} />
             <Tooltip formatter={(v: number) => info.fmt(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             {canais.map((c, i) => (

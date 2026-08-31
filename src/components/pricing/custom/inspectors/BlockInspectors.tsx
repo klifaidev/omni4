@@ -2397,6 +2397,10 @@ function OmniMetricInspector({ block, onChange, label }: {
       <Section title={t.omni.data}>
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
       </Section>
+      {/* Sem "Cor": usado por canal_mix (barras empilhadas multi-série) e
+       * heatmap_sazonalidade (cor por valor, escala de calor) — nenhum dos
+       * dois tem uma única cor de destaque pra esse campo controlar. */}
+      <OmniStyleSection block={block} onChange={onChange} hideColor />
       <OmniFiltersSection block={block} onChange={onChange} />
     </div>
   );
