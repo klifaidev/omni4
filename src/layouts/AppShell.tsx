@@ -1,7 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { UpdateNotification } from "@/components/UpdateNotification";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PanelRightOpen, Presentation, X } from "lucide-react";
 import { Sidebar } from "@/components/pricing/Sidebar";
@@ -128,12 +128,17 @@ export default function AppShell() {
     return () => window.clearTimeout(timeout);
   }, [slidesMinimized]);
 
-  const minimizeSlides = () => {
+  // useCallback (não só arrow function solta): isso desce como onMinimize
+  // até o CustomSlideEditor (React.memo, comparação rasa padrão) — uma
+  // referência nova a cada render do AppShell (helpOpen, commandOpen,
+  // sidebar, tema, etc. — nada relacionado ao conteúdo do slide) anularia
+  // esse memo em cascata, igual ao onPatch/onChange corrigidos antes.
+  const minimizeSlides = useCallback(() => {
     setSlidesMounted(true);
     setSlidesMinimized(true);
     navigate(lastNonSlidesPathRef.current || "/");
     toast.info("Slides minimizado. A sessao continua em standby.", { duration: 2200 });
-  };
+  }, [navigate]);
 
   const restoreSlides = () => {
     setSlidesMounted(true);

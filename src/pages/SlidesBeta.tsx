@@ -971,6 +971,23 @@ function FullscreenCustomEditor({
     return () => window.removeEventListener("keydown", handler, true);
   }, [open, goRel]);
 
+  // Callback estável pro onChange do CustomSlideEditor: sem isso, o arrow
+  // function inline no JSX abaixo era recriado a cada re-render deste
+  // componente (que reage a QUALQUER mudança em items, não só no slide
+  // aberto) — o que anulava o React.memo do CustomSlideEditor mesmo quando
+  // nada realmente relevante tinha mudado.
+  const currentCustomId = current?.kind === "custom" ? current.id : undefined;
+  const handleCustomSlideChange = useCallback((cfg: CustomSlideConfig) => {
+    if (readOnly) {
+      toast.info(t.common.readOnlyToast);
+      return;
+    }
+    if (!currentCustomId) return;
+    updateItem(currentCustomId, (it) =>
+      it.kind === "custom" ? ({ ...it, config: cfg } as SlideItem) : it,
+    );
+  }, [readOnly, currentCustomId, updateItem]);
+
   const stripSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const guardReadOnly = () => {
     if (!readOnly) return false;
@@ -1131,15 +1148,7 @@ function FullscreenCustomEditor({
               <CustomSlideEditor
                 slideId={current.id}
                 config={(current as Extract<SlideItem, { kind: "custom" }>).config}
-                onChange={(cfg) => {
-                  if (readOnly) {
-                    toast.info(t.common.readOnlyToast);
-                    return;
-                  }
-                  updateItem(current.id, (it) =>
-                    it.kind === "custom" ? ({ ...it, config: cfg } as SlideItem) : it,
-                  );
-                }}
+                onChange={handleCustomSlideChange}
                 readOnly={readOnly}
                 isStandby={isStandby}
                 onMinimize={onMinimize}
