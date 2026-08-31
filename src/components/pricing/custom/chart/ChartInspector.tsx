@@ -20,7 +20,6 @@ import {
 } from "./Inspector";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ChartTypePicker } from "./ChartTypePicker";
 import { STYLE_PRESETS, buildStylePresetPatch, type StylePresetId } from "./stylePresets";
 import { usePricing } from "@/store/pricing";
@@ -354,15 +353,15 @@ export function ChartInspector({
         <ChartTypePicker value={ct} onChange={(v) => onChange({ chartType: v })} />
       </div>
 
-      <Tabs defaultValue="dados" className="w-full">
-        <TabsList className="grid h-9 w-full grid-cols-3 rounded-full bg-secondary/40 p-1">
-          <TabsTrigger value="dados" className="h-7 rounded-full text-[12px] data-[state=active]:bg-background data-[state=active]:shadow-sm">{t.tabs.data}</TabsTrigger>
-          <TabsTrigger value="visual" className="h-7 rounded-full text-[12px] data-[state=active]:bg-background data-[state=active]:shadow-sm">{t.tabs.visual}</TabsTrigger>
-          <TabsTrigger value="analises" className="h-7 rounded-full text-[12px] data-[state=active]:bg-background data-[state=active]:shadow-sm">{t.tabs.analytics}</TabsTrigger>
-        </TabsList>
-
-        {/* ============================ DADOS TAB ============================ */}
-        <TabsContent value="dados" className="mt-3 space-y-3">
+      {/* Item 7 (análise "Elementos do Editor de Slides"): as abas internas
+       * Dados/Visual/Análises foram removidas — o Chart era o único tipo
+       * de bloco com abas dentro de abas ("Design" já é uma aba externa
+       * do FilteredInspector). Quase todo o conteúdo já vivia dentro de
+       * <Section> (accordion), então "achatar" foi só isso: tirar o
+       * wrapper <Tabs> e deixar as Section como irmãs diretas, na MESMA
+       * ordem que as abas tinham (Dados → Visual → Análises) — sem
+       * reordenar por uso, decisão explícita do usuário. */}
+      {/* ============================ DADOS ============================ */}
       {/* ===== Data ===== */}
       <Section title={t.dataSection.title} defaultOpen>
         {isCustomSource && (
@@ -815,10 +814,8 @@ export function ChartInspector({
           value={block.participatesInCrossFilter !== false}
           onChange={(v) => onChange({ participatesInCrossFilter: v })} />
       </Section>
-        </TabsContent>
 
-        {/* ============================ VISUAL TAB ============================ */}
-        <TabsContent value="visual" className="mt-3 space-y-3">
+      {/* ============================ VISUAL ============================ */}
       {/* Quick style presets */}
       <div className="rounded-lg border border-border/50 bg-card/40 p-3">
         <div className="mb-2 text-[12px] font-medium text-foreground/85">{t.quickStyles}</div>
@@ -1497,10 +1494,7 @@ export function ChartInspector({
         </Section>
       )}
 
-        </TabsContent>
-
-        {/* ============================ ANÁLISES TAB ============================ */}
-        <TabsContent value="analises" className="mt-3 space-y-3">
+      {/* ============================ ANÁLISES ============================ */}
       {/* B.2 — Conditional formatting. Pizza/Rosca entraram aqui porque já
           tinham a infraestrutura de "cor por fatia" (style.pie.slices) —
           faltava só ligar a regra condicional como alternativa/fallback à
@@ -1524,8 +1518,6 @@ export function ChartInspector({
           {t.analytics.noneAvailable}
         </div>
       )}
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }
