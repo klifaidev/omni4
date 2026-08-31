@@ -51,6 +51,18 @@ function SlidesRouteFallback() {
   );
 }
 
+// Fallback pro Suspense das páginas com code-splitting por rota (App.tsx).
+// Fica só um instante em rede/máquina normal (o chunk já costuma estar em
+// cache do browser depois da 1ª visita); em máquina travada é o preço de
+// não baixar o JS de todas as páginas de uma vez só.
+function PageRouteFallback() {
+  return (
+    <div className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    </div>
+  );
+}
+
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
@@ -378,7 +390,9 @@ export default function AppShell() {
                 transition: reduceMotion ? { duration: 0.01 } : { duration: 0.08, ease: "easeOut" },
               }}
             >
-              <Outlet />
+              <Suspense fallback={<PageRouteFallback />}>
+                <Outlet />
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         )}

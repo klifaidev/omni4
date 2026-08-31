@@ -1,33 +1,45 @@
+import { lazy } from "react";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppPreloader } from "@/components/pricing/AppPreloader";
 import AppShell from "./layouts/AppShell";
-import Index from "./pages/Index.tsx";
-import VisaoGeral from "./pages/VisaoGeral.tsx";
-import BridgePvm from "./pages/BridgePvm.tsx";
-import Mix from "./pages/Mix.tsx";
-import Preco from "./pages/Preco.tsx";
-import IndicePrecoIdeal from "./pages/IndicePrecoIdeal.tsx";
-import Dre from "./pages/Dre.tsx";
-import Canais from "./pages/Canais.tsx";
-import Custos from "./pages/Custos.tsx";
-import Inovacao from "./pages/Inovacao.tsx";
-import MargemTarget from "./pages/MargemTarget.tsx";
-import Budget from "./pages/Budget.tsx";
-import Rolling from "./pages/Rolling.tsx";
-import Abc from "./pages/Abc.tsx";
-import Detalhe from "./pages/Detalhe.tsx";
-import Upload from "./pages/Upload.tsx";
-import Atividades from "./pages/Atividades.tsx";
-import Alertas from "./pages/Alertas.tsx";
-import Filtros from "./pages/Filtros.tsx";
-import Demanda from "./pages/Demanda.tsx";
-import Estoque from "./pages/Estoque.tsx";
-import Positivacao from "./pages/Positivacao.tsx";
-import FarolCadastro from "./pages/FarolCadastro.tsx";
 import NotFound from "./pages/NotFound.tsx";
+
+// Code-split por rota: cada página vira um chunk separado, baixado só quando
+// visitada. Antes disso, todas essas 22 páginas eram importadas de forma
+// eager e caíam no bundle principal (3.17MB / 863KB gzip antes desta
+// mudança) — em máquina/rede lenta isso significava baixar e parsear o
+// código de páginas que o usuário talvez nunca abra só pra ver a Home.
+// Suspense fica em AppShell.tsx, ao redor do <Outlet />.
+const Index = lazy(() => import("./pages/Index.tsx"));
+const VisaoGeral = lazy(() => import("./pages/VisaoGeral.tsx"));
+const BridgePvm = lazy(() => import("./pages/BridgePvm.tsx"));
+const Mix = lazy(() => import("./pages/Mix.tsx"));
+const Preco = lazy(() => import("./pages/Preco.tsx"));
+const IndicePrecoIdeal = lazy(() => import("./pages/IndicePrecoIdeal.tsx"));
+const Dre = lazy(() => import("./pages/Dre.tsx"));
+const Canais = lazy(() => import("./pages/Canais.tsx"));
+const Custos = lazy(() => import("./pages/Custos.tsx"));
+const Inovacao = lazy(() => import("./pages/Inovacao.tsx"));
+const MargemTarget = lazy(() => import("./pages/MargemTarget.tsx"));
+const Budget = lazy(() => import("./pages/Budget.tsx"));
+const Rolling = lazy(() => import("./pages/Rolling.tsx"));
+const Abc = lazy(() => import("./pages/Abc.tsx"));
+const Detalhe = lazy(() => import("./pages/Detalhe.tsx"));
+const Upload = lazy(() => import("./pages/Upload.tsx"));
+const Atividades = lazy(() => import("./pages/Atividades.tsx"));
+const Alertas = lazy(() => import("./pages/Alertas.tsx"));
+const Filtros = lazy(() => import("./pages/Filtros.tsx"));
+const Demanda = lazy(() => import("./pages/Demanda.tsx"));
+const Estoque = lazy(() => import("./pages/Estoque.tsx"));
+const Positivacao = lazy(() => import("./pages/Positivacao.tsx"));
+const FarolCadastro = lazy(() => import("./pages/FarolCadastro.tsx"));
+// NotFound fica eager (import normal, acima): é a rota catch-all "*", que
+// vive fora do <Route element={<AppShell />}> e por isso fora do Suspense
+// que envolve o <Outlet /> em AppShell.tsx — lazy aqui suspenderia sem
+// nenhum boundary acima e derrubaria a tela de erro do app.
 
 const App = () => (
   <TooltipProvider>
