@@ -2361,7 +2361,7 @@ function OmniFiltersSection({ block, onChange }: {
  * vez (cada renderer decide como aplicar `color`/`fontSize`, já que os
  * 17 blocos têm formas de desenho bem diferentes entre si). Ver
  * OmniBaseBlock em customSlide.ts pro porquê dos campos ficarem lá. */
-function OmniStyleSection({ block, onChange, defaultColor, hideColor }: {
+function OmniStyleSection({ block, onChange, defaultColor, hideColor, defaultFontSize, fontSizeRange }: {
   block: OmniBaseBlock;
   onChange: (p: Partial<OmniBaseBlock>) => void;
   defaultColor?: string;
@@ -2370,7 +2370,16 @@ function OmniStyleSection({ block, onChange, defaultColor, hideColor }: {
    *  de cor pelos dados) — evita reintroduzir a mesma classe de "controle
    *  que não faz nada" que motivou essa análise inteira. */
   hideColor?: boolean;
+  /** Fallback quando `block.fontSize` é undefined. Default 9 (a maioria dos
+   *  blocos usa isso pra rótulo de eixo). Alguns blocos têm um tamanho
+   *  hardcoded bem diferente (ex.: rótulos grandes do Mapa de UF). */
+  defaultFontSize?: number;
+  /** [min, max] do stepper — default [7,16]. Só muda quando o hardcoded
+   *  original do bloco já passa desse range (evita clampar o valor visual
+   *  de quem nunca abriu essa seção). */
+  fontSizeRange?: [number, number];
 }) {
+  const [min, max] = fontSizeRange ?? [7, 16];
   return (
     <Section title={t.omni.style.sectionLabel}>
       {!hideColor && (
@@ -2379,7 +2388,7 @@ function OmniStyleSection({ block, onChange, defaultColor, hideColor }: {
         </Row>
       )}
       <Row label={t.omni.style.fontSize}>
-        <NumberStepper value={block.fontSize ?? 9} min={7} max={16}
+        <NumberStepper value={block.fontSize ?? defaultFontSize ?? 9} min={min} max={max}
           onChange={(v) => onChange({ fontSize: v })} suffix="px" />
       </Row>
     </Section>
@@ -2562,6 +2571,13 @@ function OmniUfMapInspector({ block, onChange }: {
           { value: "both", label: t.omni.ufMap.labelModeOptions.both },
         ]} /></Row>
       </Section>
+      {/* Sem "Cor": a cor de cada estado já é a escala de calor pelo valor.
+       * Range de fonte maior que o padrão (14-24 em vez de 7-16) porque o
+       * rótulo do mapa já nasce grande (14 ou 18px hardcoded conforme o
+       * modo) — um range pequeno clamparia o visual de quem nunca abrir
+       * essa seção. */}
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} hideColor
+        defaultFontSize={block.labelMode === "both" ? 14 : 18} fontSizeRange={[10, 24]} />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );

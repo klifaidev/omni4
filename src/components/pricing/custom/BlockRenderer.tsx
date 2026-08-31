@@ -2922,7 +2922,7 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
               stroke={SLIDE_HEX.chart2}
               strokeWidth={1.2}
               fill={SLIDE_HEX.white}
-              fontSize={b.labelMode === "both" ? 14 : 18}
+              fontSize={b.fontSize ?? (b.labelMode === "both" ? 14 : 18)}
               fontWeight={800}
               style={{ pointerEvents: "none" }}
             >
