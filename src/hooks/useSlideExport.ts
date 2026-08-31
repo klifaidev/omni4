@@ -1,8 +1,6 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
-import { exportSlideFlow } from "@/lib/exportPpt";
-import { exportToPdf } from "@/lib/exportPdf";
 import { itemToFlow, type SlideItem } from "@/lib/slidesFlow";
 import type { Metric, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
@@ -42,6 +40,10 @@ export function useSlideExport({
     if (!canExport()) return;
     setExporting(true);
     try {
+      // jspdf (~470KB) só baixa quando o usuário clica em exportar PDF —
+      // import estático aqui fazia essa biblioteca cair no caminho de
+      // carregamento da página Slides inteira, mesmo pra quem nunca exporta.
+      const { exportToPdf } = await import("@/lib/exportPdf");
       await exportToPdf(items, normalizeExportFileName(fileName, "pdf"));
     } catch (err) {
       console.error(err);
@@ -57,6 +59,9 @@ export function useSlideExport({
     try {
       const flow = items.map((i) => itemToFlow(i, { pricingRows, budgetRows, metric }));
       const bridgeIdx = items.findIndex((i) => i.kind === "bridge_pvm");
+      // pptxgenjs + jszip (~520KB) mesma lógica do PDF acima: só baixa
+      // quando o usuário realmente exporta.
+      const { exportSlideFlow } = await import("@/lib/exportPpt");
       const { failedSlides } = await exportSlideFlow(
         flow, normalizeExportFileName(fileName, "pptx"), bridgeIdx >= 0 ? bridgeIdx + 1 : undefined,
       );

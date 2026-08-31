@@ -14,7 +14,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, ChevronLeft, ChevronRight, Filter as FunnelIcon, Download, Eye, EyeOff, Image as ImageIcon, Timer } from "lucide-react";
-import { exportToPdf } from "@/lib/exportPdf";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { Button } from "@/components/ui/button";
 import { useSlidesFlow } from "@/store/slidesFlow";
@@ -219,6 +218,11 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
           onClick={async () => {
             const list = items.length > 0 ? items : (slide ? [slide as unknown as import("@/lib/slidesFlow").SlideItem] : []);
             if (list.length === 0) return;
+            // jspdf (~470KB) só é baixado quando o usuário realmente clica em
+            // "Baixar PDF" — antes disso ficava importado estaticamente e
+            // caía inteiro dentro do chunk do SlidePreview, que é usado o
+            // tempo todo (miniaturas do deck), não só neste botão.
+            const { exportToPdf } = await import("@/lib/exportPdf");
             await exportToPdf(list as import("@/lib/slidesFlow").SlideItem[], "apresentacao.pdf");
           }}
           aria-label="Baixar PDF"
