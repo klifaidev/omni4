@@ -545,6 +545,29 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     patchBlockAction(id, patch, label);
   }, [canEdit]);
 
+  // Cache de callbacks onPatch por bloco: sem isso, o map de renderização do
+  // canvas (mais abaixo) criaria uma arrow function nova pra cada bloco em
+  // TODA re-renderização do editor — o que anula silenciosamente o
+  // React.memo do BlockRenderer (a comparação rasa de props sempre vê
+  // onPatch como "mudou"). Com decks grandes, isso fazia todo bloco
+  // re-renderizar (incl. gráficos e tabelas caros) a cada interação
+  // qualquer no editor, não só no bloco tocado. `updateBlock` já é estável
+  // (useCallback com deps raramente mudam), então cachear por id é seguro.
+  const onPatchCache = useRef(new Map<string, (patch: Partial<CustomBlock>) => void>());
+  // Guarda a versão mais recente de updateBlock num ref (em vez de fechar
+  // sobre ele diretamente) pra que os closures cacheados abaixo nunca
+  // fiquem presos a uma versão antiga — ex.: se canEdit/readOnly mudar.
+  const updateBlockRef = useRef(updateBlock);
+  updateBlockRef.current = updateBlock;
+  const getBlockOnPatch = useCallback((id: string) => {
+    let fn = onPatchCache.current.get(id);
+    if (!fn) {
+      fn = (patch: Partial<CustomBlock>) => updateBlockRef.current(id, patch);
+      onPatchCache.current.set(id, fn);
+    }
+    return fn;
+  }, []);
+
   const blockTransformActions = useMemo(() => ({
     canEdit,
     insertBlocks: insertBlocksAction,
@@ -2280,7 +2303,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             block={blk}
                             isEditing={isEditing}
                             cacheSlideId={slideId}
-                            onPatch={(patch) => updateBlock(blk.id, patch)}
+                            onPatch={getBlockOnPatch(blk.id)}
                           />
                         </div>
                         {isEditing && (
