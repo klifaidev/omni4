@@ -10,6 +10,7 @@ import {
   isLineFamily,
 } from "@/lib/customSlide";
 import { patchBlockAction } from "./editorStore";
+import type { GuideState } from "./blockTransform";
 
 type Pt = { x: number; y: number };
 
@@ -17,6 +18,13 @@ interface Props {
   block: ShapeBlock;
   scale: number;
   canvasEl: HTMLDivElement | null;
+  /** Alinhamento de ponta de linha (p1/p2) e mover linha (lineMove) contra
+   * os outros blocos do slide — mesmo motor de smart guides usado pra
+   * mover/redimensionar qualquer outro bloco (Fase 4 da Doutrina do
+   * Editor: antes disso, arrastar a ponta de uma linha nunca alinhava com
+   * nada, único tipo de arraste do editor com esse comportamento). */
+  computeGuides?: (activeIds: string[], x: number, y: number, w: number, h: number) => { x: number; y: number; guides: GuideState };
+  clearGuides?: () => void;
 }
 
 const HANDLE_BASE = 10; // px at 1× zoom
@@ -40,7 +48,7 @@ function snapAngle(p1: Pt, p2: Pt): Pt {
   return { x: p1.x + Math.cos(snapped) * len, y: p1.y + Math.sin(snapped) * len };
 }
 
-export function ShapeHandleOverlay({ block, scale, canvasEl }: Props) {
+export function ShapeHandleOverlay({ block, scale, canvasEl, computeGuides, clearGuides }: Props) {
   const b = ensureShapeBlock(block);
   // Local preview state during drag — committed on pointerup.
   const [draft, setDraft] = useState<Partial<ShapeBlock> | null>(null);
@@ -83,7 +91,19 @@ export function ShapeHandleOverlay({ block, scale, canvasEl }: Props) {
           ? { x: init.p1.x + dx, y: init.p1.y + dy }
           : { x: init.p2.x + dx, y: init.p2.y + dy };
         const other: Pt = drag.kind === "p1" ? init.p2 : init.p1;
-        const snapped = ev.shiftKey ? snapAngle(other, moving) : moving;
+        // Shift = ângulo travado em 45° (comportamento original, prioridade
+        // sobre o alinhamento). Sem Shift = alinha a ponta com bordas/centros
+        // de outros blocos, tratando o ponto como uma caixa de tamanho zero
+        // — computeGuides/snapBlockFrame já generalizam pra isso (left =
+        // center = right = x do próprio ponto quando w=0).
+        let snapped = moving;
+        if (ev.shiftKey) {
+          clearGuides?.();
+          snapped = snapAngle(other, moving);
+        } else {
+          const snapResult = computeGuides?.([block.id], moving.x, moving.y, 0, 0);
+          if (snapResult) snapped = { x: snapResult.x, y: snapResult.y };
+        }
         const p1 = drag.kind === "p1" ? snapped : init.p1;
         const p2 = drag.kind === "p2" ? snapped : init.p2;
         const x = Math.min(p1.x, p2.x);
@@ -92,8 +112,15 @@ export function ShapeHandleOverlay({ block, scale, canvasEl }: Props) {
         const h = Math.max(1, Math.abs(p2.y - p1.y));
         setDraft({ p1, p2, x, y, w, h });
       } else if (drag.kind === "lineMove") {
-        const p1 = { x: init.p1.x + dx, y: init.p1.y + dy };
-        const p2 = { x: init.p2.x + dx, y: init.p2.y + dy };
+        const rawX = Math.min(init.p1.x, init.p2.x) + dx;
+        const rawY = Math.min(init.p1.y, init.p2.y) + dy;
+        const lineW = Math.abs(init.p2.x - init.p1.x);
+        const lineH = Math.abs(init.p2.y - init.p1.y);
+        const snap = computeGuides?.([block.id], rawX, rawY, lineW, lineH);
+        const snappedDx = (snap?.x ?? rawX) - Math.min(init.p1.x, init.p2.x);
+        const snappedDy = (snap?.y ?? rawY) - Math.min(init.p1.y, init.p2.y);
+        const p1 = { x: init.p1.x + snappedDx, y: init.p1.y + snappedDy };
+        const p2 = { x: init.p2.x + snappedDx, y: init.p2.y + snappedDy };
         const x = Math.min(p1.x, p2.x);
         const y = Math.min(p1.y, p2.y);
         const w = Math.max(1, Math.abs(p2.x - p1.x));
@@ -133,6 +160,7 @@ export function ShapeHandleOverlay({ block, scale, canvasEl }: Props) {
           : labelMap[drag.kind] ?? "Ajustar geometria";
         patchBlockAction(block.id, draft, lbl);
       }
+      clearGuides?.();
       dragRef.current = null;
       setDraft(null);
     };
@@ -143,7 +171,7 @@ export function ShapeHandleOverlay({ block, scale, canvasEl }: Props) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [draft, block.id, canvasEl, scale]);
+  }, [draft, block.id, canvasEl, scale, computeGuides, clearGuides]);
 
   // ---- Render ----
   const handleStyle = (kind: "square" | "circle" | "diamond", color = "#3B82F6", fill = "#fff", cursor = "pointer", size = handleSize): React.CSSProperties => ({

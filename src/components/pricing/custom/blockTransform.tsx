@@ -471,6 +471,7 @@ export function useBlockTransform({
   return {
     guides,
     clearGuides,
+    computeGuides,
     getBlockFrameHandlers,
   };
 }

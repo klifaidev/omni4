@@ -2447,7 +2447,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   b.kind === "shape" && selectedIds.includes(b.id) && !b.locked && !readOnly)
                 .map((sb) => (
                   <ShapeHandleOverlay key={`sh-${sb.id}`} block={sb}
-                    scale={scale} canvasEl={canvasRef.current} />
+                    scale={scale} canvasEl={canvasRef.current}
+                    computeGuides={blockTransform.computeGuides} clearGuides={clearGuides} />
                 ))}
 
               {/* Group outlines + resize handles. */}
