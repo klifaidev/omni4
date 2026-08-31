@@ -2771,6 +2771,9 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
     cf: b.viewMode === "pct" ? r.custoFixoPctRol     : b.viewMode === "kg" ? r.custoFixoPorKg     : r.custoFixo,
   }));
 
+  // Estilo mínimo: só fontSize (sem "Cor" — 2 séries fixas com cor própria).
+  const fontSize = b.fontSize ?? 9;
+
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
       {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoEvolucao)}
@@ -2778,8 +2781,8 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             <Line type="monotone" dataKey="cv" name={t.omni.custoSeries.custoVariavel} stroke={OMNI_COLORS[0]} strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -2952,6 +2955,9 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
     cf: b.viewMode === "pct" ? r.custoFixoPctRol     : r.custoFixo,
   }));
 
+  // Estilo mínimo: só fontSize (sem "Cor" — 2 séries fixas com cor própria).
+  const fontSize = b.fontSize ?? 9;
+
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4 }}>
       {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.custoComposicao)}
@@ -2959,8 +2965,8 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="hsl(var(--border) / 0.3)" strokeDasharray="3 3" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
-            <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
+            <XAxis dataKey="label" tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} angle={-30} textAnchor="end" height={36} />
+            <YAxis tick={{ fontSize, fill: "hsl(var(--muted-foreground))" }} tickFormatter={fmtY} width={56} />
             <Tooltip formatter={(v: number) => fmtY(v)} />
             {b.showLegend && <Legend wrapperStyle={{ fontSize: 10 }} />}
             <Bar dataKey="cv" name={t.omni.custoSeries.custoVariavel} stackId="a" fill={OMNI_COLORS[0]} isAnimationActive={false} />

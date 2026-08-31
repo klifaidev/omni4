@@ -2488,6 +2488,10 @@ function OmniCustoInspector({ block, onChange }: {
         ]} /></Row>
         <Row label={t.omni.custo.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
+      {/* Sem "Cor": 2 séries fixas (custo variável/fixo), cada uma já com
+       * sua própria cor semântica na paleta — um único campo "Cor" não
+       * cobriria as duas de forma clara. */}
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} hideColor />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
