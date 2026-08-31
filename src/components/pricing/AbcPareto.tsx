@@ -8,6 +8,11 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   rows: AggRow[];
+  /** Tabela detalhada abaixo do gráfico. Default true — preserva o
+   * comportamento de sempre mostrar (usado em src/pages/Abc.tsx, que não
+   * tem um toggle pra isso). O bloco Omni "Curva ABC" do editor de Slides
+   * passa este valor explicitamente a partir de block.showTable. */
+  showTable?: boolean;
 }
 
 export interface AbcClassifiedRow extends AggRow {
@@ -28,7 +33,7 @@ export function classifyAbc(rows: AggRow[]): AbcClassifiedRow[] {
   });
 }
 
-export function AbcPareto({ rows }: Props) {
+export function AbcPareto({ rows, showTable = true }: Props) {
   const classified = useMemo(() => classifyAbc(rows), [rows]);
   const chartData = useMemo(
     () =>
@@ -74,39 +79,41 @@ export function AbcPareto({ rows }: Props) {
         </ComposedChart>
       </ResponsiveContainer>
 
-      <DataTable
-        rows={classified as unknown as Record<string, unknown>[]}
-        searchable
-        searchKeys={["key"]}
-        columns={[
-          { key: "position", label: "#", align: "right", format: (v) => String(v) },
-          { key: "key", label: "SKU", align: "left", format: (v) => <span className="truncate font-medium">{String(v)}</span> },
-          { key: "rol", label: "ROL", align: "right", format: (v) => formatBRL(Number(v), { compact: true }) },
-          { key: "cumulPct", label: "ROL Acum.%", align: "right", format: (v) => formatPct(Number(v)) },
-          {
-            key: "classe",
-            label: "Classe",
-            align: "right",
-            format: (v) => {
-              const c = String(v) as "A" | "B" | "C";
-              return (
-                <Badge
-                  className={cn(
-                    "px-2 text-[10px] font-bold",
-                    c === "A" && "bg-success/15 text-success hover:bg-success/20 border border-success/30",
-                    c === "B" && "bg-warning/15 text-warning hover:bg-warning/20 border border-warning/30",
-                    c === "C" && "bg-destructive/15 text-destructive hover:bg-destructive/20 border border-destructive/30",
-                  )}
-                  variant="secondary"
-                >
-                  {c}
-                </Badge>
-              );
+      {showTable && (
+        <DataTable
+          rows={classified as unknown as Record<string, unknown>[]}
+          searchable
+          searchKeys={["key"]}
+          columns={[
+            { key: "position", label: "#", align: "right", format: (v) => String(v) },
+            { key: "key", label: "SKU", align: "left", format: (v) => <span className="truncate font-medium">{String(v)}</span> },
+            { key: "rol", label: "ROL", align: "right", format: (v) => formatBRL(Number(v), { compact: true }) },
+            { key: "cumulPct", label: "ROL Acum.%", align: "right", format: (v) => formatPct(Number(v)) },
+            {
+              key: "classe",
+              label: "Classe",
+              align: "right",
+              format: (v) => {
+                const c = String(v) as "A" | "B" | "C";
+                return (
+                  <Badge
+                    className={cn(
+                      "px-2 text-[10px] font-bold",
+                      c === "A" && "bg-success/15 text-success hover:bg-success/20 border border-success/30",
+                      c === "B" && "bg-warning/15 text-warning hover:bg-warning/20 border border-warning/30",
+                      c === "C" && "bg-destructive/15 text-destructive hover:bg-destructive/20 border border-destructive/30",
+                    )}
+                    variant="secondary"
+                  >
+                    {c}
+                  </Badge>
+                );
+              },
             },
-          },
-          { key: "margemPct", label: "Margem %", align: "right", format: (v) => formatPct(Number(v)) },
-        ]}
-      />
+            { key: "margemPct", label: "Margem %", align: "right", format: (v) => formatPct(Number(v)) },
+          ]}
+        />
+      )}
     </div>
   );
 }

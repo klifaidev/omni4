@@ -3130,7 +3130,7 @@ function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: 4, overflow: "auto" }}>
       {b.showTitle && omniTitle(b.title || t.omni.defaultTitles.abcCurva)}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <AbcPareto rows={rows} />
+        <AbcPareto rows={rows} showTable={b.showTable} />
       </div>
     </div>
   );
