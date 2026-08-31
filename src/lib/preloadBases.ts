@@ -119,22 +119,48 @@ export async function preloadSavedBases(
     failed,
   });
 
-  for (let i = 0; i < available.length; i++) {
-    const tipo = available[i];
-    const label = BASE_LABELS[tipo];
-    const startPercent = Math.round((i / total) * 100);
-
+  // Cada tipo de base vai pra uma store diferente (pricing/budget/forecast/
+  // rolling/demanda/inovacaoDepara) e nenhum parser lê dados de outro tipo —
+  // não há dependência real de ordem entre eles. Antes rodavam em série
+  // (for...await), então o tempo total era a SOMA de cada parse; em máquina
+  // lenta com várias bases grandes isso é o gargalo do boot inteiro do app.
+  // Agora rodam em paralelo (Promise.all) — o tempo total passa a ser o
+  // MÁXIMO entre eles, não a soma.
+  //
+  // setParsingStart/setParsingEnd em usePricing são uma flag booleana, não
+  // um contador — por isso NÃO ficam mais dentro de cada tarefa (antes,
+  // paralelizar faria uma tarefa terminar e desligar o indicador global
+  // enquanto outra ainda carrega). Aqui envolvem o lote inteiro: uma
+  // chamada antes de disparar tudo, uma depois que todas settled.
+  pricing.setParsingStart();
+  let settled = 0;
+  const reportProgress = (tipo: TipoBase, label: string, phase: "start" | "done") => {
+    if (phase === "start") {
+      onProgress({
+        status: "loading",
+        percent: Math.round((settled / total) * 100),
+        label: `Carregando ${label}`,
+        detail: info[tipo]?.nomeArquivos?.join(", "),
+        loaded: [...loaded],
+        failed: [...failed],
+      });
+      return;
+    }
+    settled += 1;
     onProgress({
       status: "loading",
-      percent: startPercent,
-      label: `Carregando ${label}`,
-      detail: info[tipo]?.nomeArquivos?.join(", "),
+      percent: Math.round((settled / total) * 100),
+      label: `${label} carregada`,
+      detail: failed.includes(label) ? "Nao foi possivel carregar esta base." : undefined,
       loaded: [...loaded],
       failed: [...failed],
     });
+  };
 
+  async function loadOneBase(tipo: TipoBase): Promise<void> {
+    const label = BASE_LABELS[tipo];
+    reportProgress(tipo, label, "start");
     try {
-      pricing.setParsingStart();
       if (tipo === "deparaInovacao") {
         const files = await carregarBase(tipo);
         const latest = files[files.length - 1];
@@ -214,17 +240,14 @@ export async function preloadSavedBases(
       console.error(`Erro ao pre-carregar ${label}:`, error);
       failed.push(label);
     } finally {
-      usePricing.getState().setParsingEnd();
+      reportProgress(tipo, label, "done");
     }
+  }
 
-    onProgress({
-      status: "loading",
-      percent: Math.round(((i + 1) / total) * 100),
-      label: `${label} carregada`,
-      detail: failed.includes(label) ? "Nao foi possivel carregar esta base." : undefined,
-      loaded: [...loaded],
-      failed: [...failed],
-    });
+  try {
+    await Promise.all(available.map((tipo) => loadOneBase(tipo)));
+  } finally {
+    usePricing.getState().setParsingEnd();
   }
 
   const done: BasesPreloadProgress = {
