@@ -2361,16 +2361,23 @@ function OmniFiltersSection({ block, onChange }: {
  * vez (cada renderer decide como aplicar `color`/`fontSize`, já que os
  * 17 blocos têm formas de desenho bem diferentes entre si). Ver
  * OmniBaseBlock em customSlide.ts pro porquê dos campos ficarem lá. */
-function OmniStyleSection({ block, onChange, defaultColor }: {
+function OmniStyleSection({ block, onChange, defaultColor, hideColor }: {
   block: OmniBaseBlock;
   onChange: (p: Partial<OmniBaseBlock>) => void;
-  defaultColor: string;
+  defaultColor?: string;
+  /** true pros blocos onde `color` não tem efeito visível garantido (ex.:
+   *  gráfico multi-série sem uma única cor de destaque, heatmap com escala
+   *  de cor pelos dados) — evita reintroduzir a mesma classe de "controle
+   *  que não faz nada" que motivou essa análise inteira. */
+  hideColor?: boolean;
 }) {
   return (
     <Section title={t.omni.style.sectionLabel}>
-      <Row label={tc.color}>
-        <ColorField value={block.color ?? defaultColor} onChange={(c) => onChange({ color: c })} />
-      </Row>
+      {!hideColor && (
+        <Row label={tc.color}>
+          <ColorField value={block.color ?? defaultColor ?? SLIDE_HEX.chart1} onChange={(c) => onChange({ color: c })} />
+        </Row>
+      )}
       <Row label={t.omni.style.fontSize}>
         <NumberStepper value={block.fontSize ?? 9} min={7} max={16}
           onChange={(v) => onChange({ fontSize: v })} suffix="px" />
@@ -2452,6 +2459,10 @@ function OmniCanalTrendInspector({ block, onChange }: {
         <Row label={tc.metric}><SelectField value={block.metric} onChange={(v) => onChange({ metric: v as OmniMetric })} options={OMNI_METRIC_OPTIONS} /></Row>
         <Row label={t.omni.custo.legend}><ToggleField value={block.showLegend} onChange={(v) => onChange({ showLegend: v })} label="" /></Row>
       </Section>
+      {/* Sem controle de "Cor": por padrão (canal=null) este bloco desenha
+       * várias linhas (top canais), então uma única cor não teria efeito
+       * visível garantido — ver comentário em OmniStyleSection. */}
+      <OmniStyleSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} hideColor />
       <OmniFiltersSection block={block} onChange={onChange as (p: Partial<OmniBaseBlock>) => void} />
     </div>
   );
