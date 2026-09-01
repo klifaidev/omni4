@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <defs>
-    <linearGradient id="omni4Mark" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="omni4Mark" x1="0" y1="1" x2="1" y2="0">
       <stop offset="0%" stop-color="#60A5FA"/>
       <stop offset="100%" stop-color="#A855F7"/>
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="#0B0E1A"/>
-  <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
-        font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
-        font-size="15" font-weight="700" letter-spacing="-0.5" fill="url(#omni4Mark)">O4</text>
+  <rect x="5" y="19" width="4" height="8" rx="1" fill="url(#omni4Mark)" opacity="0.55"/>
+  <rect x="11" y="15" width="4" height="12" rx="1" fill="url(#omni4Mark)" opacity="0.75"/>
+  <rect x="17" y="9" width="4" height="18" rx="1" fill="url(#omni4Mark)" opacity="0.9"/>
+  <rect x="23" y="4" width="4" height="23" rx="1" fill="url(#omni4Mark)"/>
 </svg>

@@ -1,4 +1,5 @@
 import { NavLink } from "@/components/NavLink";
+import { OmniMark } from "./OmniMark";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 
@@ -128,19 +129,16 @@ export function Sidebar() {
           className={`flex items-center justify-center px-5 pb-7 pt-6 ${collapsed ? "md:px-3" : ""}`}
         >
           <div
-            className={`leading-tight transition-opacity duration-150 ${
+            className={`flex items-center gap-2.5 leading-tight transition-opacity duration-150 ${
               collapsed ? "md:hidden" : ""
             }`}
           >
-            <h1 className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-bold tracking-tight text-transparent">
+            <OmniMark className="h-7 w-7 shrink-0" />
+            <h1 className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
               OMNI4
             </h1>
           </div>
-          {collapsed && (
-            <h1 className="hidden bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-xl font-bold tracking-tight text-transparent md:block">
-              O4
-            </h1>
-          )}
+          {collapsed && <OmniMark className="hidden h-7 w-7 md:block" />}
           <button
             onClick={closeMobile}
             aria-label="Fechar menu"
