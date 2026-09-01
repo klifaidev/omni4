@@ -224,8 +224,12 @@ export default function VisaoGeral() {
           </Badge>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* Roteiro Visual, item 2.3: ROL Total vira o número âncora da tela
+            (hero), em vez de competir em tamanho igual com os outros 3 KPIs
+            numa grade uniforme. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
           <KpiCard
+            size="hero"
             label="ROL Total"
             value={formatBRL(kpis.rol, { compact: true })}
             subValue={formatBRL(kpis.rol)}
@@ -239,48 +243,50 @@ export default function VisaoGeral() {
               config: { label: "ROL Total", measure: "rol", dataSource: "ke30", filters, selectedPeriods: selected },
             }}
           />
-          <KpiCard
-            className="animation-delay-100"
-            label={metric === "cm" ? "Contrib. Marginal" : "Margem Bruta"}
-            value={formatBRL(kpis.margem, { compact: true })}
-            subValue={formatPct(kpis.margemPct)}
-            accent="green"
-            glow="green"
-            delta={comparison?.deltaPct.margem}
-            deltaLabel={comparison?.label}
-            sendToSlide={{
-              source: { page: "Visão Geral", visualization: `KPI - ${metric === "cm" ? "Contrib. Marginal" : "Margem Bruta"}` },
-              target: { blockKind: "kpi", blockLabel: "KPI" },
-              config: { label: metric === "cm" ? "Contrib. Marginal" : "Margem Bruta", measure: metric, dataSource: "ke30", filters, selectedPeriods: selected },
-            }}
-          />
-          <KpiCard
-            className="animation-delay-200"
-            label="Volume"
-            value={formatTon(kpis.volumeKg)}
-            subValue={`${formatNum(kpis.volumeKg)} t`}
-            accent="amber"
-            delta={comparison?.deltaPct.volumeKg}
-            deltaLabel={comparison?.label}
-            sendToSlide={{
-              source: { page: "Visão Geral", visualization: "KPI - Volume" },
-              target: { blockKind: "kpi", blockLabel: "KPI" },
-              config: { label: "Volume", measure: "volume", dataSource: "ke30", filters, selectedPeriods: selected },
-            }}
-          />
-          <KpiCard
-            className="animation-delay-300"
-            label="SKUs ativos"
-            value={formatNum(kpis.skus)}
-            accent="violet"
-            delta={comparison?.deltaPct.skus}
-            deltaLabel={comparison?.label}
-            sendToSlide={{
-              source: { page: "Visão Geral", visualization: "KPI - SKUs ativos" },
-              target: { blockKind: "kpi", blockLabel: "KPI" },
-              config: { label: "SKUs ativos", measure: "skus", dataSource: "ke30", filters, selectedPeriods: selected },
-            }}
-          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1">
+            <KpiCard
+              className="animation-delay-100"
+              label={metric === "cm" ? "Contrib. Marginal" : "Margem Bruta"}
+              value={formatBRL(kpis.margem, { compact: true })}
+              subValue={formatPct(kpis.margemPct)}
+              accent="green"
+              glow="green"
+              delta={comparison?.deltaPct.margem}
+              deltaLabel={comparison?.label}
+              sendToSlide={{
+                source: { page: "Visão Geral", visualization: `KPI - ${metric === "cm" ? "Contrib. Marginal" : "Margem Bruta"}` },
+                target: { blockKind: "kpi", blockLabel: "KPI" },
+                config: { label: metric === "cm" ? "Contrib. Marginal" : "Margem Bruta", measure: metric, dataSource: "ke30", filters, selectedPeriods: selected },
+              }}
+            />
+            <KpiCard
+              className="animation-delay-200"
+              label="Volume"
+              value={formatTon(kpis.volumeKg)}
+              subValue={`${formatNum(kpis.volumeKg)} t`}
+              accent="amber"
+              delta={comparison?.deltaPct.volumeKg}
+              deltaLabel={comparison?.label}
+              sendToSlide={{
+                source: { page: "Visão Geral", visualization: "KPI - Volume" },
+                target: { blockKind: "kpi", blockLabel: "KPI" },
+                config: { label: "Volume", measure: "volume", dataSource: "ke30", filters, selectedPeriods: selected },
+              }}
+            />
+            <KpiCard
+              className="animation-delay-300"
+              label="SKUs ativos"
+              value={formatNum(kpis.skus)}
+              accent="violet"
+              delta={comparison?.deltaPct.skus}
+              deltaLabel={comparison?.label}
+              sendToSlide={{
+                source: { page: "Visão Geral", visualization: "KPI - SKUs ativos" },
+                target: { blockKind: "kpi", blockLabel: "KPI" },
+                config: { label: "SKUs ativos", measure: "skus", dataSource: "ke30", filters, selectedPeriods: selected },
+              }}
+            />
+          </div>
         </div>
 
         <SendToSlideHover

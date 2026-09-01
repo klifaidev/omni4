@@ -15,6 +15,10 @@ interface KpiCardProps {
   accent?: "blue" | "green" | "red" | "amber" | "violet";
   className?: string;
   sendToSlide?: SendToSlidePayload;
+  /** Roteiro Visual, item 2.3: destaca um KPI como o número âncora da tela
+   * (ex. ROL Total na Visão Geral), em vez de todos competirem no mesmo
+   * tamanho numa grade uniforme. */
+  size?: "default" | "hero";
 }
 
 const accentColor: Record<NonNullable<KpiCardProps["accent"]>, string> = {
@@ -33,7 +37,7 @@ function formatDeltaPct(d: number): string {
   })}%`;
 }
 
-export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide }: KpiCardProps) {
+export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide, size = "default" }: KpiCardProps) {
   const hasDelta = typeof delta === "number" && isFinite(delta);
   const dir = hasDelta ? (delta! > 0 ? "up" : delta! < 0 ? "down" : "flat") : null;
   // Roteiro Visual, item 1.3: o valor já chega formatado como string
@@ -43,13 +47,30 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
   // o "vivo" vem de reagir à mudança, não de um contador falso.
   const reduceMotion = useReducedMotion();
 
+  const isHero = size === "hero";
+
   const card = (
-    <GlassCard glow={glow} hoverable surface="raised" className={cn("relative overflow-hidden animate-fade-up", className)}>
+    <GlassCard
+      glow={glow}
+      hoverable
+      surface="raised"
+      className={cn("relative overflow-hidden animate-fade-up", isHero && "h-full flex flex-col justify-center py-8", className)}
+    >
       <div className="flex flex-col gap-3">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <span
+          className={cn(
+            "font-medium uppercase tracking-[0.14em] text-muted-foreground",
+            isHero ? "text-xs" : "text-[11px]",
+          )}
+        >
           {label}
         </span>
-        <div className={cn("break-words text-3xl font-light leading-tight tabular-nums", accentColor[accent])}>
+        <div
+          className={cn(
+            "break-words font-light leading-tight tabular-nums",
+            isHero ? "text-3xl sm:text-4xl md:text-5xl lg:text-6xl" : "text-3xl",
+            accentColor[accent],
+          )}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
               key={value}
