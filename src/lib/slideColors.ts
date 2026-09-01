@@ -7,14 +7,18 @@ function withHash(hex: string): string {
 }
 
 const HEX = {
+  // chart1 (vermelho "Harald") e chart2 (ink/texto) ficam intocados —
+  // ver comentário em src/index.css sobre --chart-1/--chart-2. chart3–chart8
+  // redesenhados no Roteiro Visual item 3.2 com paleta azul/roxo validada
+  // (scripts/validate_palette.js da skill dataviz).
   chart1: "#C8102E",
   chart2: "#1C2430",
-  chart3: "#0F766E",
-  chart4: "#EA580C",
-  chart5: "#2563EB",
-  chart6: "#7C3AED",
-  chart7: "#16A34A",
-  chart8: "#DB2777",
+  chart3: "#2a78d6",
+  chart4: "#eb6834",
+  chart5: "#4a3aa7",
+  chart6: "#1baf7a",
+  chart7: "#eda100",
+  chart8: "#008300",
   black: "#000000",
   sky: "#0EA5E9",
   amber: "#CA8A04",

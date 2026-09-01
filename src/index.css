@@ -95,15 +95,23 @@
     --pvm-mix: 38 92% 60%;
     --pvm-base: 0 0% 8%;
 
-    /* Slide editor and chart palettes */
+    /* Slide editor and chart palettes.
+       Roteiro Visual, item 3.2: --chart-1 (vermelho "Harald") e --chart-2
+       ("ink"/texto dos exports PPTX) ficam intocados por decisão do
+       usuário — são a cor de marca usada nas apresentações reais entregues
+       ao cliente Harald, não uma cor categórica genérica. --chart-3 a
+       --chart-8 foram redesenhados com uma paleta azul/roxo, validada
+       contra daltonismo (protan/deutan) e contraste via
+       scripts/validate_palette.js da skill dataviz — ver PASS/WARN no
+       commit. */
     --chart-1: 352 85% 42%;
     --chart-2: 216 26% 15%;
-    --chart-3: 176 78% 26%;
-    --chart-4: 24 95% 48%;
-    --chart-5: 217 91% 53%;
-    --chart-6: 262 83% 58%;
-    --chart-7: 142 71% 45%;
-    --chart-8: 328 73% 47%;
+    --chart-3: 213 68% 50%;
+    --chart-4: 17 82% 56%;
+    --chart-5: 249 48% 44%;
+    --chart-6: 159 73% 40%;
+    --chart-7: 41 100% 46%;
+    --chart-8: 120 100% 26%;
 
     --data-source-ke30: 217 91% 60%;
     --data-source-budget: 262 83% 58%;
@@ -192,12 +200,12 @@
 
     --chart-1: 352 85% 42%;
     --chart-2: 216 26% 15%;
-    --chart-3: 176 78% 26%;
-    --chart-4: 24 95% 48%;
-    --chart-5: 217 91% 53%;
-    --chart-6: 262 83% 58%;
-    --chart-7: 142 71% 45%;
-    --chart-8: 328 73% 47%;
+    --chart-3: 213 77% 56%;
+    --chart-4: 17 70% 50%;
+    --chart-5: 247 69% 72%;
+    --chart-6: 159 73% 36%;
+    --chart-7: 40 100% 39%;
+    --chart-8: 120 100% 26%;
 
     --data-source-ke30: 217 91% 50%;
     --data-source-budget: 262 83% 52%;
