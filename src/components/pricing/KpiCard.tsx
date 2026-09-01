@@ -3,6 +3,7 @@ import { GlassCard } from "./GlassCard";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { SendToSlideHover } from "./SendToSlideHover";
 import type { SendToSlidePayload } from "@/lib/sendToSlide";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 interface KpiCardProps {
   label: string;
@@ -35,6 +36,12 @@ function formatDeltaPct(d: number): string {
 export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide }: KpiCardProps) {
   const hasDelta = typeof delta === "number" && isFinite(delta);
   const dir = hasDelta ? (delta! > 0 ? "up" : delta! < 0 ? "down" : "flat") : null;
+  // Roteiro Visual, item 1.3: o valor já chega formatado como string
+  // ("R$ 12,4M") — animar dígito por dígito exigiria parsear moeda/%/kt de
+  // volta pra número (frágil, arrisca ficar errado em algum formato). Em
+  // vez disso, troca de valor (mês, filtro) dispara uma entrada suave —
+  // o "vivo" vem de reagir à mudança, não de um contador falso.
+  const reduceMotion = useReducedMotion();
 
   const card = (
     <GlassCard glow={glow} hoverable surface="raised" className={cn("relative overflow-hidden animate-fade-up", className)}>
@@ -43,7 +50,17 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
           {label}
         </span>
         <div className={cn("break-words text-3xl font-light leading-tight tabular-nums", accentColor[accent])}>
-          {value}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={value}
+              initial={reduceMotion ? undefined : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.32, ease: [0.4, 0, 0.2, 1] }}
+              style={{ display: "inline-block" }}
+            >
+              {value}
+            </motion.span>
+          </AnimatePresence>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           {subValue && <span>{subValue}</span>}

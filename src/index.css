@@ -10,6 +10,20 @@
   font-display: swap;
 }
 
+/* Roteiro Visual, item 1.2: fonte de destaque, só pra momentos de hero
+ * (título de página no Topbar, hero da Home) — o corpo/tabelas continuam
+ * 100% Inter, que é a escolha certa pra densidade de dado. Auto-hospedada
+ * (arquivo próprio em /fonts), igual ao Inter — respeita a CSP do app
+ * (font-src 'self' data:, sem fontes externas), decisão de segurança já
+ * documentada no projeto. */
+@font-face {
+  font-family: "Fraunces Display";
+  src: url("/fonts/FrauncesDisplay.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Pricing Analytics — Harald: Dark Glassmorphism Design System
    All colors MUST be HSL.
 */
@@ -317,6 +331,15 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  /* Roteiro Visual, item 1.2 — só pra título de página (Topbar) e hero da
+   * Home. Nunca no corpo, tabela ou rótulo — ali Inter continua sendo a
+   * escolha certa. */
+  .font-display {
+    font-family: "Fraunces Display", Georgia, serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
 
   .glow-blue { box-shadow: 0 0 60px hsl(217 91% 60% / 0.18); }

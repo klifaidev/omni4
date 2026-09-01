@@ -160,7 +160,7 @@ export default function Index() {
                   <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
                     <Sparkles className="h-3 w-3" /> Bem-vindo
                   </div>
-                  <h2 className="text-3xl font-light tracking-tight">
+                  <h2 className="font-display text-3xl tracking-tight">
                     Comece carregando seus <span className="text-primary">CSVs mensais</span>.
                   </h2>
                   <p className="max-w-2xl text-sm text-muted-foreground">

@@ -87,7 +87,7 @@ export function Topbar({
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-gradient-primary">{title}</h1>
+              <h1 className="font-display text-2xl tracking-tight text-gradient-primary">{title}</h1>
               {inovActive && (
                 <span className="inline-flex animate-fade-in items-center gap-1 rounded-full border border-accent/40 bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
                   <Sparkles className="h-3 w-3" />
