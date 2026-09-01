@@ -78,7 +78,7 @@ import {
 } from "@/lib/customSlide";
 import { newId } from "@/lib/slidesFlow";
 import {
-  patchBlockAction, alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
+  patchBlockAction, patchBlocksAction, alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction, type AlignKind,
 } from "../editorStore";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -2983,6 +2983,42 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
   onDelete: () => void;
 }) {
   const align = (k: AlignKind) => { if (canEdit()) alignBlocksAction(selectedIds, k); };
+
+  // Roteiro do Slides, item 2.1: edição de estilo em lote. Escopo
+  // deliberadamente restrito aos blocos Omni Analytics — compartilham os
+  // mesmos campos `color`/`fontSize` (mesma convenção de hex COM #).
+  // Misturar com Chart/KPI/Table exigiria mapear convenções diferentes por
+  // tipo (KPI guarda hex SEM #, Chart nem tem um campo "color" único) —
+  // risco real de escrever uma cor quebrada.
+  //
+  // Dentro do universo Omni, nem todo kind CONSOME os dois campos — ver
+  // decisão do item 1 (hideColor): a maioria dos blocos Omni não tem uma
+  // única cor de destaque (multi-série, heatmap por valor), só
+  // `omni_evolucao_mensal` de fato usa `color` no render hoje. Bulk-editar
+  // "Cor" numa seleção que misture evolucao_mensal com, por ex.,
+  // canal_trend pareceria funcionar (o campo é escrito) mas não faria
+  // NADA visível no canal_trend — exatamente a classe de "controle morto"
+  // que essa sessão inteira tentou eliminar. Por isso o controle de Cor só
+  // aparece quando 100% da seleção é de um kind que realmente lê `color`;
+  // fontSize é mais permissivo pois praticamente todo bloco Omni wired
+  // (item 1) o consome.
+  const FONT_SIZE_WIRED_KINDS = new Set([
+    "omni_evolucao_mensal", "omni_canal_trend", "omni_canal_mix",
+    "omni_heatmap_sazonalidade", "omni_custo_evolucao", "omni_custo_composicao",
+    "omni_custo_pressao", "omni_positivacao", "omni_uf_map",
+  ]);
+  const COLOR_WIRED_KINDS = new Set(["omni_evolucao_mensal"]);
+  const allFontSizeWired = blocks.length >= 2 && blocks.every((b) => FONT_SIZE_WIRED_KINDS.has(b.kind));
+  const allColorWired = blocks.length >= 2 && blocks.every((b) => COLOR_WIRED_KINDS.has(b.kind));
+  const showBulkStyle = allFontSizeWired || allColorWired;
+  const omniBlocks = blocks as (CustomBlock & { color?: string; fontSize?: number })[];
+  const bulkColor = allColorWired ? (omniBlocks[0].color ?? SLIDE_HEX.chart1) : SLIDE_HEX.chart1;
+  const bulkFontSize = allFontSizeWired ? (omniBlocks[0].fontSize ?? 9) : 9;
+  const applyToAll = (patch: Partial<OmniBaseBlock>) => {
+    if (!canEdit()) return;
+    patchBlocksAction(selectedIds.map((id) => ({ id, patch: patch as Partial<CustomBlock> })), "Alterar estilo");
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -3048,6 +3084,29 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
           </Button>
         </div>
       </div>
+
+      {showBulkStyle && (
+        <>
+          <Separator />
+          <div>
+            <Label className="text-[10px] uppercase text-muted-foreground">{t.multiSelect.styleSection}</Label>
+            <p className="mb-1.5 mt-0.5 text-[10px] leading-snug text-muted-foreground">{t.multiSelect.styleHint}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {allColorWired && (
+                <Row label={tc.color}>
+                  <ColorField value={bulkColor} onChange={(c) => applyToAll({ color: c })} />
+                </Row>
+              )}
+              {allFontSizeWired && (
+                <Row label={t.omni.style.fontSize}>
+                  <NumberStepper value={bulkFontSize} min={6} max={24}
+                    onChange={(v) => applyToAll({ fontSize: v })} suffix="px" />
+                </Row>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <Separator />
 

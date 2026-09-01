@@ -741,6 +741,11 @@ export const ptBR = {
             distribute: "Distribuir",
             distributeH: "Horizontal",
             distributeV: "Vertical",
+            // Roteiro do Slides, item 2.1 — edição de estilo em lote.
+            // Só aparece quando toda a seleção é de blocos Omni Analytics
+            // (mesma convenção de campos color/fontSize nos 16 tipos).
+            styleSection: "Estilo (blocos Omni selecionados)",
+            styleHint: "Aplicado de uma vez a todos os blocos selecionados — só mostra o campo quando ele tem efeito visível em todos eles.",
             group: "Agrupar",
             groupAria: "Agrupar blocos selecionados",
             ungroup: "Desagrupar",
