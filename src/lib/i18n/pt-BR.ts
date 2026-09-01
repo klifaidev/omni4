@@ -907,6 +907,31 @@ export const ptBR = {
       // inspectors.blocks.omni. Ver nota em MEMORY sobre isso antes de
       // "consertar" — não foi removido aqui, fora de escopo desta migração.
       customSlideEditor: {
+        // Roteiro do Slides, item 2.3 — tour leve de 1ª vez, dispensável.
+        onboarding: {
+          skip: "Pular tour",
+          next: "Próximo",
+          done: "Entendi",
+          stepLabel: (i: number, total: number) => `${i} de ${total}`,
+          steps: [
+            {
+              title: "Monte sua apresentação",
+              body: "O editor combina blocos de dados com filtros próprios — cada bloco decide sua própria fonte e período, sem afetar os outros.",
+            },
+            {
+              title: "Escolha um bloco na paleta",
+              body: "As categorias à esquerda cobrem gráficos, KPIs, tabelas e os blocos de Omni Analytics. Clique num ícone pra abrir, ou busque pelo nome.",
+            },
+            {
+              title: "Configure no painel à direita",
+              body: "Cada bloco selecionado abre suas próprias opções de dados, estilo e filtros — sempre no mesmo lugar.",
+            },
+            {
+              title: "Pronto pra apresentar",
+              body: "Use \"Apresentar\" quando terminar, ou exporte em PPTX/PDF a qualquer momento pelo menu Compartilhar.",
+            },
+          ],
+        },
         sourceFooter: {
           editTitle: "Editar fonte de dados do rodape",
           ariaLabel: "Fonte de dados do slide",

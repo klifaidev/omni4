@@ -342,6 +342,63 @@ interface Props {
   onMinimize?: () => void;
 }
 
+// Roteiro do Slides, item 2.3: tour leve e dispensável na 1ª vez que
+// alguém abre o editor de slides em tela cheia — substitui o texto
+// estático parado que já existia no painel vazio ("Nenhum bloco
+// selecionado"). Não é um coach-mark apontando pra elementos reais (evita
+// lógica frágil de posicionamento) — é um card flutuante com 4 passos
+// curtos, dispensável a qualquer momento, que nunca mais aparece depois
+// de fechado (flag em localStorage; se o storage falhar, simplesmente não
+// mostra o tour, não bloqueia o editor).
+const ONBOARDING_SEEN_KEY = "omni4.customSlideEditor.onboardingSeen";
+
+function OnboardingTour() {
+  const steps = t.onboarding.steps;
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_SEEN_KEY) === "1";
+    } catch {
+      return true;
+    }
+  });
+  const [step, setStep] = useState(0);
+
+  const finish = () => {
+    setDismissed(true);
+    try { localStorage.setItem(ONBOARDING_SEEN_KEY, "1"); } catch { /* sem storage disponível — ok não persistir */ }
+  };
+
+  if (dismissed) return null;
+  const isLast = step === steps.length - 1;
+  const current = steps[step];
+
+  return (
+    <div className="surface-overlay absolute bottom-4 right-4 z-[999999] w-[300px] rounded-xl border border-border/60 p-4 shadow-xl">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="slides-type-label text-muted-foreground">{t.onboarding.stepLabel(step + 1, steps.length)}</div>
+        <button type="button" onClick={finish} className="rounded p-0.5 text-muted-foreground hover:text-foreground" aria-label={t.onboarding.skip}>
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="slides-type-section mb-1">{current.title}</div>
+      <p className="mb-3 text-[12px] leading-snug text-muted-foreground">{current.body}</p>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex gap-1">
+          {steps.map((s, i) => (
+            <span key={s.title} className={cn("h-1.5 w-1.5 rounded-full", i === step ? "bg-primary" : "bg-border")} />
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={finish}>{t.onboarding.skip}</Button>
+          <Button size="sm" className="h-7 text-[11px]" onClick={() => (isLast ? finish() : setStep((s) => s + 1))}>
+            {isLast ? t.onboarding.done : t.onboarding.next}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
   return prev.slideId === next.slideId
     && prev.config === next.config
@@ -1544,6 +1601,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   return (
     <SlideFilterProvider slideKey={slideId}>
     <div className={cn("surface-base relative grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
+      <OnboardingTour />
       {templateApplying && (
         <div className="absolute inset-0 z-[99999999] flex items-center justify-center bg-background/55 backdrop-blur-sm">
           <div className="surface-overlay flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
