@@ -34,7 +34,9 @@ import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import { buildCustomTableChartData } from "@/lib/customTableChartData";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { Input } from "@/components/ui/input";
+import { Search, X as ClearIcon } from "lucide-react";
 import { Trash2, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSlideFilters } from "../SlideFilterContext";
@@ -190,6 +192,57 @@ function sectionsFor(ct: ChartBlock["chartType"]) {
   };
 }
 
+/** Roteiro do Slides, item 1.4. Filtra as Section do inspector do Chart por
+ *  texto — título da seção OU qualquer rótulo de campo dentro dela.
+ *  Imperativo de propósito: mexer no componente `Section`/`Row`
+ *  compartilhado (usado por praticamente todo inspector do editor) pra
+ *  adicionar lógica de busca teria um raio de impacto muito maior que essa
+ *  função, que só olha o DOM já renderizado dentro do container passado. */
+function SectionSearchBar({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const wrappers = Array.from(root.querySelectorAll<HTMLElement>(":scope > .surface-raised"));
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      wrappers.forEach((w) => { w.style.display = ""; });
+      return;
+    }
+    wrappers.forEach((w) => {
+      const matches = (w.innerText ?? "").toLowerCase().includes(q);
+      w.style.display = matches ? "" : "none";
+      if (matches) {
+        const toggle = w.querySelector<HTMLButtonElement>('[data-inspector-section-toggle="true"]');
+        if (toggle && toggle.getAttribute("aria-expanded") === "false") toggle.click();
+      }
+    });
+  }, [query, containerRef]);
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t.inspectorSearch.placeholder}
+        className="h-8 pl-8 pr-8 text-[12px]"
+      />
+      {query && (
+        <button
+          type="button"
+          onClick={() => setQuery("")}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          aria-label={t.inspectorSearch.clearAria}
+        >
+          <ClearIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ChartInspector({
   block, onChange,
 }: { block: ChartBlock; onChange: (p: Patch) => void }) {
@@ -206,6 +259,7 @@ export function ChartInspector({
   const ct = block.chartType;
   const S = sectionsFor(ct);
   const { clearFilter } = useSlideFilters();
+  const sectionsRef = useRef<HTMLDivElement>(null);
 
   // Detect actual series/categories present on canvas to drive per-item editors
   const pricing = usePricing((s) => s.rows);
@@ -353,6 +407,17 @@ export function ChartInspector({
         <ChartTypePicker value={ct} onChange={(v) => onChange({ chartType: v })} />
       </div>
 
+      {/* Roteiro do Slides, item 1.4: busca dentro do inspector. O Chart é o
+       * único inspector com seções demais (9-10 visíveis por vez, ~11
+       * tipo-específicas no total) pra valer a pena — os outros (KPI, Omni)
+       * têm poucas seções e não precisam. Filtra por texto renderizado
+       * (título da seção OU qualquer rótulo de campo dentro dela), de
+       * forma imperativa via DOM — não mexe no componente Section/Row
+       * compartilhado, que é usado por praticamente todo inspector do
+       * editor; qualquer mudança ali teria um raio de impacto enorme. */}
+      <SectionSearchBar containerRef={sectionsRef} />
+
+      <div ref={sectionsRef} className="space-y-3">
       {/* Item 7 (análise "Elementos do Editor de Slides"): as abas internas
        * Dados/Visual/Análises foram removidas — o Chart era o único tipo
        * de bloco com abas dentro de abas ("Design" já é uma aba externa
@@ -1527,6 +1592,7 @@ export function ChartInspector({
           {t.analytics.noneAvailable}
         </div>
       )}
+      </div>
     </div>
   );
 }

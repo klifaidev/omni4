@@ -84,6 +84,11 @@ export const ptBR = {
             reorderDown: "Mover abaixo",
           },
           tabs: { data: "Dados", visual: "Visual", analytics: "Análises" },
+          // Roteiro do Slides, item 1.4 — busca dentro do inspector do Chart.
+          inspectorSearch: {
+            placeholder: "Buscar nesta seção...",
+            clearAria: "Limpar busca",
+          },
           quickStyles: "Estilos rápidos",
           dataSection: {
             title: "Medidas e dimensões",
