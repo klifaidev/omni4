@@ -460,6 +460,13 @@ export const ptBR = {
             colorHex: "Cor (hex)",
             cardBg: "Fundo do card",
             reactToFilters: "Reagir a filtros do slide",
+            // Fase 1 do "Roteiro do Slides" — o KPI era o único inspector
+            // sem nenhum agrupamento (Section), enquanto o resto do editor
+            // (Chart pós-flatten, Table, Omni) já usava. Estes 3 títulos
+            // só nomeiam os grupos que já existiam visualmente.
+            sourceSection: "Fonte do valor",
+            appearanceSection: "Aparência",
+            interactivitySection: "Interatividade",
           },
           image: {
             upload: "Upload",

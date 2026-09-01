@@ -734,6 +734,12 @@ function KpiInspector({ block, onChange }: {
 
   return (
     <div className="space-y-2">
+      {/* Fase 1 do "Roteiro do Slides": KPI passa a usar Section (accordion)
+       * igual ao resto do editor — antes era só campos soltos com
+       * <Separator/>, a última gramática de navegação inconsistente que
+       * sobrou depois de termos achatado o Chart (item 7). Os campos em si
+       * não mudaram, só ganharam agrupamento com título. */}
+      <Section title={t.kpi.sourceSection} defaultOpen>
       <Field label={t.kpi.label} value={block.label}
         onChange={(v) => onChange({ label: v } as never)} />
 
@@ -862,8 +868,9 @@ function KpiInspector({ block, onChange }: {
           </div>
         </>
       )}
+      </Section>
 
-      <Separator />
+      <Section title={t.kpi.appearanceSection}>
       <div className="grid grid-cols-2 gap-2">
         <NumField label={t.kpi.valueSize} value={block.valueSize}
           onChange={(v) => onChange({ valueSize: v } as never)} />
@@ -874,7 +881,9 @@ function KpiInspector({ block, onChange }: {
       <BgField label={t.kpi.cardBg}
         value={block.cardBg ?? "F8FAFC"}
         onChange={(v) => onChange({ cardBg: v } as never)} />
-      <Separator />
+      </Section>
+
+      <Section title={t.kpi.interactivitySection}>
       <div className="flex items-center justify-between">
         <Label className="text-[10px] uppercase text-muted-foreground">
           {t.kpi.reactToFilters}
@@ -884,6 +893,7 @@ function KpiInspector({ block, onChange }: {
           onCheckedChange={(v) => onChange({ participatesInCrossFilter: v } as never)}
         />
       </div>
+      </Section>
     </div>
   );
 }
