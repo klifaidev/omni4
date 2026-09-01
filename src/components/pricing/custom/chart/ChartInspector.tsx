@@ -835,9 +835,18 @@ export function ChartInspector({
       {/* FIX 3 — Chart-specific sections appear FIRST (most relevant) */}
       {/* ============================================================ */}
 
+      {/* Roteiro do Slides, item 1.2: as ~11 seções tipo-específicas abaixo
+       * (Barras, Pizza/Rosca, Bolhas, Área, Waterfall, Funil, Treemap,
+       * Mapa, Radar, Histograma, Boxplot) ganharam defaultOpen. Só uma
+       * delas renderiza por vez (gated por `ct`), então abrir todas por
+       * padrão é seguro — nunca aparece mais de uma ao mesmo tempo. Antes,
+       * só "Dados" abria por padrão; agora quem troca de tipo de gráfico
+       * já vê direto o estilo daquele tipo, sem precisar abrir a seção
+       * manualmente toda vez. "Dados" continua aberta também — nada foi
+       * escondido, só ganhou companhia. */}
       {/* ===== Type-specific: Bar ===== */}
       {S.showBar && (
-        <Section title={t.bar.title} onReset={() => resetPath("bar")}>
+        <Section title={t.bar.title} defaultOpen onReset={() => resetPath("bar")}>
           <Row label={tc.type}>
             <SelectField value={style.bar.mode}
               onChange={(v) => updPath("bar", { mode: v as never })}
@@ -867,7 +876,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Pie/Donut ===== */}
       {S.isPie && (
-        <Section title={t.pie.title} onReset={() => resetPath("pie")}>
+        <Section title={t.pie.title} defaultOpen onReset={() => resetPath("pie")}>
           {ct === "donut" && (
             <Row label={t.pie.hole}>
               <NumberStepper value={style.pie.donutHolePct} min={0} max={80}
@@ -928,7 +937,7 @@ export function ChartInspector({
           tamanho variável (sem ZAxis). Por isso reaproveita a seção inteira,
           só escondendo os 2 campos que não fazem sentido sem essa dimensão. */}
       {(ct === "bubble" || ct === "scatter") && (
-        <Section title={ct === "scatter" ? t.bubble.titleScatter : t.bubble.title} onReset={() => resetPath("bubble")}>
+        <Section title={ct === "scatter" ? t.bubble.titleScatter : t.bubble.title} defaultOpen onReset={() => resetPath("bubble")}>
           {ct === "bubble" && (
             <>
               <Row label={t.bubble.minSize}>
@@ -961,7 +970,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Area ===== */}
       {S.showArea && (
-        <Section title={t.area.title} onReset={() => resetPath("area")}>
+        <Section title={t.area.title} defaultOpen onReset={() => resetPath("area")}>
           <ToggleField label={t.area.stacked} value={style.area.stacked}
             onChange={(v) => updPath("area", { stacked: v })} />
           <ToggleField label={t.area.lineOnTop} value={style.area.lineOnTop}
@@ -971,7 +980,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Waterfall ===== */}
       {ct === "waterfall" && (
-        <Section title={t.waterfall.title} onReset={() => resetPath("waterfall")}>
+        <Section title={t.waterfall.title} defaultOpen onReset={() => resetPath("waterfall")}>
           <PvmBridgePicker block={block} style={style} dsRows={dsRows} updPath={updPath} />
           <Row label={t.waterfall.positiveColor}><ColorField value={style.waterfall.positiveColor}
             onChange={(c) => updPath("waterfall", { positiveColor: c })} /></Row>
@@ -1026,7 +1035,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Funnel ===== */}
       {ct === "funnel" && (
-        <Section title={t.funnel.title} onReset={() => resetPath("funnel")}>
+        <Section title={t.funnel.title} defaultOpen onReset={() => resetPath("funnel")}>
           <Row label={tc.direction}>
             <Segmented value={style.funnel.direction}
               onChange={(v) => updPath("funnel", { direction: v as never })}
@@ -1070,7 +1079,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Treemap ===== */}
       {ct === "treemap" && (
-        <Section title={t.treemap.title} onReset={() => resetPath("treemap")}>
+        <Section title={t.treemap.title} defaultOpen onReset={() => resetPath("treemap")}>
           <Row label={t.treemap.colorScheme}>
             <Segmented value={style.treemap.colorScheme}
               onChange={(v) => updPath("treemap", { colorScheme: v as never })}
@@ -1108,7 +1117,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Brazil map ===== */}
       {ct === "mapaBrasil" && (
-        <Section title={t.mapaBrasil.title} onReset={() => resetPath("mapaBrasil")}>
+        <Section title={t.mapaBrasil.title} defaultOpen onReset={() => resetPath("mapaBrasil")}>
           <Row label={t.mapaBrasil.palette}>
             <Segmented value={style.mapaBrasil.palette}
               onChange={(v) => updPath("mapaBrasil", { palette: v as never })}
@@ -1133,7 +1142,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Radar ===== */}
       {S.isRadar && (
-        <Section title={t.radar.title} onReset={() => resetPath("radar")}>
+        <Section title={t.radar.title} defaultOpen onReset={() => resetPath("radar")}>
           <ToggleField label={t.radar.fillArea} value={style.radar.fillArea}
             onChange={(v) => updPath("radar", { fillArea: v })} />
           <Row label={t.radar.fillOpacity}>
@@ -1165,7 +1174,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Histogram ===== */}
       {ct === "histogram" && (
-        <Section title={t.histogram.title} onReset={() => resetPath("histogram")}>
+        <Section title={t.histogram.title} defaultOpen onReset={() => resetPath("histogram")}>
           <Row label={t.histogram.bins}>
             <NumberStepper value={style.histogram.bins} min={2} max={100}
               onChange={(v) => updPath("histogram", { bins: v })} />
@@ -1195,7 +1204,7 @@ export function ChartInspector({
 
       {/* ===== Type-specific: Boxplot ===== */}
       {ct === "boxplot" && (
-        <Section title={t.boxplot.title} onReset={() => resetPath("boxplot")}>
+        <Section title={t.boxplot.title} defaultOpen onReset={() => resetPath("boxplot")}>
           <Row label={t.boxplot.boxColor}>
             <ColorField value={style.boxplot.boxFillColor}
               onChange={(c) => updPath("boxplot", { boxFillColor: c })} />
