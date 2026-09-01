@@ -228,7 +228,7 @@ ipcMain.on("renderer:error", (event, payload = {}) => {
 // lista fechada de valores conhecidos, e nomeArquivo/key sao validados para
 // aceitar apenas um nome de arquivo simples (sem separador de caminho, sem
 // "..", nunca um caminho absoluto).
-const VALID_BASE_TIPOS = new Set(["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"]);
+const VALID_BASE_TIPOS = new Set(["ke30", "budget", "demanda", "deparaInovacao", "personalizado"]);
 const VALID_CACHE_KINDS = new Set(["ke30-parsed-csv", "budget-parsed-xlsx"]);
 
 function isSafeTipo(tipo) {
@@ -577,7 +577,7 @@ ipcMain.handle("bases:info", async () => {
     const dir = getBasesDir();
     if (!fs.existsSync(dir)) return { ok: true, bases: {} };
     const bases = {};
-    for (const tipo of ["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"]) {
+    for (const tipo of ["ke30", "budget", "demanda", "deparaInovacao", "personalizado"]) {
       const subDir = path.join(dir, tipo);
       if (!fs.existsSync(subDir)) continue;
       const arquivos = fs.readdirSync(subDir).sort((a, b) => {

@@ -26,11 +26,7 @@ import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
 
 const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
@@ -531,16 +527,13 @@ function SlideRenderArea({
 function useSourceFooterRows(): SourceRowsByDataSource {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  const forecastRows = useForecast((s) => s.rows);
-  const rollingRows = useRolling((s) => s.rows);
 
   return useMemo<SourceRowsByDataSource>(() => ({
     ke30: pricingRows,
     budget: budgetRowsAsPricingFiltered(budgetRows, "budget"),
     budget_real: budgetRowsAsPricingFiltered(budgetRows, "real"),
-    forecast: forecastRowsAsPricingLatest(forecastRows),
-    rolling: rollingRowsAsPricing(rollingRows),
-  }), [pricingRows, budgetRows, forecastRows, rollingRows]);
+    personalizado: [],
+  }), [pricingRows, budgetRows]);
 }
 
 function SlideSourceFooterReadOnly({ config }: { config: CustomSlideConfig }) {

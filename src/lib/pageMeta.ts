@@ -39,7 +39,6 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/margem-target": { label: "Margem Target", icon: Target },
   "/abc": { label: "Portfólio de SKUs", icon: LineChart },
   "/budget": { label: "Budget", icon: Target },
-  "/rolling": { label: "Rolling", icon: TrendingUp },
   "/detalhe": { label: "Tabela Dinâmica", icon: TableProperties },
   "/slides": { label: "Slides", icon: Presentation },
   "/atividades": { label: "Atividades", icon: KanbanSquare },

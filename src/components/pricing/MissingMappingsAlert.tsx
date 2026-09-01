@@ -7,8 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { toast } from "sonner";
 import { exportMissingSkusXlsx } from "@/lib/exportMissingSkusXlsx";
 import { formatNum, formatPct } from "@/lib/format";
@@ -32,8 +30,6 @@ export function MissingMappingsAlert() {
   const dismiss = usePricing((s) => s.dismissMissing);
   const applySkuDeParaEntries = usePricing((s) => s.applySkuDeParaEntries);
   const applyBudgetDeParaEntries = useBudget((s) => s.applySkuDeParaEntries);
-  const applyForecastDeParaEntries = useForecast((s) => s.applySkuDeParaEntries);
-  const applyRollingDeParaEntries = useRolling((s) => s.applySkuDeParaEntries);
   const [open, setOpen] = useState(true);
   const [copied, setCopied] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -247,8 +243,6 @@ export function MissingMappingsAlert() {
           upsertDeParaEntries(entries);
           applySkuDeParaEntries(entries);
           applyBudgetDeParaEntries(entries);
-          applyForecastDeParaEntries(entries);
-          applyRollingDeParaEntries(entries);
           toast.success(`${Object.keys(entries).length} SKU(s) atualizados no De/Para do app.`);
           setEditorOpen(false);
         }}

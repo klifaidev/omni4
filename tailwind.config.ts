@@ -83,8 +83,6 @@ export default {
         "data-source": {
           ke30: "hsl(var(--data-source-ke30))",
           budget: "hsl(var(--data-source-budget))",
-          forecast: "hsl(var(--data-source-forecast))",
-          rolling: "hsl(var(--data-source-rolling))",
           "budget-real": "hsl(var(--data-source-budget-real))",
         },
         editor: {

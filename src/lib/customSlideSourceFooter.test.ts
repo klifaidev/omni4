@@ -14,8 +14,7 @@ function rowsBySource(rows: PricingRow[] = baseRows): SourceRowsByDataSource {
     ke30: rows,
     budget: rows,
     budget_real: rows,
-    forecast: rows,
-    rolling: rows,
+    personalizado: rows,
   };
 }
 

@@ -114,8 +114,6 @@ export function slideDataSignature(rows: readonly unknown[]): string {
       row.skuDesc,
       row.canal,
       row.canalAjustado,
-      row.forecastCycle,
-      row.rollingCycle,
       row.volumeKg,
       row.rol,
       row.margemBruta,

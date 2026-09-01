@@ -10,22 +10,23 @@ export interface SlideSourceFooterConfig {
 
 export type SourceRowsByDataSource = Record<BlockDataSource, readonly PricingRow[]>;
 
+// Nota: "personalizado" nunca aparece em SOURCE_ORDER de propósito (tabelas
+// customizadas não mostram rótulo de fonte no rodapé) — comportamento
+// pré-existente, mantido. Chave presente aqui só pra satisfazer o Record.
 const SOURCE_LABELS: Record<BlockDataSource, string> = {
   ke30: "KE30",
   budget: "Superbase",
   budget_real: "Superbase",
-  forecast: "Forecast",
-  rolling: "Rolling",
+  personalizado: "",
 };
 
-const SOURCE_ORDER: BlockDataSource[] = ["ke30", "budget", "budget_real", "forecast", "rolling"];
+const SOURCE_ORDER: BlockDataSource[] = ["ke30", "budget", "budget_real"];
 
 function isDataSource(value: unknown): value is BlockDataSource {
   return value === "ke30"
     || value === "budget"
     || value === "budget_real"
-    || value === "forecast"
-    || value === "rolling";
+    || value === "personalizado";
 }
 
 function blockDataSources(block: CustomBlock): BlockDataSource[] {

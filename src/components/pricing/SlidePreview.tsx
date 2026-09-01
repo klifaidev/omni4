@@ -20,8 +20,6 @@ import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fisca
 import { monthLabel } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { useCustomTables } from "@/store/customTables";
 import { AlertCircle, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -58,8 +56,6 @@ type ThumbnailKeySignature = {
   pricingMetric: string;
   pricingSignature: string;
   budgetSignature: string;
-  forecastSignature: string;
-  rollingSignature: string;
   useData: boolean;
   pixelRatio: number;
 };
@@ -70,8 +66,6 @@ function sameThumbnailKeySignature(a: ThumbnailKeySignature, b: ThumbnailKeySign
   return a.pricingMetric === b.pricingMetric
     && a.pricingSignature === b.pricingSignature
     && a.budgetSignature === b.budgetSignature
-    && a.forecastSignature === b.forecastSignature
-    && a.rollingSignature === b.rollingSignature
     && a.useData === b.useData
     && a.pixelRatio === b.pixelRatio;
 }
@@ -1100,24 +1094,18 @@ function buildSlideThumbnailKeyFromSignatures({
   pricingMetric,
   pricingSignature,
   budgetSignature,
-  forecastSignature,
-  rollingSignature,
   useData = true,
 }: {
   item: SlideItem;
   pricingMetric: string;
   pricingSignature: string;
   budgetSignature: string;
-  forecastSignature: string;
-  rollingSignature: string;
   useData?: boolean;
 }): string {
   const signature = {
     pricingMetric,
     pricingSignature,
     budgetSignature,
-    forecastSignature,
-    rollingSignature,
     useData,
     pixelRatio: thumbnailPixelRatio(),
   };
@@ -1128,8 +1116,6 @@ function buildSlideThumbnailKeyFromSignatures({
     pricingMetric,
     pricingSignature,
     budgetSignature,
-    forecastSignature,
-    rollingSignature,
     thumbnailMode: useData ? "rich" : "light",
     renderWidth: STATIC_THUMBNAIL_W,
     pixelRatio: thumbnailPixelRatio(),
@@ -1146,8 +1132,6 @@ export function getSlideThumbnailKeyForItem(item: SlideItem, options?: { useData
     pricingMetric: pricingState.metric,
     pricingSignature: getCachedRowsSignature(pricingState.rows),
     budgetSignature: getCachedRowsSignature(useBudget.getState().rows),
-    forecastSignature: getCachedRowsSignature(useForecast.getState().rows),
-    rollingSignature: getCachedRowsSignature(useRolling.getState().rows),
     useData: options?.useData !== false,
   });
 }
@@ -1248,13 +1232,9 @@ function useSlideThumbnailKey(item: SlideItem): string {
   const pricingRows = usePricing((s) => s.rows);
   const pricingMetric = usePricing((s) => s.metric);
   const budgetRows = useBudget((s) => s.rows);
-  const forecastRows = useForecast((s) => s.rows);
-  const rollingRows = useRolling((s) => s.rows);
 
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);
   const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
-  const forecastSignature = useMemo(() => getCachedRowsSignature(forecastRows), [forecastRows]);
-  const rollingSignature = useMemo(() => getCachedRowsSignature(rollingRows), [rollingRows]);
 
   return useMemo(
     () => buildSlideThumbnailKeyFromSignatures({
@@ -1262,10 +1242,8 @@ function useSlideThumbnailKey(item: SlideItem): string {
       pricingMetric,
       pricingSignature,
       budgetSignature,
-      forecastSignature,
-      rollingSignature,
     }),
-    [item, pricingMetric, pricingSignature, budgetSignature, forecastSignature, rollingSignature],
+    [item, pricingMetric, pricingSignature, budgetSignature],
   );
 }
 

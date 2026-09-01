@@ -99,8 +99,8 @@ export function exportInovacaoDeparaModeloXlsx() {
   downloadWorkbook(wb, "modelo_depara_inovacao");
 }
 
-/** Linha mínima de qualquer base (Real/Budget/Forecast/Rolling) usada só para
- * recuperar a descrição original do SKU quando o De/Para mestre está sem nome. */
+/** Linha mínima de qualquer base (Real/Budget) usada só para recuperar a
+ * descrição original do SKU quando o De/Para mestre está sem nome. */
 export interface SkuDescSourceRow {
   sku?: string;
   skuDesc?: string;
@@ -129,8 +129,8 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
   // 1) De Para Principal (SKU → atributos)
   const principal = deparaPrincipal as Record<string, DeParaPrincipalEntry>;
   // Alguns SKUs vêm sem nome no De/Para mestre. Para esses casos, usa a
-  // descrição original tal como veio na base carregada (Real/Budget/Forecast/
-  // Rolling) — sem ela o SKU fica sem nenhuma referência para ser
+  // descrição original tal como veio na base carregada (Real/Budget) — sem
+  // ela o SKU fica sem nenhuma referência para ser
   // classificado depois. Os demais níveis (categoria, marca etc.) continuam
   // em branco normalmente; só o nome é recuperado.
   const skuDescFallback = buildSkuDescFallback(rowsBySource);

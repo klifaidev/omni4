@@ -23,8 +23,6 @@ import { useBasesLocais } from "@/hooks/use-bases-locais";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -81,23 +79,19 @@ export function ExportDeparasCard() {
   const clearDepara = useInovacaoDepara((s) => s.clearDepara);
   const reclassifyPricing = usePricing((s) => s.reclassifyInovacao);
   const reclassifyBudget = useBudget((s) => s.reclassifyInovacao);
-  const reclassifyForecast = useForecast((s) => s.reclassifyInovacao);
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  const forecastRows = useForecast((s) => s.rows);
-  const rollingRows = useRolling((s) => s.rows);
 
   const reclassify = () => {
     reclassifyPricing();
     reclassifyBudget();
-    reclassifyForecast();
   };
 
   const handleExportAll = () => {
     try {
       // Real primeiro: é a base de referência mais confiável para recuperar
       // o nome original de um SKU sem descrição no De/Para mestre.
-      exportDeparasXlsx([pricingRows, budgetRows, forecastRows, rollingRows]);
+      exportDeparasXlsx([pricingRows, budgetRows]);
       toast.success("De Paras exportados com sucesso.");
     } catch (e) {
       console.error(e);

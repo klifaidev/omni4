@@ -23,10 +23,6 @@ const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
   KPI_MEASURES.map((m) => [m.id, m.label]),
 );
 
-function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeasureId {
-  return dataSource === "forecast" ? "volume" : "rol";
-}
-
 const chartBlockSignatureCache = new WeakMap<ChartBlock, string>();
 
 function chartBlockSignature(block: ChartBlock): string {
@@ -59,12 +55,8 @@ function safeMeasureForSource(
 }
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { buildCustomTableChartData } from "@/lib/customTableChartData";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { clienteId } from "@/lib/farol";
@@ -622,7 +614,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   }, [block.chartType, block.id, cacheSlideId]);
   const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
-    ?? fallbackMeasureForSource(block.dataSource);
+    ?? "rol";
   const safeMeasureLine = safeMeasureForSource(style.measureLine, block.dataSource);
   const safeMeasureX = safeMeasureForSource(style.measureX, block.dataSource);
   const safeMeasureY = safeMeasureForSource(style.measureY, block.dataSource);
@@ -631,8 +623,6 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
 
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const customTables = useCustomTables((s) => s.tables);
   const isCustomSource = block.dataSource === "personalizado";
   const customTable = useMemo(
@@ -646,8 +636,6 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   const sourceCounts = {
     pricing: pricing.length,
     budget: budget.length,
-    forecast: forecast.length,
-    rolling: rolling.length,
   };
   const missingData = isCustomSource ? null : block.chartType === "combo" && block.comboSeries?.length
     ? block.comboSeries
@@ -658,10 +646,8 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     if (block.dataSource === "personalizado") return [];
     if (block.dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (block.dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    if (block.dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
-    if (block.dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [block.dataSource, pricing, budget, forecast, rolling]);
+  }, [block.dataSource, pricing, budget]);
   const xDim = block.fieldWells?.xDim ?? null;
   // C1 â€” colorDim overrides breakdown as series-key generator
   const seriesDim = block.fieldWells?.colorDim ?? block.breakdown;
@@ -713,8 +699,6 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       if (dataSource === "personalizado") return [];
       if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
       if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-      if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
-      if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
       return pricing;
     };
     const applyIncoming = (base: PricingRow[]) => {
@@ -734,7 +718,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       });
     };
     return (dataSource: ChartBlock["dataSource"]) => applyIncoming(sourceRows(dataSource));
-  }, [pricing, budget, forecast, rolling, incoming]);
+  }, [pricing, budget, incoming]);
 
   // Determine the dimension this block emits
   const emitDim: string = (xDim && xDim !== "period" ? xDim
@@ -2697,18 +2681,14 @@ function WaterfallChart({
   cacheSlideId?: string;
 }) {
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
-    ?? fallbackMeasureForSource(block.dataSource);
+    ?? "rol";
   const measureFmt = inferFormat(effectiveMeasure);
   const pricing = usePricing((s) => s.rows);
   const metric = usePricing((s) => s.metric);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const dsRows = dsRowsProp
     ?? (block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
       : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")
-      : block.dataSource === "forecast" ? forecastRowsAsPricingLatest(forecast)
-      : block.dataSource === "rolling" ? rollingRowsAsPricing(rolling)
       : pricing);
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
   const budgetSignature = useMemo(() => getCachedRowsSignature(budget), [budget]);

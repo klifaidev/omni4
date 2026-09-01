@@ -89,11 +89,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/customCapacity";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
 import { getCachedRowsSignature } from "@/lib/slideCalcCache";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
@@ -423,15 +419,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const { selectedIds, groupEditMemberId } = useSelection();
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  const forecastRows = useForecast((s) => s.rows);
-  const rollingRows = useRolling((s) => s.rows);
   const sourceFooterRows = useMemo<SourceRowsByDataSource>(() => ({
     ke30: pricingRows,
     budget: budgetRowsAsPricingFiltered(budgetRows, "budget"),
     budget_real: budgetRowsAsPricingFiltered(budgetRows, "real"),
-    forecast: forecastRowsAsPricingLatest(forecastRows),
-    rolling: rollingRowsAsPricing(rollingRows),
-  }), [pricingRows, budgetRows, forecastRows, rollingRows]);
+    personalizado: [],
+  }), [pricingRows, budgetRows]);
   useEffect(() => {
     if (!isSlidePerfEnabled()) return;
     recordSlidePerfEvent("slides.customEditor.commit", {
@@ -1324,9 +1317,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     slideId,
     getCachedRowsSignature(pricingRows),
     getCachedRowsSignature(budgetRows),
-    getCachedRowsSignature(forecastRows),
-    getCachedRowsSignature(rollingRows),
-  ].join("|"), [slideId, pricingRows, budgetRows, forecastRows, rollingRows]);
+  ].join("|"), [slideId, pricingRows, budgetRows]);
   useEffect(() => {
     if (isStandby || !palettePanelOpen || activePaletteCategory !== "charts" || visibleChartPalette.length === 0) return;
     if (speculativeChartWarmSignaturesRef.current.has(chartWarmDataSignature)) return;

@@ -41,7 +41,6 @@ const NAV_ITEMS: { path: string; label: string }[] = [
   { path: "/inovacao", label: "Inovação" },
   { path: "/abc", label: "Portfólio de SKUs" },
   { path: "/budget", label: "Budget" },
-  { path: "/rolling", label: "Rolling" },
   { path: "/positivacao", label: "Positivação" },
   { path: "/detalhe", label: "Tabela Dinâmica" },
   { path: "/slides", label: "Slides" },

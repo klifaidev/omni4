@@ -25,7 +25,6 @@ const Custos = lazy(() => import("./pages/Custos.tsx"));
 const Inovacao = lazy(() => import("./pages/Inovacao.tsx"));
 const MargemTarget = lazy(() => import("./pages/MargemTarget.tsx"));
 const Budget = lazy(() => import("./pages/Budget.tsx"));
-const Rolling = lazy(() => import("./pages/Rolling.tsx"));
 const Abc = lazy(() => import("./pages/Abc.tsx"));
 const Detalhe = lazy(() => import("./pages/Detalhe.tsx"));
 const Upload = lazy(() => import("./pages/Upload.tsx"));
@@ -61,7 +60,6 @@ const App = () => (
             <Route path="/inovacao" element={<Inovacao />} />
             <Route path="/margem-target" element={<MargemTarget />} />
             <Route path="/budget" element={<Budget />} />
-            <Route path="/rolling" element={<Rolling />} />
             <Route path="/abc" element={<Abc />} />
             <Route path="/detalhe" element={<Detalhe />} />
             <Route path="/atividades" element={<Atividades />} />

@@ -39,8 +39,6 @@ import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { monthLabel, formatBRL } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
@@ -49,8 +47,6 @@ import { calcFarol } from "@/lib/farol";
 import { KPI_MEASURES } from "@/lib/customSlide";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { useSlideFilters } from "./SlideFilterContext";
@@ -72,17 +68,13 @@ function useDataSource(
   dataSource: BlockDataSource | undefined,
   pricing: PricingRow[],
   budget: BudgetRow[],
-  forecast: import("@/lib/forecast").ForecastRow[],
-  rolling: import("@/lib/rolling").RollingRow[],
 ): PricingRow[] {
   return useMemo(() => {
     if (!dataSource || dataSource === "ke30") return pricing;
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
-    if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [dataSource, pricing, budget, forecast, rolling]);
+  }, [dataSource, pricing, budget]);
 }
 
 function MissingLocalData({ label }: { label: string }) {
@@ -574,18 +566,14 @@ function SimpleLayoutRender({
 function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
   const missingData = missingLocalDataLabel(b.dataSource, {
     pricing: pricing.length,
     budget: budget.length,
-    forecast: forecast.length,
-    rolling: rolling.length,
   });
-  const baseRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
+  const baseRows = useDataSource(b.dataSource, pricing, budget);
 
   // Split incoming filters into "period" (special: format-tolerant + overrides
   // the block's own periodMode/periodValue) and "dimensional" (other dims).
@@ -1087,15 +1075,11 @@ function TableColumnResizeHandle({
 function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readOnly?: boolean; onPatch?: (patch: Partial<CustomBlock>) => void }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const missingData = missingLocalDataLabel(b.dataSource, {
     pricing: pricing.length,
     budget: budget.length,
-    forecast: forecast.length,
-    rolling: rolling.length,
   });
-  const sourceRows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
+  const sourceRows = useDataSource(b.dataSource, pricing, budget);
 
   const data = useMemo(() => {
     const dimensionFilteredRows = applyTableDimensionFilters(sourceRows, b.filters);
@@ -1805,15 +1789,11 @@ function ChartRender({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?
 function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const missingData = missingLocalDataLabel(b.dataSource, {
     pricing: pricing.length,
     budget: budget.length,
-    forecast: forecast.length,
-    rolling: rolling.length,
   });
-  const rows = useDataSource(b.dataSource, pricing, budget, forecast, rolling);
+  const rows = useDataSource(b.dataSource, pricing, budget);
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
     () => computeTopRanking(
@@ -2012,15 +1992,11 @@ function computeDreColumnWidths(args: {
 function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const pricingRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  const forecastRows = useForecast((s) => s.rows);
-  const rollingRows = useRolling((s) => s.rows);
   const missingData = missingLocalDataLabel(blk.dataSource, {
     pricing: pricingRows.length,
     budget: budgetRows.length,
-    forecast: forecastRows.length,
-    rolling: rollingRows.length,
   });
-  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows, forecastRows, rollingRows);
+  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
   const months = useMonthsInfo();
 
   const filteredRows = useMemo(

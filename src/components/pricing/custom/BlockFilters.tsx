@@ -8,12 +8,8 @@ import { Button } from "@/components/ui/button";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { getDeParaBySku } from "@/lib/depara";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BlockDataSource } from "@/lib/customSlide";
@@ -41,16 +37,12 @@ export function BlockFilters({
 }: { filters: Filters; onChange: (next: Filters) => void; dataSource?: BlockDataSource }) {
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const baseRows = useMemo(() => {
     if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
-    if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return applyFilters(pricing, {}, null).filter((r) => getDeParaBySku(r.sku));
-  }, [dataSource, pricing, budget, forecast, rolling]);
+  }, [dataSource, pricing, budget]);
   const filterOptionsByKey = useMemo(() => {
     const fields = [...SKU_FIELDS, ...COMERCIAL_FIELDS];
     return Object.fromEntries(
@@ -65,7 +57,7 @@ export function BlockFilters({
     return desc;
   }, [baseRows]);
   // Em Budget só mostramos campos suportados (sem UF/Regional/Mercado Ajustado/Cliente).
-  const isLimitedSource = dataSource === "budget" || dataSource === "budget_real" || dataSource === "forecast" || dataSource === "rolling";
+  const isLimitedSource = dataSource === "budget" || dataSource === "budget_real";
   const setKey = (k: FilterKey, vals: string[]) => {
     const next: Filters = { ...filters };
     if (vals.length === 0) delete next[k];

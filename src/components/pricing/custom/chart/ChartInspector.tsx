@@ -5,9 +5,7 @@
 import type { BlockDataSource, ChartBlock, CustomTableChartOrientation, KpiMeasureId } from "@/lib/customSlide";
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
-  ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
-  isFromBudgetBase, isFromForecastBase, isFromRollingBase,
+  isFromBudgetBase,
 } from "@/lib/customSlide";
 import {
   ensureChartStyle, defaultChartStyle, DEFAULT_PALETTE,
@@ -21,15 +19,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ChartTypePicker } from "./ChartTypePicker";
-import { STYLE_PRESETS, buildStylePresetPatch, type StylePresetId } from "./stylePresets";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { applyFilters } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
@@ -64,24 +57,12 @@ function rid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const PRESET_THUMB_COLORS: Record<StylePresetId, string[]> = {
-  default: [SLIDE_HEX.chart1, SLIDE_HEX.chart2, SLIDE_HEX.chart3, SLIDE_HEX.chart6],
-  minimal: [SLIDE_HEX.grid, SLIDE_HEX.slate300, SLIDE_HEX.slate400, SLIDE_HEX.slate500],
-  bold: [SLIDE_HEX.ink, SLIDE_HEX.chart1, SLIDE_HEX.chart4, SLIDE_HEX.chart5],
-  monochrome: [SLIDE_HEX.ink, SLIDE_HEX.slate700, SLIDE_HEX.slate500, SLIDE_HEX.slate400],
-  harald: [SLIDE_HEX.chart1, SLIDE_HEX.chart2, SLIDE_HEX.chart3, SLIDE_HEX.chart4],
-};
-
 function unavailableMeasuresForSource(ds: ChartBlock["dataSource"]): readonly string[] {
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_MEASURES;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
   return [];
 }
 
 function unavailableHintForSource(ds: ChartBlock["dataSource"]): string | undefined {
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
   return undefined;
 }
@@ -92,18 +73,6 @@ function availableMeasuresForSource(ds: BlockDataSource) {
     label: m.label,
     disabled: unavailableMeasuresForSource(ds).includes(m.id),
   }));
-}
-
-function PresetThumbnail({ id }: { id: StylePresetId }) {
-  const colors = PRESET_THUMB_COLORS[id];
-  return (
-    <div className="flex h-6 w-full items-end gap-0.5 rounded-sm bg-secondary/40 p-0.5">
-      {colors.map((c, i) => (
-        <div key={i} className="flex-1 rounded-sm"
-          style={{ background: c, height: `${40 + i * 15}%` }} />
-      ))}
-    </div>
-  );
 }
 
 // Position options per chart family
@@ -264,8 +233,6 @@ export function ChartInspector({
   // Detect actual series/categories present on canvas to drive per-item editors
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const customTables = useCustomTables((s) => s.tables);
   const dataSource = block.dataSource;
   const isCustomSource = dataSource === "personalizado";
@@ -286,10 +253,8 @@ export function ChartInspector({
     if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    if (dataSource === "forecast") return forecastRowsAsPricingLatest(forecast);
-    if (dataSource === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [dataSource, pricing, budget, forecast, rolling]);
+  }, [dataSource, pricing, budget]);
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
   const detectedChartSeries = useMemo(() => {
     if (isCustomSource) return customChartData;
@@ -382,8 +347,6 @@ export function ChartInspector({
     const defaults: NonNullable<ChartBlock["comboSeries"]> = [
       { id: rid(), name: "Volume Real", dataSource: "ke30", measure: "volume", asLine: true },
       { id: rid(), name: "Volume Budget", dataSource: "budget", measure: "volume", asLine: true },
-      { id: rid(), name: "Volume Forecast", dataSource: "forecast", measure: "volume", asLine: true },
-      { id: rid(), name: "Volume Rolling", dataSource: "rolling", measure: "volume", asLine: true },
     ];
     onChange({
       comboSeries: defaults,
@@ -393,8 +356,6 @@ export function ChartInspector({
           ...style.series.filter((s) => !defaults.some((d) => d.name === s.key)),
           { key: "Volume Real", color: SLIDE_HEX.chart1, asLine: true },
           { key: "Volume Budget", color: SLIDE_HEX.chart2, asLine: true, lineStyle: "dashed" },
-          { key: "Volume Forecast", color: SLIDE_HEX.chart5, asLine: true, lineStyle: "dotted" },
-          { key: "Volume Rolling", color: SLIDE_HEX.forecastOrange, asLine: true, lineStyle: "dashed" },
         ],
       },
     } as Patch);
@@ -566,17 +527,14 @@ export function ChartInspector({
                     <SelectField value={series.dataSource}
                       onChange={(v) => {
                         const nextSource = v as BlockDataSource;
-                        const nextMeasure = isFromForecastBase(nextSource) ? "volume" : series.measure;
                         patchComboSeries(series.id, {
                           dataSource: nextSource,
-                          measure: unavailableMeasuresForSource(nextSource).includes(nextMeasure) ? "volume" : nextMeasure,
+                          measure: unavailableMeasuresForSource(nextSource).includes(series.measure) ? "volume" : series.measure,
                         });
                       }}
                       options={[
                         { value: "ke30", label: t.dataSection.multiBase.sourceOptions.real },
                         { value: "budget", label: t.dataSection.multiBase.sourceOptions.budget },
-                        { value: "forecast", label: t.dataSection.multiBase.sourceOptions.forecast },
-                        { value: "rolling", label: t.dataSection.multiBase.sourceOptions.rolling },
                       ]} />
                   </Row>
                   <Row label={tc.measure}>
@@ -620,16 +578,6 @@ export function ChartInspector({
                 onClick={() => addComboSeries("budget", "volume")}>
                 <Plus className="mr-1 h-3 w-3" />
                 {t.dataSection.multiBase.addBudget}
-              </Button>
-              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
-                onClick={() => addComboSeries("forecast", "volume")}>
-                <Plus className="mr-1 h-3 w-3" />
-                {t.dataSection.multiBase.addForecast}
-              </Button>
-              <Button size="sm" variant="secondary" className="h-7 px-2 text-[11px]"
-                onClick={() => addComboSeries("rolling", "volume")}>
-                <Plus className="mr-1 h-3 w-3" />
-                {t.dataSection.multiBase.addRolling}
               </Button>
               {(block.comboSeries ?? []).length > 0 && (
                 <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]"
@@ -881,20 +829,6 @@ export function ChartInspector({
       </Section>
 
       {/* ============================ VISUAL ============================ */}
-      {/* Quick style presets */}
-      <div className="rounded-lg border border-border/50 bg-card/40 p-3">
-        <div className="mb-2 text-[12px] font-medium text-foreground/85">{t.quickStyles}</div>
-        <div className="grid grid-cols-5 gap-1.5">
-          {STYLE_PRESETS.map((p) => (
-            <button key={p.id} type="button"
-              onClick={() => updStyle(buildStylePresetPatch(p.id as StylePresetId, style))}
-              className="flex flex-col items-center gap-1 rounded-md border border-border/40 p-1.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary hover:text-foreground">
-              <PresetThumbnail id={p.id as StylePresetId} />
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* ============================================================ */}
       {/* FIX 3 — Chart-specific sections appear FIRST (most relevant) */}

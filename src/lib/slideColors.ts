@@ -41,7 +41,6 @@ const HEX = {
   blueDark: "#1D4ED8",
   blueSoft: "#BFDBFE",
   warningDark: "#D97706",
-  forecastOrange: "#F59E0B",
   cyanDark: "#0891B2",
   pinkDark: "#BE185D",
   neutralDark: "#111827",

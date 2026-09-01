@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
 import { useBudget, getBudgetMonthsInfo } from "@/store/budget";
-import { useForecast, getForecastCyclesInfo, getForecastMonthsInfo } from "@/store/forecast";
-import { useRolling, getRollingCyclesInfo, getRollingMonthsInfo } from "@/store/rolling";
 import {
   CUSTOM_TABLES_FILE,
   createCustomTableDraft,
@@ -20,7 +18,7 @@ import {
 } from "@/store/customTables";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { useMonthsInfo } from "@/store/selectors";
-import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, TrendingUp, Pencil, Plus } from "lucide-react";
+import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, Pencil, Plus } from "lucide-react";
 import { monthLabel } from "@/lib/format";
 import { getFreshness, type FreshnessStatus } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
@@ -32,8 +30,6 @@ import { useUploadGuard } from "@/store/uploadGuard";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
 import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
-import { parseForecastFile } from "@/lib/forecast";
-import { parseRollingFile } from "@/lib/rolling";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
 import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
 import { useBasesLocais, type InfoArquivoBase, type TipoBase, type InfoBase } from "@/hooks/use-bases-locais";
@@ -105,17 +101,13 @@ function StatusHeroCard({
   subtitle: string;
   icon: typeof Database;
   freshness: FreshnessStatus;
-  accent: "primary" | "accent" | "forecast" | "rolling";
+  accent: "primary" | "accent";
   rightSlot?: React.ReactNode;
 }) {
   const accentClasses =
     accent === "primary"
       ? "from-primary/15 to-primary/0 border-primary/20 [&_.acc]:text-primary [&_.acc-bg]:bg-primary/15"
-      : accent === "accent"
-      ? "from-accent/15 to-accent/0 border-accent/20 [&_.acc]:text-accent [&_.acc-bg]:bg-accent/15"
-      : accent === "forecast"
-      ? "from-emerald-500/15 to-emerald-500/0 border-emerald-500/20 [&_.acc]:text-emerald-500 [&_.acc-bg]:bg-emerald-500/15"
-      : "from-amber-500/15 to-amber-500/0 border-amber-500/20 [&_.acc]:text-amber-500 [&_.acc-bg]:bg-amber-500/15";
+      : "from-accent/15 to-accent/0 border-accent/20 [&_.acc]:text-accent [&_.acc-bg]:bg-accent/15";
 
   return (
     <div
@@ -165,8 +157,6 @@ function StatusHeroCard({
 const TIPO_LABELS: Record<TipoBase, string> = {
   ke30: "KE30 (Real)",
   budget: "Budget",
-  forecast: "Forecast",
-  rolling: "Rolling",
   demanda: "Demanda",
   personalizado: "Personalizado",
   deparaInovacao: "De/Para Inovação",
@@ -196,22 +186,6 @@ export default function Upload() {
   const addBudget = useBudget((s) => s.addBudget);
   const budgetMonths = useMemo(() => getBudgetMonthsInfo(budgetRows), [budgetRows]);
 
-  const forecastRows = useForecast((s) => s.rows);
-  const forecastFiles = useForecast((s) => s.files);
-  const removeForecastFile = useForecast((s) => s.removeForecastFile);
-  const clearForecast = useForecast((s) => s.clearForecast);
-  const addForecast = useForecast((s) => s.addForecast);
-  const forecastMonths = useMemo(() => getForecastMonthsInfo(forecastRows), [forecastRows]);
-  const forecastCycles = useMemo(() => getForecastCyclesInfo(forecastRows), [forecastRows]);
-
-  const rollingRows = useRolling((s) => s.rows);
-  const rollingFiles = useRolling((s) => s.files);
-  const removeRollingFile = useRolling((s) => s.removeRollingFile);
-  const clearRolling = useRolling((s) => s.clearRolling);
-  const addRolling = useRolling((s) => s.addRolling);
-  const rollingMonths = useMemo(() => getRollingMonthsInfo(rollingRows), [rollingRows]);
-  const rollingCycles = useMemo(() => getRollingCyclesInfo(rollingRows), [rollingRows]);
-
   const customTables = useCustomTables((s) => s.tables);
   const setCustomTables = useCustomTables((s) => s.setTables);
   const [customEditorOpen, setCustomEditorOpen] = useState(false);
@@ -223,20 +197,6 @@ export default function Upload() {
 
   const realFreshness = useMemo(() => getFreshness(months), [months]);
   const budgetFreshness = useMemo(() => getFreshness(budgetMonths), [budgetMonths]);
-  const forecastFreshness = useMemo(() => getFreshness(forecastCycles.map((c) => ({
-    periodo: c.periodo,
-    mes: parseInt(c.periodo.slice(0, 3), 10),
-    ano: parseInt(c.periodo.slice(4), 10),
-    fy: "",
-    rowCount: c.rowCount,
-  }))), [forecastCycles]);
-  const rollingFreshness = useMemo(() => getFreshness(rollingCycles.map((c) => ({
-    periodo: c.periodo,
-    mes: parseInt(c.periodo.slice(0, 3), 10),
-    ano: parseInt(c.periodo.slice(4), 10),
-    fy: "",
-    rowCount: c.rowCount,
-  }))), [rollingCycles]);
 
   const basesLocais = useBasesLocais();
   const autoLoadedRef = useRef(false);
@@ -252,8 +212,6 @@ export default function Upload() {
     setBasesSalvas({
       ke30: !!info.ke30,
       budget: !!info.budget,
-      forecast: !!info.forecast,
-      rolling: !!info.rolling,
       demanda: !!info.demanda,
       deparaInovacao: !!info.deparaInovacao,
       personalizado: !!info.personalizado,
@@ -354,36 +312,6 @@ export default function Upload() {
           }
           if (savedFiles.length > 0) toast.success(`Base Budget carregada: ${savedFiles.length} arquivo(s)`);
         } catch { toast.error("Erro ao carregar base Budget salva."); }
-        finally { setParsingEnd(); }
-      }
-      if (forecastRows.length === 0 && info.forecast) {
-        toast.info("Carregando base Forecast salva...");
-        try {
-          setParsingStart();
-          const savedFiles = await basesLocais.carregarBase("forecast");
-          for (const file of savedFiles) {
-            const parsed = await parseForecastFile(file);
-            if (parsed.rows.length > 0) {
-              addForecast(parsed.rows, parsed.file, false);
-            }
-          }
-          if (savedFiles.length > 0) toast.success(`Base Forecast carregada: ${savedFiles.length} arquivo(s)`);
-        } catch { toast.error("Erro ao carregar base Forecast salva."); }
-        finally { setParsingEnd(); }
-      }
-      if (rollingRows.length === 0 && info.rolling) {
-        toast.info("Carregando base Rolling salva...");
-        try {
-          setParsingStart();
-          const savedFiles = await basesLocais.carregarBase("rolling");
-          for (const file of savedFiles) {
-            const parsed = await parseRollingFile(file);
-            if (parsed.rows.length > 0) {
-              addRolling(parsed.rows, parsed.file);
-            }
-          }
-          if (savedFiles.length > 0) toast.success(`Base Rolling carregada: ${savedFiles.length} arquivo(s)`);
-        } catch { toast.error("Erro ao carregar base Rolling salva."); }
         finally { setParsingEnd(); }
       }
       await refreshInfoSalvas();
@@ -496,8 +424,6 @@ export default function Upload() {
   const handleLoadDemo = () => {
     clearAll();
     clearBudget();
-    clearForecast();
-    clearRolling();
     const demo = generateDemoData();
     addParsed(demo.realRows, demo.realFile, true, { skus: [], canais: [], regioes: [], ufs: [] });
     addBudget(demo.budgetRows, demo.budgetFile, true);
@@ -510,8 +436,6 @@ export default function Upload() {
   const handleRemoveDemo = () => {
     clearAll();
     clearBudget();
-    clearForecast();
-    clearRolling();
     setDemoMode(false);
     toast.success("Dados de demonstração removidos");
   };
@@ -573,7 +497,7 @@ export default function Upload() {
 
   return (
     <>
-      <Topbar title="Upload / Bases" subtitle="Gerencie Real, Budget, Forecast, Rolling e tabelas personalizadas" />
+      <Topbar title="Upload / Bases" subtitle="Gerencie Real, Budget e tabelas personalizadas" />
       <div className="space-y-6 px-8 py-6">
         <MissingMappingsAlert />
 
@@ -614,7 +538,7 @@ export default function Upload() {
 
 
         {/* Status hero — Real | Budget */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <StatusHeroCard
             title="Base Real"
             subtitle="Vendas, custos e margens efetivos"
@@ -629,19 +553,6 @@ export default function Upload() {
             }
           />
           <StatusHeroCard
-            title="Base Forecast"
-            subtitle="Revisões mensais da meta"
-            icon={TrendingUp}
-            accent="forecast"
-            freshness={forecastFreshness}
-            rightSlot={
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground">{forecastCycles.length} ciclo(s)</div>
-                <div className="text-xs text-muted-foreground">{forecastFiles.length} arquivo(s)</div>
-              </div>
-            }
-          />
-          <StatusHeroCard
             title="Base Budget"
             subtitle="Previsão orçamentária do ano"
             icon={Target}
@@ -651,19 +562,6 @@ export default function Upload() {
               <div className="text-right">
                 <div className="text-xs text-muted-foreground">{budgetMonths.length} mês(es)</div>
                 <div className="text-xs text-muted-foreground">{budgetFiles.length} arquivo(s)</div>
-              </div>
-            }
-          />
-          <StatusHeroCard
-            title="Base Rolling"
-            subtitle="Revisao prudencial por SKU e DRE"
-            icon={TrendingUp}
-            accent="rolling"
-            freshness={rollingFreshness}
-            rightSlot={
-              <div className="text-right">
-                <div className="text-xs text-muted-foreground">{rollingCycles.length} ciclo(s)</div>
-                <div className="text-xs text-muted-foreground">{rollingFiles.length} arquivo(s)</div>
               </div>
             }
           />
@@ -681,8 +579,6 @@ export default function Upload() {
             <div className="flex items-center gap-1">
               <Badge variant="secondary" className="text-[10px]">.csv (Real)</Badge>
               <Badge variant="secondary" className="text-[10px]">.xlsx (Budget)</Badge>
-              <Badge variant="secondary" className="text-[10px]">.xlsx (Forecast)</Badge>
-              <Badge variant="secondary" className="text-[10px]">.xlsx (Rolling)</Badge>
             </div>
           </header>
           <UploadQueue
@@ -759,7 +655,7 @@ export default function Upload() {
         </GlassCard>
 
         {/* Meses + arquivos da base Real */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <GlassCard>
             <header className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-medium">
@@ -803,52 +699,10 @@ export default function Upload() {
               </div>
             )}
           </GlassCard>
-          <GlassCard>
-            <header className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-medium">
-                <Calendar className="mr-2 inline h-4 w-4" /> Ciclos Forecast
-              </h3>
-              <Badge variant="secondary">{forecastCycles.length}</Badge>
-            </header>
-            {forecastCycles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum ciclo de Forecast carregado.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {forecastCycles.map((c) => (
-                  <div key={c.periodo} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
-                    <div className="text-sm font-semibold">{c.label}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">Forecast</div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">{c.rowCount.toLocaleString("pt-BR")} linhas</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </GlassCard>
-          <GlassCard>
-            <header className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-medium">
-                <Calendar className="mr-2 inline h-4 w-4" /> Ciclos Rolling
-              </h3>
-              <Badge variant="secondary">{rollingCycles.length}</Badge>
-            </header>
-            {rollingCycles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum ciclo de Rolling carregado.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {rollingCycles.map((c) => (
-                  <div key={c.periodo} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-center">
-                    <div className="text-sm font-semibold">{c.label}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">Rolling</div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">{c.rowCount.toLocaleString("pt-BR")} linhas</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </GlassCard>
         </div>
 
         {/* Arquivos */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <GlassCard>
             <header className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-medium">
@@ -912,68 +766,6 @@ export default function Upload() {
               </ul>
             )}
           </GlassCard>
-          <GlassCard>
-            <header className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-medium">
-                <FileSpreadsheet className="mr-2 inline h-4 w-4" /> Arquivos Forecast
-              </h3>
-              {forecastFiles.length > 0 && (
-                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={clearForecast}>
-                  Limpar tudo
-                </Button>
-              )}
-            </header>
-            {forecastFiles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum arquivo de Forecast.</p>
-            ) : (
-              <ul className="space-y-2">
-                {forecastFiles.map((f) => (
-                  <li key={f.name} className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{f.name}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {f.rowCount.toLocaleString("pt-BR")} linhas · {f.cycles.length} ciclo(s) · {f.months.length} mês(es)
-                      </div>
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeForecastFile(f.name)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </GlassCard>
-          <GlassCard>
-            <header className="mb-4 flex items-center justify-between">
-              <h3 className="text-sm font-medium">
-                <FileSpreadsheet className="mr-2 inline h-4 w-4" /> Arquivos Rolling
-              </h3>
-              {rollingFiles.length > 0 && (
-                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={clearRolling}>
-                  Limpar tudo
-                </Button>
-              )}
-            </header>
-            {rollingFiles.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum arquivo de Rolling.</p>
-            ) : (
-              <ul className="space-y-2">
-                {rollingFiles.map((f) => (
-                  <li key={f.name} className="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{f.name}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {f.rowCount.toLocaleString("pt-BR")} linhas · {f.cycles.length} ciclo(s) · {f.months.length} mes(es)
-                      </div>
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeRollingFile(f.name)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </GlassCard>
         </div>
 
         <ExportDeparasCard />
@@ -985,7 +777,7 @@ export default function Upload() {
               <h3 className="text-sm font-medium">Bases salvas localmente</h3>
             </header>
             <div className="space-y-2">
-              {(["ke30", "budget", "forecast", "rolling", "demanda", "deparaInovacao", "personalizado"] as const).map((tipo) => {
+              {(["ke30", "budget", "demanda", "deparaInovacao", "personalizado"] as const).map((tipo) => {
                 const info = infoSalvas[tipo];
                 if (!info) return null;
                 return (

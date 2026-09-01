@@ -3,12 +3,8 @@ import type { SlideItem } from "@/lib/slidesFlow";
 import { isMeasureAvailable, newChartBlock, newPositivacaoChartBlock } from "@/lib/customSlide";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
 import { usePricing } from "@/store/pricing";
-import { useRolling } from "@/store/rolling";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import { getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { computeChartSeriesAsync, computeTopRankingAsync } from "@/lib/slideCalcWorkerClient";
 import { ensureChartStyle } from "@/components/pricing/custom/chart/types";
@@ -31,10 +27,6 @@ const SPECULATIVE_CHART_TYPES: CustomChartType[] = [
   "treemap",
 ];
 
-function fallbackMeasureForSource(dataSource: ChartBlock["dataSource"]): KpiMeasureId {
-  return dataSource === "forecast" ? "volume" : "rol";
-}
-
 function safeMeasureForSource(
   measure: KpiMeasureId | null | undefined,
   dataSource: ChartBlock["dataSource"],
@@ -46,8 +38,6 @@ function safeMeasureForSource(
 function rowsForDataSource(dataSource: ChartBlock["dataSource"]): PricingRow[] {
   if (dataSource === "budget") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "budget");
   if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "real");
-  if (dataSource === "forecast") return forecastRowsAsPricingLatest(useForecast.getState().rows);
-  if (dataSource === "rolling") return rollingRowsAsPricing(useRolling.getState().rows);
   return usePricing.getState().rows;
 }
 
@@ -91,7 +81,7 @@ export async function warmSlideChartData(item: SlideItem, options?: {
     const style = ensureChartStyle(block.style);
     const xDim = block.fieldWells?.xDim ?? null;
     const seriesDim = block.fieldWells?.colorDim ?? block.breakdown ?? null;
-    const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource) ?? fallbackMeasureForSource(block.dataSource);
+    const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource) ?? "rol";
     const safeMeasureLine = safeMeasureForSource(style.measureLine, block.dataSource);
     const safeMeasureX = safeMeasureForSource(style.measureX, block.dataSource);
     const safeMeasureY = safeMeasureForSource(style.measureY, block.dataSource);
@@ -243,7 +233,7 @@ export async function warmSpeculativeChartPaletteData(options?: {
     const style = ensureChartStyle(block.style);
     const xDim = block.fieldWells?.xDim ?? null;
     const seriesDim = block.fieldWells?.colorDim ?? block.breakdown ?? null;
-    const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource) ?? fallbackMeasureForSource(block.dataSource);
+    const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource) ?? "rol";
     const safeMeasureX = safeMeasureForSource(style.measureX, block.dataSource);
     const safeMeasureY = safeMeasureForSource(style.measureY, block.dataSource);
     const rows = rowsForDataSource(block.dataSource);

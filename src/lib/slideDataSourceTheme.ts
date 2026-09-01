@@ -20,18 +20,6 @@ export const SLIDE_DATA_SOURCE_THEME: Record<BlockDataSource, SlideDataSourceThe
     badgeClass: "bg-data-source-budget/15 text-data-source-budget",
     activeClass: "bg-data-source-budget/20 text-data-source-budget",
   },
-  forecast: {
-    label: "Forecast",
-    description: "Forecast: volume por SKU/mes do ultimo ciclo carregado, com filtros de produto.",
-    badgeClass: "bg-data-source-forecast/15 text-data-source-forecast",
-    activeClass: "bg-data-source-forecast/20 text-data-source-forecast",
-  },
-  rolling: {
-    label: "Rolling",
-    description: "Rolling: DRE por SKU/mes com receita, volume, custos, frete, comissao e CM.",
-    badgeClass: "bg-data-source-rolling/15 text-data-source-rolling",
-    activeClass: "bg-data-source-rolling/20 text-data-source-rolling",
-  },
   budget_real: {
     label: "Real Bud.",
     description: "Realizado da planilha Budget (legado). Sem MB/Frete/Comissao.",

@@ -121,7 +121,7 @@ export type KpiFormat = "auto" | "currency" | "percent" | "tons" | "number";
  * - "budget": base agregada / orçamentária (Excel Budget — useBudget)
  * Padrão histórico: "ke30".
  */
-export type BlockDataSource = "ke30" | "budget" | "forecast" | "rolling" | "budget_real" | "personalizado";
+export type BlockDataSource = "ke30" | "budget" | "budget_real" | "personalizado";
 export type CustomTableChartOrientation = "auto" | "rows" | "columns";
 
 /** Medidas suportadas pela base Budget (subset do KpiMeasureId). */
@@ -1104,38 +1104,16 @@ export const BUDGET_UNAVAILABLE_MEASURES: readonly string[] = [
 export const BUDGET_UNAVAILABLE_HINT =
   "Indisponível na fonte Budget — a base Budget não contém custos detalhados (Margem Bruta, Frete, Comissão).";
 
-export const FORECAST_UNAVAILABLE_MEASURES: readonly string[] = [
-  "rol", "cm", "mb", "cv", "frete", "comissao",
-  "cmPct", "mbPct", "precoMedio", "positivacao", "ticketMedio",
-];
-
-export const ROLLING_UNAVAILABLE_MEASURES: readonly string[] = [
-  "positivacao", "ticketMedio",
-];
-
-export const FORECAST_UNAVAILABLE_HINT =
-  "Indisponível na fonte Forecast — a base Forecast carrega volume por SKU/mês.";
-
-/** Retorna true se a fonte de dados é derivada da planilha Budget (budget ou budget_real). */
-export const ROLLING_UNAVAILABLE_HINT =
-  "Indisponivel na fonte Rolling - a base Rolling nao contem clientes para Positivacao e Ticket Medio.";
-
 export function isFromBudgetBase(ds: BlockDataSource | undefined): boolean {
   return ds === "budget" || ds === "budget_real";
 }
 
-export function isFromForecastBase(ds: BlockDataSource | undefined): boolean {
-  return ds === "forecast";
-}
-
-export function isFromRollingBase(ds: BlockDataSource | undefined): boolean {
-  return ds === "rolling";
-}
-
-/** Migra valores antigos de dataSource para o esquema atual. */
+/** Migra valores antigos de dataSource para o esquema atual. "forecast"/
+ *  "rolling" existiam antes da remoção dessas bases (ver memória do
+ *  projeto) — decks salvos com esses valores caem em "ke30". */
 export function migrateDataSource(ds: string | undefined): BlockDataSource {
   if (ds === "real") return "ke30";
-  if (ds === "budget" || ds === "budget_real" || ds === "forecast" || ds === "rolling" || ds === "ke30" || ds === "personalizado") return ds;
+  if (ds === "budget" || ds === "budget_real" || ds === "ke30" || ds === "personalizado") return ds;
   return "ke30";
 }
 
@@ -1143,8 +1121,6 @@ export function isMeasureAvailable(
   measureId: string,
   dataSource: BlockDataSource | undefined,
 ): boolean {
-  if (isFromForecastBase(dataSource)) return !FORECAST_UNAVAILABLE_MEASURES.includes(measureId);
-  if (isFromRollingBase(dataSource)) return !ROLLING_UNAVAILABLE_MEASURES.includes(measureId);
   if (!isFromBudgetBase(dataSource)) return true;
   return !BUDGET_UNAVAILABLE_MEASURES.includes(measureId);
 }

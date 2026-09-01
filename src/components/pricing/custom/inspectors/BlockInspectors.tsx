@@ -47,8 +47,6 @@ import { ChartInspector } from "../chart/ChartInspector";
 import { CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "../BlockRenderer";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
 import { useBudget } from "@/store/budget";
-import { useForecast } from "@/store/forecast";
-import { useRolling } from "@/store/rolling";
 import { usePricing } from "@/store/pricing";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
@@ -65,9 +63,7 @@ import type { Filters, PricingRow } from "@/lib/types";
 import {
   BLOCK_LABELS, KPI_MEASURES, CHART_TYPE_LABELS, CANVAS_H,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  FORECAST_UNAVAILABLE_MEASURES, FORECAST_UNAVAILABLE_HINT,
-  ROLLING_UNAVAILABLE_MEASURES, ROLLING_UNAVAILABLE_HINT,
-  isFromBudgetBase, isFromForecastBase, isFromRollingBase,
+  isFromBudgetBase,
   type BlockDataSource, type CustomBlock, type CustomBlockKind, type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type CustomChartType, type ConditionalFormatMode, type ConditionalFormatRule,
   type TableGapColumn, type TableGapComparisonMode, type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
@@ -91,8 +87,6 @@ import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
 import { recordSlidePerfEvent, isSlidePerfEnabled } from "@/lib/slidesPerfCounters";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { forecastRowsAsPricingLatest } from "@/lib/forecastAdapter";
-import { rollingRowsAsPricing } from "@/lib/rollingAdapter";
 import {
   brandStyleTargetLabel,
   buildBrandStylePatch,
@@ -133,15 +127,11 @@ type Icon = ComponentType<{ className?: string }>;
 
 function unavailableMeasuresForSource(ds: BlockDataSource | undefined): readonly string[] {
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_MEASURES;
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_MEASURES;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_MEASURES;
   return [];
 }
 
 function unavailableHintForSource(ds: BlockDataSource | undefined): string | undefined {
   if (isFromBudgetBase(ds)) return BUDGET_UNAVAILABLE_HINT;
-  if (isFromForecastBase(ds)) return FORECAST_UNAVAILABLE_HINT;
-  if (isFromRollingBase(ds)) return ROLLING_UNAVAILABLE_HINT;
   return undefined;
 }
 
@@ -451,8 +441,6 @@ function FilteredInspector({
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const hasBudget = useBudget((s) => s.rows.length > 0);
-  const hasForecast = useForecast((s) => s.rows.length > 0);
-  const hasRolling = useRolling((s) => s.rows.length > 0);
 
   // Bridge não tem fonte selecionável (sempre KE30 ? usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
@@ -477,13 +465,13 @@ function FilteredInspector({
     if (block.kind === "kpi" && unavailable.length > 0) {
       const m = (block as KpiBlock).measure;
       if (unavailable.includes(m)) {
-        (patch as Partial<KpiBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
+        (patch as Partial<KpiBlock>).measure = "rol";
       }
     }
     if (block.kind === "chart" && unavailable.length > 0) {
       const m = (block as ChartBlock).measure;
       if (unavailable.includes(m)) {
-        (patch as Partial<ChartBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
+        (patch as Partial<ChartBlock>).measure = "rol";
       }
       const chart = block as ChartBlock;
       const stylePatch: NonNullable<ChartBlock["style"]> = { ...(chart.style ?? {}) };
@@ -509,7 +497,7 @@ function FilteredInspector({
     if (block.kind === "topSku" && unavailable.length > 0) {
       const m = (block as TopSkuBlock).measure;
       if (unavailable.includes(m)) {
-        (patch as Partial<TopSkuBlock>).measure = isFromForecastBase(pendingSource) ? "volume" : "rol";
+        (patch as Partial<TopSkuBlock>).measure = "rol";
       }
     }
     if (block.kind === "table" && unavailable.length > 0) {
@@ -547,14 +535,10 @@ function FilteredInspector({
   const sourceOptions: BlockDataSource[] = [
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
-    ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
-    ...(hasRolling ? (["rolling"] as BlockDataSource[]) : []),
     ...(block.kind === "chart" ? (["personalizado"] as BlockDataSource[]) : []),
   ];
   const dsDesc = ds === "personalizado"
     ? dataSourceDescription(ds)
-    : ds === "forecast"
-    ? t.dataSourcePicker.descriptions.forecast
     : ds === "ke30"
     ? t.dataSourcePicker.descriptions.ke30
     : ds === "budget"
@@ -1051,16 +1035,12 @@ function TableBlockEditor({ block, onChange }: {
   const dims = CUSTOM_TABLE_DIMS;
   const pricing = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
-  const forecast = useForecast((s) => s.rows);
-  const rolling = useRolling((s) => s.rows);
   const sourceRows = useMemo(() => {
     const ds = block.dataSource ?? "ke30";
     if (ds === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (ds === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    if (ds === "forecast") return forecastRowsAsPricingLatest(forecast);
-    if (ds === "rolling") return rollingRowsAsPricing(rolling);
     return pricing;
-  }, [block.dataSource, pricing, budget, forecast, rolling]);
+  }, [block.dataSource, pricing, budget]);
   const periodOptions = useMemo(() => (
     Array.from(new Map(sourceRows.map((row) => [row.periodo, row])).values())
       .filter((row) => row.periodo && row.mes && row.ano)
@@ -2053,16 +2033,12 @@ function DreSourcePicker({ block, onChange }: {
   onChange: (patch: Partial<DreBlock>) => void;
 }) {
   const hasBudget = useBudget((s) => s.rows.length > 0);
-  const hasForecast = useForecast((s) => s.rows.length > 0);
-  const hasRolling = useRolling((s) => s.rows.length > 0);
   const ds = block.dataSource ?? "ke30";
   const dsBadgeLabel = dataSourceLabel(ds);
   const dsBadgeCls = dataSourceBadgeClass(ds);
   const sourceOptions: BlockDataSource[] = [
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
-    ...(hasForecast ? (["forecast"] as BlockDataSource[]) : []),
-    ...(hasRolling ? (["rolling"] as BlockDataSource[]) : []),
   ];
   if (sourceOptions.length <= 1) return null;
   return (
@@ -2899,8 +2875,6 @@ export function DataSourceBadge({ block }: { block: CustomBlock }) {
     ? SLIDE_RGBA.editorSelectionBadgeStrong
     : ds === "budget"
       ? "hsl(var(--data-source-budget) / 0.92)"
-      : ds === "forecast"
-        ? "hsl(var(--data-source-forecast) / 0.92)"
       : "hsl(var(--data-source-budget-real) / 0.92)";
   const dsLabel = dataSourceLabel(ds);
   return (

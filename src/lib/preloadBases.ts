@@ -1,15 +1,11 @@
 import { parseBudgetFile } from "@/lib/budget";
 import { parseCsvFile } from "@/lib/csv";
-import { parseForecastFile } from "@/lib/forecast";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
 import { parseDemandaXlsx } from "@/lib/parseDemanda";
-import { parseRollingFile } from "@/lib/rolling";
 import { useBudget } from "@/store/budget";
 import { useDemanda } from "@/store/demanda";
-import { useForecast } from "@/store/forecast";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
-import { useRolling } from "@/store/rolling";
 import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
 import type { ParsedBudget } from "@/lib/budget";
 import type { ParsedCsv } from "@/lib/csv";
@@ -30,12 +26,10 @@ const BASE_LABELS: Record<TipoBase, string> = {
   deparaInovacao: "De/Para Inovacao",
   ke30: "KE30 (Real)",
   budget: "Budget",
-  forecast: "Forecast",
-  rolling: "Rolling",
   demanda: "Demanda",
 };
 
-const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget", "forecast", "rolling", "demanda"];
+const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget", "demanda"];
 
 function base64ToFile(base64: string, nomeArquivo: string, ultimaModificacao: string): File {
   const binary = atob(base64);
@@ -119,8 +113,8 @@ export async function preloadSavedBases(
     failed,
   });
 
-  // Cada tipo de base vai pra uma store diferente (pricing/budget/forecast/
-  // rolling/demanda/inovacaoDepara) e nenhum parser lê dados de outro tipo —
+  // Cada tipo de base vai pra uma store diferente (pricing/budget/demanda/
+  // inovacaoDepara) e nenhum parser lê dados de outro tipo —
   // não há dependência real de ordem entre eles. Antes rodavam em série
   // (for...await), então o tempo total era a SOMA de cada parse; em máquina
   // lenta com várias bases grandes isso é o gargalo do boot inteiro do app.
@@ -202,26 +196,6 @@ export async function preloadSavedBases(
           }
           if (parsed.rows.length > 0) {
             useBudget.getState().addBudget(parsed.rows, parsed.file, false);
-          }
-        }
-      }
-
-      if (tipo === "forecast" && useForecast.getState().rows.length === 0) {
-        const files = await carregarBase(tipo);
-        for (const file of files) {
-          const parsed = await parseForecastFile(file);
-          if (parsed.rows.length > 0) {
-            useForecast.getState().addForecast(parsed.rows, parsed.file, false);
-          }
-        }
-      }
-
-      if (tipo === "rolling" && useRolling.getState().rows.length === 0) {
-        const files = await carregarBase(tipo);
-        for (const file of files) {
-          const parsed = await parseRollingFile(file);
-          if (parsed.rows.length > 0) {
-            useRolling.getState().addRolling(parsed.rows, parsed.file);
           }
         }
       }

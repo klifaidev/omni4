@@ -89,7 +89,6 @@ export const ptBR = {
             placeholder: "Buscar nesta seção...",
             clearAria: "Limpar busca",
           },
-          quickStyles: "Estilos rápidos",
           dataSection: {
             title: "Medidas e dimensões",
             customTable: {
@@ -111,8 +110,8 @@ export const ptBR = {
             comboHint: "Selecione uma medida diferente para a linha para ativar o gráfico combo. Sem ela, o gráfico exibe apenas colunas.",
             multiBase: {
               title: "Séries multi-base",
-              hint: "Use para comparar Real, Budget, Forecast e Rolling no mesmo gráfico.",
-              quickInstall: "Volume R/B/F/R",
+              hint: "Use para comparar Real e Budget no mesmo gráfico.",
+              quickInstall: "Volume Real/Budget",
               empty: "Nenhuma série multi-base configurada. O combo continua usando a fonte principal do bloco.",
               removeSeries: "Remover série",
               unavailableMeasure: "Medida indisponível para esta base. Troque a medida ou a base.",
@@ -121,10 +120,8 @@ export const ptBR = {
               secondaryAxis: "Eixo Y secundário",
               addReal: "Real",
               addBudget: "Budget",
-              addForecast: "Forecast",
-              addRolling: "Rolling",
               clear: "Limpar",
-              sourceOptions: { real: "Real", budget: "Budget", forecast: "Forecast", rolling: "Rolling" },
+              sourceOptions: { real: "Real", budget: "Budget" },
             },
             axisXMeasure: "Medida Eixo X",
             axisYMeasure: "Medida Eixo Y",
@@ -428,11 +425,10 @@ export const ptBR = {
           },
           dataSourcePicker: {
             recalculating: "Recalculando bloco...",
-            onlyKe30Hint: "Carregue Budget ou Forecast para mais opções.",
+            onlyKe30Hint: "Carregue Budget para mais opções.",
             descriptions: {
               // "personalizado" não entra aqui — já vem pronto de
               // dataSourceDescription(ds), não é string cravada neste arquivo.
-              forecast: "Forecast: volume por SKU/mês do último ciclo carregado, com filtros de produto.",
               ke30: "Detalhada (KE30): receita, custos, margens, frete, comissão.",
               budget: "Agregada (Budget): receita, volume, CM, CPV. Sem MB/Frete/Comissão.",
               budgetReal: "Realizado da planilha Budget (linhas com kind=real). Sem MB/Frete/Comissão.",
