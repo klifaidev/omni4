@@ -51,6 +51,7 @@ export function createEmptyPivotResult(): PivotResult {
     rowTotals: new Map(),
     colTotals: new Map(),
     grandTotal: {},
+    measureRange: {},
   };
 }
 

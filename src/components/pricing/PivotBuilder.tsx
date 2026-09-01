@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -33,6 +33,7 @@ import {
 import * as XLSX from "xlsx";
 import { toPng } from "html-to-image";
 import { cn } from "@/lib/utils";
+import { GlassCard } from "./GlassCard";
 import { formatBRL, formatNum, formatPct } from "@/lib/format";
 import {
   buildUnifiedRows,
@@ -510,6 +511,21 @@ export function PivotBuilder({
   const [drillSelection, setDrillSelection] = useState<DrillSelection | null>(null);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Set<string>>(() => new Set());
 
+  // Achado 05 da análise de UX/UI: identidade estável pra esses dois
+  // callbacks — passados sem useCallback antes, forçavam PivotTable
+  // (o componente mais pesado da tela, agora em React.memo) a re-renderizar
+  // por inteiro a cada render do pai, mesmo sem nenhuma mudança relevante
+  // (ex.: digitar na busca da paleta).
+  const handleToggleRowGroup = useCallback((key: string) => {
+    setExpandedRowKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const handleOpenDrill = useCallback((selection: DrillSelection) => setDrillSelection(selection), []);
+
   const tableRef = useRef<HTMLDivElement>(null);
   const pivotRequestRef = useRef(0);
 
@@ -794,6 +810,23 @@ export function PivotBuilder({
     else if (zone === "filters") setFilterDims((p) => apply(p));
   }
 
+  // Achado 12: alternativa por clique ao drag pra reordenar dentro da
+  // mesma zona — troca o campo com o vizinho imediato.
+  function moveAdjacent(zone: Zone, id: string, direction: "up" | "down") {
+    const apply = (arr: string[]) => {
+      const idx = arr.indexOf(id);
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (idx < 0 || swapIdx < 0 || swapIdx >= arr.length) return arr;
+      const next = arr.slice();
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return next;
+    };
+    if (zone === "rows") setRowsDims((p) => apply(p));
+    else if (zone === "cols") setColsDims((p) => apply(p));
+    else if (zone === "values") setValueIds((p) => apply(p));
+    else if (zone === "filters") setFilterDims((p) => apply(p));
+  }
+
   function handleDrop(zone: Zone) {
     if (!dragging) return;
     if (dragging.from !== "palette" && dragging.from !== zone) {
@@ -842,7 +875,10 @@ export function PivotBuilder({
   return (
     <div className="space-y-4">
       {/* ═════════════════ COMMAND BAR ═════════════════ */}
-      <div className="surface-raised relative overflow-hidden rounded-2xl border border-border/50 p-4 backdrop-blur-xl">
+      {/* Achado 08 da análise de UX/UI: painéis internos reproduziam as
+          classes do GlassCard cruas em vez de reusar o componente — mesmo
+          resultado visual, código duplicado em pelo menos 5 lugares. */}
+      <GlassCard surface="raised" className="relative overflow-hidden p-4 border-border/50 animate-fade-up">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-primary/15 blur-3xl" />
         <div className="pointer-events-none absolute -left-20 -bottom-20 h-52 w-52 rounded-full bg-accent/10 blur-3xl" />
 
@@ -974,7 +1010,7 @@ export function PivotBuilder({
             </button>
           ))}
         </div>
-      </div>
+      </GlassCard>
 
       {/* ═════════════════ MAIN GRID ═════════════════ */}
       <div className={cn("grid min-w-0 grid-cols-1 gap-4", paletteOpen ? "lg:grid-cols-[260px_minmax(0,1fr)]" : "lg:grid-cols-[44px_minmax(0,1fr)]")}>
@@ -1075,9 +1111,17 @@ export function PivotBuilder({
               dragOver={dragOver === "filters"}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("filters")}
+              headerAction={
+                <ZoneAddButton
+                  items={dims}
+                  usedItems={usedItems}
+                  onAdd={(id) => addToZone(id, "filters")}
+                  placeholder="Adicionar filtro…"
+                />
+              }
             >
-              {filterDims.length === 0 && <Hint>Arraste uma dimensão</Hint>}
-              {filterDims.map((id) => {
+              {filterDims.length === 0 && <Hint>Arraste uma dimensão aqui</Hint>}
+              {filterDims.map((id, idx) => {
                 const allValues = allValuesByDim[id] ?? [];
                 const selected = filterVals[id] ?? [];
                 return (
@@ -1091,6 +1135,8 @@ export function PivotBuilder({
                     currentZone="filters"
                     fieldKind="dimension"
                     onMoveToZone={(zone) => moveFieldToZone(id, "filters", zone)}
+                    onMoveUp={idx > 0 ? () => moveAdjacent("filters", id, "up") : undefined}
+                    onMoveDown={idx < filterDims.length - 1 ? () => moveAdjacent("filters", id, "down") : undefined}
                     draggable
                     onDragStart={() => setDragging({ id, from: "filters" })}
                     onDragOver={(e) => {
@@ -1119,9 +1165,17 @@ export function PivotBuilder({
               dragOver={dragOver === "cols"}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("cols")}
+              headerAction={
+                <ZoneAddButton
+                  items={dims}
+                  usedItems={usedItems}
+                  onAdd={(id) => addToZone(id, "cols")}
+                  placeholder="Adicionar coluna…"
+                />
+              }
             >
-              {colsDims.length === 0 && <Hint>Sem colunas</Hint>}
-              {colsDims.map((id) => (
+              {colsDims.length === 0 && <Hint>Arraste uma dimensão aqui</Hint>}
+              {colsDims.map((id, idx) => (
                 <Chip
                   key={id}
                   label={dimMap.get(id)?.label ?? id}
@@ -1130,6 +1184,8 @@ export function PivotBuilder({
                   currentZone="cols"
                   fieldKind="dimension"
                   onMoveToZone={(zone) => moveFieldToZone(id, "cols", zone)}
+                  onMoveUp={idx > 0 ? () => moveAdjacent("cols", id, "up") : undefined}
+                  onMoveDown={idx < colsDims.length - 1 ? () => moveAdjacent("cols", id, "down") : undefined}
                   draggable
                   onDragStart={() => setDragging({ id, from: "cols" })}
                   onDragOverChip={(e) => {
@@ -1155,9 +1211,17 @@ export function PivotBuilder({
               dragOver={dragOver === "rows"}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("rows")}
+              headerAction={
+                <ZoneAddButton
+                  items={dims}
+                  usedItems={usedItems}
+                  onAdd={(id) => addToZone(id, "rows")}
+                  placeholder="Adicionar linha…"
+                />
+              }
             >
-              {rowsDims.length === 0 && <Hint>Sem linhas</Hint>}
-              {rowsDims.map((id) => (
+              {rowsDims.length === 0 && <Hint>Arraste uma dimensão aqui</Hint>}
+              {rowsDims.map((id, idx) => (
                 <Chip
                   key={id}
                   label={dimMap.get(id)?.label ?? id}
@@ -1166,6 +1230,8 @@ export function PivotBuilder({
                   currentZone="rows"
                   fieldKind="dimension"
                   onMoveToZone={(zone) => moveFieldToZone(id, "rows", zone)}
+                  onMoveUp={idx > 0 ? () => moveAdjacent("rows", id, "up") : undefined}
+                  onMoveDown={idx < rowsDims.length - 1 ? () => moveAdjacent("rows", id, "down") : undefined}
                   draggable
                   onDragStart={() => setDragging({ id, from: "rows" })}
                   onDragOverChip={(e) => {
@@ -1191,9 +1257,17 @@ export function PivotBuilder({
               dragOver={dragOver === "values"}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("values")}
+              headerAction={
+                <ZoneAddButton
+                  items={measureCatalog}
+                  usedItems={usedItems}
+                  onAdd={(id) => addToZone(id, "values")}
+                  placeholder="Adicionar medida…"
+                />
+              }
             >
-              {valueIds.length === 0 && <Hint>Arraste medidas</Hint>}
-              {valueIds.map((id) => {
+              {valueIds.length === 0 && <Hint>Arraste uma medida aqui</Hint>}
+              {valueIds.map((id, idx) => {
                 const m = measureMap.get(id);
                 return (
                   <Chip
@@ -1205,6 +1279,8 @@ export function PivotBuilder({
                     currentZone="values"
                     fieldKind="measure"
                     onMoveToZone={(zone) => moveFieldToZone(id, "values", zone)}
+                    onMoveUp={idx > 0 ? () => moveAdjacent("values", id, "up") : undefined}
+                    onMoveDown={idx < valueIds.length - 1 ? () => moveAdjacent("values", id, "down") : undefined}
                     draggable
                     onDragStart={() => setDragging({ id, from: "values" })}
                     onDragOverChip={(e) => {
@@ -1267,17 +1343,10 @@ export function PivotBuilder({
               setSort={setSort}
               sortedRows={visibleRows}
               expandedRowKeys={expandedRowKeys}
-              onToggleRowGroup={(key) => {
-                setExpandedRowKeys((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(key)) next.delete(key);
-                  else next.add(key);
-                  return next;
-                });
-              }}
+              onToggleRowGroup={handleToggleRowGroup}
               highlightRow={highlightRow}
               setHighlightRow={setHighlightRow}
-              onOpenDrill={(selection) => setDrillSelection(selection)}
+              onOpenDrill={handleOpenDrill}
               sourceRows={unifiedRecords}
               pivotConfig={pivotConfig}
             />
@@ -1299,8 +1368,16 @@ export function PivotBuilder({
 // ============================================================
 //                       SUB-COMPONENTS
 // ============================================================
+// Achado 10 da análise de UX/UI: uma zona vazia sem nenhum indício visual
+// de que aceita um campo solto ali. O texto já existia (por zona), mas
+// sem destaque — agora ganha borda tracejada, o padrão universal de
+// "solte aqui" em construtores de pivot/dashboard.
 function Hint({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] italic text-muted-foreground/60">{children}</span>;
+  return (
+    <span className="pointer-events-none select-none rounded-lg border border-dashed border-border/50 px-2 py-1 text-[10px] text-muted-foreground/60">
+      {children}
+    </span>
+  );
 }
 
 function FieldMoveMenu({
@@ -1309,12 +1386,20 @@ function FieldMoveMenu({
   fieldKind,
   onMoveToZone,
   onRemove,
+  onMoveUp,
+  onMoveDown,
 }: {
   label: string;
   currentZone: Zone;
   fieldKind: PivotFieldKind;
   onMoveToZone: (zone: Zone) => void;
   onRemove: () => void;
+  /** Achado 12 da análise de UX/UI: reordenar DENTRO da mesma zona antes só
+   * funcionava arrastando — sem equivalente por clique/teclado, diferente
+   * de mover ENTRE zonas (que já tinha este menu). undefined quando o
+   * campo já está na primeira/última posição da zona. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const canMoveTo = (zone: Zone) => (fieldKind === "measure" ? zone === "values" : zone !== "values");
 
@@ -1335,6 +1420,31 @@ function FieldMoveMenu({
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="truncate text-xs">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {(onMoveUp || onMoveDown) && (
+          <>
+            <DropdownMenuItem
+              disabled={!onMoveUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveUp?.();
+              }}
+              className="text-xs"
+            >
+              Mover pra cima
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!onMoveDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveDown?.();
+              }}
+              className="text-xs"
+            >
+              Mover pra baixo
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {(["rows", "cols", "values", "filters"] as Zone[]).map((zone) => {
           const disabled = zone === currentZone || !canMoveTo(zone);
           return (
@@ -1502,6 +1612,8 @@ function Chip({
   currentZone,
   fieldKind,
   onMoveToZone,
+  onMoveUp,
+  onMoveDown,
   onClick,
   draggable,
   onDragStart,
@@ -1517,6 +1629,8 @@ function Chip({
   currentZone?: Zone;
   fieldKind?: PivotFieldKind;
   onMoveToZone?: (zone: Zone) => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   onClick?: () => void;
   draggable?: boolean;
   onDragStart?: () => void;
@@ -1576,6 +1690,8 @@ function Chip({
           fieldKind={fieldKind}
           onMoveToZone={onMoveToZone}
           onRemove={onRemove}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
         />
       )}
       {closable && !currentZone && (
@@ -1603,6 +1719,8 @@ function FilterChip({
   currentZone,
   fieldKind,
   onMoveToZone,
+  onMoveUp,
+  onMoveDown,
   draggable,
   onDragStart,
   onDragEnd,
@@ -1618,6 +1736,8 @@ function FilterChip({
   currentZone: Zone;
   fieldKind: PivotFieldKind;
   onMoveToZone: (zone: Zone) => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   draggable?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
@@ -1765,7 +1885,7 @@ function FilterChip({
             <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => onChange([])}>
               Limpar
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => onChange([])}>
+            <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => onChange(filtered)}>
               Todos
             </Button>
           </div>
@@ -1778,9 +1898,86 @@ function FilterChip({
           fieldKind={fieldKind}
           onMoveToZone={onMoveToZone}
           onRemove={onRemove}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
         />
       </span>
     </span>
+  );
+}
+
+// Achado 11 da análise de UX/UI: sem isto, colocar um campo numa zona
+// específica sem arrastar exigia clicar na paleta (que sempre manda pro
+// destino padrão) e depois abrir o menu "⋮" pra mover — 4 passos. Este
+// botão adiciona direto na zona onde ele está, um segundo caminho completo
+// que não depende do drag nenhuma vez.
+function ZoneAddButton({
+  items,
+  usedItems,
+  onAdd,
+  placeholder,
+}: {
+  items: { id: string; label: string }[];
+  usedItems: Set<string>;
+  onAdd: (id: string) => void;
+  placeholder: string;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const filtered = items.filter((it) => it.label.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQ("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="rounded-full p-0.5 text-muted-foreground outline-none transition hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60"
+          aria-label={placeholder}
+          title={placeholder}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="end">
+        <div className="border-b border-border/30 p-2">
+          <Input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={placeholder}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="max-h-56 overflow-auto p-1">
+          {filtered.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => {
+                onAdd(it.id);
+                setOpen(false);
+                setQ("");
+              }}
+              className={cn(
+                "flex w-full items-center rounded px-2 py-1 text-left text-xs hover:bg-secondary/60",
+                usedItems.has(it.id) && "text-muted-foreground",
+              )}
+            >
+              <span className="truncate">{it.label}</span>
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">Nenhum campo</div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1794,6 +1991,7 @@ function DropZone({
   setDragOver,
   onDrop,
   children,
+  headerAction,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -1804,6 +2002,7 @@ function DropZone({
   setDragOver: (z: Zone | null) => void;
   onDrop: () => void;
   children: React.ReactNode;
+  headerAction?: React.ReactNode;
 }) {
   const accentRing =
     accent === "primary"
@@ -1837,11 +2036,14 @@ function DropZone({
           {icon}
           {label}
         </div>
-        {count > 0 && (
-          <span className="rounded-full bg-secondary/80 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
-            {count}
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {count > 0 && (
+            <span className="rounded-full bg-secondary/80 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+              {count}
+            </span>
+          )}
+          {headerAction}
+        </div>
       </div>
       <div className="flex min-w-0 flex-wrap gap-1">{children}</div>
     </div>
@@ -1853,7 +2055,12 @@ function DropZone({
 // ============================================================
 interface DimMeta { id: string; label: string; group: string }
 
-function PivotTable({
+// Achado 05 da análise de UX/UI: React.memo aqui — combinado com a
+// identidade estável de handleToggleRowGroup/handleOpenDrill (useCallback
+// no pai) — evita que o componente mais pesado da tela (a tabela inteira)
+// re-renderize por conta de mudanças de estado do pai que não afetam a
+// tabela em si (busca da paleta, popovers, etc.).
+const PivotTable = memo(function PivotTable({
   pivot,
   measures,
   rowDims,
@@ -1954,20 +2161,15 @@ function PivotTable({
     };
   }, [scrollTop, shouldVirtualize, sortedRows, viewportHeight]);
 
+  // Achado 04 da análise de UX/UI: antes, isto varria sortedRows × cols ×
+  // measures inteiro, síncrono no cliente, redundante com a agregação já
+  // feita no worker. Agora só lê pivot.measureRange, calculado uma vez
+  // durante a própria agregação (computePivot).
   const maxByMeasure = useMemo(() => {
     const map = new Map<string, number>();
-    for (const m of measures) {
-      let max = 0;
-      for (const rh of sortedRows) {
-        for (const c of cols) {
-          const v = pivot.cells.get(rh.key)?.get(c.key)?.[m.id] ?? 0;
-          if (isFinite(v)) max = Math.max(max, Math.abs(v));
-        }
-      }
-      map.set(m.id, max);
-    }
+    for (const m of measures) map.set(m.id, pivot.measureRange[m.id] ?? 0);
     return map;
-  }, [measures, sortedRows, cols, pivot]);
+  }, [measures, pivot]);
 
   function toggleSort(colKey: string, measureId: string) {
     if (sort && sort.col === colKey && sort.measure === measureId) {
@@ -1987,7 +2189,7 @@ function PivotTable({
 
   if (measures.length === 0) {
     return (
-      <div className="surface-panel flex h-72 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-sm">
+      <GlassCard surface="panel" className="flex h-72 flex-col items-center justify-center gap-2 border-dashed border-border/50 text-sm">
         <Sigma className="h-10 w-10 text-muted-foreground/40" />
         <div className="text-muted-foreground">
           Adicione ao menos uma medida em <span className="font-semibold text-foreground">Valores</span>
@@ -1995,12 +2197,12 @@ function PivotTable({
         <div className="text-[11px] text-muted-foreground/60">
           Clique em uma medida da paleta ou use um preset acima
         </div>
-      </div>
+      </GlassCard>
     );
   }
 
   return (
-    <div className="surface-panel min-w-0 max-w-full overflow-hidden rounded-2xl border border-border/40 backdrop-blur-xl">
+    <GlassCard surface="panel" className="min-w-0 max-w-full overflow-hidden p-0">
       <div
         ref={scrollRef}
         className="relative max-h-[68vh] min-w-0 max-w-full overflow-auto"
@@ -2074,13 +2276,45 @@ function PivotTable({
                             isSorted && "text-primary",
                             showAs !== "normal" && "bg-primary/10 text-primary",
                           )}
-                          title="Clique para ordenar. Clique com o botão direito para mostrar valores como."
+                          title="Clique para ordenar. Clique com o botão direito (ou no ⋮) para mostrar valores como."
                         >
-                          <span className="inline-flex items-center justify-end gap-1">
+                          <span className="group inline-flex items-center justify-end gap-1">
                             {m.label}
                             {showAs !== "normal" && (
                               <span className="rounded-full bg-primary/15 px-1 text-[9px] normal-case tracking-normal text-primary">%</span>
                             )}
+                            {/* Achado 07 da análise de UX/UI: "mostrar como %" só existia via
+                                clique-direito — baixa descoberta. Este gatilho visível abre o
+                                mesmo menu, sem tirar o atalho de clique-direito. */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                  className="rounded p-0.5 normal-case opacity-0 outline-none transition-opacity hover:bg-foreground/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-60 hover:opacity-100"
+                                  aria-label={`Mostrar ${m.label} como…`}
+                                  title="Mostrar valores como"
+                                >
+                                  <MoreHorizontal className="h-3 w-3" />
+                                </span>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-64">
+                                <DropdownMenuLabel>Mostrar valores como</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {SHOW_AS_OPTIONS.map((option) => (
+                                  <DropdownMenuItem
+                                    key={option.mode}
+                                    onClick={() => setShowAsByMeasure((prev) => ({ ...prev, [m.id]: option.mode }))}
+                                    className="gap-2"
+                                  >
+                                    <Check className={cn("h-4 w-4", showAs === option.mode ? "opacity-100" : "opacity-0")} />
+                                    <span>{option.label}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                             {isSorted ? (
                               sort!.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
                             ) : (
@@ -2275,9 +2509,9 @@ function PivotTable({
           </tfoot>
         </table>
       </div>
-    </div>
+    </GlassCard>
   );
-}
+});
 
 // ============================================================
 //                       EXPORT MENU
@@ -2317,6 +2551,14 @@ function ExportMenu({
 
   const exportXlsx = async () => {
     setExporting(true);
+    // Achado 02 da análise de UX/UI: antes disso, o corpo inteiro da função
+    // rodava síncrono sem nenhum await no meio — nem o spinner chegava a
+    // pintar antes do main thread travar num pivot grande. Este primeiro
+    // yield garante que "Exportando…" apareça na tela antes do trabalho
+    // pesado começar; os yields dentro do loop abaixo (a cada 2.000 linhas)
+    // devolvem o controle ao navegador periodicamente, então a aba continua
+    // respondendo a scroll/clique em vez de congelar até terminar.
+    await new Promise(requestAnimationFrame);
     try {
       const hasExplicitCols = colDims.length > 0 && pivot.colHeaders.length > 0;
       const exportCols = hasExplicitCols
@@ -2348,18 +2590,20 @@ function ExportMenu({
         v !== null && v !== undefined && isFinite(v) ? Number(v) : null;
 
       const dataRows: (string | number | null)[][] = [];
+      const EXPORT_CHUNK_SIZE = 2000;
 
-      for (const rh of sortedRows) {
+      for (let i = 0; i < sortedRows.length; i++) {
+        const rh = sortedRows[i];
         const row: (string | number | null)[] = [];
-        rowDims.forEach((_, i) => {
+        rowDims.forEach((_, di) => {
           if (!rh.isLeaf) {
-            row.push(i === 0 ? `${rh.values[0] ?? ""} subtotal` : null);
-          } else if (rh.parentKey && i === 0) {
+            row.push(di === 0 ? `${rh.values[0] ?? ""} subtotal` : null);
+          } else if (rh.parentKey && di === 0) {
             row.push(null);
-          } else if (rh.parentKey && i === Math.min(1, rowDims.length - 1)) {
-            row.push(`  ${rh.values[i] ?? ""}`);
+          } else if (rh.parentKey && di === Math.min(1, rowDims.length - 1)) {
+            row.push(`  ${rh.values[di] ?? ""}`);
           } else {
-            row.push(rh.values[i] ?? null);
+            row.push(rh.values[di] ?? null);
           }
         });
         for (const c of exportCols) {
@@ -2371,6 +2615,10 @@ function ExportMenu({
           for (const m of measures) row.push(safeNum(rowTot[m.id]));
         }
         dataRows.push(row);
+
+        if (i > 0 && i % EXPORT_CHUNK_SIZE === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       }
 
       // Linha de rodapé com totais por coluna + grand total
@@ -2396,6 +2644,9 @@ function ExportMenu({
           const addr = XLSX.utils.encode_cell({ r: R, c: C });
           const cell = ws[addr];
           if (cell && cell.t === "n") cell.z = fmt;
+        }
+        if (R > 0 && R % EXPORT_CHUNK_SIZE === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
 
@@ -2424,10 +2675,23 @@ function ExportMenu({
   const exportPng = async () => {
     if (!tableRef.current) return;
     try {
+      // Achado 03 da análise de UX/UI: acima do limite de virtualização, o
+      // DOM só contém as linhas visíveis no momento — o PNG sairia cortado
+      // sem explicação. Avisa antes de capturar em vez de deixar o usuário
+      // descobrir sozinho que a imagem está incompleta.
+      if (sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD) {
+        toast.warning("A imagem vai capturar só as linhas visíveis na tela agora", {
+          description: "Tabelas grandes são renderizadas por partes. Pra exportar tudo, use \"Exportar Excel\".",
+        });
+      }
+      // Lê o token --background em vez de fixar uma cor: acompanha o tema
+      // (claro/escuro) e qualquer futura mudança de paleta, em vez de
+      // destoar silenciosamente da UI real (achado 09 da análise de UX/UI).
+      const bgToken = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
       const dataUrl = await toPng(tableRef.current, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor: "#0b0b0f",
+        backgroundColor: bgToken ? `hsl(${bgToken})` : "#0b0b0f",
       });
       const a = document.createElement("a");
       a.href = dataUrl;

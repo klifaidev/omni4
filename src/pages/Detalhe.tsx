@@ -9,7 +9,7 @@ import { useBudget } from "@/store/budget";
 import { applyFilters, clearApplyFiltersCache } from "@/lib/analytics";
 import { applyBudgetFilters } from "@/lib/budget";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MoveHorizontal, FileSpreadsheet } from "lucide-react";
+import { MoveHorizontal, FileSpreadsheet, FilterX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -172,6 +172,24 @@ export default function Detalhe() {
         <Topbar title="Tabela Dinâmica" />
         <div className="px-8 py-6">
           <EmptyState />
+        </div>
+      </>
+    );
+  }
+
+  // Achado 06 da análise de UX/UI: havia dados brutos carregados, mas os
+  // filtros globais (outra aba/estado) zeraram o resultado — sem isso, a
+  // tabela dinâmica renderizava vazia sem explicar o motivo.
+  if (filteredReal.length === 0 && filteredBudget.length === 0) {
+    return (
+      <>
+        <Topbar title="Tabela Dinâmica" />
+        <div className="px-8 py-6">
+          <EmptyState
+            icon={FilterX}
+            title="Nenhum resultado"
+            message="Sem dados para os filtros aplicados. Ajuste os filtros ativos para ver a tabela dinâmica."
+          />
         </div>
       </>
     );

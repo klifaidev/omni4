@@ -59,6 +59,14 @@ export interface PivotResult {
   colTotals: Map<string, Record<string, number | null>>;
   /** total geral */
   grandTotal: Record<string, number | null>;
+  /**
+   * Maior valor absoluto por medida, entre todas as células (linha×coluna,
+   * incluindo linhas de grupo/subtotal). Calculado aqui — no mesmo passe que
+   * já monta `cells` — pra alimentar o heatmap sem precisar de um segundo
+   * loop completo no componente (achado 04 da análise de UX/UI: antes disso,
+   * `maxByMeasure` refazia essa varredura inteira, síncrona, no cliente).
+   */
+  measureRange: Record<string, number>;
 }
 
 export interface PivotSizeEstimate {
@@ -422,10 +430,17 @@ export function computePivot(
   }
 
   const cells = new Map<string, Map<string, Record<string, number | null>>>();
+  const measureRange: Record<string, number> = {};
   for (const [rk, cmap] of cellBuckets) {
     const inner = new Map<string, Record<string, number | null>>();
     for (const [ck, b] of cmap) {
-      inner.set(ck, reduce(b));
+      const reduced = reduce(b);
+      inner.set(ck, reduced);
+      for (const [measureId, v] of Object.entries(reduced)) {
+        if (v == null || !isFinite(v)) continue;
+        const abs = Math.abs(v);
+        if (abs > (measureRange[measureId] ?? 0)) measureRange[measureId] = abs;
+      }
     }
     cells.set(rk, inner);
   }
@@ -435,7 +450,7 @@ export function computePivot(
   for (const [ck, b] of colBuckets) colTotals.set(ck, reduce(b));
   const grandTotal = reduce(grandBucket);
 
-  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows: new Map(), rowTotals, colTotals, grandTotal };
+  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows: new Map(), rowTotals, colTotals, grandTotal, measureRange };
 }
 
 export function getDrillRowsForCell(
