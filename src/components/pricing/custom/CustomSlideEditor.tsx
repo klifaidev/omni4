@@ -2312,6 +2312,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onResize={blockFrameHandlers.onResize}
                         onMoveEnd={blockFrameHandlers.onMoveEnd}
                         onResizeEnd={blockFrameHandlers.onResizeEnd}
+                        onGestureEnd={blockFrameHandlers.onGestureEnd}
                         onSelect={(additive) => {
                           const wasSelected = selectedIds.includes(blk.id);
                           selectBlock(blk.id, { additive: !!additive });

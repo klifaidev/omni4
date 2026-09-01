@@ -55,6 +55,16 @@ interface RotatableBlockProps extends React.HTMLAttributes<HTMLDivElement> {
   onResizeStart?: (event: React.MouseEvent<HTMLDivElement>, dir: Direction) => void;
   onResize?: (x: number, y: number, w: number, h: number) => Partial<BlockFrame> | void;
   onResizeEnd?: (x: number, y: number, w: number, h: number, event: MouseEvent) => void;
+  /**
+   * Chamado sempre que um gesto de mover/redimensionar termina (mouseup),
+   * mesmo quando o movimento não passou do limiar de "mudou" (< 1px) e
+   * onMoveEnd/onResizeEnd por isso não disparam. Usado pra limpar estado
+   * de UI transitório (ex. guias de alinhamento) que não deveria depender
+   * de o gesto ter de fato alterado a posição/tamanho — sem isso, um clique
+   * com leve tremor do mouse podia deixar as guias de alinhamento presas
+   * na tela até o próximo arrasto.
+   */
+  onGestureEnd?: () => void;
   onSelect: (additive?: boolean) => void;
   onDoubleClick?: () => void;
 }
@@ -75,7 +85,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
     {
       x, y, w, h, rotation, scale, isSelected, isLocked, isEditing, showResizeHandles = true,
       disableDragging = false, enableResizing = true, lockAspectRatio = false, bounds, cancel,
-      onMoveStart, onMove, onMoveEnd, onResizeStart, onResize, onResizeEnd, onSelect, onDoubleClick,
+      onMoveStart, onMove, onMoveEnd, onResizeStart, onResize, onResizeEnd, onGestureEnd, onSelect, onDoubleClick,
       className, style, children, ...rest
     },
     ref,
@@ -144,6 +154,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
         gestureChangedRef.current = false;
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
+        onGestureEnd?.();
         if (changed) onMoveEnd?.(finalFrame.x, finalFrame.y, ev);
       };
       window.addEventListener("mousemove", onMouseMove);
@@ -203,6 +214,7 @@ export const RotatableBlock = React.forwardRef<HTMLDivElement, RotatableBlockPro
         gestureChangedRef.current = false;
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
+        onGestureEnd?.();
         if (changed) onResizeEnd?.(finalFrame.x, finalFrame.y, finalFrame.w, finalFrame.h, ev);
       };
       window.addEventListener("mousemove", onMouseMove);

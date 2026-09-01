@@ -198,9 +198,22 @@ export function resizeFrameFromPointerDelta({
     if (dir.includes("e") || dir.includes("w")) h = Math.max(minH, w / aspect);
     else w = Math.max(minW, h * aspect);
   }
+  // Mantém fixa a borda/canto oposto ao que está sendo arrastado, em vez de
+  // sempre redimensionar a partir do centro do bloco. Antes disso, arrastar
+  // só a alça direita (por ex.) também deslocava a borda esquerda pra
+  // dentro/fora — visualmente igual a "proporção travada" (bug relatado
+  // pelo usuário). O deslocamento de centro é calculado no referencial
+  // local do bloco (sem rotação) e depois rotacionado de volta pro mundo,
+  // pra continuar funcionando com blocos girados.
+  const dw = w - origin.w;
+  const dh = h - origin.h;
+  const localCenterDx = dir.includes("e") ? dw / 2 : dir.includes("w") ? -dw / 2 : 0;
+  const localCenterDy = dir.includes("s") ? dh / 2 : dir.includes("n") ? -dh / 2 : 0;
+  const worldCenterDx = localCenterDx * cos - localCenterDy * sin;
+  const worldCenterDy = localCenterDx * sin + localCenterDy * cos;
   return {
-    x: Math.round(centerX - w / 2),
-    y: Math.round(centerY - h / 2),
+    x: Math.round(centerX + worldCenterDx - w / 2),
+    y: Math.round(centerY + worldCenterDy - h / 2),
     w: Math.round(w),
     h: Math.round(h),
   };
@@ -270,6 +283,7 @@ export type BlockTransformHandlers = {
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void;
   onResize: (x: number, y: number, w: number, h: number) => void;
   onResizeEnd: (x: number, y: number, w: number, h: number) => void;
+  onGestureEnd: () => void;
 };
 
 export function useBlockTransform({
@@ -365,6 +379,21 @@ export function useBlockTransform({
       if (event.shiftKey) {
         setAspectResizeIds((prev) => new Set(prev).add(block.id));
       }
+    },
+    // Roda em TODO mouseup de mover/redimensionar, mesmo quando o gesto não
+    // passou do limiar de "mudou" (RotatableBlock só chama onMoveEnd/
+    // onResizeEnd nesse caso) — sem isso, um clique com leve tremor do
+    // mouse deixava as guias de alinhamento presas na tela até o próximo
+    // arrasto de verdade.
+    onGestureEnd: () => {
+      clearGuides();
+      setActiveGestureIds(new Set());
+      setAspectResizeIds((prev) => {
+        if (!prev.has(block.id)) return prev;
+        const next = new Set(prev);
+        next.delete(block.id);
+        return next;
+      });
     },
     onMoveStart: (event) => {
       setActiveGestureIds(new Set(draggableSiblings(block.id)));

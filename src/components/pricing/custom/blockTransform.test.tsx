@@ -134,6 +134,39 @@ describe("blockTransform", () => {
     expect(resized.w / resized.h).toBeCloseTo(2);
   });
 
+  it("keeps the opposite edge fixed when resizing from a single-side handle (not aspect-locked)", () => {
+    const origin = { x: 100, y: 100, w: 200, h: 100 };
+
+    // Arraste da alça direita ("e"): a borda esquerda (x) não deve se mover.
+    const east = resizeFrameFromPointerDelta({
+      origin, dir: "e", clientDx: 80, clientDy: 0, scale: 1, rotation: 0, lockAspectRatio: false,
+    });
+    expect(east.x).toBe(100);
+    expect(east.w).toBe(280);
+    expect(east.x + east.w).toBe(380); // borda direita seguiu o mouse
+
+    // Arraste da alça esquerda ("w"): a borda direita (x + w) não deve se mover.
+    const west = resizeFrameFromPointerDelta({
+      origin, dir: "w", clientDx: -50, clientDy: 0, scale: 1, rotation: 0, lockAspectRatio: false,
+    });
+    expect(west.x + west.w).toBe(300); // borda direita original preservada
+    expect(west.w).toBe(250);
+
+    // Arraste da alça inferior ("s"): a borda superior (y) não deve se mover.
+    const south = resizeFrameFromPointerDelta({
+      origin, dir: "s", clientDx: 0, clientDy: 40, scale: 1, rotation: 0, lockAspectRatio: false,
+    });
+    expect(south.y).toBe(100);
+    expect(south.h).toBe(140);
+
+    // Canto inferior-direito ("se"): o canto superior-esquerdo oposto fica fixo.
+    const se = resizeFrameFromPointerDelta({
+      origin, dir: "se", clientDx: 30, clientDy: 20, scale: 1, rotation: 0, lockAspectRatio: false,
+    });
+    expect(se.x).toBe(100);
+    expect(se.y).toBe(100);
+  });
+
   it("resizes grouped blocks proportionally, including text font size", () => {
     const blocks = [
       shape("bg", { x: 60, y: 150, w: 520, h: 235 }),
