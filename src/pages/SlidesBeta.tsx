@@ -68,7 +68,7 @@ import { useBudget } from "@/store/budget";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import {
   useSlidesFlow, getSlidesFlowSaveStatus, subscribeSlidesFlowSaveStatus,
-  type SlidesPreset, type SlidesFlowSaveStatus,
+  type SlidesPreset, type SlidesFlowSaveStatus, type SlideTransition,
 } from "@/store/slidesFlow";
 import {
   SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
@@ -1507,6 +1507,34 @@ function safePresetFileName(name: string): string {
   return cleaned || "modelo-slides";
 }
 
+/** Roteiro do Slides, item 2.2: "rede de segurança além do navegador".
+ *  Baixa a esteira inteira (todos os slides + transição) como um .json
+ *  local, fora do alcance de um localStorage zerado/corrompido — a mesma
+ *  classe de incidente já documentada no projeto (perda por estouro de
+ *  cota). Escopo desta 1ª versão: só exportar (decisão explícita do
+ *  usuário) — sem um botão de "restaurar" correspondente ainda; o arquivo
+ *  também serve como registro manual, aberto/inspecionado como JSON. */
+function exportSlidesFlowBackup(items: SlideItem[], transition: SlideTransition) {
+  const payload = {
+    schema: "omni4.slidesFlowBackup.v1",
+    exportedAt: new Date().toISOString(),
+    transition,
+    items,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  a.download = `omni4-esteira-backup-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function exportPresetModel(preset: SlidesPreset) {
   const payload = {
     schema: "omni4.slidesPresetExport.v1",
@@ -2449,6 +2477,19 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       <Upload className="h-4 w-4 text-muted-foreground" />
                       {t.page.esteira.importPptx}
                     </button>
+                    {items.length > 0 && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                        onClick={() => {
+                          exportSlidesFlowBackup(items, transition);
+                          toast.success(t.page.esteira.backupExportedToast);
+                        }}
+                      >
+                        <Download className="h-4 w-4 text-muted-foreground" />
+                        {t.page.esteira.exportBackup}
+                      </button>
+                    )}
                     <SavePresetDialog triggerClassName="h-8 w-full justify-start gap-2 px-2 text-xs text-muted-foreground" triggerLabel={t.page.esteira.savePreset} />
                     {items.length > 0 && (
                       <button

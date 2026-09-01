@@ -1460,6 +1460,9 @@ export const ptBR = {
           moreButton: "Mais",
           moreOptions: "Mais opcoes",
           importPptx: "Importar PPTX",
+          // Roteiro do Slides, item 2.2 — backup manual além do navegador.
+          exportBackup: "Baixar backup (.json)",
+          backupExportedToast: "Backup da esteira baixado",
           savePreset: "Salvar pre-definicao",
           duplicateDeck: "Duplicar deck inteiro",
           duplicatedToast: (n: number) => `Deck duplicado (${n} slides)`,
