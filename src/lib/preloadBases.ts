@@ -1,9 +1,7 @@
 import { parseBudgetFile } from "@/lib/budget";
 import { parseCsvFile } from "@/lib/csv";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
-import { parseDemandaXlsx } from "@/lib/parseDemanda";
 import { useBudget } from "@/store/budget";
-import { useDemanda } from "@/store/demanda";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
@@ -26,10 +24,9 @@ const BASE_LABELS: Record<TipoBase, string> = {
   deparaInovacao: "De/Para Inovacao",
   ke30: "KE30 (Real)",
   budget: "Budget",
-  demanda: "Demanda",
 };
 
-const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget", "demanda"];
+const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget"];
 
 function base64ToFile(base64: string, nomeArquivo: string, ultimaModificacao: string): File {
   const binary = atob(base64);
@@ -113,7 +110,7 @@ export async function preloadSavedBases(
     failed,
   });
 
-  // Cada tipo de base vai pra uma store diferente (pricing/budget/demanda/
+  // Cada tipo de base vai pra uma store diferente (pricing/budget/
   // inovacaoDepara) e nenhum parser lê dados de outro tipo —
   // não há dependência real de ordem entre eles. Antes rodavam em série
   // (for...await), então o tempo total era a SOMA de cada parse; em máquina
@@ -197,15 +194,6 @@ export async function preloadSavedBases(
           if (parsed.rows.length > 0) {
             useBudget.getState().addBudget(parsed.rows, parsed.file, false);
           }
-        }
-      }
-
-      if (tipo === "demanda" && useDemanda.getState().deck === null) {
-        const files = await carregarBase(tipo);
-        const latest = files[files.length - 1];
-        if (latest) {
-          const parsed = await parseDemandaXlsx(latest);
-          useDemanda.getState().loadDeck(parsed, latest);
         }
       }
 

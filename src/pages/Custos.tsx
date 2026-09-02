@@ -34,17 +34,26 @@ export default function Custos() {
   const selected = usePricing((s) => s.selectedPeriods);
 
   const filtered = useMemo(() => applyFilters(rows, filters, selected), [rows, filters, selected]);
-  const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
+  // Gráficos e tabelas desta página mostram um histórico — o filtro de
+  // período (que recorta pra 1 ou poucos meses) não deve afetá-los, só os
+  // demais filtros (Marca, Canal etc.) continuam valendo. Só os KPIs de
+  // resumo no topo (que respondem "quanto custou no período selecionado")
+  // usam `filtered`.
+  const filteredHistory = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
 
-  // Composition of variable cost per period (MP, Embalagem, MOD, CIF)
-  const composition = useMemo(() => {
-    const map = new Map<string, {
-      periodo: string; label: string;
-      materiaPrima: number; embalagem: number; mod: number; cif: number;
-      rol: number;
-      hasMP: boolean; hasEmb: boolean; hasMod: boolean; hasCif: boolean;
-    }>();
-    for (const r of filtered) {
+  const kpiEvolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
+  const evolution = useMemo(() => computeCostEvolution(filteredHistory), [filteredHistory]);
+
+  type CompositionRow = {
+    periodo: string; label: string;
+    materiaPrima: number; embalagem: number; mod: number; cif: number;
+    rol: number;
+    hasMP: boolean; hasEmb: boolean; hasMod: boolean; hasCif: boolean;
+  };
+
+  function buildComposition(source: typeof filtered): CompositionRow[] {
+    const map = new Map<string, CompositionRow>();
+    for (const r of source) {
       const cur = map.get(r.periodo) ?? {
         periodo: r.periodo,
         label: `${String(r.mes).padStart(2, "0")}/${String(r.ano).slice(-2)}`,
@@ -59,25 +68,31 @@ export default function Custos() {
       map.set(r.periodo, cur);
     }
     return Array.from(map.values()).sort((a, b) => a.periodo.localeCompare(b.periodo));
-  }, [filtered]);
+  }
 
-  const compTotals = useMemo(() => {
-    return composition.reduce(
-      (acc, r) => {
-        acc.materiaPrima += r.materiaPrima;
-        acc.embalagem += r.embalagem;
-        acc.mod += r.mod;
-        acc.cif += r.cif;
-        acc.rol += r.rol;
-        acc.hasMP = acc.hasMP || r.hasMP;
-        acc.hasEmb = acc.hasEmb || r.hasEmb;
-        acc.hasMod = acc.hasMod || r.hasMod;
-        acc.hasCif = acc.hasCif || r.hasCif;
-        return acc;
-      },
-      { materiaPrima: 0, embalagem: 0, mod: 0, cif: 0, rol: 0, hasMP: false, hasEmb: false, hasMod: false, hasCif: false },
-    );
-  }, [composition]);
+  // Composition of variable cost per period (MP, Embalagem, MOD, CIF) — histórico completo, pro gráfico/tabela.
+  const composition = useMemo(() => buildComposition(filteredHistory), [filteredHistory]);
+  // Mesma composição, mas respeitando o período selecionado — só pros KPIs de resumo.
+  const kpiComposition = useMemo(() => buildComposition(filtered), [filtered]);
+
+  const compTotalsFor = (source: CompositionRow[]) => source.reduce(
+    (acc, r) => {
+      acc.materiaPrima += r.materiaPrima;
+      acc.embalagem += r.embalagem;
+      acc.mod += r.mod;
+      acc.cif += r.cif;
+      acc.rol += r.rol;
+      acc.hasMP = acc.hasMP || r.hasMP;
+      acc.hasEmb = acc.hasEmb || r.hasEmb;
+      acc.hasMod = acc.hasMod || r.hasMod;
+      acc.hasCif = acc.hasCif || r.hasCif;
+      return acc;
+    },
+    { materiaPrima: 0, embalagem: 0, mod: 0, cif: 0, rol: 0, hasMP: false, hasEmb: false, hasMod: false, hasCif: false },
+  );
+
+  const compTotals = useMemo(() => compTotalsFor(composition), [composition]);
+  const kpiCompTotals = useMemo(() => compTotalsFor(kpiComposition), [kpiComposition]);
 
   const showComposition =
     (compTotals.hasMP && compTotals.materiaPrima !== 0) ||
@@ -86,24 +101,20 @@ export default function Custos() {
     (compTotals.hasCif && compTotals.cif !== 0);
 
   const totals = useMemo(() => {
-    return evolution.reduce(
+    return kpiEvolution.reduce(
       (acc, row) => {
         acc.rol += row.rol;
         acc.volumeKg += row.volumeKg;
         acc.custoVariavel += row.custoVariavel;
-        acc.custoFixo += row.custoFixo;
         return acc;
       },
-      { rol: 0, volumeKg: 0, custoVariavel: 0, custoFixo: 0 },
+      { rol: 0, volumeKg: 0, custoVariavel: 0 },
     );
-  }, [evolution]);
+  }, [kpiEvolution]);
 
-  const custoTotal = totals.custoVariavel + totals.custoFixo;
   const custoVariavelPct = totals.rol > 0 ? totals.custoVariavel / totals.rol : 0;
-  const custoFixoPct = totals.rol > 0 ? totals.custoFixo / totals.rol : 0;
-  const custoTotalPorKg = totals.volumeKg > 0 ? custoTotal / totals.volumeKg : 0;
-  const mpPctRol = totals.rol > 0 ? compTotals.materiaPrima / totals.rol : 0;
-  const embPctRol = totals.rol > 0 ? compTotals.embalagem / totals.rol : 0;
+  const mpPctRol = totals.rol > 0 ? kpiCompTotals.materiaPrima / totals.rol : 0;
+  const embPctRol = totals.rol > 0 ? kpiCompTotals.embalagem / totals.rol : 0;
 
   if (rows.length === 0) {
     return (
@@ -125,14 +136,12 @@ export default function Custos() {
       <div className="space-y-6 px-8 py-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Custo Variável" value={formatBRL(totals.custoVariavel, { compact: true })} subValue={formatPct(custoVariavelPct)} accent="amber" />
-          <KpiCard label="Custo Fixo" value={formatBRL(totals.custoFixo, { compact: true })} subValue={formatPct(custoFixoPct)} accent="violet" />
-          <KpiCard label="Custo Total" value={formatBRL(custoTotal, { compact: true })} subValue={formatBRL(custoTotalPorKg, { digits: 2 }) + "/kg"} accent="blue" glow="blue" />
-          <KpiCard label="Volume filtrado" value={formatTon(totals.volumeKg)} subValue={`${evolution.length} período(s)`} accent="green" />
-          {compTotals.hasMP && compTotals.materiaPrima !== 0 && (
-            <KpiCard label="Matéria Prima / ROL" value={formatPct(mpPctRol)} subValue={formatBRL(compTotals.materiaPrima, { compact: true })} accent="blue" />
+          <KpiCard label="Volume filtrado" value={formatTon(totals.volumeKg)} subValue={`${kpiEvolution.length} período(s)`} accent="green" />
+          {kpiCompTotals.hasMP && kpiCompTotals.materiaPrima !== 0 && (
+            <KpiCard label="Matéria Prima / ROL" value={formatPct(mpPctRol)} subValue={formatBRL(kpiCompTotals.materiaPrima, { compact: true })} accent="blue" />
           )}
-          {compTotals.hasEmb && compTotals.embalagem !== 0 && (
-            <KpiCard label="Embalagem / ROL" value={formatPct(embPctRol)} subValue={formatBRL(compTotals.embalagem, { compact: true })} accent="amber" />
+          {kpiCompTotals.hasEmb && kpiCompTotals.embalagem !== 0 && (
+            <KpiCard label="Embalagem / ROL" value={formatPct(embPctRol)} subValue={formatBRL(kpiCompTotals.embalagem, { compact: true })} accent="amber" />
           )}
         </div>
 

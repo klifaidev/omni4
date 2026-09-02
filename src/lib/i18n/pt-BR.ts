@@ -95,7 +95,7 @@ export const ptBR = {
               title: "Tabela personalizada",
               hint: "O gráfico usa os dados vivos da tabela livre. Ao editar a tabela, o bloco atualiza na próxima renderização.",
               empty: "Nenhuma tabela personalizada foi criada ainda.",
-              createCta: "Criar em Upload / Bases",
+              createCta: "Criar em Bases",
               table: "Tabela",
               noTable: "Nenhuma tabela",
               orientation: "Orientação",

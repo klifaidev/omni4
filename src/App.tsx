@@ -18,7 +18,6 @@ const VisaoGeral = lazy(() => import("./pages/VisaoGeral.tsx"));
 const BridgePvm = lazy(() => import("./pages/BridgePvm.tsx"));
 const Mix = lazy(() => import("./pages/Mix.tsx"));
 const Preco = lazy(() => import("./pages/Preco.tsx"));
-const IndicePrecoIdeal = lazy(() => import("./pages/IndicePrecoIdeal.tsx"));
 const Dre = lazy(() => import("./pages/Dre.tsx"));
 const Canais = lazy(() => import("./pages/Canais.tsx"));
 const Custos = lazy(() => import("./pages/Custos.tsx"));
@@ -31,8 +30,6 @@ const Upload = lazy(() => import("./pages/Upload.tsx"));
 const Atividades = lazy(() => import("./pages/Atividades.tsx"));
 const Alertas = lazy(() => import("./pages/Alertas.tsx"));
 const Filtros = lazy(() => import("./pages/Filtros.tsx"));
-const Demanda = lazy(() => import("./pages/Demanda.tsx"));
-const Estoque = lazy(() => import("./pages/Estoque.tsx"));
 const Positivacao = lazy(() => import("./pages/Positivacao.tsx"));
 const FarolCadastro = lazy(() => import("./pages/FarolCadastro.tsx"));
 // NotFound fica eager (import normal, acima): é a rota catch-all "*", que
@@ -53,7 +50,6 @@ const App = () => (
             <Route path="/bridge-pvm" element={<BridgePvm />} />
             <Route path="/mix" element={<Mix />} />
             <Route path="/preco" element={<Preco />} />
-            <Route path="/indice-preco-ideal" element={<IndicePrecoIdeal />} />
             <Route path="/dre" element={<Dre />} />
             <Route path="/canais" element={<Canais />} />
             <Route path="/custos" element={<Custos />} />
@@ -65,8 +61,6 @@ const App = () => (
             <Route path="/atividades" element={<Atividades />} />
             <Route path="/alertas" element={<Alertas />} />
             <Route path="/filtros" element={<Filtros />} />
-            <Route path="/demanda" element={<Demanda />} />
-            <Route path="/estoque" element={<Estoque />} />
             <Route path="/positivacao" element={<Positivacao />} />
             <Route path="/farol" element={<FarolCadastro />} />
             <Route path="/slides" element={null} />

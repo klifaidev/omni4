@@ -46,15 +46,31 @@ const MES_NOMES = [
   "Jul", "Ago", "Set", "Out", "Nov", "Dez",
 ];
 
-function formatPeriodo(p: string): string {
+function parsePeriodo(p: string): { mes: number; ano: number } | null {
   // Aceita "MM.YYYY", "MMM.YYYY" (ex.: 005.2025), "YYYY-MM", "YYYYMM"
   let mes = 0;
   let ano = 0;
   let m = p.match(/^0*(\d{1,2})[./-](\d{4})$/);
   if (m) { mes = parseInt(m[1], 10); ano = parseInt(m[2], 10); }
   else if ((m = p.match(/^(\d{4})[-/.]?(\d{2})$/))) { ano = parseInt(m[1], 10); mes = parseInt(m[2], 10); }
-  if (!mes || !ano) return p;
-  return `${MES_NOMES[mes - 1] ?? mes}/${String(ano).slice(-2)}`;
+  if (!mes || !ano) return null;
+  return { mes, ano };
+}
+
+function formatPeriodo(p: string): string {
+  const parsed = parsePeriodo(p);
+  if (!parsed) return p;
+  return `${MES_NOMES[parsed.mes - 1] ?? parsed.mes}/${String(parsed.ano).slice(-2)}`;
+}
+
+/**
+ * Chave numérica cronológica (ano*100+mês) pra ordenar períodos — usar
+ * `.sort()` puro numa string tipo "MM.YYYY" ordena por mês primeiro (achado
+ * do usuário: "Jan/26 – Dez/25" aparecia com o mês mais novo primeiro).
+ */
+function periodoSortKey(p: string): number {
+  const parsed = parsePeriodo(p);
+  return parsed ? parsed.ano * 100 + parsed.mes : 0;
 }
 
 function periodoLabel(selected: string[] | null, allPeriods: string[]): string {
@@ -65,7 +81,7 @@ function periodoLabel(selected: string[] | null, allPeriods: string[]): string {
     return `Todos os meses do histórico (${first} – ${last})`;
   }
   if (selected.length === 1) return `Mês selecionado: ${formatPeriodo(selected[0])}`;
-  const sorted = [...selected].sort();
+  const sorted = [...selected].sort((a, b) => periodoSortKey(a) - periodoSortKey(b));
   return `${sorted.length} meses selecionados (${formatPeriodo(sorted[0])} – ${formatPeriodo(sorted[sorted.length - 1])})`;
 }
 
@@ -91,7 +107,7 @@ export default function VisaoGeral() {
   }, [rows, filters, selected, filtered, metric]);
 
   const allPeriods = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.periodo))).sort(),
+    () => Array.from(new Set(rows.map((r) => r.periodo))).sort((a, b) => periodoSortKey(a) - periodoSortKey(b)),
     [rows],
   );
   const periodoInfo = useMemo(() => periodoLabel(selected, allPeriods), [selected, allPeriods]);

@@ -72,10 +72,10 @@ function VarBadge({ v, invert = false }: { v: number; invert?: boolean }) {
 // ---------------------------------------------------------------
 interface EvoRow {
   label: string;
-  realCm: number; budCm: number;
+  realCm: number | null; budCm: number;
   realCmPct: number | null; budCmPct: number | null;
   realCmKg: number | null; budCmKg: number | null;
-  realVol: number; budVol: number;
+  realVol: number | null; budVol: number;
 }
 
 function ChartHeader({
@@ -274,6 +274,7 @@ export default function Budget() {
       realVol: number; budVol: number;
       realCmPct: number | null; budCmPct: number | null;
       realCmKg: number | null; budCmKg: number | null;
+      hasReal: boolean;
     };
     const map = new Map<string, M>();
     const ensure = (periodo: string, mes: number, ano: number) => {
@@ -283,6 +284,7 @@ export default function Budget() {
           periodo, mes, ano, label: monthLabel(mes, ano),
           realRol: 0, budRol: 0, realCm: 0, budCm: 0, realVol: 0, budVol: 0,
           realCmPct: null, budCmPct: null, realCmKg: null, budCmKg: null,
+          hasReal: false,
         };
         map.set(periodo, x);
       }
@@ -295,6 +297,7 @@ export default function Budget() {
       const x = ensure(r.periodo, r.mes, r.ano);
       if (r.kind === "real") {
         x.realRol += r.receita; x.realCm += r.cm; x.realVol += r.volumeKg;
+        x.hasReal = true;
       } else {
         x.budRol += r.receita; x.budCm += r.cm; x.budVol += r.volumeKg;
       }
@@ -303,9 +306,16 @@ export default function Budget() {
       .sort((a, b) => a.ano - b.ano || a.mes - b.mes)
       .map((x) => ({
         ...x,
-        realCmPct: x.realRol ? x.realCm / x.realRol : null,
+        // Meses sem nenhum lançamento Real (fechamento ainda não chegou)
+        // ficam com valores Real nulos, não zero — um zero é um ponto de
+        // dado de verdade, então a linha/área "Real" continuava desenhada
+        // (achatada em zero) até o fim do horizonte do Budget em vez de
+        // simplesmente parar no último mês fechado.
+        realCm: x.hasReal ? x.realCm : null,
+        realVol: x.hasReal ? x.realVol : null,
+        realCmPct: x.hasReal && x.realRol ? x.realCm / x.realRol : null,
         budCmPct: x.budRol ? x.budCm / x.budRol : null,
-        realCmKg: x.realVol ? x.realCm / x.realVol : null,
+        realCmKg: x.hasReal && x.realVol ? x.realCm / x.realVol : null,
         budCmKg: x.budVol ? x.budCm / x.budVol : null,
       }));
   }, [budgetRows, filters]);

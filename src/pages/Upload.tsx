@@ -157,7 +157,6 @@ function StatusHeroCard({
 const TIPO_LABELS: Record<TipoBase, string> = {
   ke30: "KE30 (Real)",
   budget: "Budget",
-  demanda: "Demanda",
   personalizado: "Personalizado",
   deparaInovacao: "De/Para Inovação",
 };
@@ -169,7 +168,7 @@ function formatFileSize(bytes: number) {
 }
 
 export default function Upload() {
-  usePageTitle("Upload / Bases");
+  usePageTitle("Bases");
   const files = usePricing((s) => s.files);
   const removeFile = usePricing((s) => s.removeFile);
   const clearAll = usePricing((s) => s.clearAll);
@@ -212,7 +211,6 @@ export default function Upload() {
     setBasesSalvas({
       ke30: !!info.ke30,
       budget: !!info.budget,
-      demanda: !!info.demanda,
       deparaInovacao: !!info.deparaInovacao,
       personalizado: !!info.personalizado,
     });
@@ -497,7 +495,7 @@ export default function Upload() {
 
   return (
     <>
-      <Topbar title="Upload / Bases" subtitle="Gerencie Real, Budget e tabelas personalizadas" />
+      <Topbar title="Bases" subtitle="Gerencie Real, Budget e tabelas personalizadas" />
       <div className="space-y-6 px-8 py-6">
         <MissingMappingsAlert />
 
@@ -777,7 +775,7 @@ export default function Upload() {
               <h3 className="text-sm font-medium">Bases salvas localmente</h3>
             </header>
             <div className="space-y-2">
-              {(["ke30", "budget", "demanda", "deparaInovacao", "personalizado"] as const).map((tipo) => {
+              {(["ke30", "budget", "deparaInovacao", "personalizado"] as const).map((tipo) => {
                 const info = infoSalvas[tipo];
                 if (!info) return null;
                 return (

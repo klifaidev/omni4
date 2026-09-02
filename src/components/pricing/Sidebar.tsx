@@ -12,8 +12,6 @@ import { PAGE_LABELS } from "@/lib/pageMeta";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useHasActiveFilters } from "./ActiveFiltersBar";
 import {
-  AlertTriangle,
-  BadgeCheck,
   BarChart3,
   BellRing,
   ChevronDown,
@@ -31,7 +29,6 @@ import {
   Monitor,
   Moon,
   Network,
-  PackageSearch,
   Presentation,
   Radar,
   Search,
@@ -59,7 +56,6 @@ const dashItems = [
   { to: "/bridge-pvm", label: "Bridge PVM", icon: TrendingUp },
   { to: "/mix", label: "Mix", icon: Layers3 },
   { to: "/preco", label: "Análise de Preço", icon: DollarSign },
-  { to: "/indice-preco-ideal", label: "Índice de Preço Ideal", icon: BadgeCheck },
   { to: "/farol", label: "Farol de Cadastro", icon: Radar },
   { to: "/dre", label: "DRE", icon: FileSpreadsheet },
   { to: "/canais", label: "Canais", icon: Network },
@@ -74,14 +70,11 @@ const dashItems = [
 const workItems = [
   { to: "/alertas", label: "Alertas", icon: BellRing, alertBadge: true },
   { to: "/atividades", label: "Atividades", icon: KanbanSquare },
-  { to: "/demanda", label: "Demanda", icon: TrendingUp },
-  { to: "/estoque", label: "Estoque", icon: PackageSearch },
   { to: "/positivacao", label: "Positivação", icon: UserCheck },
   { to: "/slides", label: "Slides", icon: Presentation },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];
 
 export function Sidebar() {
-  const missing = usePricing((s) => s.missing);
   const monthsCount = useMonthsInfo().length;
   const hasFilters = useHasActiveFilters();
   const activeAlertCount = useActiveAlertCount();
@@ -92,11 +85,6 @@ export function Sidebar() {
   const setMobileOpen = useSidebarState((s) => s.setMobileOpen);
   const [searchOpen, setSearchOpen] = useState(false);
   const openCommandPalette = useCommandPalette((s) => s.setOpen);
-
-  const missingCount = useMemo(
-    () => missing.skus.length + missing.canais.length + missing.regioes.length + missing.ufs.length,
-    [missing],
-  );
 
   // On mobile, the drawer is full-width sidebar (230px) regardless of `collapsed`.
   // On desktop (md+), `collapsed` controls the width.
@@ -261,8 +249,8 @@ export function Sidebar() {
               <NavLink
                 to="/upload"
                 onClick={closeMobile}
-                title={collapsed ? "Upload / Bases" : undefined}
-                aria-label="Upload / Bases"
+                title={collapsed ? "Bases" : undefined}
+                aria-label="Bases"
                 className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground/80 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-primary/60 ${
                   collapsed ? "md:justify-center md:px-2" : ""
                 }`}
@@ -275,13 +263,12 @@ export function Sidebar() {
                       collapsed ? "md:hidden" : ""
                     }`}
                   >
-                    Upload / Bases
+                    Bases
                   </span>
-                  {missingCount > 0 && <AlertTriangle className="h-3.5 w-3.5 text-warning" />}
                 </span>
-                {(monthsCount > 0 || missingCount > 0) && !collapsed && (
+                {monthsCount > 0 && !collapsed && (
                   <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-semibold">
-                    {missingCount > 0 ? `${monthsCount} · !` : monthsCount}
+                    {monthsCount}
                   </Badge>
                 )}
               </NavLink>

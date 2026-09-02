@@ -11,9 +11,14 @@ export interface FreshnessStatus {
 export function getFreshness(
   months: { mes: number; ano: number; periodo: string }[],
 ): FreshnessStatus {
+  // Trabalhamos com fechamento mensal — o mês corrente nunca está fechado
+  // ainda, então "atualizado" significa ter o fechamento do mês ANTERIOR
+  // ao atual, não do mês corrente. new Date(ano, mes-1, 1) com mes=0 rola
+  // corretamente pra dezembro do ano anterior quando estamos em janeiro.
   const now = new Date();
-  const expectedMes = now.getMonth() + 1;
-  const expectedAno = now.getFullYear();
+  const expectedDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const expectedMes = expectedDate.getMonth() + 1;
+  const expectedAno = expectedDate.getFullYear();
   const expectedLabel = monthLabel(expectedMes, expectedAno);
 
   if (months.length === 0) {

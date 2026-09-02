@@ -221,7 +221,11 @@ export default function Preco() {
     const baseOk = base && values.has(base);
     const compOk = comp && values.has(comp);
     if (!baseOk || !compOk) {
-      setBase(options[0].value);
+      // Default = os dois períodos mais recentes disponíveis (M-2 vs M-1),
+      // não o histórico inteiro (mais antigo vs mais novo). Trabalhamos com
+      // fechamento mensal, então "M-1" na prática é o período mais recente
+      // já carregado, não o mês corrente do calendário.
+      setBase(options[options.length - 2].value);
       setComp(options[options.length - 1].value);
     }
   }, [options, base, comp]);

@@ -886,10 +886,12 @@ export interface BudgetEvoRow {
   periodo: string;
   mes: number;
   ano: number;
-  realCm: number; budCm: number;
+  // Meses sem fechamento Real ainda (futuro, só Budget) chegam como null,
+  // não zero — um zero seria um dado real de verdade.
+  realCm: number | null; budCm: number;
   realCmPct: number | null; budCmPct: number | null;
   realCmKg: number | null; budCmKg: number | null;
-  realVol: number; budVol: number;
+  realVol: number | null; budVol: number;
 }
 
 // Formatos pt-BR alinhados ao padrão das apresentações da Harald:

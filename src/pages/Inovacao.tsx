@@ -16,6 +16,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -136,10 +137,6 @@ function classifyTrend(slope: number): "Crescendo" | "Estável" | "Deteriorando"
 
 function monthLabel(row: PricingRow): string {
   return `${String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}`;
-}
-
-function periodRankFromParts(ano: number, mes: number): number {
-  return ano * 12 + mes;
 }
 
 function formatPp(value: number): string {
@@ -450,159 +447,6 @@ export default function Inovacao() {
     return { cohorts, data };
   }, [filtered, innovationMap, rows]);
 
-  const legacyImpact = useMemo(() => {
-    const historyRows = applyFilters(rows, filters, null);
-    const firstSeenBySku = new Map<string, { ano: number; mes: number }>();
-    const skuToLegacy = new Map<string, string>();
-    const skuToLaunch = new Map<string, { ano: number; mes: number }>();
-
-    for (const row of rows) {
-      const sku = row.sku?.trim();
-      if (!sku) continue;
-      const current = firstSeenBySku.get(sku);
-      if (!current || periodRankFromParts(row.ano, row.mes) < periodRankFromParts(current.ano, current.mes)) {
-        firstSeenBySku.set(sku, { ano: row.ano, mes: row.mes });
-      }
-    }
-
-    for (const [sku, entry] of Object.entries(innovationMap)) {
-      if (!/inova/i.test(entry.classificacao ?? "")) continue;
-      const legacy = String(entry.legado ?? "").trim();
-      if (legacy) skuToLegacy.set(sku, legacy);
-    }
-
-    for (const row of rows) {
-      const sku = row.sku?.trim();
-      if (!sku || !skuToLegacy.has(sku)) continue;
-      const launchYear = parseLaunchYear(innovationMap[sku]?.anoLancamento);
-      if (!launchYear || row.ano !== launchYear) continue;
-      const current = skuToLaunch.get(sku);
-      if (!current || row.mes < current.mes) skuToLaunch.set(sku, { ano: launchYear, mes: row.mes });
-    }
-
-    for (const [sku] of skuToLegacy.entries()) {
-      if (!skuToLaunch.has(sku)) {
-        const firstSeen = firstSeenBySku.get(sku);
-        if (firstSeen) skuToLaunch.set(sku, firstSeen);
-      }
-    }
-
-    const noLegacyInnovationKg = innovationRows.reduce((sum, row) => {
-      const sku = row.sku?.trim();
-      return sum + (sku && skuToLegacy.has(sku) ? 0 : row.volumeKg);
-    }, 0);
-
-    const pairCodes = Array.from(new Set(Array.from(skuToLegacy.values()))).sort();
-    const pairs: LegacyPairAnalysis[] = [];
-
-    for (const legacyCode of pairCodes) {
-      const skus = Array.from(skuToLegacy.entries())
-        .filter(([, legacy]) => legacy === legacyCode)
-        .map(([sku]) => sku);
-      const skuSet = new Set(skus);
-      const launches = skus.map((sku) => skuToLaunch.get(sku)).filter(Boolean) as { ano: number; mes: number }[];
-      if (launches.length === 0) continue;
-      const launch = launches.sort((a, b) => periodRankFromParts(a.ano, a.mes) - periodRankFromParts(b.ano, b.mes))[0];
-      const launchRank = periodRankFromParts(launch.ano, launch.mes);
-
-      const selectedInnovationKg = filtered.reduce((sum, row) => {
-        const sku = row.sku?.trim();
-        return sum + (sku && skuSet.has(sku) ? row.volumeKg : 0);
-      }, 0);
-      if (selectedInnovationKg <= 0) continue;
-
-      const monthMap = new Map<string, { ano: number; mes: number; label: string; innovationKg: number; legacyKg: number }>();
-      for (const row of historyRows) {
-        const sku = row.sku?.trim();
-        if (!sku) continue;
-        const isPairInnovation = skuSet.has(sku);
-        const isPairLegacy = !isInnovationRow(row) && (row.legado === legacyCode || row.sku === legacyCode);
-        if (!isPairInnovation && !isPairLegacy) continue;
-        const current = monthMap.get(row.periodo) ?? {
-          ano: row.ano,
-          mes: row.mes,
-          label: monthLabel(row),
-          innovationKg: 0,
-          legacyKg: 0,
-        };
-        if (isPairInnovation) current.innovationKg += row.volumeKg;
-        if (isPairLegacy) current.legacyKg += row.volumeKg;
-        monthMap.set(row.periodo, current);
-      }
-
-      const months = Array.from(monthMap.entries())
-        .sort(([, a], [, b]) => periodRankFromParts(a.ano, a.mes) - periodRankFromParts(b.ano, b.mes));
-      const before = months.filter(([, value]) => periodRankFromParts(value.ano, value.mes) < launchRank);
-      const afterSelected = applyFilters(rows, filters, selected).filter((row) => {
-        const rowRank = periodRankFromParts(row.ano, row.mes);
-        return rowRank >= launchRank && !isInnovationRow(row) && (row.legado === legacyCode || row.sku === legacyCode);
-      });
-      const selectedPeriodsForPair = new Set(filtered
-        .filter((row) => {
-          const sku = row.sku?.trim();
-          return sku && skuSet.has(sku);
-        })
-        .map((row) => row.periodo));
-
-      const beforeAvgKg = before.length > 0
-        ? before.reduce((sum, [, value]) => sum + value.legacyKg, 0) / before.length
-        : 0;
-      const afterLegacyKg = afterSelected.reduce((sum, row) => sum + row.volumeKg, 0);
-      const comparableMonths = Math.max(1, selectedPeriodsForPair.size);
-      const expectedLegacyKg = beforeAvgKg * comparableMonths;
-      const legacyDropKg = Math.max(0, expectedLegacyKg - afterLegacyKg);
-      const substitutionKg = Math.min(selectedInnovationKg, legacyDropKg);
-      const incrementalKg = Math.max(0, selectedInnovationKg - substitutionKg);
-      const substitutionPct = selectedInnovationKg > 0 ? substitutionKg / selectedInnovationKg : 0;
-      const incrementalPct = selectedInnovationKg > 0 ? incrementalKg / selectedInnovationKg : 0;
-      const hasLegacyRows = months.some(([, value]) => value.legacyKg > 0);
-      const classification = substitutionPct >= 0.65 ? "Substituição" : incrementalPct >= 0.65 ? "Incremental" : "Misto";
-
-      const series = months
-        .filter(([, value]) => {
-          const rank = periodRankFromParts(value.ano, value.mes);
-          return rank >= launchRank - 6 && rank <= launchRank + 18;
-        })
-        .map(([periodo, value]) => ({
-          periodo,
-          label: value.label,
-          innovationTon: value.innovationKg / 1000,
-          legacyTon: value.legacyKg / 1000,
-        }));
-
-      pairs.push({
-        legado: legacyCode,
-        launchLabel: `${String(launch.mes).padStart(2, "0")}/${String(launch.ano).slice(-2)}`,
-        innovationVolumeKg: selectedInnovationKg,
-        substitutionKg,
-        incrementalKg,
-        substitutionPct,
-        incrementalPct,
-        legacyBeforeAvgKg: beforeAvgKg,
-        legacyAfterAvgKg: afterLegacyKg / comparableMonths,
-        hasLegacyRows,
-        classification,
-        series,
-      });
-    }
-
-    const sortedPairs = pairs.sort((a, b) => b.innovationVolumeKg - a.innovationVolumeKg);
-    const substitutionKg = sortedPairs.reduce((sum, pair) => sum + pair.substitutionKg, 0);
-    const incrementalKg = sortedPairs.reduce((sum, pair) => sum + pair.incrementalKg, 0) + noLegacyInnovationKg;
-    const totalInnovationKg = substitutionKg + incrementalKg;
-
-    return {
-      pairs: sortedPairs,
-      featured: sortedPairs[0] ?? null,
-      noLegacyInnovationKg,
-      substitutionKg,
-      incrementalKg,
-      substitutionPct: totalInnovationKg > 0 ? substitutionKg / totalInnovationKg : 0,
-      incrementalPct: totalInnovationKg > 0 ? incrementalKg / totalInnovationKg : 0,
-      totalInnovationKg,
-    };
-  }, [filtered, filters, innovationMap, innovationRows, rows, selected]);
-
   const heroesOffenders = useMemo(() => {
     const prevCtx = getKpiComparisonContext(rows, filters, selected);
     const previousInnovationRows = prevCtx ? prevCtx.previousRows.filter(isInnovationRow) : [];
@@ -668,17 +512,40 @@ export default function Inovacao() {
     const regularPrice = regularKpis.volumeKg > 0 ? regularKpis.rol / regularKpis.volumeKg : 0;
     const delta = innovationPrice - regularPrice;
     const deltaPct = regularPrice > 0 ? delta / regularPrice : 0;
+
+    // Evolutivo mês a mês (item 4a): preço médio Inovação vs Regular ao
+    // longo do tempo, não só o snapshot do período filtrado.
+    const byPeriod = new Map<string, {
+      label: string; ano: number; mes: number;
+      innovationRol: number; innovationVolumeKg: number;
+      regularRol: number; regularVolumeKg: number;
+    }>();
+    for (const row of filtered) {
+      const current = byPeriod.get(row.periodo) ?? {
+        label: monthLabel(row), ano: row.ano, mes: row.mes,
+        innovationRol: 0, innovationVolumeKg: 0, regularRol: 0, regularVolumeKg: 0,
+      };
+      if (isInnovationRow(row)) { current.innovationRol += row.rol; current.innovationVolumeKg += row.volumeKg; }
+      else { current.regularRol += row.rol; current.regularVolumeKg += row.volumeKg; }
+      byPeriod.set(row.periodo, current);
+    }
+    const monthly = Array.from(byPeriod.entries())
+      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
+      .map(([periodo, value]) => ({
+        periodo,
+        label: value.label,
+        innovationPrice: value.innovationVolumeKg > 0 ? value.innovationRol / value.innovationVolumeKg : null,
+        regularPrice: value.regularVolumeKg > 0 ? value.regularRol / value.regularVolumeKg : null,
+      }));
+
     return {
       innovationPrice,
       regularPrice,
       delta,
       deltaPct,
-      data: [
-        { name: "Inovação", value: innovationPrice },
-        { name: "Regular", value: regularPrice },
-      ],
+      monthly,
     };
-  }, [innovationKpis, regularKpis]);
+  }, [filtered, innovationKpis, regularKpis]);
 
   const channelMix = useMemo<ChannelMixRow[]>(() => {
     const map = new Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>();
@@ -706,6 +573,45 @@ export default function Inovacao() {
       .sort((a, b) => b.innovationVolumeKg - a.innovationVolumeKg)
       .slice(0, 8);
   }, [filtered, innovationKpis.volumeKg]);
+
+  // Item 4a: histórico mês a mês (últimos 13 meses) do mix de inovação por
+  // canal — não fica preso ao filtro de período selecionado, senão "últimos
+  // 13 meses" faria pouco sentido se o usuário tivesse filtrado 1 mês só.
+  const channelMixMonthly = useMemo(() => {
+    const history = applyFilters(rows, filters, null);
+    const topCanais = channelMix.map((c) => c.canal);
+    if (topCanais.length === 0) return { canais: [] as string[], data: [] as Record<string, unknown>[] };
+
+    const byPeriod = new Map<string, {
+      label: string; ano: number; mes: number;
+      byCanal: Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>;
+    }>();
+    for (const row of history) {
+      const canal = row.canalAjustado || row.canal || "Sem canal";
+      if (!topCanais.includes(canal)) continue;
+      const period = byPeriod.get(row.periodo) ?? { label: monthLabel(row), ano: row.ano, mes: row.mes, byCanal: new Map() };
+      const current = period.byCanal.get(canal) ?? { innovationVolumeKg: 0, regularVolumeKg: 0 };
+      if (isInnovationRow(row)) current.innovationVolumeKg += row.volumeKg;
+      else current.regularVolumeKg += row.volumeKg;
+      period.byCanal.set(canal, current);
+      byPeriod.set(row.periodo, period);
+    }
+
+    const months = Array.from(byPeriod.entries())
+      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
+      .slice(-13)
+      .map(([periodo, value]) => {
+        const point: Record<string, unknown> = { periodo, label: value.label };
+        for (const canal of topCanais) {
+          const c = value.byCanal.get(canal);
+          const total = c ? c.innovationVolumeKg + c.regularVolumeKg : 0;
+          point[canal] = total > 0 && c ? c.innovationVolumeKg / total : null;
+        }
+        return point;
+      });
+
+    return { canais: topCanais, data: months };
+  }, [rows, filters, channelMix]);
 
   if (rows.length === 0) {
     return (
@@ -903,8 +809,26 @@ export default function Inovacao() {
                   }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar name="Inovação" dataKey="innovation" stackId="volumeMix" fill={PALETTE[0]} fillOpacity={0.9} />
-                <Bar name="Regular" dataKey="regular" stackId="volumeMix" fill={PALETTE[1]} fillOpacity={0.55} />
+                <Bar name="Inovação" dataKey="innovation" stackId="volumeMix" fill={PALETTE[0]} fillOpacity={0.9}>
+                  <LabelList
+                    dataKey="innovation"
+                    position="inside"
+                    formatter={(v: number) => (v >= 6 ? `${v.toFixed(0)}%` : "")}
+                    fill="hsl(var(--background))"
+                    fontSize={11}
+                    fontWeight={600}
+                  />
+                </Bar>
+                <Bar name="Regular" dataKey="regular" stackId="volumeMix" fill={PALETTE[1]} fillOpacity={0.55}>
+                  <LabelList
+                    dataKey="regular"
+                    position="inside"
+                    formatter={(v: number) => (v >= 6 ? `${v.toFixed(0)}%` : "")}
+                    fill="hsl(var(--background))"
+                    fontSize={11}
+                    fontWeight={600}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </GlassCard>
@@ -1061,147 +985,6 @@ export default function Inovacao() {
 
         <SendToSlideHover
           payload={{
-            source: { page: "Inovação", visualization: "Substituição vs incremental" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: {
-              chartType: "combo",
-              measure: "volume",
-              dimension: "legado",
-              filters,
-              selectedPeriods: selected,
-              view: "innovation_legacy_incrementality",
-            },
-          }}
-        >
-          <GlassCard>
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-medium">Substituição de legado vs crescimento incremental</h2>
-                <p className="text-xs text-muted-foreground">
-                  Estimativa do volume de inovação que substitui produtos legado versus volume líquido adicional.
-                </p>
-              </div>
-              <Badge variant="outline">
-                {legacyImpact.pairs.length} legado{legacyImpact.pairs.length === 1 ? "" : "s"} analisado{legacyImpact.pairs.length === 1 ? "" : "s"}
-              </Badge>
-            </div>
-
-            <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Substituição estimada</p>
-                <p className="mt-2 text-2xl font-semibold text-warning">{formatPct(legacyImpact.substitutionPct)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatTon(legacyImpact.substitutionKg / 1000)} do volume de inovação</p>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Incremental líquido</p>
-                <p className="mt-2 text-2xl font-semibold text-success">{formatPct(legacyImpact.incrementalPct)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatTon(legacyImpact.incrementalKg / 1000)} estimado como volume novo</p>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sem legado associado</p>
-                <p className="mt-2 text-2xl font-semibold">{formatTon(legacyImpact.noLegacyInnovationKg / 1000)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Tratado como 100% incremental por definição</p>
-              </div>
-            </div>
-
-            {legacyImpact.featured ? (
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-medium">Par em destaque: Legado {legacyImpact.featured.legado}</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Lançamento observado em {legacyImpact.featured.launchLabel}. Linhas em toneladas.
-                      </p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        legacyImpact.featured.classification === "Substituição"
-                          ? "border-warning/30 bg-warning/10 text-warning"
-                          : legacyImpact.featured.classification === "Incremental"
-                            ? "border-success/30 bg-success/10 text-success"
-                            : "border-primary/30 bg-primary/10 text-primary"
-                      }
-                    >
-                      {legacyImpact.featured.classification}
-                    </Badge>
-                  </div>
-                  {legacyImpact.featured.series.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={legacyImpact.featured.series} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-                        <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                        <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} tickFormatter={(value) => formatTon(Number(value))} />
-                        <Tooltip
-                          content={({ active, payload, label }) => {
-                            if (!active || !payload?.length) return null;
-                            return (
-                              <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                                <div className="mb-1 font-semibold">{label}</div>
-                                {payload.map((entry) => (
-                                  <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
-                                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                                      <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
-                                      {entry.dataKey === "innovationTon" ? "Inovação" : "Legado"}
-                                    </span>
-                                    <span className="tabular-nums text-foreground">{formatTon(Number(entry.value))}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <Line type="monotone" name="Inovação" dataKey="innovationTon" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
-                        <Line type="monotone" name="Legado" dataKey="legacyTon" stroke="hsl(var(--muted-foreground))" strokeWidth={2.5} strokeDasharray="5 4" dot={{ r: 3 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
-                      <p className="text-sm text-muted-foreground">Sem série mensal suficiente para o par em destaque.</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  {legacyImpact.pairs.slice(0, 3).map((pair) => (
-                    <div key={pair.legado} className="rounded-xl border border-border/50 bg-secondary/25 p-3">
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium">Legado {pair.legado}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {pair.hasLegacyRows ? `Baseline legado ${formatTon(pair.legacyBeforeAvgKg / 1000)}/mês` : "Sem volume de legado observado"}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="shrink-0">{pair.classification}</Badge>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full bg-warning" style={{ width: `${Math.min(100, pair.substitutionPct * 100)}%` }} />
-                      </div>
-                      <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
-                        <span>{formatPct(pair.substitutionPct)} substituição</span>
-                        <span>{formatPct(pair.incrementalPct)} incremental</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
-                <div>
-                  <p className="text-sm font-medium">Sem pares legado/inovação no recorte</p>
-                  <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                    As inovações sem legado associado continuam classificadas como 100% incrementais.
-                  </p>
-                </div>
-              </div>
-            )}
-          </GlassCard>
-        </SendToSlideHover>
-
-        <SendToSlideHover
-          payload={{
             source: { page: "Inovação", visualization: "Heróis e ofensores de inovação" },
             target: { blockKind: "omni_herois_ofensores", blockLabel: "Heróis e Ofensores" },
             config: {
@@ -1283,7 +1066,7 @@ export default function Inovacao() {
             source: { page: "Inovação", visualization: "Preço médio Inovação vs Regular" },
             target: { blockKind: "chart", blockLabel: "Gráfico" },
             config: {
-              chartType: "column",
+              chartType: "line",
               measure: "precoMedio",
               dimension: "inovacao",
               filters,
@@ -1320,21 +1103,31 @@ export default function Inovacao() {
               </div>
 
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={priceComparison.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                <LineChart data={priceComparison.monthly} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
                   <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                  <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
                   <YAxis
                     tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                     tickFormatter={(value) => formatBRL(Number(value), { digits: 2 })}
                   />
-                  <Tooltip formatter={(value) => [`${formatBRL(Number(value), { digits: 2 })}/kg`, "Preço médio"]} />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-                </BarChart>
+                  <Tooltip
+                    formatter={(value, name) => [
+                      value == null ? "—" : `${formatBRL(Number(value), { digits: 2 })}/kg`,
+                      name === "innovationPrice" ? "Inovação" : "Regular",
+                    ]}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 11 }}
+                    formatter={(value) => (value === "innovationPrice" ? "Inovação" : "Regular")}
+                  />
+                  <Line type="monotone" name="innovationPrice" dataKey="innovationPrice" stroke={PALETTE[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                  <Line type="monotone" name="regularPrice" dataKey="regularPrice" stroke={PALETTE[1]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                </LineChart>
               </ResponsiveContainer>
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground">
-              Diferença relativa: {formatPct(priceComparison.deltaPct)} vs. Regular.
+              Diferença relativa: {formatPct(priceComparison.deltaPct)} vs. Regular (média do período filtrado).
             </p>
           </GlassCard>
         </SendToSlideHover>
@@ -1358,55 +1151,53 @@ export default function Inovacao() {
               <div>
                 <h2 className="text-sm font-medium">Mix de inovação por canal</h2>
                 <p className="text-xs text-muted-foreground">
-                  Penetração da inovação dentro de cada canal, comparada à linha Regular.
+                  Penetração da inovação dentro de cada canal (% do volume do canal), últimos {channelMixMonthly.data.length} meses.
                 </p>
               </div>
-              <Badge variant="outline">Top {channelMix.length}</Badge>
+              <Badge variant="outline">Top {channelMixMonthly.canais.length}</Badge>
             </div>
 
-            {channelMix.length === 0 ? (
+            {channelMixMonthly.canais.length === 0 ? (
               <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
                 <p className="text-sm text-muted-foreground">Sem canais com volume no recorte atual.</p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={channelMix} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 96 }}>
-                  <CartesianGrid stroke="hsl(var(--border) / 0.35)" strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
+                <BarChart data={channelMixMonthly.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+                  <CartesianGrid stroke="hsl(var(--border) / 0.35)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+                  <YAxis
                     domain={[0, 1]}
                     tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`}
                     tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                   />
-                  <YAxis type="category" dataKey="canal" width={92} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null;
-                      const row = payload[0].payload as ChannelMixRow;
                       return (
                         <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
                           <div className="mb-1 font-semibold">{label}</div>
                           <div className="space-y-1">
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">Penetração Inovação</span>
-                              <span>{formatPct(row.innovationPenetration)}</span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">Penetração Regular</span>
-                              <span>{formatPct(row.regularPenetration)}</span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">Volume Inovação</span>
-                              <span>{formatTon(row.innovationVolumeKg / 1000)}</span>
-                            </div>
+                            {payload.map((entry) => (
+                              <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
+                                  {String(entry.dataKey)}
+                                </span>
+                                <span className="tabular-nums text-foreground">
+                                  {entry.value == null ? "—" : formatPct(Number(entry.value))}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       );
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar name="Inovação" dataKey="innovationPenetration" stackId="penetration" fill="hsl(var(--primary))" fillOpacity={0.9} />
-                  <Bar name="Regular" dataKey="regularPenetration" stackId="penetration" fill="hsl(var(--muted-foreground))" fillOpacity={0.45} />
+                  {channelMixMonthly.canais.map((canal, index) => (
+                    <Bar key={canal} name={canal} dataKey={canal} fill={PALETTE[index % PALETTE.length]} radius={[3, 3, 0, 0]} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             )}
