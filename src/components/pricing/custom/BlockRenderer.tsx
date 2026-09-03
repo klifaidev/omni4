@@ -39,7 +39,7 @@ import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
-import { monthLabel, formatBRL } from "@/lib/format";
+import { monthLabel, formatBRL, parsePeriod } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
 } from "@/lib/customKpi";
@@ -632,10 +632,19 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   const measureLabel = b.source === "dynamic"
     ? KPI_MEASURES.find((m) => m.id === b.measure)?.label
     : null;
+  // Período fixo em modo "mês" guarda o código interno cru (ex.: "006.2026"),
+  // não um rótulo pronto — sem formatar, esse código vazava direto pro
+  // rodapé do card ("Ticket Médio (Kg/cliente) · 006.2026" em vez de
+  // "· Jun/2026"). Modo "fy" já guarda a string pronta (ex.: "FY26/27").
   const periodDescriptor = b.periodMode && b.periodMode !== "all"
     ? b.periodSelectionMode === "relative"
       ? t.kpi.relative(relativePeriodLabel(b.relativePeriod))
-      : b.periodValue ?? ""
+      : b.periodMode === "month" && b.periodValue
+        ? (() => {
+            const parsed = parsePeriod(b.periodValue);
+            return parsed ? monthLabel(parsed.mes, parsed.ano) : b.periodValue;
+          })()
+        : b.periodValue ?? ""
     : b.periodMode === "all" ? t.kpi.allPeriods : "";
 
   const cardBg = b.cardBg ?? "F8FAFC";
