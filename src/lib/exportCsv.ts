@@ -3,8 +3,17 @@ import type { PVMResult } from "./analytics";
 const fmt = (n: number) =>
   Number.isFinite(n) ? n.toFixed(2).replace(".", ",") : "0,00";
 
+// CSV/formula injection (CWE-1236): campos como "cliente" ou "SKU" vêm de
+// texto livre do CSV/XLSX de origem (KE30, Budget) — se algum contiver um
+// valor iniciado por =, +, -, @, tab ou CR, o Excel interpreta isso como
+// fórmula ao abrir o CSV exportado, não como texto. Prefixa com aspas
+// simples pra forçar leitura como texto literal — mitigação padrão OWASP
+// pra esse tipo de exportação.
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
 const esc = (v: string | number) => {
-  const s = String(v);
+  let s = String(v);
+  if (FORMULA_TRIGGER.test(s)) s = `'${s}`;
   if (/[;"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 };

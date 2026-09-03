@@ -244,7 +244,15 @@ function PositivacaoTable({ title, series }: { title: string; series: Positivaca
       r.media.toFixed(1),
       r.delta,
     ])];
-    const csv = lines.map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";")).join("\n");
+    // r.key vem de texto livre (cliente/SKU) — prefixa com aspas simples se
+    // começar com =, +, -, @, tab ou CR pra evitar formula injection (CWE-1236)
+    // quando o Excel abre o CSV.
+    const escCell = (cell: unknown) => {
+      let s = String(cell);
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const csv = lines.map((line) => line.map(escCell).join(";")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
