@@ -44,7 +44,8 @@ import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
 } from "@/lib/customKpi";
 import { calcFarol } from "@/lib/farol";
-import { KPI_MEASURES } from "@/lib/customSlide";
+import { KPI_MEASURES, resolveEffectiveBlock } from "@/lib/customSlide";
+import { useSlidesFlow } from "@/store/slidesFlow";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
@@ -445,7 +446,14 @@ export const BlockRenderer = React.memo(function BlockRenderer({ block, readOnly
   && prev.cacheSlideId === next.cacheSlideId
 ));
 
-function BlockRendererInner({ block, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
+function BlockRendererInner({ block: rawBlock, readOnly, isEditing, cacheSlideId, onPatch }: BlockRendererProps) {
+  // Filtro Global (Part D) — blocos com useGlobalFilter=true leem o filtro
+  // global da apresentação em vez do individual salvo neles. Resolve uma
+  // única vez aqui, antes do switch, para que todo o restante do arquivo
+  // (KpiRender/ChartRender/TableRender/etc.) continue lendo `block.filters`
+  // normalmente, sem precisar saber da existência do filtro global.
+  const globalFilters = useSlidesFlow((s) => s.globalFilters);
+  const block = resolveEffectiveBlock(rawBlock as never, globalFilters) as typeof rawBlock;
   let content: React.ReactNode;
   switch (block.kind) {
     case "title":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;

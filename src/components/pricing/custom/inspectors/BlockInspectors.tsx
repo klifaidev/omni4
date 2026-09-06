@@ -23,6 +23,7 @@ import {
   AlignVerticalJustifyCenter,
   ChevronDown,
   Filter as FunnelIcon,
+  Globe2,
   GripVertical,
   Info,
   Loader2,
@@ -71,8 +72,10 @@ import {
   type OmniCustoComposicaoBlock, type OmniCustoPressaoBlock, type OmniPositivacaoBlock, type OmniUfMapBlock,
   type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock, type OmniAbcCurvaBlock,
   type OmniBaseBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock, type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
+  resolveEffectiveBlock,
 } from "@/lib/customSlide";
 import { newId } from "@/lib/slidesFlow";
+import { useSlidesFlow } from "@/store/slidesFlow";
 import {
   patchBlockAction, patchBlocksAction, alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction, type AlignKind,
@@ -243,6 +246,10 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
       kind: block.kind,
     });
   }, [block.id, block.kind]);
+  // Filtro Global (Part D) — o painel de Design de cada bloco filtrável
+  // deve pré-visualizar com o mesmo filtro efetivo usado no canvas.
+  const globalFilters = useSlidesFlow((s) => s.globalFilters);
+  const effective = resolveEffectiveBlock(block as never, globalFilters) as typeof block;
   switch (block.kind) {
     case "title":
     case "text":
@@ -252,7 +259,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
       return <FilteredInspector
         block={block}
         design={<KpiInspector
-          block={block}
+          block={effective as KpiBlock}
           onChange={onChange}
         />}
         filters={block.filters ?? {}}
@@ -340,7 +347,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "bridge":
       return <FilteredInspector
         block={block}
-        design={<BridgeBlockEditor block={block} onChange={onChange} />}
+        design={<BridgeBlockEditor block={effective as Extract<CustomBlock, { kind: "bridge" }>} onChange={onChange} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -350,7 +357,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "table":
       return <FilteredInspector
         block={block}
-        design={<TableBlockEditor block={block} onChange={onChange} />}
+        design={<TableBlockEditor block={effective as TableBlock} onChange={onChange} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -360,7 +367,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "chart":
       return <FilteredInspector
         block={block}
-        design={<ChartBlockEditor block={block} onChange={onChange} />}
+        design={<ChartBlockEditor block={effective as ChartBlock} onChange={onChange} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -370,7 +377,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "topSku":
       return <FilteredInspector
         block={block}
-        design={<TopSkuBlockEditor block={block} onChange={onChange} />}
+        design={<TopSkuBlockEditor block={effective as TopSkuBlock} onChange={onChange} />}
         filters={block.filters}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -380,7 +387,7 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "dre":
       return <FilteredInspector
         block={block}
-        design={<DreBlockInspector block={block} onChange={onChange as (patch: Partial<DreBlock>) => void} />}
+        design={<DreBlockInspector block={effective as DreBlock} onChange={onChange as (patch: Partial<DreBlock>) => void} />}
         filters={(block as DreBlock).filters ?? {}}
         onFiltersChange={(f) => onChange({ filters: f } as never)}
         onChange={onChange}
@@ -441,6 +448,9 @@ function FilteredInspector({
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const [recalculating, setRecalculating] = useState(false);
   const hasBudget = useBudget((s) => s.rows.length > 0);
+  const globalFilters = useSlidesFlow((s) => s.globalFilters);
+  const globalFilterCount = Object.values(globalFilters).reduce((acc, v) => acc + (v?.length ?? 0), 0);
+  const useGlobalFilter = !!(block as { useGlobalFilter?: boolean }).useGlobalFilter;
 
   // Bridge não tem fonte selecionável (sempre KE30 ? usa cálculo PVM).
   const showPicker = block.kind !== "bridge";
@@ -597,8 +607,34 @@ function FilteredInspector({
         <TabsContent value="design" className="mt-2 space-y-2">
           <div data-style-panel-target="true">{design}</div>
         </TabsContent>
-        <TabsContent value="filters" className="mt-2">
-          <BlockFilters filters={filters} onChange={onFiltersChange} dataSource={ds} />
+        <TabsContent value="filters" className="mt-2 space-y-3">
+          <div className={cn(
+            "flex items-center justify-between gap-2 rounded-md border p-2.5",
+            useGlobalFilter ? "border-primary/40 bg-primary/5" : "border-border/50 bg-card/30",
+          )}>
+            <div className="flex min-w-0 items-center gap-2">
+              <Globe2 className={cn("h-3.5 w-3.5 shrink-0", useGlobalFilter ? "text-primary" : "text-muted-foreground")} />
+              <div className="min-w-0">
+                <div className="text-[11px] font-medium text-foreground">{t.globalFilter.toggleLabel}</div>
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {useGlobalFilter ? t.globalFilter.individualPreserved : t.globalFilter.toggleHint}
+                </div>
+              </div>
+            </div>
+            <Switch
+              checked={useGlobalFilter}
+              onCheckedChange={(v) => onChange({ useGlobalFilter: v } as never)}
+            />
+          </div>
+          {useGlobalFilter ? (
+            <div className="rounded-md border border-dashed border-border/50 bg-card/20 p-3 text-[11px] text-muted-foreground">
+              {globalFilterCount > 0
+                ? t.globalFilter.activeCount(globalFilterCount)
+                : t.globalFilter.noneActive}
+            </div>
+          ) : (
+            <BlockFilters filters={filters} onChange={onFiltersChange} dataSource={ds} />
+          )}
         </TabsContent>
       </Tabs>
 

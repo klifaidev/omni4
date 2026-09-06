@@ -105,6 +105,7 @@ import { ptBR } from "date-fns/locale";
 import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/components/pricing/slides/SlideCatalogFlow";
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
+import { GlobalFilterControl } from "@/components/pricing/slides/GlobalFilterControl";
 import { useIdleSlidePrecompute } from "@/components/pricing/slides/useIdleSlidePrecompute";
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useThumbnailVisibilityScheduler } from "@/components/pricing/slides/useThumbnailVisibilityScheduler";
@@ -2587,6 +2588,8 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                   </Tooltip>
                 )}
                 <div className="mx-2 h-6 w-px bg-border/50" />
+                <GlobalFilterControl />
+                <div className="mx-1 h-5 w-px bg-border/50" />
                 <TransitionSelect />
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <Tooltip>

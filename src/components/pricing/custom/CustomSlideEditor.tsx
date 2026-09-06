@@ -33,7 +33,7 @@ import {
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Loader2, Minus, MoreHorizontal,
-  PanelRightClose,
+  PanelRightClose, Globe2 as Globe2Icon,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -229,6 +229,7 @@ import {
 } from "@/lib/slideBrandKit";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { strings } from "@/lib/i18n";
+const tGlobalFilter = strings.slides.editor.inspectors.blocks.globalFilter;
 
 const t = strings.slides.editor.customSlideEditor;
 
@@ -2356,6 +2357,16 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                             onPatch={getBlockOnPatch(blk.id)}
                           />
                         </div>
+                        {"useGlobalFilter" in blk && blk.useGlobalFilter && (
+                          <div
+                            data-export-hide="true"
+                            className="pointer-events-none absolute left-1 top-1 z-10 flex items-center gap-1 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold leading-none text-primary-foreground shadow-sm"
+                            title={tGlobalFilter.toggleLabel}
+                          >
+                            <Globe2Icon className="h-2.5 w-2.5" />
+                            {tGlobalFilter.openPanel}
+                          </div>
+                        )}
                         {isEditing && (
                           <InlineTextEditor
                             block={blk as TitleBlock | TextBlock}

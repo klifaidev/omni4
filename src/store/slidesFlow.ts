@@ -3,7 +3,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
-import { migrateDataSource } from "@/lib/customSlide";
+import { migrateDataSource, type FilterableBlock } from "@/lib/customSlide";
+import type { Filters } from "@/lib/types";
 
 const SLIDES_FLOW_STORAGE_KEY = "pricing.slidesFlow.v1";
 const SLIDES_FLOW_BACKUP_KEY = "pricing.slidesFlow.v1.backup";
@@ -41,6 +42,9 @@ export interface SlidesPreset {
   name: string;
   description?: string;
   items: SlideItem[];
+  /** Filtro Global salvo junto com esta pré-definição. Ausente em presets
+   *  antigos — trate como `{}` (nenhum filtro global). */
+  globalFilters?: Filters;
   createdAt: number;
   updatedAt: number;
 }
@@ -52,6 +56,10 @@ interface SlidesFlowState {
   presets: SlidesPreset[];
   selectedId: string | null;
   transition: SlideTransition;
+  /** Filtro Global da apresentação — dimensional, mesma forma dos filtros
+   *  de bloco. Blocos com `useGlobalFilter: true` usam isto em vez do seu
+   *  filtro individual. Visível na esteira, salvo junto com os presets. */
+  globalFilters: Filters;
 
   // Itens
   addItem: (kind: SlideKind) => void;
@@ -63,6 +71,12 @@ interface SlidesFlowState {
   duplicateDeck: () => void;
   select: (id: string | null) => void;
   setTransition: (t: SlideTransition) => void;
+
+  // Filtro Global
+  setGlobalFilters: (next: Filters) => void;
+  clearGlobalFilters: () => void;
+  /** Liga `useGlobalFilter` em todo bloco filtrável de toda a apresentação. Retorna quantos blocos foram afetados. */
+  applyGlobalFilterToAllBlocks: () => number;
 
   // Presets
   savePreset: (name: string, description?: string) => SlidesPreset;
@@ -371,8 +385,29 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       presets: [],
       selectedId: null,
       transition: "fade",
+      globalFilters: {},
 
       setTransition: (t) => set({ transition: t }),
+
+      setGlobalFilters: (next) => set({ globalFilters: next }),
+      clearGlobalFilters: () => set({ globalFilters: {} }),
+      applyGlobalFilterToAllBlocks: () => {
+        let affected = 0;
+        set((s) => ({
+          items: s.items.map((item) => {
+            if (item.kind !== "custom" || !item.config?.blocks) return item;
+            const blocks = item.config.blocks.map((block) => {
+              const fb = block as unknown as FilterableBlock;
+              if (!("filters" in fb)) return block;
+              if (fb.useGlobalFilter) return block;
+              affected += 1;
+              return { ...block, useGlobalFilter: true };
+            });
+            return { ...item, config: { ...item.config, blocks } };
+          }),
+        }));
+        return affected;
+      },
 
       addItem: (kind) =>
         set((s) => {
@@ -441,6 +476,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           description: description?.trim(),
           // deep clone para evitar mutações futuras vazarem para o preset
           items: JSON.parse(JSON.stringify(get().items)),
+          globalFilters: JSON.parse(JSON.stringify(get().globalFilters)),
           createdAt: now,
           updatedAt: now,
         };
@@ -458,6 +494,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           name: preset.name?.trim() || "Modelo importado",
           description: preset.description?.trim(),
           items: safeItems,
+          globalFilters: preset.globalFilters ? JSON.parse(JSON.stringify(preset.globalFilters)) : {},
           createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : now,
           updatedAt: now,
         };
@@ -469,7 +506,12 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         set((s) => ({
           presets: s.presets.map((p) =>
             p.id === id
-              ? { ...p, items: JSON.parse(JSON.stringify(s.items)), updatedAt: Date.now() }
+              ? {
+                  ...p,
+                  items: JSON.parse(JSON.stringify(s.items)),
+                  globalFilters: JSON.parse(JSON.stringify(s.globalFilters)),
+                  updatedAt: Date.now(),
+                }
               : p,
           ),
         })),
@@ -484,7 +526,11 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           id: newId(),
         })) as SlideItem[];
         const safeItems = sanitizeSlidesFlowItems(items);
-        set({ items: safeItems, selectedId: safeItems[0]?.id ?? null });
+        set({
+          items: safeItems,
+          selectedId: safeItems[0]?.id ?? null,
+          globalFilters: p.globalFilters ? JSON.parse(JSON.stringify(p.globalFilters)) : {},
+        });
       },
 
       deletePreset: (id) =>
@@ -502,7 +548,12 @@ export const useSlidesFlow = create<SlidesFlowState>()(
     {
       name: SLIDES_FLOW_STORAGE_KEY,
       storage: createJSONStorage(() => pickSlidesFlowStorage()),
-      partialize: (s) => ({ items: s.items, presets: s.presets, transition: s.transition }),
+      partialize: (s) => ({
+        items: s.items,
+        presets: s.presets,
+        transition: s.transition,
+        globalFilters: s.globalFilters,
+      }),
       onRehydrateStorage: () => {
         // O backup preventivo por localStorage so faz sentido no fallback de
         // navegador/dev-server — no Electron os backups ja sao mantidos em
@@ -514,6 +565,9 @@ export const useSlidesFlow = create<SlidesFlowState>()(
             return;
           }
           if (!state) return;
+          if (!state.globalFilters || typeof state.globalFilters !== "object") {
+            state.globalFilters = {};
+          }
           try {
             const safeItems = sanitizeSlidesFlowItems(Array.isArray(state.items) ? state.items : []);
             state.items = migrateSlidesFlowItemsDataSources(safeItems);

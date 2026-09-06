@@ -149,6 +149,8 @@ export interface KpiBlock extends BaseBlock {
   relativePeriod?: RelativePeriodPreset;
   /** Filtros adicionais aplicados ao bloco */
   filters?: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
   /** Formato; "auto" infere a partir da medida */
   format?: KpiFormat;
   /** Fonte de dados — default "ke30" para retro-compatibilidade. */
@@ -322,6 +324,8 @@ export interface BridgeBlock extends BaseBlock {
   compRelativePeriod?: RelativePeriodPreset;
   mode: "fy" | "month";
   filters: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
 }
 
 export interface TableBlock extends BaseBlock {
@@ -339,6 +343,8 @@ export interface TableBlock extends BaseBlock {
   rowDims: string[];
   colDim: string | null;
   filters: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
   /** Filtro de meses da tabela. Undefined/null mantém todos os meses. */
   monthFilter?: MonthRangeSelection | null;
   /** Se true, calcula N de linhas a partir da altura. Default: true */
@@ -425,6 +431,8 @@ export interface ChartBlock extends BaseBlock {
   /** @deprecated — usar style.dataLabels.show */
   showLabels: boolean;
   filters: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
   title?: string;
   /** Auto-ajustar nº de séries pela altura do bloco. Default: true */
   autoFit?: boolean;
@@ -489,6 +497,8 @@ export interface TopSkuBlock extends BaseBlock {
   periodSelectionMode?: PeriodSelectionMode;
   relativePeriod?: RelativePeriodPreset;
   filters: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
   showShare: boolean;
   title?: string;
   /** Auto-ajustar nº de itens pela altura. Default: true */
@@ -536,6 +546,8 @@ export interface DreBlock extends BaseBlock {
   };
   /** Filtros Produto + Comercial (mesma estrutura dos demais blocos). */
   filters: Filters;
+  /** Se true, ignora `filters` e usa o Filtro Global da apresentação. Default false. */
+  useGlobalFilter?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,6 +1115,24 @@ export const BUDGET_UNAVAILABLE_MEASURES: readonly string[] = [
 
 export const BUDGET_UNAVAILABLE_HINT =
   "Indisponível na fonte Budget — a base Budget não contém custos detalhados (Margem Bruta, Frete, Comissão).";
+
+/** Blocos que podem participar do Filtro Global — todos carregam `filters?: Filters`
+ *  e o novo `useGlobalFilter?: boolean`. */
+export type FilterableBlock = { filters?: Filters; useGlobalFilter?: boolean };
+
+/**
+ * Resolve o bloco efetivamente usado para leitura de dados (render, export,
+ * preview no inspector): quando `useGlobalFilter` está ativo, retorna uma
+ * cópia do bloco com `filters` substituído pelo Filtro Global da
+ * apresentação — o `filters` individual do bloco NÃO é apagado, apenas
+ * ignorado enquanto o global estiver ativo (permite voltar ao individual
+ * sem perder o que estava salvo). Blocos sem `useGlobalFilter` (ou com ele
+ * desligado) retornam o bloco original, sem cópia.
+ */
+export function resolveEffectiveBlock<T extends FilterableBlock>(block: T, globalFilters: Filters): T {
+  if (!block.useGlobalFilter) return block;
+  return { ...block, filters: globalFilters };
+}
 
 export function isFromBudgetBase(ds: BlockDataSource | undefined): boolean {
   return ds === "budget" || ds === "budget_real";
