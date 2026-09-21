@@ -1553,6 +1553,7 @@ export const ptBR = {
         },
         exportDisabledReason: {
           noSlides: "Adicione ao menos um slide para exportar.",
+          allHidden: "Todos os slides estão ocultos — mostre pelo menos um para exportar.",
           incomplete: (n: number) => `Existem ${n} slide${n > 1 ? "s" : ""} incompleto${n > 1 ? "s" : ""}.`,
         },
         templateApplyError: "Não foi possível aplicar o template.",

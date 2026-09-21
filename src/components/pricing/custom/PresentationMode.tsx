@@ -50,7 +50,9 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
     return [{ id: currentSlideId ?? "live", kind: "custom" as const, config: currentConfig }];
   }, [items.length, currentSlideId, currentConfig]);
 
-  const slides = standaloneList ?? items;
+  // Slides ocultos na esteira não entram na apresentação ao vivo — mesma
+  // regra do export (PPTX/PDF), pra evitar o slide "sumir" só de um lugar.
+  const slides = standaloneList ?? items.filter((s) => !s.hidden);
   const initial = Math.max(0, slides.findIndex((s) => s.id === currentSlideId));
   const [idx, setIdx] = useState(initial < 0 ? 0 : initial);
   const [prevIdx, setPrevIdx] = useState<number | null>(null);

@@ -687,6 +687,7 @@ function StripThumbnail({
         "surface-raised group relative cursor-pointer rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         active ? "border-primary ring-2 ring-primary/40" : "border-border/40 hover:border-border/80",
         !ready.ok && !active && "border-destructive/50",
+        item.hidden && "opacity-50",
       )}
     >
       {!ready.ok && (
@@ -729,6 +730,11 @@ function StripThumbnail({
         aria-label={displayName}
       >
         {displayName}
+        {item.hidden && (
+          <span className="ml-1 inline-flex items-center rounded bg-slate-500/15 px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-muted-foreground">
+            Oculto
+          </span>
+        )}
       </div>
       {/* Botão de comentários (hover + sempre visível se houver não-resolvidos) */}
       <Popover open={commentsOpen} onOpenChange={setCommentsOpen} modal={false}>
@@ -2093,7 +2099,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     initialDeckPreparationCheckedRef.current = true;
     startDeckPreparation(items, t.deckPreparation.defaultTitle);
   }, [items, startDeckPreparation]);
-  const readyAll = items.every((i) => isItemReady(i).ok);
+  const readyAll = items.filter((i) => !i.hidden).every((i) => isItemReady(i).ok);
   const {
     exporting,
     fileName,
@@ -2110,7 +2116,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
   const exportDisabledReason = useMemo(() => {
     if (items.length === 0) return t.page.exportDisabledReason.noSlides;
-    const incomplete = items.filter((i) => !isItemReady(i).ok).length;
+    const visibleItems = items.filter((i) => !i.hidden);
+    if (visibleItems.length === 0) return t.page.exportDisabledReason.allHidden;
+    const incomplete = visibleItems.filter((i) => !isItemReady(i).ok).length;
     if (incomplete > 0) {
       return t.page.exportDisabledReason.incomplete(incomplete);
     }
@@ -2687,6 +2695,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                           onSelect={() => select(item.id)}
                           onRemove={() => removeItem(item.id)}
                           onDuplicate={() => duplicateItem(item.id)}
+                          onToggleHidden={() => updateItem(item.id, (it) => ({ ...it, hidden: !it.hidden } as SlideItem))}
                         />
                       ))}
                       <QuickAddSlideButton onAdd={addSlideFromShortcut} />

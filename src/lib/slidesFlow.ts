@@ -31,6 +31,9 @@ export interface BaseSlideItem {
   kind: SlideKind;
   /** Nome amigável customizável pelo usuário (opcional) */
   label?: string;
+  /** Oculto na esteira: não entra em export (PPTX/PDF) nem na apresentação
+   *  ao vivo, mas continua editável normalmente. Default false. */
+  hidden?: boolean;
 }
 
 export interface BridgePvmSlideConfig {

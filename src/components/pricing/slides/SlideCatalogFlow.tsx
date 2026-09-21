@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertTriangle, Copy, Filter as FilterIcon, GripVertical, MessageSquare, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Eye, EyeOff, Filter as FilterIcon, GripVertical, MessageSquare, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -158,6 +158,7 @@ export const FlowCard = React.memo(function FlowCard({
   onSelect,
   onRemove,
   onDuplicate,
+  onToggleHidden,
 }: {
   item: SlideItem;
   index: number;
@@ -169,6 +170,7 @@ export const FlowCard = React.memo(function FlowCard({
   onSelect: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
+  onToggleHidden: () => void;
 }) {
   const meta = metaOf(item.kind);
   const Icon = SLIDE_ICON_MAP[meta.icon];
@@ -180,6 +182,7 @@ export const FlowCard = React.memo(function FlowCard({
   const statusSeverity: SlidePreflightSeverity | null = !ready.ok ? "error" : preflightSeverity;
   const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
+  const isHidden = !!item.hidden;
   const displayName = item.label || meta.title;
   const [, forceCommentsUpdate] = useState(0);
   const hoverPreviewTimerRef = useRef<number | null>(null);
@@ -226,6 +229,7 @@ export const FlowCard = React.memo(function FlowCard({
               preflightSeverity === "error" && !selected && "border-destructive/50",
               preflightSeverity === "warning" && !selected && "border-warning/50",
               preflightSeverity === "info" && !selected && "border-primary/35",
+              isHidden && "opacity-50",
             )}
             onClick={onSelect}
             onKeyDown={(e) => {
@@ -304,11 +308,16 @@ export const FlowCard = React.memo(function FlowCard({
 
             <div className="min-w-0 flex-[1_1_260px] pr-1">
               <div
-                className="line-clamp-2 text-sm font-semibold leading-snug tracking-tight"
+                className="flex items-center gap-1.5 line-clamp-2 text-sm font-semibold leading-snug tracking-tight"
                 title={displayName}
                 aria-label={displayName}
               >
                 {displayName}
+                {isHidden && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-slate-500/15 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <EyeOff className="h-2.5 w-2.5" /> Oculto
+                  </span>
+                )}
               </div>
             </div>
 
@@ -321,6 +330,15 @@ export const FlowCard = React.memo(function FlowCard({
             </div>
 
             <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <Button
+                variant="ghost" size="icon" className="h-7 w-7"
+                onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
+                aria-label={isHidden ? "Mostrar" : "Ocultar"}
+                aria-pressed={isHidden}
+                title={isHidden ? "Mostrar slide (volta a entrar no export)" : "Ocultar slide (não entra no export)"}
+              >
+                {isHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
               <Button
                 variant="ghost" size="icon" className="h-7 w-7"
                 onClick={(e) => { e.stopPropagation(); onDuplicate(); }}

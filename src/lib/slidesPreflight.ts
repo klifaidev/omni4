@@ -24,6 +24,9 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
   const issues: SlidePreflightIssue[] = [];
 
   items.forEach((item, index) => {
+    // Slide oculto não entra no export — não faz sentido reportar pendências
+    // (ex.: "bridge incompleta") de algo que não vai ser gerado.
+    if (item.hidden) return;
     const slideNumber = index + 1;
     const slideLabel = item.label || defaultSlideLabel(item.kind);
 
