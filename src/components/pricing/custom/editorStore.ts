@@ -113,9 +113,63 @@ const baseStore = create<EditorState>()(
   ),
 );
 
+// Emitir pro pai (useSlidesFlow.updateItem) dispara, síncrono, a serialização
+// da esteira inteira + gravação em disco com rotação de backup (ver
+// electron/main.js). Fazer isso a cada tecla/pixel de um slider trava a
+// pintura da tela, porque as duas coisas — atualizar o canvas e gravar em
+// disco — aconteciam na mesma chamada síncrona: o navegador não pinta a
+// atualização instantânea do baseStore até a gravação pesada terminar,
+// e o usuário vê a edição "piscar" e travar por um instante a cada mudança.
+// Por isso a emissão pro pai é adiada: o canvas continua respondendo na
+// hora (baseStore.setState, abaixo, não é afetado), e a gravação em disco
+// só acontece um pouco depois de a edição parar — várias mudanças seguidas
+// (arrastar um slider, digitar um texto) viram UMA gravação, não uma por
+// mudança.
+const EMIT_DEBOUNCE_MS = 500;
+let pendingEmit: {
+  onChange: (next: CustomSlideConfig) => void;
+  config: CustomSlideConfig;
+  timer: ReturnType<typeof setTimeout>;
+} | null = null;
+
 function emit(next: CustomSlideConfig) {
   if (suppressEmit || !onChangeRef) return;
+  const onChange = onChangeRef;
+  if (pendingEmit) clearTimeout(pendingEmit.timer);
+  pendingEmit = {
+    onChange,
+    config: next,
+    timer: setTimeout(() => {
+      const p = pendingEmit;
+      pendingEmit = null;
+      p?.onChange(p.config);
+    }, EMIT_DEBOUNCE_MS),
+  };
+}
+
+/** Emite na hora, ignorando o debounce — usado por undo/redo (ações
+ *  explícitas e pontuais do usuário, não uma rajada de mudanças). Cancela
+ *  qualquer gravação adiada pendente: o valor sendo emitido agora já é
+ *  mais recente que ela. */
+function emitImmediate(next: CustomSlideConfig) {
+  if (suppressEmit || !onChangeRef) return;
+  if (pendingEmit) {
+    clearTimeout(pendingEmit.timer);
+    pendingEmit = null;
+  }
   onChangeRef(next);
+}
+
+/** Envia imediatamente qualquer gravação adiada pendente, sem esperar o
+ *  debounce. Chamar antes de trocar de slide, ao desmontar o editor, e no
+ *  fechamento do app — pra nunca perder a última edição por causa do
+ *  atraso proposital que evita a gravação síncrona a cada tecla. */
+export function flushPendingEditorEmit(): void {
+  if (!pendingEmit) return;
+  clearTimeout(pendingEmit.timer);
+  const p = pendingEmit;
+  pendingEmit = null;
+  p.onChange(p.config);
 }
 
 function mutate(label: EditorActionLabel, updater: (cfg: CustomSlideConfig) => CustomSlideConfig) {
@@ -141,6 +195,10 @@ export function bindEditorStore(
   onChange: (next: CustomSlideConfig) => void,
   slideId: string | undefined,
 ) {
+  // Antes de trocar de slide/onChange, garante que a última edição do
+  // slide anterior seja gravada — sem isso, uma edição feita bem antes de
+  // trocar de slide (dentro da janela do debounce) poderia se perder.
+  flushPendingEditorEmit();
   onChangeRef = onChange;
   const prevSlide = baseStore.getState().slideId;
   // Suppress the emit caused by the initial load.
@@ -380,7 +438,7 @@ export function undo(): CustomSlideConfig | null {
   if (t.pastStates.length === 0) return null;
   t.undo();
   const cur = baseStore.getState().config;
-  if (cur) emit(cur);
+  if (cur) emitImmediate(cur);
   return cur;
 }
 
@@ -389,7 +447,7 @@ export function redo(): CustomSlideConfig | null {
   if (t.futureStates.length === 0) return null;
   t.redo();
   const cur = baseStore.getState().config;
-  if (cur) emit(cur);
+  if (cur) emitImmediate(cur);
   return cur;
 }
 
@@ -443,6 +501,18 @@ export function useEditorBinding(
   useEffect(() => {
     syncFromParent(config);
   }, [config]);
+
+  // Garante que a última edição (adiada pelo debounce do emit) seja
+  // gravada ao fechar o editor (dialog fechado, navegação pra outra tela)
+  // ou ao fechar o app — sem isso, uma edição feita bem antes de sair
+  // poderia se perder dentro da janela do debounce.
+  useEffect(() => {
+    window.addEventListener("beforeunload", flushPendingEditorEmit);
+    return () => {
+      window.removeEventListener("beforeunload", flushPendingEditorEmit);
+      flushPendingEditorEmit();
+    };
+  }, []);
 }
 
 export function commitExternalEditorChange(label: EditorActionLabel, next: CustomSlideConfig): void {

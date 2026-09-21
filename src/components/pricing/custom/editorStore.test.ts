@@ -3,6 +3,7 @@ import type { CustomBlock, CustomSlideConfig } from "@/lib/customSlide";
 import {
   bindEditorStore,
   commitExternalEditorChange,
+  flushPendingEditorEmit,
   insertBlocksAction,
   redo,
   resizeGroupAction,
@@ -93,6 +94,10 @@ describe("editorStore undo/redo", () => {
     ] as CustomBlock[];
 
     const ids = insertBlocksAction(blocks, "Adicionar bloco");
+    // A emissão pro pai (persistência) agora é adiada (debounce) pra não
+    // travar a tela a cada edição — ver editorStore.ts. Esvazia na mão
+    // pra poder inspecionar o valor emitido de forma síncrona no teste.
+    flushPendingEditorEmit();
     const next = onChange.mock.calls.at(-1)?.[0] as CustomSlideConfig;
 
     expect(ids).toEqual(["story-bg", "story-title"]);
@@ -143,6 +148,7 @@ describe("editorStore undo/redo", () => {
       { x: 60, y: 150, w: 520, h: 235 },
       { x: 60, y: 150, w: 1040, h: 470 },
     );
+    flushPendingEditorEmit();
     const next = onChange.mock.calls.at(-1)?.[0] as CustomSlideConfig;
     const bg = next.blocks.find((block) => block.id === "story-bg");
     const title = next.blocks.find((block) => block.id === "story-title");
@@ -196,11 +202,68 @@ describe("editorStore undo/redo", () => {
       { x: 100, y: 100, w: 600, h: 300 },
     );
 
+    flushPendingEditorEmit();
     const next = onChange.mock.calls.at(-1)?.[0] as CustomSlideConfig;
     const title = next.blocks.find((block) => block.id === "story-title");
     const text = next.blocks.find((block) => block.id === "story-text");
 
     expect(title).toMatchObject({ size: 48 });
     expect(text).toMatchObject({ size: 32 });
+  });
+});
+
+describe("editorStore emit debounce", () => {
+  it("adia a gravação e agrupa mutações rápidas numa única emissão", () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      bindEditorStore(config(), onChange, "slide-debounce");
+
+      insertBlocksAction(
+        [{ id: "a", kind: "shape", x: 0, y: 0, w: 10, h: 10, z: 2, shape: "rect", fill: "FFFFFF" } as CustomBlock],
+        "Adicionar bloco",
+      );
+      insertBlocksAction(
+        [{ id: "b", kind: "shape", x: 0, y: 0, w: 10, h: 10, z: 3, shape: "rect", fill: "FFFFFF" } as CustomBlock],
+        "Adicionar bloco",
+      );
+
+      // A gravação pro pai (persistência em disco) não acontece na hora —
+      // é isso que evita travar a tela a cada edição.
+      expect(onChange).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(500);
+
+      // As duas mutações rápidas viram UMA única gravação, com o estado
+      // mais recente (não uma gravação por mutação).
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const next = onChange.mock.calls[0][0] as CustomSlideConfig;
+      expect(next.blocks.map((b) => b.id)).toEqual(["title-1", "a", "b"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("undo/redo emitem na hora, sem esperar o debounce", () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const initial = config();
+      bindEditorStore(initial, onChange, "slide-debounce-undo");
+
+      insertBlocksAction(
+        [{ id: "a", kind: "shape", x: 0, y: 0, w: 10, h: 10, z: 2, shape: "rect", fill: "FFFFFF" } as CustomBlock],
+        "Adicionar bloco",
+      );
+      expect(onChange).not.toHaveBeenCalled();
+
+      undo();
+
+      // Undo é uma ação pontual do usuário, não uma rajada — emite na hora.
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith(initial);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
