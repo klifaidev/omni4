@@ -1,6 +1,6 @@
 import type { BudgetRow } from "./budget";
 import type { Filters, Metric, PricingRow } from "./types";
-import { applyFilters, type PVMSkuDetail, type PVMResult } from "./analytics";
+import { applyFilters, computePvmEffects, type PvmSkuAgg, type PVMResult } from "./analytics";
 import { monthLabel } from "./format";
 import { fiscalYearStartYear } from "./fiscalYear";
 
@@ -12,9 +12,6 @@ export interface BridgeYtdBudgetResult {
   periods: string[];
   latestPeriodLabel: string;
 }
-
-const MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS = 0.01;
-const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
 
 function periodSortValue(row: Pick<PricingRow, "ano" | "mes">): number {
   return row.ano * 100 + row.mes;
@@ -87,18 +84,11 @@ function latestRealYtdPeriods(realRows: PricingRow[]): { fy: string; periods: st
 }
 
 function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[], labels: { base: string; comp: string }): PVMResult {
-  interface Agg {
-    vol: number;
-    rol: number;
-    cogs: number;
-    margem: number;
-  }
-
   const aggSku = (rows: PricingRow[]) => {
-    const map = new Map<string, Agg>();
+    const map = new Map<string, PvmSkuAgg>();
     for (const row of rows) {
       const key = row.sku || row.skuDesc || "-";
-      const cur = map.get(key) ?? { vol: 0, rol: 0, cogs: 0, margem: 0 };
+      const cur = map.get(key) ?? { vol: 0, rol: 0, cogs: 0, frete: 0, comissao: 0, margem: 0 };
       cur.vol += row.volumeKg ?? 0;
       cur.rol += row.rol ?? 0;
       cur.cogs += row.cogs ?? 0;
@@ -110,115 +100,32 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
 
   const base = aggSku(baseRows);
   const comp = aggSku(compRows);
-  const totalVolume = [...base.values(), ...comp.values()].reduce((sum, row) => sum + Math.max(0, row.vol), 0);
-  const minMaterialVolume = Math.max(
-    MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS,
-    totalVolume * MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS,
-  );
   const descMap = new Map<string, string>();
   for (const row of [...baseRows, ...compRows]) {
     const key = row.sku || row.skuDesc || "-";
     if (!descMap.has(key) && row.skuDesc) descMap.set(key, row.skuDesc);
   }
 
-  let baseTotal = 0;
-  let currentTotal = 0;
-  for (const row of base.values()) baseTotal += row.margem;
-  for (const row of comp.values()) currentTotal += row.margem;
+  const effects = computePvmEffects(base, comp, descMap);
+  const others = effects.currentTotal - effects.baseTotal - effects.volume - effects.price - effects.cost;
 
-  let volume = 0;
-  let price = 0;
-  let cost = 0;
-  let mixEffect = 0;
-  let skuOnlyEffect = 0;
-  let lowVolumeEffect = 0;
-  const skuDetails: PVMSkuDetail[] = [];
-
-  for (const sku of new Set([...base.keys(), ...comp.keys()])) {
-    const a = base.get(sku);
-    const b = comp.get(sku);
-    const detail: PVMSkuDetail = {
-      sku,
-      skuDesc: descMap.get(sku),
-      status: a && b ? "both" : a ? "only_base" : "only_comp",
-      volA: a?.vol ?? 0,
-      volB: b?.vol ?? 0,
-      rolA: a?.rol ?? 0,
-      rolB: b?.rol ?? 0,
-      cogsA: a?.cogs ?? 0,
-      cogsB: b?.cogs ?? 0,
-      freteA: 0,
-      freteB: 0,
-      comissaoA: 0,
-      comissaoB: 0,
-      margemA: a?.margem ?? 0,
-      margemB: b?.margem ?? 0,
-      volumeEffect: 0,
-      priceEffect: 0,
-      costEffect: 0,
-      freightEffect: 0,
-      commissionEffect: 0,
-      othersEffect: 0,
-      mixResidualEffect: 0,
-      skuOnlyEffect: 0,
-      lowVolumeResidualEffect: 0,
-    };
-
-    if (!a || !b || a.vol === 0 || b.vol === 0) {
-      detail.othersEffect = (b?.margem ?? 0) - (a?.margem ?? 0);
-      detail.skuOnlyEffect = detail.othersEffect;
-      detail.residualCause = "sku_only";
-      skuOnlyEffect += detail.othersEffect;
-      skuDetails.push(detail);
-      continue;
-    }
-
-    if (a.vol < minMaterialVolume || b.vol < minMaterialVolume) {
-      detail.othersEffect = b.margem - a.margem;
-      detail.lowVolumeResidualEffect = detail.othersEffect;
-      detail.residualCause = "low_volume";
-      lowVolumeEffect += detail.othersEffect;
-      skuDetails.push(detail);
-      continue;
-    }
-
-    const volumeEffect = (b.vol - a.vol) * (a.margem / a.vol);
-    const priceEffect = ((b.rol / b.vol) - (a.rol / a.vol)) * b.vol;
-    const costEffect = -((b.cogs / b.vol) - (a.cogs / a.vol)) * b.vol;
-    const othersEffect = (b.margem - a.margem) - volumeEffect - priceEffect - costEffect;
-
-    detail.volumeEffect = volumeEffect;
-    detail.priceEffect = priceEffect;
-    detail.costEffect = costEffect;
-    detail.othersEffect = othersEffect;
-    detail.mixResidualEffect = othersEffect;
-    detail.residualCause = "mix";
-    mixEffect += othersEffect;
-    skuDetails.push(detail);
-
-    volume += volumeEffect;
-    price += priceEffect;
-    cost += costEffect;
-  }
-
-  const others = currentTotal - baseTotal - volume - price - cost;
   return {
-    base: baseTotal,
-    volume,
-    price,
-    cost,
+    base: effects.baseTotal,
+    volume: effects.volume,
+    price: effects.price,
+    cost: effects.cost,
     freight: 0,
     commission: 0,
     others,
-    mixEffect,
-    newDiscontinuedEffect: skuOnlyEffect,
-    lowVolumeEffect,
+    mixEffect: effects.mixEffect,
+    newDiscontinuedEffect: effects.skuOnlyEffect,
+    lowVolumeEffect: effects.lowVolumeEffect,
     othersLabel: "Mix e Resíduo Comercial",
     commercialCostsCollapsed: true,
-    current: currentTotal,
+    current: effects.currentTotal,
     baseLabel: labels.base,
     currentLabel: labels.comp,
-    skuDetails,
+    skuDetails: effects.skuDetails,
   };
 }
 

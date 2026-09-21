@@ -205,6 +205,41 @@ describe("calcPVM", () => {
     expect(res.lowVolumeEffect).toBeCloseTo(500 - 60, 6);
   });
 
+  it("computes Volume from the portfolio-average base margin/kg, not a single SKU's own rate", () => {
+    // CORE é a maior parte do portfólio, com margem/kg estável (1000/1000=1
+    // por kg). FRAGIL tem margem/kg altíssima na base (500/1=500 por kg) e
+    // cresce de volume de forma desproporcional — exatamente o tipo de SKU
+    // que, na fórmula antiga (Efeito Volume = ΔV × margem/kg DO PRÓPRIO SKU),
+    // fazia o Efeito Volume do portfólio inteiro explodir ou mudar de sinal
+    // dependendo de FRAGIL cair ou não abaixo do piso de materialidade.
+    const rows = [
+      makeRow({ periodo: "007.2025", mes: 7, ano: 2025, sku: "CORE", volumeKg: 1_000, rol: 10_000, cogs: 9_000, margemBruta: 1_000, contribMarginal: 1_000 }),
+      makeRow({ periodo: "007.2026", mes: 7, ano: 2026, fy: "FY26/27", fyNum: 202627, sku: "CORE", volumeKg: 1_100, rol: 11_500, cogs: 9_900, margemBruta: 1_600, contribMarginal: 1_600 }),
+      makeRow({ periodo: "007.2025", mes: 7, ano: 2025, sku: "FRAGIL", volumeKg: 2, rol: 1_000, cogs: 0, margemBruta: 1_000, contribMarginal: 1_000 }),
+      makeRow({ periodo: "007.2026", mes: 7, ano: 2026, fy: "FY26/27", fyNum: 202627, sku: "FRAGIL", volumeKg: 2_000, rol: 40_000, cogs: 36_000, margemBruta: 4_000, contribMarginal: 4_000 }),
+    ];
+
+    const res = calcPVM(rows, "mb", "007.2025", "007.2026", "month");
+
+    // Fórmula esperada: Volume = ΔVolume_total_comum × margem/kg MÉDIA da
+    // base (comum): ((1100+2000)-(1000+2)) × ((1000+1000)/(1000+2))
+    const expectedVolume = (1100 + 2000 - (1000 + 2)) * ((1000 + 1000) / (1000 + 2));
+    expect(res.volume).toBeCloseTo(expectedVolume, 6);
+
+    // Se a fórmula ainda usasse a margem/kg DO PRÓPRIO FRAGIL (500/kg) para
+    // valorizar seu ΔVolume de +1998kg, o Efeito Volume isolado desse SKU
+    // sozinho já passaria de R$ 900.000 — muito maior que o Efeito Volume
+    // total do portfólio inteiro. Com a fórmula de portfólio, isso não
+    // acontece: o total fica na mesma ordem de grandeza do portfólio.
+    expect(Math.abs(res.volume)).toBeLessThan(10_000);
+
+    // Identidade contábil continua exata (nenhum R$ some).
+    expect(res.base + res.volume + res.price + res.cost + res.freight + res.commission + res.others).toBeCloseTo(
+      res.current,
+      6,
+    );
+  });
+
   it("keeps mixEffect/newDiscontinuedEffect/lowVolumeEffect at zero for empty and identical-period inputs", () => {
     const empty = calcPVM([], "mb", "FY24/25", "FY25/26", "fy");
     expect(empty.mixEffect).toBe(0);

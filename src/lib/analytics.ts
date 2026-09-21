@@ -420,83 +420,72 @@ export interface PVMResult {
   skuDetails: PVMSkuDetail[];
 }
 
-const MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS = 0.001;
+/** Piso ABSOLUTO (kg), independente do tamanho do portfólio, abaixo do qual
+ *  não confiamos numa taxa por kg calculada para aquele SKU (margem/volume
+ *  perto de zero no denominador é numericamente instável). Ao contrário de
+ *  um piso "% do portfólio total" (removido — inflava e desinflava conforme
+ *  o portfólio mudava, varrendo metade dos SKUs pro balde "baixo volume" só
+ *  por o portfólio ter poucos produtos grandes), este valor não muda com o
+ *  tamanho do portfólio: 1kg é 1kg. */
 const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
 
-function minMaterialVolumeForUnitEffects(aggregates: Iterable<{ vol: number }>): number {
-  let totalVolume = 0;
-  for (const row of aggregates) totalVolume += Math.max(0, row.vol);
-  return Math.max(MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS, totalVolume * MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS);
+export interface PvmSkuAgg {
+  vol: number;
+  rol: number;
+  cogs: number;
+  frete: number;
+  comissao: number;
+  margem: number;
+}
+
+export interface PvmEffectsResult {
+  baseTotal: number;
+  currentTotal: number;
+  volume: number;
+  price: number;
+  cost: number;
+  freight: number;
+  commission: number;
+  mixEffect: number;
+  skuOnlyEffect: number;
+  lowVolumeEffect: number;
+  skuDetails: PVMSkuDetail[];
 }
 
 /**
- * Detailed PVM bridge between two periods (FY or month).
- * Decomposes CM/MB variation into:
- *   Volume · Preço · Custo Variável · Frete · Comissão · Outros (mix + resíduo)
+ * Núcleo compartilhado da decomposição PVM (usado por calcPVMFromRows aqui e
+ * por computeBudgetStyleBridge em bridgeYtdBudget.ts, que antes duplicava
+ * essa lógica com um piso ligeiramente diferente).
  *
- * Per-SKU effects use comp-period volumes for unit deltas; volume effect uses
- * base CM unit margin × Δvolume (classic PVM approach).
- *
- * `mode`: "fy" compares by `r.fy`, "month" compares by `r.periodo`.
+ * Metodologia (decomposição de portfólio, não mais razão por SKU individual):
+ * o Efeito Volume usa a margem/kg MÉDIA do portfólio comum (SKUs presentes
+ * nos dois lados, acima do piso absoluto) multiplicada pela variação de
+ * volume — nunca divide por volume de UM SKU só, então é imune a qualquer
+ * SKU específico (grande ou pequeno) e não muda de sinal dependendo de onde
+ * se traça um corte de materialidade. Preço/Custo/Frete/Comissão continuam
+ * por SKU (Paasche, valorizados pelo volume atual) porque preço e custo
+ * unitário são taxas reais do produto, bem-comportadas mesmo em volumes
+ * pequenos — o problema estava especificamente em margem/volume, não em
+ * receita/volume ou custo/volume. Mix é o resíduo que fecha a identidade
+ * contábil por SKU (ΔMargem − Volume − Preço − Custo − Frete − Comissão),
+ * garantindo reconciliação exata tanto por SKU (usado na página Mix pra
+ * ranquear SKUs) quanto agregada.
  */
-export function calcPVMFromRows(
-  baseRows: PricingRow[],
-  compRows: PricingRow[],
-  metric: Metric,
-  labels?: { base?: string; comp?: string },
-): PVMResult {
-  interface Agg {
-    vol: number;
-    rol: number;
-    cogs: number;
-    frete: number;
-    comissao: number;
-    margem: number;
-  }
-
-  const aggSku = (rs: PricingRow[]) => {
-    const m = new Map<string, Agg>();
-    for (const r of rs) {
-      const k = r.sku || r.skuDesc || "—";
-      const c = m.get(k) ?? { vol: 0, rol: 0, cogs: 0, frete: 0, comissao: 0, margem: 0 };
-      c.vol += r.volumeKg;
-      c.rol += r.rol;
-      c.cogs += r.cogs;
-      c.frete += r.frete ?? 0;
-      c.comissao += r.comissao ?? 0;
-      c.margem += measureOf(r, metric);
-      m.set(k, c);
-    }
-    return m;
-  };
-
-  const a = aggSku(baseRows);
-  const b = aggSku(compRows);
-  const minMaterialVolumeA = minMaterialVolumeForUnitEffects(a.values());
-  const minMaterialVolumeB = minMaterialVolumeForUnitEffects(b.values());
-
-  // Map of sku key → human-readable description (prefer comp period, fallback to base)
-  const descMap = new Map<string, string>();
-  for (const r of [...baseRows, ...compRows]) {
-    const k = r.sku || r.skuDesc || "—";
-    if (!descMap.has(k) && r.skuDesc) descMap.set(k, r.skuDesc);
-  }
-
+export function computePvmEffects(
+  a: Map<string, PvmSkuAgg>,
+  b: Map<string, PvmSkuAgg>,
+  descMap: Map<string, string>,
+): PvmEffectsResult {
   let baseTotal = 0, currentTotal = 0;
-  for (const v of a.values()) { baseTotal += v.margem; }
-  for (const v of b.values()) { currentTotal += v.margem; }
+  for (const v of a.values()) baseTotal += v.margem;
+  for (const v of b.values()) currentTotal += v.margem;
 
-  let volEffect = 0;
-  let priceEffect = 0;
-  let costEffect = 0;
-  let freightEffect = 0;
-  let commissionEffect = 0;
-  let mixEffect = 0;
+  const allSkus = new Set([...a.keys(), ...b.keys()]);
+  const common: { sku: string; a: PvmSkuAgg; b: PvmSkuAgg }[] = [];
+  const skuDetails: PVMSkuDetail[] = [];
   let skuOnlyEffect = 0;
   let lowVolumeEffect = 0;
 
-  const skuDetails: PVMSkuDetail[] = [];
-  const allSkus = new Set([...a.keys(), ...b.keys()]);
   for (const sku of allSkus) {
     const ra = a.get(sku);
     const rb = b.get(sku);
@@ -525,7 +514,7 @@ export function calcPVMFromRows(
       othersEffect: 0,
     };
 
-    // SKUs órfãos (só A ou só B) → impacto total cai em Mix/Outros (resíduo).
+    // SKUs órfãos (só A ou só B) → impacto total cai em SKU Novo/Descontinuado.
     if (!ra || !rb || ra.vol === 0 || rb.vol === 0) {
       detail.othersEffect = (rb?.margem ?? 0) - (ra?.margem ?? 0);
       detail.skuOnlyEffect = detail.othersEffect;
@@ -535,7 +524,9 @@ export function calcPVMFromRows(
       continue;
     }
 
-    if (Math.abs(ra.vol) < minMaterialVolumeA || Math.abs(rb.vol) < minMaterialVolumeB) {
+    // SKU abaixo do piso absoluto em qualquer um dos lados → taxa por kg não
+    // é confiável, usa o efeito bruto (Δmargem) em vez de decompor.
+    if (Math.abs(ra.vol) < MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS || Math.abs(rb.vol) < MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS) {
       detail.othersEffect = rb.margem - ra.margem;
       detail.lowVolumeResidualEffect = detail.othersEffect;
       detail.residualCause = "low_volume";
@@ -544,11 +535,25 @@ export function calcPVMFromRows(
       continue;
     }
 
-    // Efeito Volume no nível do SKU: ΔV × margem unitária base daquele SKU
-    const margemUnitA = ra.margem / ra.vol;
-    const skuVol = (rb.vol - ra.vol) * margemUnitA;
+    common.push({ sku, a: ra, b: rb });
+    skuDetails.push(detail);
+  }
 
-    // Paasche: efeitos unitários valorizados pelo VOLUME ATUAL (B)
+  // Margem/kg média do portfólio comum na base — único número usado pro
+  // Efeito Volume (nível de portfólio, não por SKU).
+  let volABase = 0, margemABase = 0;
+  for (const c of common) { volABase += c.a.vol; margemABase += c.a.margem; }
+  const avgUnitMarginBase = volABase > 0 ? margemABase / volABase : 0;
+
+  let volume = 0, price = 0, cost = 0, freight = 0, commission = 0, mixEffect = 0;
+  const detailBySku = new Map(skuDetails.map((d) => [d.sku, d]));
+
+  for (const c of common) {
+    const { sku, a: ra, b: rb } = c;
+    const detail = detailBySku.get(sku)!;
+
+    const skuVol = (rb.vol - ra.vol) * avgUnitMarginBase;
+
     const priceA = ra.rol / ra.vol;
     const priceB = rb.rol / rb.vol;
     const costA = ra.cogs / ra.vol;
@@ -562,46 +567,88 @@ export function calcPVMFromRows(
     const skuCost = -(costB - costA) * rb.vol;
     const skuFreight = -(freightB - freightA) * rb.vol;
     const skuComm = -(commB - commA) * rb.vol;
+    const skuMix = (rb.margem - ra.margem) - skuVol - skuPrice - skuCost - skuFreight - skuComm;
 
     detail.volumeEffect = skuVol;
     detail.priceEffect = skuPrice;
     detail.costEffect = skuCost;
     detail.freightEffect = skuFreight;
     detail.commissionEffect = skuComm;
-    // residual per-SKU (mix puro): ΔMargem - soma dos efeitos calculados
-    detail.othersEffect =
-      (rb.margem - ra.margem) - skuVol - skuPrice - skuCost - skuFreight - skuComm;
-    detail.mixResidualEffect = detail.othersEffect;
+    detail.othersEffect = skuMix;
+    detail.mixResidualEffect = skuMix;
     detail.residualCause = "mix";
-    mixEffect += detail.othersEffect;
 
-    volEffect += skuVol;
-    priceEffect += skuPrice;
-    costEffect += skuCost;
-    freightEffect += skuFreight;
-    commissionEffect += skuComm;
-
-    skuDetails.push(detail);
+    volume += skuVol;
+    price += skuPrice;
+    cost += skuCost;
+    freight += skuFreight;
+    commission += skuComm;
+    mixEffect += skuMix;
   }
 
+  return { baseTotal, currentTotal, volume, price, cost, freight, commission, mixEffect, skuOnlyEffect, lowVolumeEffect, skuDetails };
+}
+
+/**
+ * Detailed PVM bridge between two periods (FY or month).
+ * Decomposes CM/MB variation into:
+ *   Volume · Preço · Custo Variável · Frete · Comissão · Outros (mix + resíduo)
+ *
+ * Ver computePvmEffects para a metodologia (decomposição de portfólio).
+ *
+ * `mode`: "fy" compares by `r.fy`, "month" compares by `r.periodo`.
+ */
+export function calcPVMFromRows(
+  baseRows: PricingRow[],
+  compRows: PricingRow[],
+  metric: Metric,
+  labels?: { base?: string; comp?: string },
+): PVMResult {
+  const aggSku = (rs: PricingRow[]) => {
+    const m = new Map<string, PvmSkuAgg>();
+    for (const r of rs) {
+      const k = r.sku || r.skuDesc || "—";
+      const c = m.get(k) ?? { vol: 0, rol: 0, cogs: 0, frete: 0, comissao: 0, margem: 0 };
+      c.vol += r.volumeKg;
+      c.rol += r.rol;
+      c.cogs += r.cogs;
+      c.frete += r.frete ?? 0;
+      c.comissao += r.comissao ?? 0;
+      c.margem += measureOf(r, metric);
+      m.set(k, c);
+    }
+    return m;
+  };
+
+  const a = aggSku(baseRows);
+  const b = aggSku(compRows);
+
+  // Map of sku key → human-readable description (prefer comp period, fallback to base)
+  const descMap = new Map<string, string>();
+  for (const r of [...baseRows, ...compRows]) {
+    const k = r.sku || r.skuDesc || "—";
+    if (!descMap.has(k) && r.skuDesc) descMap.set(k, r.skuDesc);
+  }
+
+  const effects = computePvmEffects(a, b, descMap);
   const others =
-    currentTotal - baseTotal - volEffect - priceEffect - costEffect - freightEffect - commissionEffect;
+    effects.currentTotal - effects.baseTotal - effects.volume - effects.price - effects.cost - effects.freight - effects.commission;
 
   return {
-    base: baseTotal,
-    volume: volEffect,
-    price: priceEffect,
-    cost: costEffect,
-    freight: freightEffect,
-    commission: commissionEffect,
+    base: effects.baseTotal,
+    volume: effects.volume,
+    price: effects.price,
+    cost: effects.cost,
+    freight: effects.freight,
+    commission: effects.commission,
     others,
-    mixEffect,
-    newDiscontinuedEffect: skuOnlyEffect,
-    lowVolumeEffect,
-    current: currentTotal,
+    mixEffect: effects.mixEffect,
+    newDiscontinuedEffect: effects.skuOnlyEffect,
+    lowVolumeEffect: effects.lowVolumeEffect,
+    current: effects.currentTotal,
     baseLabel: labels?.base ?? "Base",
     currentLabel: labels?.comp ?? "Comparacao",
-    skuDetails,
+    skuDetails: effects.skuDetails,
   };
 }
 
