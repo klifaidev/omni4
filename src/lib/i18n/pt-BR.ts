@@ -205,6 +205,8 @@ export const ptBR = {
             connectorColor: "Cor conector",
             connectorStyle: "Estilo conector",
             runningTotal: "Total acumulado",
+            wrapLabels: "Quebrar texto do rótulo",
+            wrapLabelsHint: "Em vez de cortar com \"...\", o rótulo de cada barra quebra em várias linhas para não esconder informação.",
             classification: "Classificação",
             classifyOptions: { positive: "Positivo", negative: "Negativo", total: "Total" },
             bridgeMode: "Modo Bridge",

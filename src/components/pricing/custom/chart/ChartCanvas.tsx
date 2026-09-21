@@ -2938,22 +2938,59 @@ function WaterfallChart({
         // Use user-configured font sizes directly so labels stay visually fixed
         const labelFs = style.xAxis.labelSize;
         const dlFs = style.dataLabels.size;
-        const m = {
-          top: Math.max(20, H * 0.08),
+        const wrapLabels = style.waterfall.wrapLabels ?? false;
+        const mProvisional = {
           right: Math.max(16, W * 0.025),
-          bottom: Math.max(40, H * 0.16),
           left: style.yAxis.show ? Math.max(56, W * 0.07) : Math.max(16, W * 0.025),
         };
-        const plotW = Math.max(10, W - m.left - m.right);
+        const plotW = Math.max(10, W - mProvisional.left - mProvisional.right);
+        const slot = plotW / Math.max(1, wfRows.length);
+        const maxChars = Math.max(4, Math.floor(slot / (labelFs * 0.6)));
+        // Quebra o rótulo em linhas por palavra em vez de truncar com "..."
+        // — nenhuma informação some, só ocupa mais altura no eixo.
+        const wrapLabelLines = (lbl: string): string[] => {
+          const cleanLabel = repairMojibakeLabel(lbl);
+          if (cleanLabel.length <= maxChars) return [cleanLabel];
+          const words = cleanLabel.split(/\s+/);
+          const lines: string[] = [];
+          let current = "";
+          for (const word of words) {
+            const candidate = current ? `${current} ${word}` : word;
+            if (candidate.length > maxChars && current) {
+              lines.push(current);
+              current = word;
+            } else {
+              current = candidate;
+            }
+          }
+          if (current) lines.push(current);
+          // Palavra isolada maior que a coluna: quebra por caractere mesmo assim.
+          return lines.flatMap((line) =>
+            line.length <= maxChars
+              ? [line]
+              : Array.from({ length: Math.ceil(line.length / maxChars) }, (_, i) =>
+                  line.slice(i * maxChars, (i + 1) * maxChars),
+                ),
+          );
+        };
+        const labelLineCount = wrapLabels
+          ? Math.max(1, ...wfRows.map((r) => wrapLabelLines(r.label).length))
+          : 1;
+        const m = {
+          top: Math.max(20, H * 0.08),
+          right: mProvisional.right,
+          bottom: wrapLabels
+            ? Math.max(40, H * 0.16, 16 + labelLineCount * (labelFs + 4))
+            : Math.max(40, H * 0.16),
+          left: mProvisional.left,
+        };
         const plotH = Math.max(10, H - m.top - m.bottom);
         const range = yMax - yMin || 1;
         const yOf = (v: number) => m.top + (1 - (v - yMin) / range) * plotH;
-        const slot = plotW / Math.max(1, wfRows.length);
         const barW = Math.max(6, Math.min(slot * 0.9, slot * (1 - style.waterfall.gapPct / 120)));
         const zeroY = yOf(0);
         const valFmt = (v: number) => formatValue(v, style.dataLabels.format === "auto" ? measureFmt : style.dataLabels.format, "rol", style.dataLabels.decimals);
         const truncLabel = (lbl: string) => {
-          const maxChars = Math.max(4, Math.floor(slot / (labelFs * 0.6)));
           const cleanLabel = repairMojibakeLabel(lbl);
           return cleanLabel.length > maxChars ? `${cleanLabel.slice(0, Math.max(1, maxChars - 1))}...` : cleanLabel;
         };
@@ -2991,7 +3028,15 @@ function WaterfallChart({
                 <g key={r.label}>
                   <rect x={x} y={y} width={barW} height={h} fill={fill} rx="2" />
                   {style.dataLabels.show && <text x={cx} y={labelY} textAnchor="middle" fontSize={dlFs} fill={style.dataLabels.color} fontWeight={style.dataLabels.bold ? 700 : 400} fontStyle={style.dataLabels.italic ? "italic" : "normal"}>{labelTxt}</text>}
-                  <text x={cx} y={H - Math.max(12, m.bottom * 0.45)} textAnchor="middle" fontSize={labelFs} fill={style.xAxis.labelColor}>{truncLabel(r.label)}</text>
+                  {wrapLabels ? (
+                    <text x={cx} y={H - Math.max(12, m.bottom * 0.45) - (labelLineCount - 1) * (labelFs + 4)} textAnchor="middle" fontSize={labelFs} fill={style.xAxis.labelColor}>
+                      {wrapLabelLines(r.label).map((line, li) => (
+                        <tspan key={li} x={cx} dy={li === 0 ? 0 : labelFs + 4}>{line}</tspan>
+                      ))}
+                    </text>
+                  ) : (
+                    <text x={cx} y={H - Math.max(12, m.bottom * 0.45)} textAnchor="middle" fontSize={labelFs} fill={style.xAxis.labelColor}>{truncLabel(r.label)}</text>
+                  )}
                 </g>
               );
             })}

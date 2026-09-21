@@ -146,6 +146,9 @@ export interface WaterfallStyleCfg {
   showRunningTotal: boolean;
   labelPos: "above" | "inside" | "below";
   gapPct: number;
+  /** Quando true, o rótulo de cada barra quebra em várias linhas em vez de
+   *  truncar com "..." quando não cabe na largura da coluna. */
+  wrapLabels?: boolean;
   /** per category override: positive | negative | total */
   classify: Record<string, "positive" | "negative" | "total">;
   /** Smart bridge: explicit column list overrides automatic series */
@@ -345,6 +348,7 @@ export function defaultChartStyle(): ChartStyle {
       positiveColor: SLIDE_HEX.chart7, negativeColor: SLIDE_HEX.chart1, totalColor: SLIDE_HEX.chart2,
       connectors: true, connectorColor: SLIDE_HEX.slate400, connectorStyle: "dashed",
       showRunningTotal: false, labelPos: "above", gapPct: 30, classify: {},
+      wrapLabels: false,
       mode: "pvm",
       pvm: { base: null, comp: null, periodMode: "month", decomposition: "effects", topN: 6, comparisonMode: "prev-month" },
     },

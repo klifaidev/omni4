@@ -1003,6 +1003,11 @@ export function ChartInspector({
           </Row>
           <ToggleField label={t.waterfall.runningTotal} value={style.waterfall.showRunningTotal}
             onChange={(v) => updPath("waterfall", { showRunningTotal: v })} />
+          <ToggleField label={t.waterfall.wrapLabels} value={style.waterfall.wrapLabels ?? false}
+            onChange={(v) => updPath("waterfall", { wrapLabels: v })} />
+          {style.waterfall.wrapLabels && (
+            <div className="text-[11px] text-muted-foreground leading-snug -mt-1">{t.waterfall.wrapLabelsHint}</div>
+          )}
           <Row label={tc.spacing}>
             <NumberStepper value={style.waterfall.gapPct} min={0} max={80}
               onChange={(v) => updPath("waterfall", { gapPct: v })} suffix="%" />
