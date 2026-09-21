@@ -753,8 +753,8 @@ export async function exportBridgePvmPpt(result: PVMResult, rows: PricingRow[] =
   await getHaraldFooterDataUri(); // pré-carrega o rodapé como base64
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.33 x 7.5 in
-  pptx.author = "Lovable";
-  pptx.company = "Lovable";
+  pptx.author = "OMNI4";
+  pptx.company = "OMNI4";
   pptx.subject = "Bridge PVM";
   pptx.title = `Bridge PVM ${result.baseLabel} vs ${result.currentLabel}`;
   pptx.theme = {
@@ -1400,8 +1400,8 @@ export async function exportSlideFlow(
   await getHaraldFooterDataUri();
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "Lovable";
-  pptx.company = "Lovable";
+  pptx.author = "OMNI4";
+  pptx.company = "OMNI4";
   pptx.title = "Apresentação Pricing Analytics";
   pptx.theme = { headFontFace: "Calibri", bodyFontFace: "Calibri" };
 

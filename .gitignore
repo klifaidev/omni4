@@ -15,8 +15,19 @@ dist-ssr
 # Electron build output
 release/
 
-# Supabase local CLI state
-supabase/.temp/
+# Variáveis de ambiente — nunca versionar (podem conter chaves)
+.env
+.env.*
+
+# Supabase (recurso de colaboração removido; só resta cache local da CLI)
+supabase/
+
+# Dumps/backups locais de dados do app — contêm dados reais de negócio
+recovery-localstorage/
+
+# Configurações locais do Claude Code (caminhos da máquina)
+.claude/settings.local.json
+.claude/launch.json
 
 # Editor directories and files
 .vscode/*
