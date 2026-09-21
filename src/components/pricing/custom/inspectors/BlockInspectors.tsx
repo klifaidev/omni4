@@ -2643,15 +2643,18 @@ function OmniBridgePvmInspector({ block, onChange }: {
       <OmniTitleSection showTitle={block.showTitle} title={block.title} defaultTitle={t.omni.defaultTitles.bridgePvm} onChange={onChange} />
       <Section title={t.omni.priceDecompBridge.periodsSection}>
         <Row label={tc.mode}><SelectField value={block.periodMode} onChange={(v) => {
-          const nextMode = v as "fy" | "month" | "ytd_budget";
+          const nextMode = v as "fy" | "month" | "ytd_budget" | "ytd_vs_ytd";
           onChange({ periodMode: nextMode, base: null, comp: null, baseSelectionMode: block.baseSelectionMode ?? "relative", baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2", compSelectionMode: block.compSelectionMode ?? "relative", compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1" });
         }} options={[
           { value: "month", label: t.omni.priceDecompBridge.modeOptions.month },
           { value: "fy", label: t.omni.priceDecompBridge.modeOptions.fy },
           { value: "ytd_budget", label: t.omni.priceDecompBridge.ytdBudgetOption },
+          { value: "ytd_vs_ytd", label: t.omni.priceDecompBridge.ytdVsYtdOption },
         ]} /></Row>
-        {block.periodMode === "ytd_budget" ? (
-          <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">{t.omni.priceDecompBridge.ytdBudgetHint}</div>
+        {block.periodMode === "ytd_budget" || block.periodMode === "ytd_vs_ytd" ? (
+          <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
+            {block.periodMode === "ytd_budget" ? t.omni.priceDecompBridge.ytdBudgetHint : t.omni.priceDecompBridge.ytdVsYtdHint}
+          </div>
         ) : (
           <>
             <Row label={tc.base}><ComparePeriodField label={tc.base} mode={block.periodMode} fixedValue={block.base} selectionMode={block.baseSelectionMode} relativeValue={block.baseRelativePeriod} options={opts} onChange={(p) => onChange({ base: p.value, baseSelectionMode: p.selectionMode, baseRelativePeriod: p.relativePeriod })} /></Row>

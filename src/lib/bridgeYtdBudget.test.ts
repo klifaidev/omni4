@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BudgetRow } from "./budget";
-import { computeBridgeYtdRealVsBudget, validateBridgeAgainstDre } from "./bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd, validateBridgeAgainstDre } from "./bridgeYtdBudget";
 import type { PricingRow } from "./types";
 
 function row(
@@ -30,6 +30,101 @@ function row(
     cpv,
   };
 }
+
+// Ao contrário de row() acima (que crava fy="FY26" pra todo mundo, o que
+// serve pra comparar dentro de um único ano fiscal), aqui o fy é calculado
+// de verdade (abril–março) — necessário pra testar uma comparação que
+// atravessa dois anos fiscais diferentes.
+function rowRealFy(
+  kind: BudgetRow["kind"],
+  periodo: string,
+  cm: number,
+  categoria = "Chocolates",
+  cpv = 70,
+  volumeKg = 10,
+  receita = 100,
+): BudgetRow {
+  const mes = Number(periodo.slice(0, 3));
+  const ano = Number(periodo.slice(4));
+  const fyStart = mes >= 4 ? ano : ano - 1;
+  return {
+    periodo,
+    mes,
+    ano,
+    fy: `FY${String(fyStart).slice(-2)}/${String(fyStart + 1).slice(-2)}`,
+    fyNum: fyStart * 100 + ((fyStart + 1) % 100),
+    kind,
+    categoria,
+    sku: categoria,
+    volumeKg,
+    receita,
+    cm,
+    cpv,
+  };
+}
+
+describe("computeBridgeYtdVsYtd", () => {
+  it("compares current fiscal-year YTD real against the same months of the previous fiscal year", () => {
+    const result = computeBridgeYtdVsYtd([
+      // FY25/26 (ano fiscal anterior): Abr–Jun/25
+      rowRealFy("real", "004.2025", 40),
+      rowRealFy("real", "005.2025", 50),
+      rowRealFy("real", "006.2025", 60),
+      // FY26/27 (ano fiscal atual): Abr–Jun/26 — mesma janela de meses
+      rowRealFy("real", "004.2026", 45),
+      rowRealFy("real", "005.2026", 55),
+      rowRealFy("real", "006.2026", 65),
+    ], {}, "cm");
+
+    expect(result?.fy).toBe("FY26/27");
+    expect(result?.periods).toEqual(["004.2026", "005.2026", "006.2026"]);
+    expect(result?.result.base).toBe(150); // FY25/26 Abr–Jun
+    expect(result?.result.current).toBe(165); // FY26/27 Abr–Jun
+    expect(result?.result.baseLabel).toContain("FY25/26");
+    expect(result?.result.currentLabel).toContain("FY26/27");
+  });
+
+  it("uses only the same relative months of the previous fiscal year, ignoring extra months", () => {
+    const result = computeBridgeYtdVsYtd([
+      // Ano fiscal anterior tem o ano inteiro, mas só Abr-Mai devem entrar
+      // na comparação (janela igual à do ano atual).
+      rowRealFy("real", "004.2025", 40),
+      rowRealFy("real", "005.2025", 50),
+      rowRealFy("real", "012.2025", 999), // Dez/25 — fora da janela, deve ser ignorado
+      rowRealFy("real", "004.2026", 45),
+      rowRealFy("real", "005.2026", 55),
+    ], {}, "cm");
+
+    expect(result?.result.base).toBe(90); // só Abr+Mai do FY anterior, não os 999
+    expect(result?.result.current).toBe(100);
+  });
+
+  it("respects slide filters before calculating the bridge", () => {
+    const result = computeBridgeYtdVsYtd([
+      rowRealFy("real", "004.2025", 40, "Chocolates"),
+      rowRealFy("real", "004.2025", 80, "Coberturas"),
+      rowRealFy("real", "004.2026", 45, "Chocolates"),
+      rowRealFy("real", "004.2026", 90, "Coberturas"),
+    ], { categoria: ["Chocolates"] }, "cm");
+
+    expect(result?.result.base).toBe(40);
+    expect(result?.result.current).toBe(45);
+  });
+
+  it("returns null when there is no data for the previous fiscal year", () => {
+    const result = computeBridgeYtdVsYtd([
+      rowRealFy("real", "004.2026", 45),
+      rowRealFy("real", "005.2026", 55),
+    ], {}, "cm");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when there is no real data at all", () => {
+    const result = computeBridgeYtdVsYtd([], {}, "cm");
+    expect(result).toBeNull();
+  });
+});
 
 describe("computeBridgeYtdRealVsBudget", () => {
   it("compares Superbase real YTD only against budget for the same realized months", () => {

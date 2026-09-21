@@ -35,7 +35,7 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
     }
 
     if (item.kind === "bridge_pvm") {
-      if (item.config.mode === "ytd_budget") return;
+      if (item.config.mode === "ytd_budget" || item.config.mode === "ytd_vs_ytd") return;
       if (!item.config.base || !item.config.comp || item.config.base === item.config.comp) {
         issues.push(issue("error", item.id, slideNumber, slideLabel, "Bridge incompleta", "Selecione periodos base e comparacao diferentes."));
       }

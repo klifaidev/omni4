@@ -27,7 +27,7 @@ import {
   CANVAS_W,
   CANVAS_H,
 } from "@/lib/customSlide";
-import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -553,17 +553,21 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
 
   const pvm = useMemo(() => {
     if (!ready.ok) return null;
-    if (item.config.mode !== "ytd_budget" && (!item.config.base || !item.config.comp)) return null;
+    const isYtdMode = item.config.mode === "ytd_budget" || item.config.mode === "ytd_vs_ytd";
+    if (!isYtdMode && (!item.config.base || !item.config.comp)) return null;
     return getOrComputeSlideCalc({
       op: "preview-bridge-pvm",
       slideId: item.id,
       blockId: "bridge-pvm",
-      dataSource: item.config.mode === "ytd_budget" ? "budget" : "ke30",
-      dataSignature: item.config.mode === "ytd_budget" ? budgetSignature : pricingSignature,
+      dataSource: isYtdMode ? "budget" : "ke30",
+      dataSignature: isYtdMode ? budgetSignature : pricingSignature,
       params: { metric, config: item.config },
     }, () => {
       if (item.config.mode === "ytd_budget") {
         return computeBridgeYtdRealVsBudget(budgetRows, item.config.filters, metric)?.result ?? null;
+      }
+      if (item.config.mode === "ytd_vs_ytd") {
+        return computeBridgeYtdVsYtd(budgetRows, item.config.filters, metric)?.result ?? null;
       }
       const filtered = applyFilters(pricingRows, item.config.filters, null);
       const labels = item.config.mode === "month"

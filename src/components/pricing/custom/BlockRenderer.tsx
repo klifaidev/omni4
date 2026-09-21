@@ -57,7 +57,7 @@ import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, 
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 import { resolveMonthRangeSelection, resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
 import { buildPositivacaoSeries } from "@/lib/positivacao";
-import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { buildSimpleBlockLayout, type CustomSlideLayoutNode } from "@/lib/customSlideLayout";
 import brMapRaw from "@/assets/br.svg?raw";
@@ -3032,7 +3032,7 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
   const { baseKey, compKey } = useMemo(() => {
-    if (b.periodMode === "ytd_budget") return { baseKey: "", compKey: "" };
+    if (b.periodMode === "ytd_budget" || b.periodMode === "ytd_vs_ytd") return { baseKey: "", compKey: "" };
     const relativeBase = resolvePeriodValue(filtered, b.periodMode, b.base, b.baseSelectionMode, b.baseRelativePeriod);
     const relativeComp = resolvePeriodValue(filtered, b.periodMode, b.comp, b.compSelectionMode, b.compRelativePeriod);
     if (relativeBase && relativeComp) return { baseKey: relativeBase, compKey: relativeComp };
@@ -3045,6 +3045,9 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
   const result = useMemo(() => {
     if (b.periodMode === "ytd_budget") {
       return computeBridgeYtdRealVsBudget(budget, b.filters, metric)?.result ?? null;
+    }
+    if (b.periodMode === "ytd_vs_ytd") {
+      return computeBridgeYtdVsYtd(budget, b.filters, metric)?.result ?? null;
     }
     if (!baseKey || !compKey) return null;
     return calcPVM(filtered, metric, baseKey, compKey, b.periodMode);

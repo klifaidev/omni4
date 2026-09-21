@@ -15,7 +15,7 @@ import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import { KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
-import { computeBridgeYtdRealVsBudget } from "@/lib/bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 
@@ -2716,7 +2716,7 @@ function WaterfallChart({
       slideId: cacheSlideId,
       blockId: block.id,
       dataSource: block.dataSource,
-      dataSignature: comparisonMode === "ytd-budget" ? budgetSignature : dsRowsSignature,
+      dataSignature: comparisonMode === "ytd-budget" || comparisonMode === "ytd-vs-ytd" ? budgetSignature : dsRowsSignature,
       params: {
         filters: block.filters,
         metric,
@@ -2729,12 +2729,14 @@ function WaterfallChart({
     }, () => {
     const ytdBudget = comparisonMode === "ytd-budget"
       ? computeBridgeYtdRealVsBudget(budget, block.filters, metric)
-      : null;
+      : comparisonMode === "ytd-vs-ytd"
+        ? computeBridgeYtdVsYtd(budget, block.filters, metric)
+        : null;
     const filtered = ytdBudget ? [...ytdBudget.baseRows, ...ytdBudget.compRows] : applyFilters(dsRows, block.filters, null);
     if (filtered.length === 0) return [];
 
-    let baseKey = ytdBudget ? "__budget_ytd__" : pvmCfg.base;
-    let compKey = ytdBudget ? "__real_ytd__" : pvmCfg.comp;
+    let baseKey = ytdBudget ? "__ytd_base__" : pvmCfg.base;
+    let compKey = ytdBudget ? "__ytd_comp__" : pvmCfg.comp;
 
     // FIX 2 â€” PerÃ­odo de comparaÃ§Ã£o automÃ¡tico
     if (comparisonMode !== "manual" && pvmCfg.periodMode === "month") {
@@ -2785,7 +2787,7 @@ function WaterfallChart({
       }
     }
 
-    const pvmPeriodMode = pvmCfg.periodMode === "ytd_budget" ? "month" : pvmCfg.periodMode;
+    const pvmPeriodMode = pvmCfg.periodMode === "ytd_budget" || pvmCfg.periodMode === "ytd_vs_ytd" ? "month" : pvmCfg.periodMode;
     const labels = pvmPeriodMode === "month" ? {
       base: (() => { const r = filtered.find((x) => x.periodo === baseKey); return r ? monthLabel(r.mes, r.ano) : baseKey!; })(),
       comp: (() => { const r = filtered.find((x) => x.periodo === compKey); return r ? monthLabel(r.mes, r.ano) : compKey!; })(),

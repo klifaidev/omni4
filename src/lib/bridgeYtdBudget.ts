@@ -2,6 +2,7 @@ import type { BudgetRow } from "./budget";
 import type { Filters, Metric, PricingRow } from "./types";
 import { applyFilters, type PVMSkuDetail, type PVMResult } from "./analytics";
 import { monthLabel } from "./format";
+import { fiscalYearStartYear } from "./fiscalYear";
 
 export interface BridgeYtdBudgetResult {
   result: PVMResult;
@@ -256,6 +257,68 @@ export function computeBridgeYtdRealVsBudget(
   const result = computeBudgetStyleBridge(baseRows, compRows, {
     base: `Budget YTD ${ytd.fy}`,
     comp: `Real YTD ate ${ytd.latestLabel}`,
+  });
+
+  return {
+    result,
+    baseRows,
+    compRows,
+    fy: ytd.fy,
+    periods: ytd.periods,
+    latestPeriodLabel: ytd.latestLabel,
+  };
+}
+
+/** Índice do mês dentro do ano fiscal (abril=1 ... março=12) — usado para
+ *  achar a mesma janela de meses no ano fiscal anterior numa comparação
+ *  YTD vs YTD (ano fiscal abril–março). */
+function fiscalMonthIndex(mes: number): number {
+  return mes >= 4 ? mes - 3 : mes + 9;
+}
+
+function fyLabelFromStartYear(fyStartYear: number): string {
+  return `FY${String(fyStartYear).slice(-2)}/${String(fyStartYear + 1).slice(-2)}`;
+}
+
+/**
+ * Compara o Real acumulado do ano fiscal atual (mesmos meses já fechados,
+ * igual à YTD vs Budget) contra o Real da MESMA janela de meses do ano
+ * fiscal anterior — ex.: Abr–Ago/26 (FY26/27) vs Abr–Ago/25 (FY25/26).
+ * Reusa a mesma agregação por SKU de computeBridgeYtdRealVsBudget, só troca
+ * o lado "base" de Budget pra Real do ano fiscal anterior.
+ */
+export function computeBridgeYtdVsYtd(
+  budgetRows: BudgetRow[],
+  filters: Filters,
+  metric: Metric,
+): BridgeYtdBudgetResult | null {
+  void metric;
+  const realRows = budgetRows.filter((row) => row.kind === "real").map(budgetToBridgeRow);
+  const ytd = latestRealYtdPeriods(realRows);
+  if (!ytd || ytd.periods.length === 0) return null;
+
+  const periodSet = new Set(ytd.periods);
+  const currentFyRows = realRows.filter((row) => row.fy === ytd.fy && periodSet.has(row.periodo));
+  if (currentFyRows.length === 0) return null;
+
+  // Meses fiscais presentes na YTD atual (normalmente contíguos desde o
+  // início do ano fiscal, mas usa o conjunto real em vez de um corte, pra
+  // lidar corretamente com meses faltantes na base).
+  const fiscalMonthsPresent = new Set(currentFyRows.map((row) => fiscalMonthIndex(row.mes)));
+  const currentFyStartYear = fiscalYearStartYear(currentFyRows[0].mes, currentFyRows[0].ano);
+  const previousFy = fyLabelFromStartYear(currentFyStartYear - 1);
+
+  const compRows = applyFilters(currentFyRows, filters, null);
+  const baseRows = applyFilters(
+    realRows.filter((row) => row.fy === previousFy && fiscalMonthsPresent.has(fiscalMonthIndex(row.mes))),
+    filters,
+    null,
+  );
+  if (baseRows.length === 0 || compRows.length === 0) return null;
+
+  const result = computeBudgetStyleBridge(baseRows, compRows, {
+    base: `Real YTD ${previousFy}`,
+    comp: `Real YTD ${ytd.fy} ate ${ytd.latestLabel}`,
   });
 
   return {

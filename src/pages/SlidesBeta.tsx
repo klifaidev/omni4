@@ -459,20 +459,21 @@ function BridgePvmConfigPanel({
         <Select
           disabled={readOnly}
           value={cfg.mode}
-          onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month" | "ytd_budget", base: null, comp: null } })}
+          onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month" | "ytd_budget" | "ytd_vs_ytd", base: null, comp: null } })}
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="month">{t.bridgePvmPanel.modeOptions.month}</SelectItem>
             <SelectItem value="fy">{t.bridgePvmPanel.modeOptions.fy}</SelectItem>
             <SelectItem value="ytd_budget">{t.bridgePvmPanel.modeOptions.ytdBudget}</SelectItem>
+            <SelectItem value="ytd_vs_ytd">{t.bridgePvmPanel.modeOptions.ytdVsYtd}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {cfg.mode === "ytd_budget" ? (
+      {cfg.mode === "ytd_budget" || cfg.mode === "ytd_vs_ytd" ? (
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-          {t.bridgePvmPanel.ytdBudgetHint}
+          {cfg.mode === "ytd_budget" ? t.bridgePvmPanel.ytdBudgetHint : t.bridgePvmPanel.ytdVsYtdHint}
         </div>
       ) : (
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">

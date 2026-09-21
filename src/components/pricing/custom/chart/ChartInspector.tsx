@@ -2037,7 +2037,9 @@ function PvmBridgePicker({
                 pvm: {
                   ...pvm,
                   comparisonMode: v as never,
-                  periodMode: v === "manual" ? (pvm.periodMode === "ytd_budget" ? "month" : pvm.periodMode) : v === "ytd-budget" ? "ytd_budget" : "month",
+                  periodMode: v === "manual"
+                    ? (pvm.periodMode === "ytd_budget" || pvm.periodMode === "ytd_vs_ytd" ? "month" : pvm.periodMode)
+                    : v === "ytd-budget" ? "ytd_budget" : v === "ytd-vs-ytd" ? "ytd_vs_ytd" : "month",
                 },
               })}
               options={[
@@ -2045,12 +2047,18 @@ function PvmBridgePicker({
                 { value: "prev-year-month", label: t.waterfall.comparisonOptions.prevYearMonth },
                 { value: "bench", label: t.waterfall.comparisonOptions.bench },
                 { value: "ytd-budget", label: t.waterfall.comparisonOptions.ytdBudget },
+                { value: "ytd-vs-ytd", label: t.waterfall.comparisonOptions.ytdVsYtd },
                 { value: "manual", label: t.waterfall.comparisonOptions.manual },
               ]} />
           </Row>
           {comparisonMode === "ytd-budget" && (
             <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
               {t.waterfall.ytdBudgetHint}
+            </div>
+          )}
+          {comparisonMode === "ytd-vs-ytd" && (
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
+              {t.waterfall.ytdVsYtdHint}
             </div>
           )}
           {comparisonMode === "bench" && (

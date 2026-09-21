@@ -211,9 +211,10 @@ export const ptBR = {
             bridgeModeOptions: { pvm: "PVM (auto)", manual: "Manual" },
             comparisonOptions: {
               prevMonth: "Mês ant.", prevYearMonth: "Mês AA", bench: "Bench",
-              ytdBudget: "YTD Budget", manual: "Manual",
+              ytdBudget: "YTD Budget", ytdVsYtd: "YTD vs YTD", manual: "Manual",
             },
             ytdBudgetHint: "Real acumulado do FY atual contra o Budget dos mesmos meses realizados.",
+            ytdVsYtdHint: "Real acumulado do FY atual contra o Real dos mesmos meses do FY anterior.",
             benchNoData: "Bench: sem dados suficientes",
             benchLabel: "Bench:",
             periodOptions: { month: "Mês", fy: "Ano fiscal" },
@@ -711,6 +712,8 @@ export const ptBR = {
               comparisonLabel: "Comp.",
               ytdBudgetOption: "YTD Real vs Budget",
               ytdBudgetHint: "Real acumulado do FY atual contra o Budget dos mesmos meses realizados.",
+              ytdVsYtdOption: "YTD vs YTD (ano anterior)",
+              ytdVsYtdHint: "Real acumulado do FY atual contra o Real dos mesmos meses do FY anterior.",
             },
             farol: {
               comparisonSection: "Comparação",
@@ -1317,8 +1320,12 @@ export const ptBR = {
       },
       bridgePvmPanel: {
         mode: "Modo",
-        modeOptions: { month: "Mês a mês", fy: "Ano fiscal", ytdBudget: "YTD Real vs Budget" },
+        modeOptions: {
+          month: "Mês a mês", fy: "Ano fiscal", ytdBudget: "YTD Real vs Budget",
+          ytdVsYtd: "YTD vs YTD (ano anterior)",
+        },
         ytdBudgetHint: "Compara o Real acumulado do ano fiscal atual contra o Budget dos mesmos meses realizados.",
+        ytdVsYtdHint: "Compara o Real acumulado do ano fiscal atual contra o Real dos mesmos meses do ano fiscal anterior (ano fiscal abril–março).",
         base: "Base",
         comparison: "Comparação",
         choosePlaceholder: "Escolha...",

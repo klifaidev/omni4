@@ -14,7 +14,7 @@ import type { BudgetRow } from "./budget";
 import { applyFilters, calcPVM } from "./analytics";
 import { applyBudgetFilters } from "./budget";
 import { useBudget } from "@/store/budget";
-import { computeBridgeYtdRealVsBudget } from "./bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "./bridgeYtdBudget";
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
 import type { SlideFlowItem, BudgetEvoRow } from "./exportPpt";
@@ -34,7 +34,7 @@ export interface BaseSlideItem {
 }
 
 export interface BridgePvmSlideConfig {
-  mode: "fy" | "month" | "ytd_budget";
+  mode: "fy" | "month" | "ytd_budget" | "ytd_vs_ytd";
   base: string | null;
   comp: string | null;
   /** Filtros específicos deste slide (não afetam outros slides) */
@@ -174,6 +174,15 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
             const ytd = computeBridgeYtdRealVsBudget(ctx.budgetRows, cfg.filters, ctx.metric);
             if (!ytd) {
               throw new Error(`Bridge PVM "${item.label}": sem dados Real/Budget suficientes para YTD.`);
+            }
+            const { addBridgePvmSlides } = await import("./exportPpt");
+            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
+            return;
+          }
+          if (cfg.mode === "ytd_vs_ytd") {
+            const ytd = computeBridgeYtdVsYtd(ctx.budgetRows, cfg.filters, ctx.metric);
+            if (!ytd) {
+              throw new Error(`Bridge PVM "${item.label}": sem dados Real suficientes para YTD vs YTD (precisa do ano fiscal atual e do anterior).`);
             }
             const { addBridgePvmSlides } = await import("./exportPpt");
             await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
@@ -337,6 +346,10 @@ export function isItemReady(item: SlideItem): { ok: boolean; reason?: string } {
     case "bridge_pvm":
       if (item.config.mode === "ytd_budget") {
         if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue a Superbase com Budget e Real antes de usar YTD Real vs Budget." };
+        return { ok: true };
+      }
+      if (item.config.mode === "ytd_vs_ytd") {
+        if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue a Superbase com Real antes de usar YTD vs YTD." };
         return { ok: true };
       }
       if (!item.config.base || !item.config.comp) return { ok: false, reason: "Defina período base e comparação." };

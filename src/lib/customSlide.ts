@@ -669,7 +669,7 @@ export interface OmniBridgePvmBlock extends OmniBaseBlock {
   baseRelativePeriod?: RelativePeriodPreset;
   compSelectionMode?: PeriodSelectionMode;
   compRelativePeriod?: RelativePeriodPreset;
-  periodMode: "fy" | "month" | "ytd_budget";
+  periodMode: "fy" | "month" | "ytd_budget" | "ytd_vs_ytd";
 }
 
 export interface OmniFarolBlock extends OmniBaseBlock {
