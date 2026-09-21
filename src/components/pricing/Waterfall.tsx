@@ -23,9 +23,22 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
       { label: "Efeito Volume", delta: data.volume, total: false, color: "hsl(var(--pvm-volume))" },
       { label: "Efeito Preço", delta: data.price, total: false, color: "hsl(var(--pvm-price))" },
       { label: "Efeito Custo Variável", delta: data.cost, total: false, color: "hsl(var(--pvm-cost))" },
-      { label: "Efeito Frete", delta: data.freight, total: false, color: "hsl(var(--pvm-freight))" },
-      { label: "Efeito Comissão", delta: data.commission, total: false, color: "hsl(var(--pvm-commission))" },
-      { label: "Efeito Outros", delta: data.others, total: false, color: "hsl(var(--pvm-others))" },
+      // Frete/Comissão saem à parte só quando o bridge realmente os abre —
+      // bridges baseados em Budget (YTD Real vs Budget, YTD vs YTD) não têm
+      // essas duas linhas (viram 0 e ficam escondidas dentro do Custo), e
+      // mostrá-las aqui como barra zerada ao lado do Mix confundiria mais
+      // do que ajudaria.
+      ...(data.commercialCostsCollapsed ? [] : [
+        { label: "Efeito Frete", delta: data.freight, total: false, color: "hsl(var(--pvm-freight))" },
+        { label: "Efeito Comissão", delta: data.commission, total: false, color: "hsl(var(--pvm-commission))" },
+      ]),
+      // "Efeito Outros" antes vinha como uma barra só — sem visibilidade de
+      // que a maior parte dela costuma ser giro de portfólio (SKU
+      // novo/descontinuado) ou ruído de SKU de baixo volume, não mix de
+      // verdade. Ver PVMResult.mixEffect/newDiscontinuedEffect/lowVolumeEffect.
+      { label: "Efeito Mix", delta: data.mixEffect, total: false, color: "hsl(var(--pvm-others))" },
+      { label: "SKU Novo/Descontinuado", delta: data.newDiscontinuedEffect, total: false, color: "hsl(var(--pvm-others))" },
+      { label: "Baixo Volume", delta: data.lowVolumeEffect, total: false, color: "hsl(var(--pvm-others))" },
       { label: data.currentLabel, delta: data.current, total: true, color: "hsl(var(--pvm-base))" },
     ],
     [data],

@@ -702,20 +702,18 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
     { label: "Efeito volume", value: pvm.volume, type: "delta" as const },
     { label: "Efeito frete", value: pvm.freight, type: "delta" as const },
     { label: "Efeito comissão", value: pvm.commission, type: "delta" as const },
-    { label: "Efeito outros", value: pvm.others, type: "delta" as const },
+    { label: "Efeito mix", value: pvm.mixEffect, type: "delta" as const },
+    { label: "SKU novo/desc.", value: pvm.newDiscontinuedEffect, type: "delta" as const },
+    { label: "Baixo volume", value: pvm.lowVolumeEffect, type: "delta" as const },
     { label: "Efeito preço", value: pvm.price, type: "delta" as const },
     { label: "Efeito custo", value: pvm.cost, type: "delta" as const },
     { label: `CM ${pvm.currentLabel}`, value: pvm.current, type: "total" as const },
   ];
+  // Frete/Comissão só existem como linhas próprias quando o bridge realmente
+  // as abre (não é o caso dos bridges baseados em Budget — YTD Real vs
+  // Budget, YTD vs YTD — onde ficam sempre em 0, embutidas no Custo).
   const displaySteps = pvm.commercialCostsCollapsed
-    ? [
-      steps[0],
-      steps[1],
-      { label: `Efeito ${pvm.othersLabel ?? "Mix e Resíduo Comercial"}`, value: pvm.others, type: "delta" as const },
-      steps[5],
-      steps[6],
-      steps[7],
-    ]
+    ? [steps[0], steps[1], steps[4], steps[5], steps[6], steps[7], steps[8], steps[9]]
     : steps;
 
   const geom: { start: number; end: number; value: number; type: "total" | "delta" }[] = [];

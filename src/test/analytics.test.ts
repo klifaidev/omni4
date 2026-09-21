@@ -193,6 +193,31 @@ describe("calcPVM", () => {
 
     expect(res.skuDetails.some((detail) => (detail.lowVolumeResidualEffect ?? 0) !== 0)).toBe(true);
     expect(mixPageTotal).toBeCloseTo(res.others, 6);
+
+    // A quebra de `others` (mixEffect + newDiscontinuedEffect + lowVolumeEffect)
+    // deve somar exatamente o total — cada SKU cai em exatamente uma das três,
+    // conforme residualCause (ver PVMResult.mixEffect/newDiscontinuedEffect/
+    // lowVolumeEffect em analytics.ts).
+    expect(res.mixEffect + res.newDiscontinuedEffect + res.lowVolumeEffect).toBeCloseTo(res.others, 6);
+    // NEW só existe no período de comparação → cai em "SKU novo/descontinuado".
+    expect(res.newDiscontinuedEffect).toBeCloseTo(600, 6);
+    // TINY tem volume abaixo do piso de materialidade nos dois lados → "baixo volume".
+    expect(res.lowVolumeEffect).toBeCloseTo(500 - 60, 6);
+  });
+
+  it("keeps mixEffect/newDiscontinuedEffect/lowVolumeEffect at zero for empty and identical-period inputs", () => {
+    const empty = calcPVM([], "mb", "FY24/25", "FY25/26", "fy");
+    expect(empty.mixEffect).toBe(0);
+    expect(empty.newDiscontinuedEffect).toBe(0);
+    expect(empty.lowVolumeEffect).toBe(0);
+
+    const rows = [
+      makeRow({ sku: "A", volumeKg: 50, rol: 500, cogs: 300, margemBruta: 200, contribMarginal: 200 }),
+    ];
+    const same = calcPVM(rows, "mb", "005.2025", "005.2025", "month");
+    expect(same.mixEffect).toBeCloseTo(0, 6);
+    expect(same.newDiscontinuedEffect).toBeCloseTo(0, 6);
+    expect(same.lowVolumeEffect).toBeCloseTo(0, 6);
   });
 });
 

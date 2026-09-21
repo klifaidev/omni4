@@ -2853,7 +2853,9 @@ function WaterfallChart({
         );
       }
       items.push(
-        { label: r.othersLabel ?? "Mix e Resíduo Comercial", value: r.others, type: t(r.others) },
+        { label: "Mix", value: r.mixEffect, type: t(r.mixEffect) },
+        { label: "SKU Novo/Descontinuado", value: r.newDiscontinuedEffect, type: t(r.newDiscontinuedEffect) },
+        { label: "Baixo Volume", value: r.lowVolumeEffect, type: t(r.lowVolumeEffect) },
         { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
       );
       return items;

@@ -399,9 +399,21 @@ export interface PVMResult {
   cost: number;       // Custo variável (CPV)
   freight: number;    // Frete sobre vendas
   commission: number; // Comissão
-  others: number;     // Mix + outros (resíduo)
+  others: number;     // Mix + SKU novo/descontinuado + baixo volume (soma dos 3 abaixo)
   othersLabel?: string;
   commercialCostsCollapsed?: boolean;
+  /** Quebra de `others` por causa (ver PVMSkuDetail.residualCause) — os três
+   *  somam exatamente `others`. Mix = SKUs presentes nos dois lados, com
+   *  volume acima do piso de materialidade, cujo efeito não é explicado por
+   *  volume/preço/custo puro. SKU novo/descontinuado = SKU presente em só um
+   *  dos dois períodos (todo o impacto de margem dele cai aqui, não dá pra
+   *  decompor em volume/preço/custo sem um "antes" ou "depois"). Baixo
+   *  volume = SKU abaixo do piso de materialidade nos dois lados — usa o
+   *  efeito bruto (Δmargem) em vez das razões unitárias, que ficam instáveis
+   *  com denominador pequeno (ver MIN_VOLUME_SHARE_FOR_UNIT_EFFECTS). */
+  mixEffect: number;
+  newDiscontinuedEffect: number;
+  lowVolumeEffect: number;
   current: number;
   baseLabel: string;
   currentLabel: string;
@@ -479,6 +491,9 @@ export function calcPVMFromRows(
   let costEffect = 0;
   let freightEffect = 0;
   let commissionEffect = 0;
+  let mixEffect = 0;
+  let skuOnlyEffect = 0;
+  let lowVolumeEffect = 0;
 
   const skuDetails: PVMSkuDetail[] = [];
   const allSkus = new Set([...a.keys(), ...b.keys()]);
@@ -515,6 +530,7 @@ export function calcPVMFromRows(
       detail.othersEffect = (rb?.margem ?? 0) - (ra?.margem ?? 0);
       detail.skuOnlyEffect = detail.othersEffect;
       detail.residualCause = "sku_only";
+      skuOnlyEffect += detail.othersEffect;
       skuDetails.push(detail);
       continue;
     }
@@ -523,6 +539,7 @@ export function calcPVMFromRows(
       detail.othersEffect = rb.margem - ra.margem;
       detail.lowVolumeResidualEffect = detail.othersEffect;
       detail.residualCause = "low_volume";
+      lowVolumeEffect += detail.othersEffect;
       skuDetails.push(detail);
       continue;
     }
@@ -556,6 +573,7 @@ export function calcPVMFromRows(
       (rb.margem - ra.margem) - skuVol - skuPrice - skuCost - skuFreight - skuComm;
     detail.mixResidualEffect = detail.othersEffect;
     detail.residualCause = "mix";
+    mixEffect += detail.othersEffect;
 
     volEffect += skuVol;
     priceEffect += skuPrice;
@@ -577,6 +595,9 @@ export function calcPVMFromRows(
     freight: freightEffect,
     commission: commissionEffect,
     others,
+    mixEffect,
+    newDiscontinuedEffect: skuOnlyEffect,
+    lowVolumeEffect,
     current: currentTotal,
     baseLabel: labels?.base ?? "Base",
     currentLabel: labels?.comp ?? "Comparacao",

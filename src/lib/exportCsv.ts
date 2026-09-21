@@ -76,7 +76,9 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
   lines.push(["Efeito Custo Variavel", fmt(result.cost)].join(sep));
   lines.push(["Efeito Frete", fmt(result.freight)].join(sep));
   lines.push(["Efeito Comissao", fmt(result.commission)].join(sep));
-  lines.push([`Efeito ${result.othersLabel ?? "Mix e Residuo Comercial"}`, fmt(result.others)].join(sep));
+  lines.push(["Efeito Mix", fmt(result.mixEffect)].join(sep));
+  lines.push(["Efeito SKU Novo/Descontinuado", fmt(result.newDiscontinuedEffect)].join(sep));
+  lines.push(["Efeito Baixo Volume", fmt(result.lowVolumeEffect)].join(sep));
   lines.push(["Margem Atual (B)", fmt(result.current)].join(sep));
   lines.push(["Variacao Total", fmt(result.current - result.base)].join(sep));
   lines.push("");

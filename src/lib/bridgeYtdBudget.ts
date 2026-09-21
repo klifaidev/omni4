@@ -129,6 +129,9 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
   let volume = 0;
   let price = 0;
   let cost = 0;
+  let mixEffect = 0;
+  let skuOnlyEffect = 0;
+  let lowVolumeEffect = 0;
   const skuDetails: PVMSkuDetail[] = [];
 
   for (const sku of new Set([...base.keys(), ...comp.keys()])) {
@@ -165,6 +168,7 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
       detail.othersEffect = (b?.margem ?? 0) - (a?.margem ?? 0);
       detail.skuOnlyEffect = detail.othersEffect;
       detail.residualCause = "sku_only";
+      skuOnlyEffect += detail.othersEffect;
       skuDetails.push(detail);
       continue;
     }
@@ -173,6 +177,7 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
       detail.othersEffect = b.margem - a.margem;
       detail.lowVolumeResidualEffect = detail.othersEffect;
       detail.residualCause = "low_volume";
+      lowVolumeEffect += detail.othersEffect;
       skuDetails.push(detail);
       continue;
     }
@@ -188,6 +193,7 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
     detail.othersEffect = othersEffect;
     detail.mixResidualEffect = othersEffect;
     detail.residualCause = "mix";
+    mixEffect += othersEffect;
     skuDetails.push(detail);
 
     volume += volumeEffect;
@@ -204,6 +210,9 @@ function computeBudgetStyleBridge(baseRows: PricingRow[], compRows: PricingRow[]
     freight: 0,
     commission: 0,
     others,
+    mixEffect,
+    newDiscontinuedEffect: skuOnlyEffect,
+    lowVolumeEffect,
     othersLabel: "Mix e Resíduo Comercial",
     commercialCostsCollapsed: true,
     current: currentTotal,

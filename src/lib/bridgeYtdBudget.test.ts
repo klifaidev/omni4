@@ -82,6 +82,10 @@ describe("computeBridgeYtdVsYtd", () => {
     expect(result?.result.current).toBe(165); // FY26/27 Abr–Jun
     expect(result?.result.baseLabel).toContain("FY25/26");
     expect(result?.result.currentLabel).toContain("FY26/27");
+    // Mesmo SKU ("Chocolates", default de rowRealFy) presente nos dois lados
+    // com volume material — a quebra de others soma exatamente o total.
+    const sumOfThree = (result?.result.mixEffect ?? 0) + (result?.result.newDiscontinuedEffect ?? 0) + (result?.result.lowVolumeEffect ?? 0);
+    expect(sumOfThree).toBeCloseTo(result?.result.others ?? 0);
   });
 
   it("uses only the same relative months of the previous fiscal year, ignoring extra months", () => {
@@ -180,6 +184,11 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(result?.result.price).toBeCloseTo(12);
     expect(result?.result.cost).toBeCloseTo(-18);
     expect(result?.result.others).toBeCloseTo(0);
+    // Único SKU, presente nos dois lados com volume material — nada cai em
+    // SKU novo/descontinuado ou baixo volume.
+    expect(result?.result.mixEffect).toBeCloseTo(0);
+    expect(result?.result.newDiscontinuedEffect).toBe(0);
+    expect(result?.result.lowVolumeEffect).toBe(0);
     expect(result?.result.current).toBeCloseTo(
       (result?.result.base ?? 0)
       + (result?.result.volume ?? 0)
@@ -215,6 +224,11 @@ describe("computeBridgeYtdRealVsBudget", () => {
     expect(tiny?.priceEffect).toBe(0);
     expect(tiny?.costEffect).toBe(0);
     expect(tiny?.lowVolumeResidualEffect).toBeCloseTo(2);
+    // O agregado do bridge reflete a mesma classificação: o efeito do SKU
+    // de baixo volume vai pra lowVolumeEffect, não pra mixEffect.
+    expect(result?.result.lowVolumeEffect).toBeCloseTo(2);
+    const sumOfThree = (result?.result.mixEffect ?? 0) + (result?.result.newDiscontinuedEffect ?? 0) + (result?.result.lowVolumeEffect ?? 0);
+    expect(sumOfThree).toBeCloseTo(result?.result.others ?? 0);
   });
 
   it("validates bridge current against an independent DRE CM total", () => {
