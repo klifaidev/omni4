@@ -644,9 +644,23 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   // não um rótulo pronto — sem formatar, esse código vazava direto pro
   // rodapé do card ("Ticket Médio (Kg/cliente) · 006.2026" em vez de
   // "· Jun/2026"). Modo "fy" já guarda a string pronta (ex.: "FY26/27").
+  // Período relativo ("mês mais recente - 2") mostra a REGRA resolvida pro
+  // mês/FY concreto (ex.: "Abr/26"), não o texto da regra em si — resolve
+  // com os mesmos dados usados por computeKpiBlock, senão o rótulo fica
+  // desalinhado do valor exibido quando os filtros mudam.
   const periodDescriptor = b.periodMode && b.periodMode !== "all"
     ? b.periodSelectionMode === "relative"
-      ? t.kpi.relative(relativePeriodLabel(b.relativePeriod))
+      ? (() => {
+          const resolved = resolvePeriodValue(rows, b.periodMode, b.periodValue, b.periodSelectionMode, b.relativePeriod);
+          if (!resolved) return t.kpi.relative(relativePeriodLabel(b.relativePeriod));
+          const resolvedLabel = b.periodMode === "month"
+            ? (() => {
+                const parsed = parsePeriod(resolved);
+                return parsed ? monthLabel(parsed.mes, parsed.ano) : resolved;
+              })()
+            : resolved;
+          return t.kpi.relative(resolvedLabel);
+        })()
       : b.periodMode === "month" && b.periodValue
         ? (() => {
             const parsed = parsePeriod(b.periodValue);
