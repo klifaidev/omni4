@@ -648,7 +648,23 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   // mês/FY concreto (ex.: "Abr/26"), não o texto da regra em si — resolve
   // com os mesmos dados usados por computeKpiBlock, senão o rótulo fica
   // desalinhado do valor exibido quando os filtros mudam.
-  const periodDescriptor = b.periodMode && b.periodMode !== "all"
+  //
+  // Quando um filtro cruzado de OUTRO bloco do slide está ativo, o card
+  // participa (participatesInCrossFilter !== false) e `effectiveBlock` força
+  // periodMode "all" pra não filtrar em cima do filtro alheio (ver acima) —
+  // ou seja, o VALOR mostrado passa a refletir o período do filtro cruzado,
+  // não o período configurado no próprio card. Sem este bloco, o rótulo
+  // continuava dizendo "Relativo: Jul/26" mesmo quando o número já era outro
+  // (ex.: agregado de vários meses de um filtro cruzado "Todos"), fazendo o
+  // card mentir sobre o que estava mostrando.
+  const periodDescriptor = periodFilterValues.length > 0
+    ? t.kpi.filteredByOther(
+        (() => {
+          const distinct = Array.from(new Set(periodFilterValues));
+          return distinct.length <= 3 ? distinct.join(", ") : `${distinct.length} períodos`;
+        })(),
+      )
+    : b.periodMode && b.periodMode !== "all"
     ? b.periodSelectionMode === "relative"
       ? (() => {
           const resolved = resolvePeriodValue(rows, b.periodMode, b.periodValue, b.periodSelectionMode, b.relativePeriod);

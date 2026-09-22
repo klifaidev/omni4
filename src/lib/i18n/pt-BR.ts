@@ -829,6 +829,7 @@ export const ptBR = {
           fallbackLabel: "KPI",
           allPeriods: "Todos os períodos",
           relative: (label: string) => `Relativo: ${label}`,
+          filteredByOther: (label: string) => `Filtrado: ${label}`,
         },
         bridge: {
           calculating: "Calculando Bridge...",
