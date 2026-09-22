@@ -38,7 +38,7 @@ export function Waterfall({ data, height = 360, labelAngle = 0 }: WaterfallProps
       // verdade. Ver PVMResult.mixEffect/newDiscontinuedEffect/lowVolumeEffect.
       { label: "Efeito Mix", delta: data.mixEffect, total: false, color: "hsl(var(--pvm-others))" },
       { label: "SKU Novo/Descontinuado", delta: data.newDiscontinuedEffect, total: false, color: "hsl(var(--pvm-others))" },
-      { label: "Baixo Volume", delta: data.lowVolumeEffect, total: false, color: "hsl(var(--pvm-others))" },
+      { label: "Outros", delta: data.lowVolumeEffect, total: false, color: "hsl(var(--pvm-others))" },
       { label: data.currentLabel, delta: data.current, total: true, color: "hsl(var(--pvm-base))" },
     ],
     [data],

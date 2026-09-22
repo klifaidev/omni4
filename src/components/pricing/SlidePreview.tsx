@@ -704,7 +704,7 @@ function BridgeWaterfall({ pvm, x, y, w, h, wrapLabels = false }: { pvm: PVMResu
     { label: "Efeito comissão", value: pvm.commission, type: "delta" as const },
     { label: "Efeito mix", value: pvm.mixEffect, type: "delta" as const },
     { label: "SKU novo/desc.", value: pvm.newDiscontinuedEffect, type: "delta" as const },
-    { label: "Baixo volume", value: pvm.lowVolumeEffect, type: "delta" as const },
+    { label: "Outros", value: pvm.lowVolumeEffect, type: "delta" as const },
     { label: "Efeito preço", value: pvm.price, type: "delta" as const },
     { label: "Efeito custo", value: pvm.cost, type: "delta" as const },
     { label: `CM ${pvm.currentLabel}`, value: pvm.current, type: "total" as const },

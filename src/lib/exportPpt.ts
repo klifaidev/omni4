@@ -431,7 +431,7 @@ function addOverviewDreBridgeSlide(
   steps.push(
     { label: "Efeito mix", value: result.mixEffect, type: "delta" },
     { label: "SKU novo/descontinuado", value: result.newDiscontinuedEffect, type: "delta" },
-    { label: "Baixo volume", value: result.lowVolumeEffect, type: "delta" },
+    { label: "Outros", value: result.lowVolumeEffect, type: "delta" },
     { label: "Efeito preço", value: result.price, type: "delta" },
     { label: "Efeito custo variável", value: result.cost, type: "delta" },
     { label: `Contrib. Marginal ${result.currentLabel}`, value: result.current, type: "total" },
@@ -598,7 +598,7 @@ function addBridgeTableSlide(pptx: PptxGenJS, result: PVMResult) {
     ] as PptxGenJS.TableRow[]),
     [{ text: "Efeito Mix" }, { text: brl(result.mixEffect), options: { align: "right" } }],
     [{ text: "SKU Novo/Descontinuado" }, { text: brl(result.newDiscontinuedEffect), options: { align: "right" } }],
-    [{ text: "Baixo Volume" }, { text: brl(result.lowVolumeEffect), options: { align: "right" } }],
+    [{ text: "Outros" }, { text: brl(result.lowVolumeEffect), options: { align: "right" } }],
     [
       { text: `Margem atual (${result.currentLabel})`, options: { bold: true, fill: { color: PPT_COLORS.surfaceAlt } } },
       { text: brl(result.current), options: { bold: true, align: "right", fill: { color: PPT_COLORS.surfaceAlt } } },

@@ -78,7 +78,7 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
   lines.push(["Efeito Comissao", fmt(result.commission)].join(sep));
   lines.push(["Efeito Mix", fmt(result.mixEffect)].join(sep));
   lines.push(["Efeito SKU Novo/Descontinuado", fmt(result.newDiscontinuedEffect)].join(sep));
-  lines.push(["Efeito Baixo Volume", fmt(result.lowVolumeEffect)].join(sep));
+  lines.push(["Efeito Outros", fmt(result.lowVolumeEffect)].join(sep));
   lines.push(["Margem Atual (B)", fmt(result.current)].join(sep));
   lines.push(["Variacao Total", fmt(result.current - result.base)].join(sep));
   lines.push("");
@@ -115,7 +115,7 @@ export function exportPvmCsv(result: PVMResult, filenameHint = "bridge_pvm") {
     result.othersLabel ?? "Mix e Residuo Comercial",
     "Causa Residuo",
     "Residuo SKU Exclusivo",
-    "Residuo Baixo Volume",
+    "Residuo Outros",
     "Residuo Mix",
   ];
   lines.push(header.map(esc).join(sep));

@@ -2855,7 +2855,7 @@ function WaterfallChart({
       items.push(
         { label: "Mix", value: r.mixEffect, type: t(r.mixEffect) },
         { label: "SKU Novo/Descontinuado", value: r.newDiscontinuedEffect, type: t(r.newDiscontinuedEffect) },
-        { label: "Baixo Volume", value: r.lowVolumeEffect, type: t(r.lowVolumeEffect) },
+        { label: "Outros", value: r.lowVolumeEffect, type: t(r.lowVolumeEffect) },
         { label: repairMojibakeLabel(r.currentLabel), value: r.current, type: "total" as const },
       );
       return items;
