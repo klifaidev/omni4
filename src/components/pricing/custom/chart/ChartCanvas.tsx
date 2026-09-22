@@ -2976,11 +2976,16 @@ function WaterfallChart({
         const labelLineCount = wrapLabels
           ? Math.max(1, ...wfRows.map((r) => wrapLabelLines(r.label).length))
           : 1;
+        // Espaço da primeira linha até a linha do eixo, e uma folga no fim —
+        // com isso a última linha sempre cabe dentro de m.bottom, nunca
+        // "sobra" pra cima por cima das barras do gráfico.
+        const wrapTopPad = labelFs + 4;
+        const wrapBottomPad = 6;
         const m = {
           top: Math.max(20, H * 0.08),
           right: mProvisional.right,
           bottom: wrapLabels
-            ? Math.max(40, H * 0.16, 16 + labelLineCount * (labelFs + 4))
+            ? Math.max(40, H * 0.16, wrapTopPad + (labelLineCount - 1) * (labelFs + 4) + wrapBottomPad)
             : Math.max(40, H * 0.16),
           left: mProvisional.left,
         };
@@ -3029,7 +3034,7 @@ function WaterfallChart({
                   <rect x={x} y={y} width={barW} height={h} fill={fill} rx="2" />
                   {style.dataLabels.show && <text x={cx} y={labelY} textAnchor="middle" fontSize={dlFs} fill={style.dataLabels.color} fontWeight={style.dataLabels.bold ? 700 : 400} fontStyle={style.dataLabels.italic ? "italic" : "normal"}>{labelTxt}</text>}
                   {wrapLabels ? (
-                    <text x={cx} y={H - Math.max(12, m.bottom * 0.45) - (labelLineCount - 1) * (labelFs + 4)} textAnchor="middle" fontSize={labelFs} fill={style.xAxis.labelColor}>
+                    <text x={cx} y={H - m.bottom + wrapTopPad} textAnchor="middle" fontSize={labelFs} fill={style.xAxis.labelColor}>
                       {wrapLabelLines(r.label).map((line, li) => (
                         <tspan key={li} x={cx} dy={li === 0 ? 0 : labelFs + 4}>{line}</tspan>
                       ))}
