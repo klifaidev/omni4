@@ -27,10 +27,17 @@ export interface KpiAgg {
   clientesPositivados: Set<string>;
 }
 
-export function aggregateKpi(rows: PricingRow[]): KpiAgg {
+/**
+ * `volumeMultiplier`: 1 quando a coluna de volume da base já está em Kg
+ * (padrão). Passe 1000 quando o bloco declarar `volumeUnit: "ton"` — a
+ * multiplicação acontece aqui, uma única vez, antes de qualquer medida
+ * (Volume, Ticket Médio, Preço Médio) usar o total agregado, então as três
+ * ficam corretas juntas sem precisar de lógica separada em cada uma.
+ */
+export function aggregateKpi(rows: PricingRow[], volumeMultiplier = 1): KpiAgg {
   const acc = emptyKpiAgg();
   for (const r of rows) {
-    addToKpiAgg(acc, r);
+    addToKpiAgg(acc, r, volumeMultiplier);
   }
   return acc;
 }
@@ -48,15 +55,16 @@ function emptyKpiAgg(): KpiAgg {
   };
 }
 
-function addToKpiAgg(acc: KpiAgg, r: PricingRow) {
+function addToKpiAgg(acc: KpiAgg, r: PricingRow, volumeMultiplier = 1) {
+  const volumeKg = (r.volumeKg ?? 0) * volumeMultiplier;
   acc.rol += r.rol;
-  acc.volume += r.volumeKg;
+  acc.volume += volumeKg;
   acc.cm += r.contribMarginal;
   acc.mb += r.margemBruta;
   acc.cv += r.custoVariavel;
   acc.frete += r.frete;
   acc.comissao += r.comissao;
-  if ((r.volumeKg ?? 0) > 0 || (r.rol ?? 0) > 0) {
+  if (volumeKg > 0 || (r.rol ?? 0) > 0) {
     const cliente = clienteId(r.cliente);
     if (cliente) acc.clientesPositivados.add(cliente);
   }
@@ -115,7 +123,8 @@ export function computeKpiBlock(rows: PricingRow[], block: KpiBlock): string {
     mode,
     value,
   );
-  const agg = aggregateKpi(filtered);
+  const volumeMultiplier = block.volumeUnit === "ton" ? 1000 : 1;
+  const agg = aggregateKpi(filtered, volumeMultiplier);
   return formatValue(pickMeasure(agg, measure), block.format ?? "auto", measure);
 }
 

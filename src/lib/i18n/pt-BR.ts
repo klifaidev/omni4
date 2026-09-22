@@ -477,6 +477,9 @@ export const ptBR = {
             colorHex: "Cor (hex)",
             cardBg: "Fundo do card",
             reactToFilters: "Reagir a filtros do slide",
+            volumeUnit: "Unidade do volume",
+            volumeUnitOptions: { kg: "Quilos (Kg)", ton: "Toneladas" },
+            volumeUnitHint: "Se a coluna de volume da sua base vem em toneladas, marque aqui — o app multiplica por 1.000 antes de calcular Volume, Ticket Médio e Preço Médio, então os três ficam certos juntos.",
             // Fase 1 do "Roteiro do Slides" — o KPI era o único inspector
             // sem nenhum agrupamento (Section), enquanto o resto do editor
             // (Chart pós-flatten, Table, Omni) já usava. Estes 3 títulos

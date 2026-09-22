@@ -159,6 +159,11 @@ export interface KpiBlock extends BaseBlock {
   cardBg?: string;
   /** Cross-filter participation — recebe filtros emitidos por outros blocos. Default true. */
   participatesInCrossFilter?: boolean;
+  /** Unidade em que a coluna de volume da base está expressa. "kg" (default,
+   *  retrocompatível) usa o campo volumeKg como está. "ton" multiplica por
+   *  1000 antes de qualquer cálculo — corrige junto Volume, Ticket Médio
+   *  (Kg/cliente) e Preço Médio (R$/Kg), que dependem do mesmo campo. */
+  volumeUnit?: "kg" | "ton";
 }
 
 export interface ImageBlock extends BaseBlock {

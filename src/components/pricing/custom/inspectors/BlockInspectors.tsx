@@ -805,6 +805,20 @@ function KpiInspector({ block, onChange }: {
               </p>
             )}
           </div>
+          {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
+            <div>
+              <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.volumeUnit}</Label>
+              <Segmented
+                value={block.volumeUnit ?? "kg"}
+                onChange={(v) => onChange({ volumeUnit: v as never } as never)}
+                options={[
+                  { value: "kg", label: t.kpi.volumeUnitOptions.kg },
+                  { value: "ton", label: t.kpi.volumeUnitOptions.ton },
+                ]}
+              />
+              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-[10px] uppercase text-muted-foreground">{tc.period}</Label>
