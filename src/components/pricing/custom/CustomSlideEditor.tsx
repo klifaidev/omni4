@@ -195,7 +195,7 @@ function SlideSourceFooterEditor({
   );
 }
 import {
-  useEditorBinding, useUndoRedoState,
+  useEditorBinding, useEditorLiveConfig, useUndoRedoState,
   addBlockAction, addChartBlockAction, deleteBlockAction, duplicateBlockAction,
   patchBlockAction, bringForwardAction, sendBackAction, bringToFrontAction,
   sendToBackAction, toggleLockAction,
@@ -406,7 +406,7 @@ function areCustomSlideEditorPropsEqual(prev: Props, next: Props): boolean {
 
 export const CustomSlideEditor = memo(function CustomSlideEditor({
   slideId,
-  config,
+  config: configFromParent,
   onChange,
   readOnly = false,
   isStandby = false,
@@ -415,7 +415,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   if (isSlidePerfEnabled()) recordSlideRender("CustomSlideEditor", slideId);
   // Bind the parent's config <-> internal Zustand+temporal store first so
   // selection store reflects the right slide on initial render.
-  useEditorBinding(config, onChange, slideId);
+  useEditorBinding(configFromParent, onChange, slideId);
+  // Canvas renderiza do store (pintura imediata), não da prop — a prop só
+  // volta depois da gravação adiada. Ver useEditorLiveConfig.
+  const config = useEditorLiveConfig(slideId, configFromParent);
   const undoRedo = useUndoRedoState();
   const { selectedIds, groupEditMemberId } = useSelection();
   const pricingRows = usePricing((s) => s.rows);
@@ -2832,8 +2835,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 </p>
               </div>
 
-              <PositionInputs block={selected} onChange={(p) => updateBlock(selected.id, p)} />
-              <BlockAppearanceControls block={selected} onChange={(p) => updateBlock(selected.id, p)} />
+              {/* key por bloco: sem ela, trocar de bloco selecionado reaproveita
+                * as MESMAS instâncias de input (React reconcilia por tipo +
+                * posição). Como os campos guardam rascunho local (DraftInput),
+                * o texto digitado no bloco anterior continuava na tela e era
+                * gravado no bloco novo — a edição "pulava" de um card pro
+                * outro. Com a key, cada bloco tem seus próprios inputs. */}
+              <PositionInputs key={`pos-${selected.id}`} block={selected} onChange={(p) => updateBlock(selected.id, p)} />
+              <BlockAppearanceControls key={`appearance-${selected.id}`} block={selected} onChange={(p) => updateBlock(selected.id, p)} />
               <Separator />
               <div
                 ref={inspectorStyleRef}
@@ -2843,6 +2852,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 )}
               >
                 <BlockSpecificEditor
+                  key={`specific-${selected.id}`}
                   block={selected}
                   onChange={(p) => updateBlock(selected.id, p)}
                   styleFocusRequest={styleFocusRequest}

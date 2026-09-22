@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-type CommitReason = "blur" | "enter" | "debounce";
+type CommitReason = "blur" | "enter" | "debounce" | "unmount";
 
 type DraftInputProps = Omit<ComponentProps<typeof Input>, "value" | "onChange" | "onBlur" | "onKeyDown"> & {
   value: string;
@@ -25,6 +25,8 @@ export function DraftInput({
   const focusedRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const latestValueRef = useRef(value);
+  const pendingRawRef = useRef<string | null>(null);
+  const commitRef = useRef<((raw: string, reason: CommitReason) => void) | null>(null);
 
   useEffect(() => {
     latestValueRef.current = value;
@@ -40,13 +42,30 @@ export function DraftInput({
 
   const commit = useCallback((raw: string, reason: CommitReason) => {
     clearTimer();
+    pendingRawRef.current = null;
     const next = normalize ? normalize(raw) : raw;
     onCommit(next);
     latestValueRef.current = next;
-    if (reason !== "debounce") setDraft(next);
+    if (reason === "blur" || reason === "enter") setDraft(next);
   }, [clearTimer, normalize, onCommit]);
 
-  useEffect(() => clearTimer, [clearTimer]);
+  useEffect(() => {
+    commitRef.current = commit;
+  });
+
+  // Ao desmontar, grava o que ainda estava pendente no debounce — usando o
+  // onCommit DESTA instância. Antes o timer era só cancelado: quem estivesse
+  // digitando e trocasse de bloco perdia a última alteração (o navegador não
+  // dispara blur quando o elemento focado é removido).
+  useEffect(() => () => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const pending = pendingRawRef.current;
+    pendingRawRef.current = null;
+    if (pending != null) commitRef.current?.(pending, "unmount");
+  }, []);
 
   return (
     <Input
@@ -60,6 +79,7 @@ export function DraftInput({
       onChange={(event) => {
         const next = event.target.value;
         setDraft(next);
+        pendingRawRef.current = next;
         if (commitDelayMs > 0) {
           clearTimer();
           timerRef.current = window.setTimeout(() => commit(next, "debounce"), commitDelayMs);
@@ -75,6 +95,7 @@ export function DraftInput({
         }
         if (event.key === "Escape") {
           clearTimer();
+          pendingRawRef.current = null;
           setDraft(latestValueRef.current);
           event.currentTarget.blur();
         }
@@ -103,6 +124,8 @@ export function DraftTextarea({
   const focusedRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const latestValueRef = useRef(value);
+  const pendingRawRef = useRef<string | null>(null);
+  const commitRef = useRef<((raw: string, reason: CommitReason) => void) | null>(null);
 
   useEffect(() => {
     latestValueRef.current = value;
@@ -118,13 +141,28 @@ export function DraftTextarea({
 
   const commit = useCallback((raw: string, reason: CommitReason) => {
     clearTimer();
+    pendingRawRef.current = null;
     const next = normalize ? normalize(raw) : raw;
     onCommit(next);
     latestValueRef.current = next;
-    if (reason !== "debounce") setDraft(next);
+    if (reason === "blur" || reason === "enter") setDraft(next);
   }, [clearTimer, normalize, onCommit]);
 
-  useEffect(() => clearTimer, [clearTimer]);
+  useEffect(() => {
+    commitRef.current = commit;
+  });
+
+  // Mesma proteção do DraftInput: grava o rascunho pendente ao desmontar,
+  // com o onCommit desta instância (ver comentário lá).
+  useEffect(() => () => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const pending = pendingRawRef.current;
+    pendingRawRef.current = null;
+    if (pending != null) commitRef.current?.(pending, "unmount");
+  }, []);
 
   return (
     <Textarea
@@ -138,6 +176,7 @@ export function DraftTextarea({
       onChange={(event) => {
         const next = event.target.value;
         setDraft(next);
+        pendingRawRef.current = next;
         if (commitDelayMs > 0) {
           clearTimer();
           timerRef.current = window.setTimeout(() => commit(next, "debounce"), commitDelayMs);
@@ -153,6 +192,7 @@ export function DraftTextarea({
         }
         if (event.key === "Escape") {
           clearTimer();
+          pendingRawRef.current = null;
           setDraft(latestValueRef.current);
           event.currentTarget.blur();
         }

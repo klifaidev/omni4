@@ -457,6 +457,37 @@ export function useEditorConfig(): CustomSlideConfig | null {
   return useStore(baseStore, (s) => s.config);
 }
 
+/**
+ * Config "ao vivo" pro canvas do editor.
+ *
+ * O editor renderizava direto da prop vinda do pai (useSlidesFlow). Isso
+ * acoplava PINTAR a PERSISTIR: cada edição só aparecia na tela depois de
+ * emitir pro pai → serializar a esteira inteira (JSON.stringify) → gravar em
+ * disco → a prop voltar. Com o emit adiado (EMIT_DEBOUNCE_MS), isso ficou
+ * pior ainda: a tela só atualizava meio segundo depois, e quando atualizava
+ * vinha junto com a gravação pesada no mesmo quadro — daí o "pisca e trava"
+ * a cada mudança.
+ *
+ * Lendo do store, o canvas repinta na hora (setState barato, sem
+ * serialização) e a gravação continua adiada em segundo plano. Quando a prop
+ * finalmente volta, é a MESMA referência que emitimos, então syncFromParent
+ * corta cedo e não há segundo render.
+ *
+ * O fallback existe pro primeiro render depois de trocar de slide: bind
+ * acontece num efeito, então até ele rodar o store ainda aponta pro slide
+ * anterior — renderizar isso mostraria o slide errado por um quadro.
+ */
+export function useEditorLiveConfig(
+  slideId: string | undefined,
+  fallback: CustomSlideConfig,
+): CustomSlideConfig {
+  const bound = useStore(
+    baseStore,
+    useShallow((s) => ({ config: s.config, slideId: s.slideId })),
+  );
+  return bound.config && bound.slideId === slideId ? bound.config : fallback;
+}
+
 /** Returns { canUndo, canRedo, undoLabel, redoLabel }. Re-renders on changes. */
 export function useUndoRedoState() {
   return useStore(

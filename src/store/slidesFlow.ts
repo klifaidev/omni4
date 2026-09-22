@@ -249,6 +249,26 @@ export function restoreSlidesFlowRawStateFromBackup(storage: Pick<Storage, "getI
   }
 }
 
+// O middleware `persist` do zustand grava a cada set() da store, sem comparar
+// se a fatia persistida mudou. Como `select()` (clicar em outro slide na
+// esteira) também é um set(), navegar pela aba disparava gravação da esteira
+// INTEIRA em disco — com rotação de backup (copyFileSync) no processo
+// principal — sem nada ter mudado. Guardamos o último payload gravado por
+// chave e descartamos gravações idênticas.
+const lastPersistedByKey = new Map<string, string>();
+
+function shouldSkipIdenticalWrite(name: string, value: string): boolean {
+  if (lastPersistedByKey.get(name) === value) return true;
+  lastPersistedByKey.set(name, value);
+  return false;
+}
+
+/** Esquece o payload memorizado — usado quando a gravação falha, pra não
+ *  deixar uma escrita futura idêntica ser descartada por engano. */
+function forgetPersistedSnapshot(name: string): void {
+  lastPersistedByKey.delete(name);
+}
+
 export function createSlidesFlowStorage(storage: Storage | undefined = typeof localStorage !== "undefined" ? localStorage : undefined): StateStorage {
   return {
     getItem: (name) => {
@@ -262,6 +282,7 @@ export function createSlidesFlowStorage(storage: Storage | undefined = typeof lo
     },
     setItem: (name, value) => {
       if (!storage) return;
+      if (shouldSkipIdenticalWrite(name, value)) return;
       if (name === SLIDES_FLOW_STORAGE_KEY) {
         const previous = storage.getItem(name);
         if (previous && persistedSlidesStateHasContent(previous)) {
@@ -287,6 +308,7 @@ export function createSlidesFlowStorage(storage: Storage | undefined = typeof lo
         storage.setItem(name, value);
         if (name === SLIDES_FLOW_STORAGE_KEY) reportSlidesFlowSaveStatus("saved");
       } catch (error) {
+        forgetPersistedSnapshot(name);
         if (name === SLIDES_FLOW_STORAGE_KEY) {
           console.error("[slidesFlow] Falha ao salvar a esteira — as alteracoes NAO foram persistidas.", error);
           reportSlidesFlowSaveStatus("error", error instanceof Error ? error.message : String(error));
@@ -295,6 +317,7 @@ export function createSlidesFlowStorage(storage: Storage | undefined = typeof lo
     },
     removeItem: (name) => {
       if (!storage) return;
+      forgetPersistedSnapshot(name);
       if (name === SLIDES_FLOW_STORAGE_KEY) backupSlidesFlowRawState(storage);
       storage.removeItem(name);
     },
@@ -355,10 +378,12 @@ export function createElectronSlidesFlowStorage(api: ElectronSlidesFlowAPI): Sta
       return result.ok ? (result.value ?? null) : null;
     },
     setItem: async (name, value) => {
+      if (shouldSkipIdenticalWrite(name, value)) return;
       if (name === SLIDES_FLOW_STORAGE_KEY) reportSlidesFlowSaveStatus("saving");
       const result = await api.salvar(name, value);
       if (name !== SLIDES_FLOW_STORAGE_KEY) return;
       if (!result.ok) {
+        forgetPersistedSnapshot(name);
         console.error("[slidesFlow] Falha ao salvar a esteira em disco — as alteracoes NAO foram persistidas.", result.erro);
         reportSlidesFlowSaveStatus("error", result.erro ?? "Falha desconhecida ao salvar a esteira.");
         return;
@@ -366,6 +391,7 @@ export function createElectronSlidesFlowStorage(api: ElectronSlidesFlowAPI): Sta
       reportSlidesFlowSaveStatus("saved");
     },
     removeItem: async (name) => {
+      forgetPersistedSnapshot(name);
       await api.remover(name);
     },
   };
