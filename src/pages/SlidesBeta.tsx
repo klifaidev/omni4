@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -513,6 +514,18 @@ function BridgePvmConfigPanel({
           </Select>
         </div>
       </div>
+      )}
+
+      <div className="flex items-center justify-between pt-1">
+        <Label className="text-sm text-foreground">{t.bridgePvmPanel.wrapLabels}</Label>
+        <Switch
+          disabled={readOnly}
+          checked={cfg.wrapLabels ?? false}
+          onCheckedChange={(v) => onChange({ ...item, config: { ...cfg, wrapLabels: v } })}
+        />
+      </div>
+      {cfg.wrapLabels && (
+        <div className="text-[11px] leading-snug text-muted-foreground">{t.bridgePvmPanel.wrapLabelsHint}</div>
       )}
     </div>
   );

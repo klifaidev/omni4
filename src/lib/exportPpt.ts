@@ -227,6 +227,7 @@ function addOverviewDreBridgeSlide(
   pptx: PptxGenJS,
   result: PVMResult,
   rows: PricingRow[],
+  wrapLabels = false,
 ) {
   const slide = pptx.addSlide();
   slide.background = { color: "FFFFFF" };
@@ -462,9 +463,13 @@ function addOverviewDreBridgeSlide(
   const plotX = 0.95;
   const plotY = 4.95;
   const plotW = 12.0;
-  const plotH = 1.4; // bar area (sem labels de eixo)
+  // Com quebra de texto ligada, a área de barras encolhe um pouco pra abrir
+  // espaço pro rótulo de categoria em várias linhas — mesmo orçamento total
+  // de altura de antes (barras + faixa de rótulo), só redistribuído, então
+  // o texto quebrado nunca sobrepõe o rodapé vermelho do slide.
+  const plotH = wrapLabels ? 1.1 : 1.4; // bar area (sem labels de eixo)
   const labelStripY = plotY + plotH + 0.05;
-  const labelStripH = 0.3;
+  const labelStripH = wrapLabels ? 0.6 : 0.3;
 
   const colSlot = plotW / steps.length;
   const barW = colSlot * 0.42;
@@ -526,7 +531,8 @@ function addOverviewDreBridgeSlide(
       objectName: `bridge_value_${i}`,
     });
 
-    // Label da categoria (abaixo do plot)
+    // Label da categoria (abaixo do plot) — pptxgenjs quebra automaticamente
+    // (wrap:true) quando o texto não cabe na largura da coluna.
     slide.addText(s.label, {
       x: cx - colSlot / 2,
       y: labelStripY,
@@ -538,6 +544,7 @@ function addOverviewDreBridgeSlide(
       align: "center",
       valign: "top",
       margin: 0,
+      wrap: true,
       objectName: `bridge_label_${i}`,
     });
   });
@@ -744,10 +751,10 @@ export async function addBridgePvmSlides(
   pptx: PptxGenJS,
   result: PVMResult,
   rows: PricingRow[] = [],
-  opts: { onlyOverview?: boolean } = {},
+  opts: { onlyOverview?: boolean; wrapLabels?: boolean } = {},
 ) {
   await getHaraldFooterDataUri();
-  addOverviewDreBridgeSlide(pptx, result, rows);
+  addOverviewDreBridgeSlide(pptx, result, rows, opts.wrapLabels ?? false);
   if (opts.onlyOverview) return;
   addBridgeTableSlide(pptx, result);
   EFFECT_CONFIG.forEach((effect) => addEffectSlide(pptx, result, effect));

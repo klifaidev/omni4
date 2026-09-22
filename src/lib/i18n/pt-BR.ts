@@ -1331,6 +1331,8 @@ export const ptBR = {
         base: "Base",
         comparison: "Comparação",
         choosePlaceholder: "Escolha...",
+        wrapLabels: "Quebrar texto do rótulo",
+        wrapLabelsHint: "Em vez de cortar com \"...\", o rótulo de cada categoria quebra em várias linhas para não esconder informação.",
       },
       budgetEvoPanel: {
         startMonth: "Mês inicial",

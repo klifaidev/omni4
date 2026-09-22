@@ -44,6 +44,9 @@ export interface BridgePvmSlideConfig {
   filters: Filters;
   /** Notas do apresentador (não exportadas para PPTX). */
   speakerNotes?: string;
+  /** Quando true, rótulos das categorias quebram em várias linhas em vez de
+   *  ficarem cortados quando não cabem na largura da coluna. Default false. */
+  wrapLabels?: boolean;
 }
 
 export interface BudgetEvoSlideConfig {
@@ -179,7 +182,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
               throw new Error(`Bridge PVM "${item.label}": sem dados Real/Budget suficientes para YTD.`);
             }
             const { addBridgePvmSlides } = await import("./exportPpt");
-            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
+            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true, wrapLabels: cfg.wrapLabels });
             return;
           }
           if (cfg.mode === "ytd_vs_ytd") {
@@ -188,7 +191,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
               throw new Error(`Bridge PVM "${item.label}": sem dados Real suficientes para YTD vs YTD (precisa do ano fiscal atual e do anterior).`);
             }
             const { addBridgePvmSlides } = await import("./exportPpt");
-            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true });
+            await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true, wrapLabels: cfg.wrapLabels });
             return;
           }
           if (!cfg.base || !cfg.comp || cfg.base === cfg.comp) {
@@ -204,7 +207,7 @@ export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
             : undefined;
           const result = calcPVM(filtered, ctx.metric, cfg.base, cfg.comp, cfg.mode, labels);
           const { addBridgePvmSlides } = await import("./exportPpt");
-          await addBridgePvmSlides(pptx, result, filtered, { onlyOverview: true });
+          await addBridgePvmSlides(pptx, result, filtered, { onlyOverview: true, wrapLabels: cfg.wrapLabels });
         },
       };
     }

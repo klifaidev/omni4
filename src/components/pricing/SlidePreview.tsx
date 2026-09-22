@@ -614,7 +614,7 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
           transform="rotate(-90 25 565)">BRIDGE</text>
 
         {/* Bridge waterfall */}
-        <BridgeWaterfall pvm={pvm} x={95} y={495} w={1200} h={140} />
+        <BridgeWaterfall pvm={pvm} x={95} y={495} w={1200} h={140} wrapLabels={item.config.wrapLabels ?? false} />
 
         <HaraldFooterStripe />
       </svg>
@@ -696,7 +696,7 @@ function DreTablePreview({ x, y, w, h }: { x: number; y: number; w: number; h: n
   );
 }
 
-function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: number; w: number; h: number }) {
+function BridgeWaterfall({ pvm, x, y, w, h, wrapLabels = false }: { pvm: PVMResult; x: number; y: number; w: number; h: number; wrapLabels?: boolean }) {
   const steps = [
     { label: `CM ${pvm.baseLabel}`, value: pvm.base, type: "total" as const },
     { label: "Efeito volume", value: pvm.volume, type: "delta" as const },
@@ -733,6 +733,30 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
   const barW = colSlot * 0.42;
   const yOf = (v: number) => y + (1 - (v - yMin) / (yMax - yMin)) * h;
 
+  const labelFs = 11;
+  // Quebra o rótulo em linhas por palavra em vez de deixar o texto SVG
+  // sobrepor a coluna vizinha — a 1ª linha fica sempre na mesma posição de
+  // hoje (y+h+18); linhas extras só crescem pra baixo (nunca pra cima).
+  const wrapLabelLines = (lbl: string): string[] => {
+    if (!wrapLabels) return [lbl];
+    const maxChars = Math.max(4, Math.floor(colSlot / (labelFs * 0.6)));
+    if (lbl.length <= maxChars) return [lbl];
+    const words = lbl.split(/\s+/);
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxChars && current) { lines.push(current); current = word; }
+      else current = candidate;
+    }
+    if (current) lines.push(current);
+    return lines.flatMap((line) =>
+      line.length <= maxChars
+        ? [line]
+        : Array.from({ length: Math.ceil(line.length / maxChars) }, (_, i) => line.slice(i * maxChars, (i + 1) * maxChars)),
+    );
+  };
+
   return (
     <g>
       {geom.map((g, i) => {
@@ -756,9 +780,11 @@ function BridgeWaterfall({ pvm, x, y, w, h }: { pvm: PVMResult; x: number; y: nu
               {valText}
             </text>
             {/* label abaixo */}
-            <text x={cx} y={y + h + 18} fontFamily="Calibri" fontSize="11"
+            <text x={cx} y={y + h + 18} fontFamily="Calibri" fontSize={labelFs}
               fill={C.muted} textAnchor="middle">
-              {s.label}
+              {wrapLabelLines(s.label).map((line, li) => (
+                <tspan key={li} x={cx} dy={li === 0 ? 0 : labelFs + 3}>{line}</tspan>
+              ))}
             </text>
           </g>
         );
