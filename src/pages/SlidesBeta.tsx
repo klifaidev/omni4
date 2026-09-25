@@ -8,7 +8,6 @@
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
 import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
-import { flushSync } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   DndContext,
@@ -115,34 +114,6 @@ import { useSlideExport } from "@/hooks/useSlideExport";
 import { strings } from "@/lib/i18n";
 
 const t = strings.slides.beta;
-
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (callback: () => void) => { finished: Promise<void> };
-};
-
-/**
- * Troca de slide (esteira ou editor fullscreen) sempre desmonta e remonta a
- * árvore de blocos inteira do slide anterior/novo (tabela, gráfico, KPI são
- * conteúdos genuinamente diferentes — não dá pra "reaproveitar" o DOM). Isso
- * fica visualmente seco (um "pop"). A View Transition API (nativa do
- * Chromium/Electron) tira uma foto do antes/depois e faz o cross-fade sozinha,
- * sem exigir nenhuma mudança no editor em si. `flushSync` garante que a
- * mudança de estado já esteja no DOM quando a API tira a foto "depois" —
- * sem ele, a foto sairia com o conteúdo antigo. Sem suporte (ou com
- * "prefers-reduced-motion"), cai de volta pra troca instantânea de sempre.
- */
-function withSlideSwitchTransition(update: () => void): void {
-  const doc = typeof document !== "undefined" ? (document as ViewTransitionDocument) : undefined;
-  const prefersReducedMotion = typeof window !== "undefined"
-    && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (!doc?.startViewTransition || prefersReducedMotion) {
-    update();
-    return;
-  }
-  doc.startViewTransition(() => {
-    flushSync(update);
-  });
-}
 
 type ExportFormat = "pptx" | "pdf";
 type Icon = ComponentType<{ className?: string }>;
@@ -1011,7 +982,7 @@ function FullscreenCustomEditor({
     if (idx < 0) return;
     const dir = offset > 0 ? 1 : -1;
     for (let i = idx + dir; i >= 0 && i < items.length; i += dir) {
-      if (items[i].kind === "custom") { withSlideSwitchTransition(() => select(items[i].id)); return; }
+      if (items[i].kind === "custom") { select(items[i].id); return; }
     }
   }, [idx, items, select]);
   const hasPrev = idx > 0 && items.slice(0, idx).some((i) => i.kind === "custom");
@@ -1173,7 +1144,7 @@ function FullscreenCustomEditor({
                         thumbnailRef={stripThumbnailScheduler.getRefCallback(it)}
                         onClick={() => {
                           if (it.id === current?.id) return;
-                          withSlideSwitchTransition(() => select(it.id));
+                          select(it.id);
                           if (it.kind !== "custom") onOpenChange(false);
                         }}
                       />
@@ -2746,7 +2717,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                           selected={selectedId === item.id}
                           previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
                           thumbnailRef={flowThumbnailScheduler.getRefCallback(item)}
-                          onSelect={() => withSlideSwitchTransition(() => select(item.id))}
+                          onSelect={() => select(item.id)}
                           onRemove={() => removeItem(item.id)}
                           onDuplicate={() => duplicateItem(item.id)}
                           onToggleHidden={() => updateItem(item.id, (it) => ({ ...it, hidden: !it.hidden } as SlideItem))}

@@ -465,20 +465,4 @@
     transition-duration: 0.01ms !important;
   }
 
-  /* Pseudo-elementos de View Transition não são pegos pelo `*` acima —
-     vivem numa árvore própria fora do documento normal. */
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
-}
-
-/* Cross-fade curto ao trocar de slide no editor (ver withSlideSwitchTransition
-   em SlidesBeta.tsx) — suaviza o "pop" do remonte da árvore de blocos sem
-   mudar nada no editor em si. Duração menor que o default do navegador
-   (~250ms) pra não parecer lento numa navegação sequencial rápida. */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 120ms;
 }
