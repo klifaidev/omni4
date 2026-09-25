@@ -525,16 +525,38 @@ function fmtPivotDisplay(measure: PivotMeasure, val: number | null | undefined, 
 function toneClass(tone?: PivotMeasure["tone"], val?: number | null) {
   if (tone === "delta") {
     if (val == null || !isFinite(val) || val === 0) return "text-muted-foreground";
-    return val > 0 ? "text-emerald-300" : "text-rose-300";
+    // Tom 800 no tema claro: contraste ≥ 4,5:1 mesmo sobre o heatmap mais
+    // forte; os tons 300 davam 1,5:1 e 1,9:1 e deixavam o Comparativo
+    // ilegível no tema claro.
+    return val > 0
+      ? "text-emerald-800 dark:text-emerald-300"
+      : "text-rose-800 dark:text-rose-300";
   }
-  if (tone === "budget") return "text-accent-foreground/90";
+  // accent-foreground é quase branco no tema claro (contraste ~1:1).
+  if (tone === "budget") return "text-violet-800 dark:text-accent-foreground/90";
   return "text-foreground";
 }
 
-function cellBg(viz: VizMode, m: PivotMeasure, v: number | null, max: number): React.CSSProperties | undefined {
-  if (viz === "plain" || max === 0 || v === null || !isFinite(v) || v === 0) return undefined;
-  const pct = Math.min(100, (Math.abs(v) / max) * 100);
-  const alpha = 0.06 + (pct / 100) * 0.42;
+type HeatRange = { min: number; max: number };
+
+function cellBg(viz: VizMode, m: PivotMeasure, v: number | null, range: HeatRange): React.CSSProperties | undefined {
+  if (viz === "plain" || v === null || !isFinite(v)) return undefined;
+  const { min, max } = range;
+  let intensity: number;
+  if (m.tone === "delta" || (min < 0 && max > 0)) {
+    // Divergente a partir do zero: o sinal é a informação principal.
+    const absMax = Math.max(Math.abs(min), Math.abs(max));
+    if (absMax === 0 || v === 0) return undefined;
+    intensity = Math.abs(v) / absMax;
+  } else {
+    // Todos com o mesmo sinal: escala mín→máx da medida. Numa escala
+    // 0→máximo, percentuais de faixa estreita (CM% entre 29% e 32%) ficavam
+    // todos com a mesma cor.
+    const span = max - min;
+    intensity = span > 0 ? (min >= 0 ? (v - min) / span : (max - v) / span) : 1;
+  }
+  // Teto de 0,40: acima disso o texto colorido dos deltas perde contraste.
+  const alpha = 0.06 + Math.min(1, Math.max(0, intensity)) * 0.34;
   if (m.tone === "delta") {
     const hsl = v >= 0 ? "158 64% 52%" : "0 84% 65%";
     return { backgroundColor: `hsl(${hsl} / ${alpha})` };
@@ -871,7 +893,8 @@ export function PivotBuilder({
     });
   }, [pivot.rowHeaders]);
 
-  // sortedRows: aplica hideEmpty + sort do usuário dentro de cada grupo, preservando a ordem dos grupos
+  // sortedRows: aplica hideEmpty + sort do usuário. Com grupos, os grupos são
+  // ordenados pelo subtotal e as linhas dentro de cada grupo pelo próprio valor.
   const sortedRows = useMemo(() => {
     const hasGroups = pivot.rowHeaders.some((row) => !row.isLeaf);
     const rowHasValue = (rh: PivotRowHeader) => {
@@ -888,7 +911,9 @@ export function PivotBuilder({
     const sortLeaves = (rows: PivotRowHeader[]) => {
       if (!sort) return rows;
       const getter = (k: string) => {
-        const v = pivot.cells.get(k)?.get(sort.col)?.[sort.measure];
+        const v = sort.col === TOTAL_COL_KEY
+          ? pivot.rowTotals.get(k)?.[sort.measure]
+          : pivot.cells.get(k)?.get(sort.col)?.[sort.measure];
         return v ?? 0;
       };
       return [...rows].sort((a, b) => {
@@ -909,8 +934,7 @@ export function PivotBuilder({
     }
 
     const rows: PivotRowHeader[] = [];
-    for (const header of pivot.rowHeaders) {
-      if (header.isLeaf) continue;
+    for (const header of sortLeaves(pivot.rowHeaders.filter((row) => !row.isLeaf))) {
       const children = sortLeaves(childrenByParent.get(header.key) ?? []);
       if (hideEmpty && children.length === 0 && !rowHasValue(header)) continue;
       rows.push(header);
@@ -1867,9 +1891,9 @@ function Chip({
 }) {
   const toneRing =
     tone === "budget"
-      ? "border-accent/40 bg-accent/10 text-accent-foreground hover:bg-accent/20"
+      ? "border-accent/40 bg-accent/10 text-violet-700 hover:bg-accent/20 dark:text-accent-foreground"
       : tone === "delta"
-        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
         : tone === "real"
           ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
           : "border-border/60 bg-secondary/60 text-foreground hover:bg-secondary";
@@ -2407,6 +2431,13 @@ type ShowAsMap = Record<string, ShowAsMode>;
 type PivotCellsByCol = Map<string, Record<string, number | null>>;
 
 const NO_COL_HEADERS: PivotColHeader[] = [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
+// Coluna Total à direita (soma de todas as colunas da linha). O motor sempre
+// calculou `rowTotals` e o Excel exportado sempre teve essa coluna — só a
+// tabela na tela não mostrava.
+const TOTAL_COL_KEY = "__total__";
+const TOTAL_COL_HEADER: PivotColHeader = { key: TOTAL_COL_KEY, values: ["Total"], depth: 0, isLeaf: true };
+const PERCENT_HEAT_RANGE: HeatRange = { min: 0, max: 1 };
+const EMPTY_HEAT_RANGE: HeatRange = { min: 0, max: 0 };
 const EMPTY_ROW_CELLS: PivotCellsByCol = new Map();
 const EMPTY_TOTAL: Record<string, number | null> = {};
 // A janela de linhas virtualizadas anda em saltos de N linhas: rolar dentro do
@@ -2423,6 +2454,7 @@ const PivotHeader = memo(function PivotHeader({
   onToggleSort,
   showAsByMeasure,
   onChangeShowAs,
+  showTotal,
 }: {
   rowDims: string[];
   cols: PivotColHeader[];
@@ -2433,8 +2465,14 @@ const PivotHeader = memo(function PivotHeader({
   onToggleSort: (colKey: string, measureId: string) => void;
   showAsByMeasure: ShowAsMap;
   onChangeShowAs: (measureId: string, mode: ShowAsMode) => void;
+  showTotal: boolean;
 }) {
   const headerPad = "py-1.5 px-2";
+  const totalSortIcon = (measureId: string) => {
+    const isSorted = sort && sort.col === TOTAL_COL_KEY && sort.measure === measureId;
+    if (!isSorted) return <ArrowUpDown className="h-3 w-3 opacity-20" />;
+    return sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
+  };
   return (
     <thead className="sticky top-0 z-20">
       {hasCols && (
@@ -2466,6 +2504,17 @@ const PivotHeader = memo(function PivotHeader({
               {c.values.join(" · ") || ""}
             </th>
           ))}
+          {showTotal && (
+            <th
+              colSpan={measures.length}
+              className={cn(
+                "border-b border-l-2 border-border/50 bg-card/95 backdrop-blur text-center text-[11px] font-semibold",
+                headerPad,
+              )}
+            >
+              Total
+            </th>
+          )}
         </tr>
       )}
       <tr>
@@ -2566,6 +2615,28 @@ const PivotHeader = memo(function PivotHeader({
             );
           }),
         )}
+        {showTotal && measures.map((m, idx) => {
+          const isSorted = sort && sort.col === TOTAL_COL_KEY && sort.measure === m.id;
+          return (
+            <th
+              key={`mh-total-${m.id}`}
+              onClick={() => onToggleSort(TOTAL_COL_KEY, m.id)}
+              title="Clique para ordenar pelo total da linha"
+              className={cn(
+                "cursor-pointer select-none border-b border-border/40 bg-card/95 backdrop-blur text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary/80",
+                headerPad,
+                idx === 0 ? "border-l-2 border-l-border/50" : "border-l",
+                toneClass(m.tone),
+                isSorted && "text-primary",
+              )}
+            >
+              <span className="inline-flex items-center justify-end gap-1">
+                {m.label}
+                {totalSortIcon(m.id)}
+              </span>
+            </th>
+          );
+        })}
       </tr>
     </thead>
   );
@@ -2586,7 +2657,8 @@ const PivotBodyRow = memo(function PivotBodyRow({
   grandTotal,
   viz,
   showAsByMeasure,
-  maxByMeasure,
+  rangeByMeasure,
+  showTotal,
   onToggleRowGroup,
   onOpenCell,
 }: {
@@ -2604,7 +2676,8 @@ const PivotBodyRow = memo(function PivotBodyRow({
   grandTotal: Record<string, number | null>;
   viz: VizMode;
   showAsByMeasure: ShowAsMap;
-  maxByMeasure: Map<string, number>;
+  rangeByMeasure: Map<string, HeatRange>;
+  showTotal: boolean;
   onToggleRowGroup: (key: string) => void;
   onOpenCell: (row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => void;
 }) {
@@ -2675,7 +2748,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
             colTotal: colTotals.get(c.key)?.[m.id],
             grandTotal: grandTotal[m.id],
           });
-          const max = showAs === "normal" ? (maxByMeasure.get(m.id) ?? 0) : 1;
+          const range = showAs === "normal" ? (rangeByMeasure.get(m.id) ?? EMPTY_HEAT_RANGE) : PERCENT_HEAT_RANGE;
           return (
             <td
               key={`v-${c.key}-${m.id}`}
@@ -2691,9 +2764,9 @@ const PivotBodyRow = memo(function PivotBodyRow({
                 event.preventDefault();
                 onOpenCell(row, c, m);
               }}
-              style={cellBg(viz, m, displayValue, max)}
+              style={isGroup ? undefined : cellBg(viz, m, displayValue, range)}
               className={cn(
-                "border-l border-border/10 text-right tabular-nums transition-colors",
+                "whitespace-nowrap border-l border-border/10 text-right tabular-nums transition-colors",
                 cellPad,
                 isGroup && "bg-secondary/25 font-semibold",
                 toneClass(m.tone, displayValue),
@@ -2704,6 +2777,37 @@ const PivotBodyRow = memo(function PivotBodyRow({
             </td>
           );
         });
+      })}
+      {showTotal && measures.map((m, idx) => {
+        const showAs = showAsByMeasure[m.id] ?? "normal";
+        // Na coluna Total, o "total da coluna" é o total geral.
+        const displayValue = applyShowAs(rowTotal[m.id] ?? null, showAs, {
+          rowTotal: rowTotal[m.id],
+          colTotal: grandTotal[m.id],
+          grandTotal: grandTotal[m.id],
+        });
+        return (
+          <td
+            key={`t-${m.id}`}
+            role="button"
+            tabIndex={0}
+            title="Clique para ver as linhas que compõem o total da linha"
+            onClick={() => onOpenCell(row, TOTAL_COL_HEADER, m)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onOpenCell(row, TOTAL_COL_HEADER, m);
+            }}
+            className={cn(
+              "cursor-zoom-in whitespace-nowrap bg-secondary/20 text-right font-semibold tabular-nums outline-none transition-colors hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
+              cellPad,
+              idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
+              toneClass(m.tone, displayValue),
+            )}
+          >
+            {fmtPivotDisplay(m, displayValue, showAs)}
+          </td>
+        );
       })}
     </tr>
   );
@@ -2748,15 +2852,19 @@ const PivotTable = memo(function PivotTable({
   const [windowStart, setWindowStart] = useState(0);
   const windowStartRef = useRef(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  const totalColumnCount = Math.max(1, rowDims.length) + cols.length * measures.length;
+  // Com colunas, a coluna Total fecha a tabela (como no Excel exportado).
+  const showTotal = hasCols;
+  const totalColumnCount = Math.max(1, rowDims.length) + (cols.length + (showTotal ? 1 : 0)) * measures.length;
   const shouldVirtualize = sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD;
 
   const handleOpenCell = useCallback((row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => {
+    // O total da linha é a mesma célula num pivot sem colunas.
+    const isTotal = col.key === TOTAL_COL_KEY;
     const drillIndexes = getDrillRowsForCell(
       sourceRows as Record<string, unknown>[],
-      pivotConfig,
+      isTotal ? { ...pivotConfig, cols: [] } : pivotConfig,
       row.key,
-      col.key,
+      isTotal ? "__all__" : col.key,
     );
     if (drillIndexes.length === 0) return;
     onOpenDrill({
@@ -2822,11 +2930,14 @@ const PivotTable = memo(function PivotTable({
     };
   }, [windowStart, shouldVirtualize, sortedRows, viewportHeight]);
 
-  // Achado 04 da análise de UX/UI: lê pivot.measureRange, calculado uma vez
-  // durante a própria agregação (computePivot), em vez de varrer as células.
-  const maxByMeasure = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of measures) map.set(m.id, pivot.measureRange[m.id] ?? 0);
+  // Mín/máx por medida vêm prontos da agregação (computePivot). A escala vai
+  // do mínimo ao máximo — com 0→máx, uma CM% entre 29% e 32% ficava toda
+  // da mesma cor.
+  const rangeByMeasure = useMemo(() => {
+    const map = new Map<string, HeatRange>();
+    for (const m of measures) {
+      map.set(m.id, { min: pivot.measureMin[m.id] ?? 0, max: pivot.measureMax[m.id] ?? 0 });
+    }
     return map;
   }, [measures, pivot]);
 
@@ -2858,6 +2969,7 @@ const PivotTable = memo(function PivotTable({
             rowDims={rowDims}
             cols={cols}
             hasCols={hasCols}
+            showTotal={showTotal}
             measures={measures}
             dimMap={dimMap}
             sort={sort}
@@ -2898,7 +3010,8 @@ const PivotTable = memo(function PivotTable({
                 grandTotal={pivot.grandTotal}
                 viz={viz}
                 showAsByMeasure={showAsByMeasure}
-                maxByMeasure={maxByMeasure}
+                rangeByMeasure={rangeByMeasure}
+                showTotal={showTotal}
                 onToggleRowGroup={onToggleRowGroup}
                 onOpenCell={handleOpenCell}
               />
@@ -2930,7 +3043,7 @@ const PivotTable = memo(function PivotTable({
                     <td
                       key={`ft-${c.key}-${m.id}`}
                       className={cn(
-                        "border-l border-border/20 text-right tabular-nums",
+                        "whitespace-nowrap border-l border-border/20 text-right tabular-nums",
                         cellPad,
                         toneClass(m.tone, displayValue),
                       )}
@@ -2940,6 +3053,28 @@ const PivotTable = memo(function PivotTable({
                   );
                 }),
               )}
+              {showTotal && measures.map((m, idx) => {
+                const showAs = showAsByMeasure[m.id] ?? "normal";
+                const rawValue = pivot.grandTotal[m.id] ?? null;
+                const displayValue = applyShowAs(rawValue, showAs, {
+                  rowTotal: rawValue,
+                  colTotal: rawValue,
+                  grandTotal: rawValue,
+                });
+                return (
+                  <td
+                    key={`ft-total-${m.id}`}
+                    className={cn(
+                      "whitespace-nowrap text-right tabular-nums",
+                      cellPad,
+                      idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/20",
+                      toneClass(m.tone, displayValue),
+                    )}
+                  >
+                    {fmtPivotDisplay(m, displayValue, showAs)}
+                  </td>
+                );
+              })}
             </tr>
           </tfoot>
         </table>

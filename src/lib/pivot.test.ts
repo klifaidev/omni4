@@ -95,6 +95,30 @@ describe("computePivot weighted ratio measures", () => {
     expect(pivot.drillRows.size).toBe(0);
     expect(getDrillRowsForCell(rows, config, "Chocolates", "Jan")).toEqual([0, 1]);
     expect(getDrillRowsForCell(rows, config, "Chocolates\u001f100", "Jan")).toEqual([0]);
+
+    // Escala do heatmap: só células de linha comum (subtotal "Chocolates"
+    // Jan = 300 fica de fora; o máximo é o SKU 100 em Fev = 300, o mínimo 50).
+    expect(pivot.measureMin.valor).toBe(50);
+    expect(pivot.measureMax.valor).toBe(300);
+    // Coluna Total (drill): o total da linha = célula do pivot sem colunas.
+    expect(getDrillRowsForCell(rows, { ...config, cols: [] }, "Chocolates\u001f100", "__all__")).toEqual([0, 3]);
+  });
+
+  it("escala do heatmap usa o mínimo com sinal (medidas negativas)", () => {
+    const rows = [
+      { marca: "A", valor: -20 },
+      { marca: "B", valor: 5 },
+      { marca: "C", valor: 40 },
+    ];
+    const pivot = computePivot(rows, {
+      rows: ["marca"],
+      cols: [],
+      filters: {},
+      values: [{ id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" }],
+    });
+    expect(pivot.measureMin.valor).toBe(-20);
+    expect(pivot.measureMax.valor).toBe(40);
+    expect(pivot.measureRange.valor).toBe(40);
   });
 
   it("aggregates sum, avg, count, min and max from incremental accumulators", () => {

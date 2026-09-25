@@ -60,6 +60,8 @@ export function createEmptyPivotResult(): PivotResult {
     colTotals: new Map(),
     grandTotal: {},
     measureRange: {},
+    measureMin: {},
+    measureMax: {},
   };
 }
 

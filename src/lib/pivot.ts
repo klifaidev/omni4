@@ -67,6 +67,13 @@ export interface PivotResult {
    * `maxByMeasure` refazia essa varredura inteira, síncrona, no cliente).
    */
   measureRange: Record<string, number>;
+  /**
+   * Menor e maior valor (com sinal) por medida, entre as mesmas células de
+   * `measureRange`. Escala do heatmap: medidas de faixa estreita (ex.: CM%
+   * entre 29% e 32%) ficavam todas com a mesma cor numa escala 0→máximo.
+   */
+  measureMin: Record<string, number>;
+  measureMax: Record<string, number>;
 }
 
 export interface PivotSizeEstimate {
@@ -441,15 +448,25 @@ function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
 
   const cells = new Map<string, Map<string, Record<string, number | null>>>();
   const measureRange: Record<string, number> = {};
+  const measureMin: Record<string, number> = {};
+  const measureMax: Record<string, number> = {};
+  // Subtotais de grupo ficam fora da escala: somam as linhas do grupo e
+  // desbotariam todas as outras células.
+  const groupRowKeys = new Set<string>();
+  for (const header of rowHeaders) if (!header.isLeaf) groupRowKeys.add(header.key);
   for (const [rk, cmap] of cellBuckets) {
     const inner = new Map<string, Record<string, number | null>>();
+    const inScale = !groupRowKeys.has(rk);
     for (const [ck, b] of cmap) {
       const reduced = reduce(b);
       inner.set(ck, reduced);
+      if (!inScale) continue;
       for (const [measureId, v] of Object.entries(reduced)) {
         if (v == null || !isFinite(v)) continue;
         const abs = Math.abs(v);
         if (abs > (measureRange[measureId] ?? 0)) measureRange[measureId] = abs;
+        if (!(measureId in measureMin) || v < measureMin[measureId]) measureMin[measureId] = v;
+        if (!(measureId in measureMax) || v > measureMax[measureId]) measureMax[measureId] = v;
       }
     }
     cells.set(rk, inner);
@@ -460,7 +477,19 @@ function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
   for (const [ck, b] of colBuckets) colTotals.set(ck, reduce(b));
   const grandTotal = reduce(grandBucket);
 
-  return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows: new Map(), rowTotals, colTotals, grandTotal, measureRange };
+  return {
+    rowHeaders,
+    leafRowHeaders,
+    colHeaders,
+    cells,
+    drillRows: new Map(),
+    rowTotals,
+    colTotals,
+    grandTotal,
+    measureRange,
+    measureMin,
+    measureMax,
+  };
 }
 
 export function computePivot(
