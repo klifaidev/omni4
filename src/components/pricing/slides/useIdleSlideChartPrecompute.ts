@@ -15,17 +15,14 @@ function recordIdleMetric(name: string, id?: string): void {
 /**
  * Aquece o cache de dados de gráfico (warmSlideChartData) do deck inteiro em
  * segundo plano, do slide mais próximo da seleção atual para o mais distante,
- * usando requestIdleCallback. Deliberadamente separado do agendamento de
- * miniaturas (useIdleSlidePrecompute / IntersectionObserver da tira): são
- * cargas de trabalho diferentes (cálculo de série vs. captura de DOM) e
- * misturar as filas dificultaria raciocinar sobre prioridade e cancelamento
- * de cada uma.
+ * usando requestIdleCallback — as miniaturas (renderizadas ao vivo) montam
+ * com o cache pronto e não calculam nada no quadro da montagem.
  */
 export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: string | null): void {
   const generationRef = useRef(0);
   const runningRef = useRef(false);
-  // Mesmo cuidado de useIdleSlidePrecompute: memoiza pela assinatura de ids
-  // (não por `items`, que ganha referência nova a cada edição) e exclui o
+  // Memoiza pela assinatura de ids (não por `items`, que ganha referência
+  // nova a cada edição) e exclui o
   // slide selecionado — recalcular a série dele a cada tecla digitada é
   // trabalho jogado fora, já que o conteúdo muda de novo no keystroke seguinte.
   const itemIdsSignature = useMemo(() => items.map((item) => item.id).join("|"), [items]);

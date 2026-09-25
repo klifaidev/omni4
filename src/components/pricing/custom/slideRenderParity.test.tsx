@@ -210,7 +210,7 @@ function ThumbnailCanvas({ config }: { config: CustomSlideConfig }) {
   };
   return (
     <SlideFilterProvider slideKey="reference-thumbnail">
-      <ScaledPreview item={item} targetWidth={320} mode="live" />
+      <ScaledPreview item={item} targetWidth={320} />
     </SlideFilterProvider>
   );
 }

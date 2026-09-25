@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, FilePlus2, Lock, Presentation, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScaledPreview, warmSlideThumbnail } from "@/components/pricing/SlidePreview";
+import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import {
   SEND_TO_SLIDE_EVENT,
   getLatestSendToSlidePayload,
@@ -30,11 +30,6 @@ function slideTypeLabel(item: SlideItem) {
   return "Capa";
 }
 
-function makeVisualIndex(items: SlideItem[], selectedId: string | null) {
-  const selectedIndex = selectedId ? items.findIndex((item) => item.id === selectedId) : -1;
-  return selectedIndex >= 0 ? selectedIndex : 0;
-}
-
 export function SendToSlideDestinationDialog() {
   const navigate = useNavigate();
   const items = useSlidesFlow((s) => s.items);
@@ -46,8 +41,6 @@ export function SendToSlideDestinationDialog() {
   const [destination, setDestination] = useState<Destination>("new");
 
   const recentSlideId = selectedId ?? items.find((item) => item.kind === "custom")?.id ?? null;
-  const visualIndex = useMemo(() => makeVisualIndex(items, recentSlideId), [items, recentSlideId]);
-
   useEffect(() => {
     const latest = getLatestSendToSlidePayload();
     if (latest) {
@@ -74,13 +67,6 @@ export function SendToSlideDestinationDialog() {
     window.addEventListener(SEND_TO_SLIDE_EVENT, handler);
     return () => window.removeEventListener(SEND_TO_SLIDE_EVENT, handler);
   }, []);
-
-  useEffect(() => {
-    if (!payload) return;
-    items.slice(Math.max(0, visualIndex - 2), visualIndex + 5).forEach((item, index) => {
-      window.setTimeout(() => { void warmSlideThumbnail(item); }, index * 60);
-    });
-  }, [items, payload, visualIndex]);
 
   if (!payload) return null;
 
@@ -202,7 +188,7 @@ export function SendToSlideDestinationDialog() {
                     )}
                   >
                     <div className="relative overflow-hidden rounded-lg bg-muted/30">
-                      <ScaledPreview item={item} targetWidth={260} deferUntilVisible />
+                      <ScaledPreview item={item} targetWidth={260} staggerMount />
                       {isRecent && (
                         <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground shadow">
                           <Sparkles className="h-3 w-3" />

@@ -4,10 +4,7 @@
 // Espelha exatamente: cores, posições, fontes (proporcionalmente), curvas suaves
 // para o Budget Evo (Overview CM/VOL) e bridge waterfall com retângulos pretos
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
-import html2canvas from "html2canvas";
+import React, { memo, startTransition, useEffect, useMemo, useState } from "react";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import {
   computeBudgetEvoAccumGap,
@@ -34,18 +31,9 @@ import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterCont
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
-import { incrementSlidePerfCounter, isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
+import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
-import {
-  buildSlideThumbnailKey,
-  getLastGoodSlideThumbnail,
-  getSlideThumbnail,
-  markSlideThumbnailError,
-  markSlideThumbnailRendering,
-  setSlideThumbnail,
-  subscribeSlideThumbnail,
-} from "@/lib/slideThumbnailCache";
 
 const C = SLIDE_PREVIEW_COLORS;
 
@@ -53,24 +41,6 @@ const C = SLIDE_PREVIEW_COLORS;
 const SLIDE_W = 1333;
 const SLIDE_H = 750;
 type PreviewDataRow = Record<string, number | string | null | undefined>;
-
-type ThumbnailKeySignature = {
-  pricingMetric: string;
-  pricingSignature: string;
-  budgetSignature: string;
-  useData: boolean;
-  pixelRatio: number;
-};
-
-const slideThumbnailKeyByItem = new WeakMap<SlideItem, { signature: ThumbnailKeySignature; key: string }>();
-
-function sameThumbnailKeySignature(a: ThumbnailKeySignature, b: ThumbnailKeySignature): boolean {
-  return a.pricingMetric === b.pricingMetric
-    && a.pricingSignature === b.pricingSignature
-    && a.budgetSignature === b.budgetSignature
-    && a.useData === b.useData
-    && a.pixelRatio === b.pixelRatio;
-}
 
 // ---------------------------------------------------------------------------
 // Format helpers (idênticos ao slide)
@@ -813,420 +783,130 @@ function PreviewContent({ item }: { item: SlideItem }) {
 // escalado via transform para caber no painel. Para os SVG (cover/bridge/
 // budget) o próprio viewBox cuida disso.
 const PREVIEW_W_INSPECTOR = 260;
-const PREVIEW_W_DIALOG = 800;
-const STATIC_THUMBNAIL_W = 400;
-const STATIC_THUMBNAIL_DEBOUNCE_MS = 280;
-const MAX_THUMBNAIL_RENDERERS = 1;
-const MAX_THUMBNAIL_PIXEL_RATIO = 2;
 
-function recordThumbnailMetric(name: string, id?: string): void {
-  if (!isSlidePerfEnabled()) return;
-  incrementSlidePerfCounter(name, id);
+// ---------------------------------------------------------------------------
+// Miniaturas — renderização ao vivo, no estilo PowerPoint/Canva
+// ---------------------------------------------------------------------------
+// A miniatura é o próprio slide, renderizado pelo mesmo CustomCanvasReadOnly
+// do modo Apresentação e reduzido com CSS transform:scale. Não existe mais
+// "print" (html2canvas) de miniatura: antes, cada miniatura era uma captura
+// de DOM em PNG — cara (montar raiz fora da tela, esperar fontes/pintura,
+// rasterizar, codificar), feita em fila no thread principal, e trocada por um
+// preview ao vivo só durante a edição. Essa troca "ao vivo <-> print" era a
+// origem do travamento a cada edição/troca de slide e do "apaga e pisca" ao
+// sair de um slide.
+//
+// Agora o componente é sempre o mesmo: nada é desmontado ao entrar ou sair da
+// edição, e memo + referências estáveis de item garantem que editar um slide
+// só re-renderiza a miniatura DAQUELE slide.
+
+/**
+ * Fila de montagem escalonada: listas longas (tira do editor, esteira, tira
+ * do modo Apresentação) montam no máximo uma miniatura nova por quadro, em
+ * vez de renderizar dezenas de slides (com gráficos e tabelas) de uma vez ao
+ * abrir. Placeholder primeiro, miniaturas preenchendo em sequência.
+ *
+ * Cada montagem roda dentro de startTransition: uma miniatura com tabela e
+ * gráfico reais custa ~50-75ms pra renderizar, e como transição o React fatia
+ * esse trabalho e devolve o controle ao navegador entre as fatias — digitação
+ * e cliques nunca esperam uma miniatura terminar de montar.
+ */
+type StaggeredMountPriority = boolean | "priority";
+const staggeredMountQueue: Array<() => void> = [];
+let staggeredMountPumpScheduled = false;
+
+function pumpStaggeredMounts(): void {
+  staggeredMountPumpScheduled = false;
+  const job = staggeredMountQueue.shift();
+  if (job) startTransition(job);
+  if (staggeredMountQueue.length > 0) scheduleStaggeredMountPump();
 }
 
-function thumbnailPixelRatio(): number {
-  if (typeof window === "undefined") return 1;
-  const ratio = Number(window.devicePixelRatio || 1);
-  if (!Number.isFinite(ratio) || ratio <= 1) return 1;
-  return Math.min(MAX_THUMBNAIL_PIXEL_RATIO, ratio);
-}
-
-// "visible": slide dentro da área visível da tira agora — gera imediatamente.
-// "preload": slide logo fora da área visível (rootMargin do IntersectionObserver)
-//   — gera com prioridade média para já estar pronto quando a pessoa rolar até lá.
-// "background": resto do deck — só preenchido em tempo ocioso real (requestIdleCallback).
-type ThumbnailPriority = "visible" | "preload" | "background";
-type ThumbnailWarmOptions = { useData?: boolean; priority?: ThumbnailPriority };
-type ThumbnailWarmResult = "hit" | "generated" | "fallback" | "error";
-type ThumbnailQueueJob = {
-  key: string;
-  item: SlideItem;
-  priority: ThumbnailPriority;
-  queuedAt: number;
-  resolve: (result: ThumbnailWarmResult) => void;
-};
-
-const thumbnailQueue: ThumbnailQueueJob[] = [];
-const pendingThumbnailJobs = new Map<string, ThumbnailQueueJob>();
-const runningThumbnailJobs = new Map<string, Promise<ThumbnailWarmResult>>();
-let activeThumbnailRenderers = 0;
-
-function thumbnailPriorityRank(priority: ThumbnailPriority): number {
-  if (priority === "visible") return 0;
-  if (priority === "preload") return 1;
-  return 2;
-}
-
-function yieldThumbnailQueueFrame(): Promise<void> {
-  if (typeof window === "undefined") return Promise.resolve();
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, 0);
+function scheduleStaggeredMountPump(): void {
+  if (staggeredMountPumpScheduled) return;
+  staggeredMountPumpScheduled = true;
+  // Depois da pintura do quadro atual, pra nunca empilhar duas montagens
+  // de slide no mesmo quadro.
+  requestAnimationFrame(() => {
+    window.setTimeout(pumpStaggeredMounts, 0);
   });
-}
-
-function sortThumbnailQueue(): void {
-  thumbnailQueue.sort((a, b) => {
-    const priority = thumbnailPriorityRank(a.priority) - thumbnailPriorityRank(b.priority);
-    return priority !== 0 ? priority : a.queuedAt - b.queuedAt;
-  });
-}
-
-async function generateSlideThumbnailNow(key: string, item: SlideItem): Promise<ThumbnailWarmResult> {
-  markSlideThumbnailRendering(key);
-  recordThumbnailMetric("SlideThumbnail:render", item.id);
-  try {
-    const dataUrl = await renderActualThumbnail(item);
-    setSlideThumbnail(key, dataUrl, item.id);
-    recordThumbnailMetric("SlideThumbnail:ready", item.id);
-    return "generated";
-  } catch {
-    markSlideThumbnailError(key);
-    recordThumbnailMetric("SlideThumbnail:error", item.id);
-    return "error";
-  }
-}
-
-function runThumbnailQueue(): void {
-  while (activeThumbnailRenderers < MAX_THUMBNAIL_RENDERERS && thumbnailQueue.length > 0) {
-    sortThumbnailQueue();
-    const job = thumbnailQueue.shift();
-    if (!job) return;
-    pendingThumbnailJobs.delete(job.key);
-    activeThumbnailRenderers += 1;
-
-    const promise = (async () => {
-      await yieldThumbnailQueueFrame();
-      const result = await generateSlideThumbnailNow(job.key, job.item);
-      await yieldThumbnailQueueFrame();
-      return result;
-    })();
-
-    runningThumbnailJobs.set(job.key, promise);
-    void promise
-      .then(job.resolve)
-      .catch(() => job.resolve("error"))
-      .finally(() => {
-        runningThumbnailJobs.delete(job.key);
-        activeThumbnailRenderers = Math.max(0, activeThumbnailRenderers - 1);
-        runThumbnailQueue();
-      });
-  }
-}
-
-function enqueueSlideThumbnail(
-  key: string,
-  item: SlideItem,
-  priority: ThumbnailPriority,
-): Promise<ThumbnailWarmResult> {
-  const running = runningThumbnailJobs.get(key);
-  if (running) return running;
-
-  const pending = pendingThumbnailJobs.get(key);
-  if (pending) {
-    if (thumbnailPriorityRank(priority) < thumbnailPriorityRank(pending.priority)) {
-      pending.priority = priority;
-      sortThumbnailQueue();
-    }
-    return new Promise((resolve) => {
-      const previousResolve = pending.resolve;
-      pending.resolve = (result) => {
-        previousResolve(result);
-        resolve(result);
-      };
-    });
-  }
-
-  markSlideThumbnailRendering(key);
-  const promise = new Promise<ThumbnailWarmResult>((resolve) => {
-    const job: ThumbnailQueueJob = {
-      key,
-      item,
-      priority,
-      queuedAt: typeof performance !== "undefined" ? performance.now() : Date.now(),
-      resolve,
-    };
-    pendingThumbnailJobs.set(key, job);
-    thumbnailQueue.push(job);
-    runThumbnailQueue();
-  });
-  return promise;
-}
-
-const THUMBNAIL_CAPTURE_CSS = `
-  *, *::before, *::after {
-    animation: none !important;
-    transition: none !important;
-    caret-color: transparent !important;
-  }
-  .recharts-surface * {
-    animation: none !important;
-    transition: none !important;
-  }
-  table, thead, tbody, tr, th, td {
-    vertical-align: middle !important;
-  }
-  th, td {
-    line-height: 1.15 !important;
-  }
-`;
-
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
-async function waitForFonts(): Promise<void> {
-  try {
-    await document.fonts?.ready;
-  } catch {
-    // Browser font readiness is best-effort for thumbnails.
-  }
-}
-
-async function waitForImages(root: HTMLElement): Promise<void> {
-  const images = Array.from(root.querySelectorAll("img"));
-  await Promise.all(images.map((img) => {
-    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      img.onload = () => resolve();
-      img.onerror = () => resolve();
-    });
-  }));
-}
-
-function hasRenderableSvgGeometry(root: HTMLElement): boolean {
-  const svgs = Array.from(root.querySelectorAll("svg"));
-  if (svgs.length === 0) return true;
-  return svgs.every((svg) => {
-    const box = svg.getBoundingClientRect();
-    if (box.width <= 0 || box.height <= 0) return false;
-    return !!svg.querySelector(
-      "path[d], rect, circle, ellipse, line, polyline, polygon, text, tspan",
-    );
-  });
-}
-
-async function waitForThumbnailPaint(root: HTMLElement): Promise<void> {
-  for (let i = 0; i < 30; i += 1) {
-    await nextFrame();
-    if (hasRenderableSvgGeometry(root)) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-async function captureThumbnailHost(host: HTMLElement): Promise<HTMLCanvasElement> {
-  const thumbnailH = Math.round((CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W);
-  return html2canvas(host, {
-    scale: thumbnailPixelRatio(),
-    useCORS: true,
-    backgroundColor: "#FFFFFF",
-    width: STATIC_THUMBNAIL_W,
-    height: thumbnailH,
-    windowWidth: STATIC_THUMBNAIL_W,
-    windowHeight: thumbnailH,
-    logging: false,
-    ignoreElements: (el) => {
-      if (!(el instanceof HTMLElement)) return false;
-      return el.dataset.exportHide === "true"
-        || el.dataset.html2canvasIgnore === "true";
-    },
-  });
-}
-
-async function renderActualThumbnail(item: SlideItem): Promise<string> {
-  const startedAt = isSlidePerfEnabled() && typeof performance !== "undefined" ? performance.now() : 0;
-  const thumbnailH = Math.round((CANVAS_H / CANVAS_W) * STATIC_THUMBNAIL_W);
-  const host = document.createElement("div");
-  host.style.cssText = [
-    "position:fixed",
-    "left:0",
-    `top:-${thumbnailH + 200}px`,
-    `width:${STATIC_THUMBNAIL_W}px`,
-    `height:${thumbnailH}px`,
-    "background:#FFFFFF",
-    "overflow:hidden",
-    "pointer-events:none",
-    "z-index:2147483647",
-  ].join(";");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-
-  try {
-    const content = item.kind === "custom"
-      ? React.createElement(
-          "div",
-          {
-            style: {
-              width: STATIC_THUMBNAIL_W,
-              height: thumbnailH,
-              position: "relative",
-              overflow: "hidden",
-              background: "#FFFFFF",
-            },
-          },
-          React.createElement(
-            "div",
-            {
-              style: {
-                width: CANVAS_W,
-                height: CANVAS_H,
-                transform: `scale(${STATIC_THUMBNAIL_W / CANVAS_W})`,
-                transformOrigin: "top left",
-              },
-            },
-            React.createElement(CustomCanvasReadOnly, { config: item.config, slideId: item.id }),
-          ),
-        )
-      : React.createElement(
-          "div",
-          { style: { width: STATIC_THUMBNAIL_W, height: thumbnailH, background: "#FFFFFF", overflow: "hidden" } },
-          React.createElement(PreviewContent, { item }),
-        );
-
-    flushSync(() => {
-      root.render(
-        React.createElement(
-          SlideFilterProvider,
-          { slideKey: `thumbnail:${item.id}` },
-          React.createElement("style", null, THUMBNAIL_CAPTURE_CSS),
-          content,
-        ),
-      );
-    });
-
-    await waitForFonts();
-    await waitForImages(host);
-    await waitForThumbnailPaint(host);
-    await nextFrame();
-    await nextFrame();
-
-    const canvas = await captureThumbnailHost(host);
-
-    if (startedAt) {
-      const elapsed = performance.now() - startedAt;
-      recordThumbnailMetric("SlideThumbnail:actual", item.id);
-      if (elapsed > 16) recordThumbnailMetric("SlideThumbnail:actual:over16ms", item.id);
-    }
-
-    return canvas.toDataURL("image/png");
-  } finally {
-    setTimeout(() => {
-      try {
-        root.unmount();
-      } catch {
-        // noop
-      }
-      host.remove();
-    }, 0);
-  }
-}
-function buildSlideThumbnailKeyFromSignatures({
-  item,
-  pricingMetric,
-  pricingSignature,
-  budgetSignature,
-  useData = true,
-}: {
-  item: SlideItem;
-  pricingMetric: string;
-  pricingSignature: string;
-  budgetSignature: string;
-  useData?: boolean;
-}): string {
-  const signature = {
-    pricingMetric,
-    pricingSignature,
-    budgetSignature,
-    useData,
-    pixelRatio: thumbnailPixelRatio(),
-  };
-  const cached = slideThumbnailKeyByItem.get(item);
-  if (cached && sameThumbnailKeySignature(cached.signature, signature)) return cached.key;
-  const key = buildSlideThumbnailKey({
-    item,
-    pricingMetric,
-    pricingSignature,
-    budgetSignature,
-    thumbnailMode: useData ? "rich" : "light",
-    renderWidth: STATIC_THUMBNAIL_W,
-    pixelRatio: thumbnailPixelRatio(),
-  });
-  slideThumbnailKeyByItem.set(item, { signature, key });
-  return key;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function getSlideThumbnailKeyForItem(item: SlideItem, options?: { useData?: boolean }): string {
-  const pricingState = usePricing.getState();
-  return buildSlideThumbnailKeyFromSignatures({
-    item,
-    pricingMetric: pricingState.metric,
-    pricingSignature: getCachedRowsSignature(pricingState.rows),
-    budgetSignature: getCachedRowsSignature(useBudget.getState().rows),
-    useData: options?.useData !== false,
-  });
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export async function warmSlideThumbnail(
-  item: SlideItem,
-  options?: ThumbnailWarmOptions,
-): Promise<ThumbnailWarmResult> {
-  const key = getSlideThumbnailKeyForItem(item, options);
-  const current = getSlideThumbnail(key);
-  if (current?.status === "ready") {
-    recordThumbnailMetric("SlideThumbnail:hit", item.id);
-    return "hit";
-  }
-  const running = runningThumbnailJobs.get(key);
-  if (running) return running;
-  const priority = options?.priority ?? "background";
-  if (current?.status === "rendering" && pendingThumbnailJobs.has(key)) {
-    return enqueueSlideThumbnail(key, item, priority);
-  }
-  if (current?.status === "rendering") return "hit";
-  return enqueueSlideThumbnail(key, item, priority);
 }
 
 /**
- * Rebaixa a prioridade de um job de miniatura ainda pendente (na fila, mas cuja
- * geração não começou) para "background". Usado quando o slide sai da área
- * visível/pré-carregamento da tira antes de ser processado — evita que uma
- * rolagem rápida deixe uma fila de trabalho obsoleto com prioridade alta.
- * Jobs já em execução (runningThumbnailJobs) não são afetados: cancelar uma
- * captura de DOM em andamento não economiza trabalho e o resultado ainda é
- * útil (fica em cache).
+ * Uma vez montada, a miniatura fica montada (não pisca ao rolar de volta).
+ * `"priority"` entra na frente da fila (slide aberto/selecionado).
  */
-// eslint-disable-next-line react-refresh/only-export-components
-export function demoteSlideThumbnailPriority(item: SlideItem, options?: { useData?: boolean }): void {
-  const key = getSlideThumbnailKeyForItem(item, options);
-  const pending = pendingThumbnailJobs.get(key);
-  if (!pending || pending.priority === "background") return;
-  pending.priority = "background";
-  sortThumbnailQueue();
+function useStaggeredMount(canMount: boolean, stagger: StaggeredMountPriority): boolean {
+  const [mounted, setMounted] = useState(canMount && !stagger);
+  useEffect(() => {
+    if (mounted || !canMount) return;
+    if (!stagger) {
+      setMounted(true);
+      return;
+    }
+    let cancelled = false;
+    const job = () => {
+      if (!cancelled) setMounted(true);
+    };
+    if (stagger === "priority") staggeredMountQueue.unshift(job);
+    else staggeredMountQueue.push(job);
+    scheduleStaggeredMountPump();
+    return () => {
+      cancelled = true;
+      const index = staggeredMountQueue.indexOf(job);
+      if (index >= 0) staggeredMountQueue.splice(index, 1);
+    };
+  }, [mounted, canMount, stagger]);
+  return mounted;
 }
 
-function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth?: number }) {
-  if (isSlidePerfEnabled()) recordSlideRender("ScaledPreview", item.id);
-  const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
+type CustomSlideConfigOf = Extract<SlideItem, { kind: "custom" }>["config"];
 
-  if (item.kind !== "custom") {
-    // SVG previews já escalam via viewBox.
-    return (
-      <div
-        className="overflow-hidden rounded-lg border border-border/40 bg-card"
-        style={{ width: previewW, height: (CANVAS_H / CANVAS_W) * previewW }}
-      >
-        <PreviewContent item={item} />
-      </div>
-    );
-  }
+/**
+ * Só re-renderiza quando o CONTEÚDO da config muda. A config de um slide que
+ * não está sendo editado mantém a mesma referência (a store só troca o item
+ * editado), então editar o slide A nunca redesenha B, C, D. Quando a
+ * referência muda mas o conteúdo não — ex.: ao sair de um slide, a miniatura
+ * passa da config ao vivo da store pra config gravada no item, que pode ser
+ * um objeto novo com o mesmo conteúdo — a comparação por conteúdo (frações de
+ * ms) evita um re-render inteiro do slide (~50ms com tabela/gráfico reais).
+ */
+const ThumbnailCanvas = memo(
+  function ThumbnailCanvas({ config, slideId }: { config: CustomSlideConfigOf; slideId: string }) {
+    if (isSlidePerfEnabled()) recordSlideRender("ThumbnailCanvas", slideId);
+    return <CustomCanvasReadOnly config={config} slideId={slideId} />;
+  },
+  (prev, next) => prev.slideId === next.slideId
+    && (prev.config === next.config || JSON.stringify(prev.config) === JSON.stringify(next.config)),
+);
 
+function CustomSlideThumbnail({
+  item,
+  previewW,
+  followLiveEdits,
+}: {
+  item: Extract<SlideItem, { kind: "custom" }>;
+  previewW: number;
+  followLiveEdits: boolean;
+}) {
+  // Com followLiveEdits, lê a config direto da store do editor enquanto ela
+  // estiver ligada a ESTE slide (repinta a cada tecla, sem esperar a gravação
+  // adiada). Ao trocar de slide, a store continua ligada ao slide anterior até
+  // o editor religar — e nesse religamento a última edição é gravada no item
+  // antes — então a miniatura passa da config ao vivo pra config salva sem
+  // nunca mostrar uma versão desatualizada no meio.
+  const config = useEditorLiveConfig(followLiveEdits ? item.id : undefined, item.config);
   const factor = previewW / CANVAS_W;
-  const previewH = CANVAS_H * factor;
   return (
     <div
       className="overflow-hidden rounded-lg border border-border/40 bg-white"
-      style={{ width: previewW, height: previewH, position: "relative" }}
+      style={{
+        width: previewW,
+        height: CANVAS_H * factor,
+        position: "relative",
+        // O navegador pula layout/pintura de miniaturas fora da tela.
+        contentVisibility: "auto",
+      }}
     >
       <div
         style={{
@@ -1240,7 +920,11 @@ function LiveScaledPreview({ item, targetWidth }: { item: SlideItem; targetWidth
           pointerEvents: "none",
         }}
       >
-        <CustomCanvasReadOnly config={item.config} slideId={item.id} />
+        {/* Provider próprio: filtros cruzados do editor ou do modo Apresentação
+            não vazam pra miniatura. */}
+        <SlideFilterProvider slideKey={`thumbnail:${item.id}`}>
+          <ThumbnailCanvas config={config} slideId={item.id} />
+        </SlideFilterProvider>
       </div>
     </div>
   );
@@ -1258,167 +942,46 @@ function SlideThumbnailPlaceholder({ width }: { width: number }) {
   );
 }
 
-function useSlideThumbnailKey(item: SlideItem): string {
-  const pricingRows = usePricing((s) => s.rows);
-  const pricingMetric = usePricing((s) => s.metric);
-  const budgetRows = useBudget((s) => s.rows);
-
-  const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);
-  const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
-
-  return useMemo(
-    () => buildSlideThumbnailKeyFromSignatures({
-      item,
-      pricingMetric,
-      pricingSignature,
-      budgetSignature,
-    }),
-    [item, pricingMetric, pricingSignature, budgetSignature],
-  );
-}
-
-function StaticScaledPreview({
+export const ScaledPreview = memo(function ScaledPreview({
   item,
   targetWidth,
   deferUntilVisible = false,
+  staggerMount = false,
+  followLiveEdits = false,
 }: {
   item: SlideItem;
   targetWidth?: number;
+  /** Fora da área visível: mostra placeholder até entrar na tela. */
   deferUntilVisible?: boolean;
+  /**
+   * Listas longas: entra na fila de montagem escalonada (uma por quadro, em
+   * transição). `"priority"` passa na frente — use pro slide aberto/selecionado.
+   */
+  staggerMount?: StaggeredMountPriority;
+  /** Tira do editor fullscreen: acompanha a edição ao vivo do slide aberto. */
+  followLiveEdits?: boolean;
 }) {
-  if (isSlidePerfEnabled()) recordSlideRender("StaticScaledPreview", item.id);
+  if (isSlidePerfEnabled()) recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
-  const previewH = (CANVAS_H / CANVAS_W) * previewW;
-  const key = useSlideThumbnailKey(item);
-  const current = useSyncExternalStore(
-    (listener) => subscribeSlideThumbnail(key, listener),
-    () => getSlideThumbnail(key),
-    () => getSlideThumbnail(key),
-  );
+  const mounted = useStaggeredMount(!deferUntilVisible, staggerMount);
 
-  useEffect(() => {
-    const entry = getSlideThumbnail(key);
-    if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
-    if (deferUntilVisible) return;
-    const timer = window.setTimeout(async () => {
-      await warmSlideThumbnail(item, { priority: "visible" });
-    }, STATIC_THUMBNAIL_DEBOUNCE_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [deferUntilVisible, item, key]);
+  if (!mounted) return <SlideThumbnailPlaceholder width={previewW} />;
 
-  // Fallback persiste por item.id (não por chave), sobrevivendo à troca de
-  // componente Live -> Static ao sair da edição: sem ele, o novo mount de
-  // StaticScaledPreview começaria sem nenhuma imagem pra mostrar (a chave
-  // pós-edição ainda não tem entrada no cache) e piscaria pra um placeholder
-  // em branco até a recaptura terminar. Ver getLastGoodSlideThumbnail.
-  const displayDataUrl = current?.status === "ready" && current.dataUrl
-    ? current.dataUrl
-    : getLastGoodSlideThumbnail(item.id) ?? null;
+  if (item.kind === "custom") {
+    return <CustomSlideThumbnail item={item} previewW={previewW} followLiveEdits={followLiveEdits} />;
+  }
 
-  return (
-    <>
-      {displayDataUrl ? (
-        <img
-          src={displayDataUrl}
-          alt=""
-          className="block rounded-lg border border-border/40 bg-white object-cover"
-          style={{ width: previewW, height: previewH }}
-          draggable={false}
-        />
-      ) : (
-        <SlideThumbnailPlaceholder width={previewW} />
-      )}
-    </>
-  );
-}
-
-/**
- * Miniatura ao vivo do slide personalizado que está sendo editado agora
- * (aberto no editor fullscreen). Em vez de congelar na última captura PNG
- * (html2canvas) e recapturar só quando a edição para, lê o config direto da
- * store do editor (o mesmo estado que a tela principal já renderiza sem
- * debounce) e desenha via CSS transform:scale — sem nenhuma captura de DOM.
- * É o mesmo padrão do LiveScaledPreview (usado no modo Apresentação e no
- * diálogo "Expandir"), só que aplicado à tira de miniaturas.
- */
-function LiveEditingCustomPreview({
-  item,
-  targetWidth,
-}: {
-  item: Extract<SlideItem, { kind: "custom" }>;
-  targetWidth?: number;
-}) {
-  if (isSlidePerfEnabled()) recordSlideRender("LiveEditingCustomPreview", item.id);
-  const liveConfig = useEditorLiveConfig(item.id, item.config);
-  const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
-  const factor = previewW / CANVAS_W;
-  const previewH = CANVAS_H * factor;
-
-  useEffect(() => {
-    return () => {
-      // Ao sair da edição ao vivo deste slide (desmonta quando
-      // liveEditingActive vira false em ScaledPreview), recaptura a
-      // miniatura estática pra refletir o estado final salvo — outros
-      // contextos (PDF, export) continuam usando a imagem cacheada.
-      void warmSlideThumbnail(item, { priority: "visible" });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id]);
-
+  // Capa/Bridge/Budget são SVG com viewBox — escalam sozinhos.
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border/40 bg-white"
-      style={{ width: previewW, height: previewH, position: "relative" }}
+      className="overflow-hidden rounded-lg border border-border/40 bg-card"
+      style={{ width: previewW, height: (CANVAS_H / CANVAS_W) * previewW }}
     >
-      <div
-        style={{
-          width: CANVAS_W,
-          height: CANVAS_H,
-          transform: `scale(${factor})`,
-          transformOrigin: "top left",
-          position: "absolute",
-          top: 0,
-          left: 0,
-          pointerEvents: "none",
-        }}
-      >
-        <CustomCanvasReadOnly config={liveConfig} slideId={item.id} />
-      </div>
+      <PreviewContent item={item} />
     </div>
   );
-}
+});
 
-export function ScaledPreview({
-  item,
-  targetWidth,
-  mode = "static",
-  deferUntilVisible = false,
-  liveEditingActive = false,
-}: {
-  item: SlideItem;
-  targetWidth?: number;
-  mode?: "static" | "live";
-  deferUntilVisible?: boolean;
-  liveEditingActive?: boolean;
-}) {
-  if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
-  if (liveEditingActive) {
-    // Slide sendo editado agora: miniatura ao vivo (sem captura de DOM) em
-    // vez da imagem estática congelada — ver LiveEditingCustomPreview.
-    return item.kind === "custom"
-      ? <LiveEditingCustomPreview item={item} targetWidth={targetWidth} />
-      : <LiveScaledPreview item={item} targetWidth={targetWidth} />;
-  }
-  return (
-    <StaticScaledPreview
-      item={item}
-      targetWidth={targetWidth}
-      deferUntilVisible={deferUntilVisible}
-    />
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Wrapper público — preview + botão de expandir
@@ -1453,7 +1016,7 @@ export function SlidePreview({ item }: { item: SlideItem }) {
             <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
           </DialogHeader>
           <div className="p-5">
-            <ScaledPreview item={item} targetWidth={800} mode="live" />
+            <ScaledPreview item={item} targetWidth={800} />
           </div>
         </DialogContent>
       </Dialog>

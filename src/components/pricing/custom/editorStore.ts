@@ -476,16 +476,20 @@ export function useEditorConfig(): CustomSlideConfig | null {
  * O fallback existe pro primeiro render depois de trocar de slide: bind
  * acontece num efeito, então até ele rodar o store ainda aponta pro slide
  * anterior — renderizar isso mostraria o slide errado por um quadro.
+ *
+ * O seletor devolve `null` estável pra quem não está ligado ao slide atual:
+ * as miniaturas da tira também assinam este hook, e só a do slide em edição
+ * deve re-renderizar a cada tecla.
  */
 export function useEditorLiveConfig(
   slideId: string | undefined,
   fallback: CustomSlideConfig,
 ): CustomSlideConfig {
-  const bound = useStore(
+  const live = useStore(
     baseStore,
-    useShallow((s) => ({ config: s.config, slideId: s.slideId })),
+    (s) => (slideId !== undefined && s.slideId === slideId ? s.config : null),
   );
-  return bound.config && bound.slideId === slideId ? bound.config : fallback;
+  return live ?? fallback;
 }
 
 /** Returns { canUndo, canRedo, undoLabel, redoLabel }. Re-renders on changes. */

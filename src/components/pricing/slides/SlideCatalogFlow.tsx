@@ -154,7 +154,6 @@ export const FlowCard = React.memo(function FlowCard({
   selected,
   preflightIssues = [],
   previewVisible = true,
-  thumbnailRef,
   onSelect,
   onRemove,
   onDuplicate,
@@ -165,8 +164,6 @@ export const FlowCard = React.memo(function FlowCard({
   selected: boolean;
   preflightIssues?: SlidePreflightIssue[];
   previewVisible?: boolean;
-  /** Ref do IntersectionObserver da esteira — ver useThumbnailVisibilityScheduler. */
-  thumbnailRef?: (element: HTMLElement | null) => void;
   onSelect: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
@@ -260,12 +257,12 @@ export const FlowCard = React.memo(function FlowCard({
               {String(index + 1).padStart(2, "0")}
             </span>
 
-            <div ref={thumbnailRef} className="pointer-events-none relative w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
+            <div className="pointer-events-none relative w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
               <ScaledPreview
                 item={item}
                 targetWidth={104}
                 deferUntilVisible={!previewVisible}
-                liveEditingActive={selected}
+                staggerMount={selected ? "priority" : true}
               />
               <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-1">
                 {statusSeverity && (

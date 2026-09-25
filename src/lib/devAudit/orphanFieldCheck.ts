@@ -61,7 +61,7 @@ export const RENDER_LIB_FILES = [
   "relativePeriods", "slideBrandKit", "slideCalcCache",
   "slideCalcWorkerClient", "slideColors", "slideDataSourceTheme",
   "slideDeckPreparation", "slideDesignTokens", "slideLocalDataStatus",
-  "slidesPerfCounters", "slideThemes", "slideThumbnailCache", "slidesFlow",
+  "slidesPerfCounters", "slideThemes", "slidesFlow",
   "types",
 ].map((name) => `src/lib/${name}.ts`);
 

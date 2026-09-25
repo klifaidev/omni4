@@ -383,7 +383,7 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
                     position: "relative",
                   }}
                 >
-                  <ScaledPreview item={s as never} targetWidth={140} />
+                  <ScaledPreview item={s as never} targetWidth={140} staggerMount />
                   <span style={{
                     position: "absolute", bottom: 2, left: 4,
                     fontSize: 9, fontWeight: 600, color: SLIDE_HEX.white,
@@ -495,7 +495,7 @@ function SlideRenderArea({
       );
     }
     // Non-custom: ScaledPreview at full canvas width so it fills the scaled container.
-    return <ScaledPreview item={slide as SlideItem} targetWidth={CANVAS_W} mode="live" />;
+    return <ScaledPreview item={slide as SlideItem} targetWidth={CANVAS_W} />;
   })();
 
   // C28: use slide background for the outer shell so transparent custom slides
