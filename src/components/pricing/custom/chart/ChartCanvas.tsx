@@ -67,7 +67,7 @@ import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilt
 import { resolveFieldValue } from "./filterHelpers";
 import { monthLabel } from "@/lib/format";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
-import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
+import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, getSlideCalcCacheValue, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import {
   computeChartSeriesAsync,
   computeTopRankingAsync,
@@ -129,8 +129,22 @@ function useAsyncSlideCalc<T>(
   key: string,
   compute: () => Promise<T>,
   label = "slide-calc",
+  /**
+   * Leitura síncrona do cache (getSlideCalcCacheValue com o mesmo input usado
+   * por `compute`). Ao reabrir um slide já visitado, o bloco de gráfico
+   * remonta do zero e o valor quase sempre já está em cache — sem essa
+   * leitura síncrona, o estado inicial seria sempre "carregando" e só viraria
+   * o valor certo depois de uma volta de microtask, piscando o gráfico a
+   * cada troca de slide mesmo quando não há nenhum cálculo novo a fazer.
+   */
+  peek?: () => T | undefined,
 ): { value: T; loading: boolean } {
-  const [state, setState] = useState<{ value: T; loading: boolean }>({ value: fallback, loading: enabled });
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+  const [state, setState] = useState<{ value: T; loading: boolean }>(() => {
+    const cached = enabled ? peekRef.current?.() : undefined;
+    return cached !== undefined ? { value: cached, loading: false } : { value: fallback, loading: enabled };
+  });
   const computeRef = useRef(compute);
   computeRef.current = compute;
 
@@ -138,6 +152,12 @@ function useAsyncSlideCalc<T>(
     let cancelled = false;
     if (!enabled) {
       setState({ value: fallback, loading: false });
+      return () => { cancelled = true; };
+    }
+
+    const cachedNow = peekRef.current?.();
+    if (cachedNow !== undefined) {
+      setState({ value: cachedNow, loading: false });
       return () => { cancelled = true; };
     }
 
@@ -893,6 +913,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         xDim,
       }),
     "chart-series",
+    () => getSlideCalcCacheValue<ChartSeriesResult>(rawCacheInput),
   );
   const raw = isCustomSource ? customChartData : (manualComboRaw ?? workerRaw.value);
   const rawLoading = !isCustomSource && !manualComboRaw && workerRaw.loading;
@@ -1030,6 +1051,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         periodValue: null,
       }),
     "chart-ranking",
+    () => getSlideCalcCacheValue<TopRankingResult>(rankingCacheInput),
   );
   const ranking = useMemo(() => {
     if (!isRankingChart) return [];
