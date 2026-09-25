@@ -952,17 +952,25 @@ function FullscreenCustomEditor({
   useEffect(() => {
     if (!open || !current || current.kind !== "custom") return;
     setWarmCustomSlideIds((previous) => [current.id, ...previous.filter((id) => id !== current.id)].slice(0, 3));
-  }, [open, current]);
+    // Depende só do id (não do objeto `current`, que é uma referência nova a
+    // cada edição) — senão essa lista seria recalculada a cada tecla digitada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, current?.id]);
 
   useEffect(() => {
     if (!open || warmCustomSlideIds.length === 0) return;
+    // Nunca pré-aquece o slide que está sendo editado agora: sua miniatura
+    // usa o preview ao vivo (ver ScaledPreview/liveEditingActive) e não
+    // precisa de captura; aquecer aqui recapturaria via html2canvas a cada
+    // tecla digitada (o array `items` muda de referência a cada edição).
     const warmItems = warmCustomSlideIds
+      .filter((id) => id !== selectedId)
       .map((id) => items.find((item) => item.id === id))
       .filter((item): item is SlideItem => !!item);
     warmItems.forEach((item, order) => {
       window.setTimeout(() => { void warmSlideThumbnail(item); }, order * 80);
     });
-  }, [open, items, warmCustomSlideIds]);
+  }, [open, items, warmCustomSlideIds, selectedId]);
 
   // Se o slide selecionado deixou de ser custom, fecha o editor.
   useEffect(() => {

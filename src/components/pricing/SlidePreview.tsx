@@ -29,6 +29,7 @@ import {
 } from "@/lib/customSlide";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
+import { useEditorLiveConfig } from "@/components/pricing/custom/editorStore";
 import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -1279,21 +1280,10 @@ function StaticScaledPreview({
   item,
   targetWidth,
   deferUntilVisible = false,
-  liveEditingActive = false,
 }: {
   item: SlideItem;
   targetWidth?: number;
   deferUntilVisible?: boolean;
-  /**
-   * true quando este é o slide aberto/ativo no editor no momento — ou seja,
-   * a pessoa está digitando/arrastando nele agora. `item.config` (e por
-   * tanto a chave da miniatura) muda a cada edição; sem essa flag, cada
-   * pausa de digitação disparava uma captura real de DOM (html2canvas) da
-   * miniatura da tira, travando/piscando a tela. Com a flag, a miniatura
-   * fica congelada na última versão pronta e só é recapturada uma vez,
-   * quando a pessoa sai da edição deste slide.
-   */
-  liveEditingActive?: boolean;
 }) {
   if (isSlidePerfEnabled()) recordSlideRender("StaticScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
@@ -1305,22 +1295,17 @@ function StaticScaledPreview({
     () => getSlideThumbnail(key),
   );
 
+  // Guarda a última imagem pronta vista por este componente (de qualquer
+  // chave), pra evitar um flash de placeholder cinza logo após sair da
+  // edição ao vivo (ver LiveEditingCustomPreview): a chave nova ainda não
+  // tem entrada no cache, mas a miniatura anterior continua valendo até a
+  // recaptura terminar.
   const lastReadyDataUrlRef = useRef<string | null>(null);
   if (current?.status === "ready" && current.dataUrl) {
     lastReadyDataUrlRef.current = current.dataUrl;
   }
 
-  const wasLiveEditingRef = useRef(liveEditingActive);
   useEffect(() => {
-    const wasActive = wasLiveEditingRef.current;
-    wasLiveEditingRef.current = liveEditingActive;
-    if (wasActive && !liveEditingActive) {
-      void warmSlideThumbnail(item, { priority: "visible" });
-    }
-  }, [liveEditingActive, item]);
-
-  useEffect(() => {
-    if (liveEditingActive) return;
     const entry = getSlideThumbnail(key);
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
     if (deferUntilVisible) return;
@@ -1330,13 +1315,11 @@ function StaticScaledPreview({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [deferUntilVisible, item, key, liveEditingActive]);
+  }, [deferUntilVisible, item, key]);
 
   const displayDataUrl = current?.status === "ready" && current.dataUrl
     ? current.dataUrl
-    : liveEditingActive
-      ? lastReadyDataUrlRef.current
-      : null;
+    : lastReadyDataUrlRef.current;
 
   return (
     <>
@@ -1355,6 +1338,62 @@ function StaticScaledPreview({
   );
 }
 
+/**
+ * Miniatura ao vivo do slide personalizado que está sendo editado agora
+ * (aberto no editor fullscreen). Em vez de congelar na última captura PNG
+ * (html2canvas) e recapturar só quando a edição para, lê o config direto da
+ * store do editor (o mesmo estado que a tela principal já renderiza sem
+ * debounce) e desenha via CSS transform:scale — sem nenhuma captura de DOM.
+ * É o mesmo padrão do LiveScaledPreview (usado no modo Apresentação e no
+ * diálogo "Expandir"), só que aplicado à tira de miniaturas.
+ */
+function LiveEditingCustomPreview({
+  item,
+  targetWidth,
+}: {
+  item: Extract<SlideItem, { kind: "custom" }>;
+  targetWidth?: number;
+}) {
+  if (isSlidePerfEnabled()) recordSlideRender("LiveEditingCustomPreview", item.id);
+  const liveConfig = useEditorLiveConfig(item.id, item.config);
+  const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
+  const factor = previewW / CANVAS_W;
+  const previewH = CANVAS_H * factor;
+
+  useEffect(() => {
+    return () => {
+      // Ao sair da edição ao vivo deste slide (desmonta quando
+      // liveEditingActive vira false em ScaledPreview), recaptura a
+      // miniatura estática pra refletir o estado final salvo — outros
+      // contextos (PDF, export) continuam usando a imagem cacheada.
+      void warmSlideThumbnail(item, { priority: "visible" });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
+
+  return (
+    <div
+      className="overflow-hidden rounded-lg border border-border/40 bg-white"
+      style={{ width: previewW, height: previewH, position: "relative" }}
+    >
+      <div
+        style={{
+          width: CANVAS_W,
+          height: CANVAS_H,
+          transform: `scale(${factor})`,
+          transformOrigin: "top left",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          pointerEvents: "none",
+        }}
+      >
+        <CustomCanvasReadOnly config={liveConfig} slideId={item.id} />
+      </div>
+    </div>
+  );
+}
+
 export function ScaledPreview({
   item,
   targetWidth,
@@ -1369,12 +1408,18 @@ export function ScaledPreview({
   liveEditingActive?: boolean;
 }) {
   if (mode === "live") return <LiveScaledPreview item={item} targetWidth={targetWidth} />;
+  if (liveEditingActive) {
+    // Slide sendo editado agora: miniatura ao vivo (sem captura de DOM) em
+    // vez da imagem estática congelada — ver LiveEditingCustomPreview.
+    return item.kind === "custom"
+      ? <LiveEditingCustomPreview item={item} targetWidth={targetWidth} />
+      : <LiveScaledPreview item={item} targetWidth={targetWidth} />;
+  }
   return (
     <StaticScaledPreview
       item={item}
       targetWidth={targetWidth}
       deferUntilVisible={deferUntilVisible}
-      liveEditingActive={liveEditingActive}
     />
   );
 }
