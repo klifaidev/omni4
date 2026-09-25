@@ -39,6 +39,7 @@ import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCa
 import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
 import {
   buildSlideThumbnailKey,
+  getLastGoodSlideThumbnail,
   getSlideThumbnail,
   markSlideThumbnailError,
   markSlideThumbnailRendering,
@@ -875,7 +876,7 @@ async function generateSlideThumbnailNow(key: string, item: SlideItem): Promise<
   recordThumbnailMetric("SlideThumbnail:render", item.id);
   try {
     const dataUrl = await renderActualThumbnail(item);
-    setSlideThumbnail(key, dataUrl);
+    setSlideThumbnail(key, dataUrl, item.id);
     recordThumbnailMetric("SlideThumbnail:ready", item.id);
     return "generated";
   } catch {
@@ -1295,16 +1296,6 @@ function StaticScaledPreview({
     () => getSlideThumbnail(key),
   );
 
-  // Guarda a última imagem pronta vista por este componente (de qualquer
-  // chave), pra evitar um flash de placeholder cinza logo após sair da
-  // edição ao vivo (ver LiveEditingCustomPreview): a chave nova ainda não
-  // tem entrada no cache, mas a miniatura anterior continua valendo até a
-  // recaptura terminar.
-  const lastReadyDataUrlRef = useRef<string | null>(null);
-  if (current?.status === "ready" && current.dataUrl) {
-    lastReadyDataUrlRef.current = current.dataUrl;
-  }
-
   useEffect(() => {
     const entry = getSlideThumbnail(key);
     if (entry?.status === "ready" || entry?.status === "rendering" || entry?.status === "error") return;
@@ -1317,9 +1308,14 @@ function StaticScaledPreview({
     };
   }, [deferUntilVisible, item, key]);
 
+  // Fallback persiste por item.id (não por chave), sobrevivendo à troca de
+  // componente Live -> Static ao sair da edição: sem ele, o novo mount de
+  // StaticScaledPreview começaria sem nenhuma imagem pra mostrar (a chave
+  // pós-edição ainda não tem entrada no cache) e piscaria pra um placeholder
+  // em branco até a recaptura terminar. Ver getLastGoodSlideThumbnail.
   const displayDataUrl = current?.status === "ready" && current.dataUrl
     ? current.dataUrl
-    : lastReadyDataUrlRef.current;
+    : getLastGoodSlideThumbnail(item.id) ?? null;
 
   return (
     <>

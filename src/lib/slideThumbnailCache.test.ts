@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSlideThumbnailKey,
   clearSlideThumbnailCacheForTest,
+  getLastGoodSlideThumbnail,
   getSlideThumbnail,
   markSlideThumbnailRendering,
   setSlideThumbnail,
@@ -44,5 +45,29 @@ describe("slideThumbnailCache", () => {
     setSlideThumbnail(key, "data:image/png;base64,next");
 
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("mantém a última miniatura pronta por item.id mesmo com uma chave nova (edição), evitando o flash de placeholder ao sair da edição", () => {
+    const keyBefore = buildSlideThumbnailKey({ slideId: "s1", version: 1 });
+    setSlideThumbnail(keyBefore, "data:image/png;base64,antes", "s1");
+    expect(getLastGoodSlideThumbnail("s1")).toBe("data:image/png;base64,antes");
+
+    // Edição do slide muda o conteúdo -> chave nova, ainda sem entrada em `entries`.
+    const keyAfter = buildSlideThumbnailKey({ slideId: "s1", version: 2 });
+    expect(getSlideThumbnail(keyAfter)).toBeUndefined();
+    // Mas o fallback por item.id continua valendo a versão anterior.
+    expect(getLastGoodSlideThumbnail("s1")).toBe("data:image/png;base64,antes");
+
+    setSlideThumbnail(keyAfter, "data:image/png;base64,depois", "s1");
+    expect(getLastGoodSlideThumbnail("s1")).toBe("data:image/png;base64,depois");
+  });
+
+  it("não confunde o fallback por item.id entre slides diferentes", () => {
+    setSlideThumbnail(buildSlideThumbnailKey({ slideId: "s1" }), "data:image/png;base64,s1", "s1");
+    setSlideThumbnail(buildSlideThumbnailKey({ slideId: "s2" }), "data:image/png;base64,s2", "s2");
+
+    expect(getLastGoodSlideThumbnail("s1")).toBe("data:image/png;base64,s1");
+    expect(getLastGoodSlideThumbnail("s2")).toBe("data:image/png;base64,s2");
+    expect(getLastGoodSlideThumbnail("s3")).toBeUndefined();
   });
 });
