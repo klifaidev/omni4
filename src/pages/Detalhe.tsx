@@ -161,9 +161,17 @@ export default function Detalhe() {
     () => applyFilters(realRows, filters, selected),
     [realRows, filters, selected],
   );
+  // A SuperBase traz o Budget ("1.Budget Vendas") e o Real de fechamento
+  // ("2.Real Vendas") no mesmo arquivo. As medidas de Budget do pivot só podem
+  // somar o primeiro — somando os dois, o "ROL Budget" do Comparativo inflava
+  // e o Δ% chegava a inverter o sinal. O Real do pivot vem da KE30.
+  const budgetPlanRows = useMemo(
+    () => budgetRows.filter((row) => row.kind === "budget"),
+    [budgetRows],
+  );
   const filteredBudget = useMemo(
-    () => applyBudgetFilters(budgetRows, filters, selected),
-    [budgetRows, filters, selected],
+    () => applyBudgetFilters(budgetPlanRows, filters, selected),
+    [budgetPlanRows, filters, selected],
   );
 
   if (realRows.length === 0 && budgetRows.length === 0) {
