@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePivot, estimatePivotSize, getDrillRowsForCell, type PivotConfig } from "./pivot";
+import { computePivot, computePivotGuarded, estimatePivotSize, getDrillRowsForCell, type PivotConfig } from "./pivot";
 
 describe("computePivot weighted ratio measures", () => {
   it("estimates pivot result size before materializing the full aggregation", () => {
@@ -200,6 +200,49 @@ describe("computePivot weighted ratio measures", () => {
     expect(cell?.cm_pct_real).toBeCloseTo(450 / 1500, 6);
     expect(cell).not.toHaveProperty("rol_real");
     expect(cell).not.toHaveProperty("cm_real");
+  });
+
+  it("computePivotGuarded estima e agrega no mesmo passe, e bloqueia sem materializar acima dos limites", () => {
+    const rows = [
+      { categoria: "A", sku: "1", mes: "Jan", canal: "Direto", valor: 10 },
+      { categoria: "A", sku: "2", mes: "Jan", canal: "Direto", valor: 20 },
+      { categoria: "B", sku: "3", mes: "Fev", canal: "Direto", valor: 30 },
+      { categoria: "C", sku: "4", mes: "Mar", canal: "Online", valor: 40 },
+    ];
+    const config: PivotConfig = {
+      rows: ["categoria", "sku"],
+      cols: ["mes"],
+      filters: { canal: ["Direto"] },
+      values: [{ id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" }],
+    };
+    const roomy = { maxRowHeaders: 100, maxColHeaders: 100, maxObservedCells: 100, maxVisibleValueCells: 100 };
+
+    const ok = computePivotGuarded(rows, config, roomy);
+    expect(ok.estimate).toEqual(estimatePivotSize(rows, config, { observedCellCap: roomy.maxObservedCells }));
+    expect(ok.result?.rowTotals).toEqual(computePivot(rows, config).rowTotals);
+    expect(ok.result?.grandTotal.valor).toBe(60);
+
+    const blocked = computePivotGuarded(rows, config, { ...roomy, maxRowHeaders: 4 });
+    expect(blocked.estimate.rowHeaderCount).toBe(5);
+    expect(blocked.result).toBeNull();
+  });
+
+  it("filtra por vários valores e ordena meses (mesLabel) cronologicamente, não alfabeticamente", () => {
+    const rows = [
+      { marca: "X", mesLabel: "Mar/26", canal: "A", valor: 1 },
+      { marca: "X", mesLabel: "Jan/26", canal: "B", valor: 2 },
+      { marca: "X", mesLabel: "Dez/25", canal: "C", valor: 4 },
+      { marca: "X", mesLabel: "Fev/26", canal: "D", valor: 8 },
+    ];
+    const pivot = computePivot(rows, {
+      rows: ["marca"],
+      cols: ["mesLabel"],
+      filters: { canal: ["A", "B", "C"] },
+      values: [{ id: "valor", label: "Valor", field: "valor", agg: "sum", format: "number" }],
+    });
+
+    expect(pivot.colHeaders.map((col) => col.key)).toEqual(["Dez/25", "Jan/26", "Mar/26"]);
+    expect(pivot.grandTotal.valor).toBe(7);
   });
 
   it("aggregates hidden dependencies when CM R$/Kg is selected alone", () => {

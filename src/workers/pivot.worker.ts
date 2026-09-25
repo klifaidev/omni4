@@ -1,4 +1,4 @@
-import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
+import { computePivotGuarded, type PivotConfig, type PivotLimits, type PivotMeasure } from "@/lib/pivot";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -14,6 +14,7 @@ type PivotWorkerRequest = {
   rowsKey: string;
   rows?: Record<string, unknown>[];
   config: PivotWorkerConfig;
+  limits: PivotLimits;
 };
 
 type PivotWorkerReleaseRequest = {
@@ -106,8 +107,8 @@ self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseReq
 
   try {
     const rows = rowsFor(request);
-    const result = computePivot(rows, hydrateConfig(request.config));
-    self.postMessage({ id: request.id, ok: true, result });
+    const { estimate, result } = computePivotGuarded(rows, hydrateConfig(request.config), request.limits);
+    self.postMessage({ id: request.id, ok: true, estimate, result });
   } catch (error) {
     self.postMessage({
       id: request.id,

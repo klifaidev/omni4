@@ -150,110 +150,144 @@ function aggregate(acc: FieldAccumulator | undefined, fn: AggFn): number | null 
   }
 }
 
-function buildHeaders(
-  rows: Record<string, unknown>[],
-  dims: string[],
-): { headers: PivotRowHeader[]; keyOf: (r: Record<string, unknown>) => string } {
-  if (dims.length === 0) {
-    return {
-      headers: [{ key: "__all__", values: [], depth: 0, isLeaf: true }],
-      keyOf: () => "__all__",
-    };
-  }
-  // Coletar combinações únicas (somente nós-folha; UI cuida de hierarquia visual)
-  const set = new Map<string, string[]>();
-  for (const r of rows) {
-    const vals = dims.map((d) => dimVal(r, d));
-    const key = vals.join(SEP);
-    if (!set.has(key)) set.set(key, vals);
-  }
-  // ordenar por valores (com ordenação cronológica para dimensões temporais)
-  const MES_ORDER: Record<string, number> = {
-    jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
-    jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
-  };
-  const mesLabelKey = (v: string): number => {
-    const m = v.match(/^([A-Za-zçÇ]{3})\/(\d{2,4})$/);
-    if (!m) return Number.MAX_SAFE_INTEGER;
-    const mn = MES_ORDER[m[1].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")];
-    if (!mn) return Number.MAX_SAFE_INTEGER;
-    const yr = parseInt(m[2], 10);
-    const yyyy = yr < 100 ? 2000 + yr : yr;
-    return yyyy * 100 + mn;
-  };
-  const cmpAt = (dim: string, av: string, bv: string): number => {
-    if (dim === "mesLabel") {
-      return mesLabelKey(av) - mesLabelKey(bv);
-    }
-    return av.localeCompare(bv, "pt-BR", { numeric: true });
-  };
-  const sorted = Array.from(set.entries()).sort(([, a], [, b]) => {
-    for (let i = 0; i < a.length; i++) {
-      const cmp = cmpAt(dims[i], a[i], b[i]);
-      if (cmp !== 0) return cmp;
-    }
-    return 0;
-  });
-  const headers: PivotRowHeader[] = sorted.map(([key, values]) => ({
-    key,
-    values,
-    depth: 0,
-    isLeaf: true,
-  }));
-  return {
-    headers,
-    keyOf: (r) => dims.map((d) => dimVal(r, d)).join(SEP),
-  };
+const MES_ORDER: Record<string, number> = {
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+};
+
+function mesLabelKey(v: string): number {
+  const m = v.match(/^([A-Za-zçÇ]{3})\/(\d{2,4})$/);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const mn = MES_ORDER[m[1].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")];
+  if (!mn) return Number.MAX_SAFE_INTEGER;
+  const yr = parseInt(m[2], 10);
+  const yyyy = yr < 100 ? 2000 + yr : yr;
+  return yyyy * 100 + mn;
 }
 
-function buildRowHeaders(
+// Mesmo resultado de localeCompare(b, "pt-BR", { numeric: true }), sem
+// recriar as regras de collation a cada comparação.
+const PT_BR_COLLATOR = new Intl.Collator("pt-BR", { numeric: true });
+
+function compareDimValues(dim: string, av: string, bv: string): number {
+  if (dim === "mesLabel") return mesLabelKey(av) - mesLabelKey(bv);
+  return PT_BR_COLLATOR.compare(av, bv);
+}
+
+function sortedHeaders(valuesByKey: Map<string, string[]>, dims: string[]): PivotRowHeader[] {
+  return Array.from(valuesByKey.entries())
+    .sort(([, a], [, b]) => {
+      for (let i = 0; i < a.length; i++) {
+        const cmp = compareDimValues(dims[i], a[i], b[i]);
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    })
+    .map(([key, values]) => ({ key, values, depth: 0, isLeaf: true }));
+}
+
+function keyFor(row: Record<string, unknown>, dims: string[]): string {
+  if (dims.length === 0) return "__all__";
+  let key = dimVal(row, dims[0]);
+  for (let i = 1; i < dims.length; i++) key += SEP + dimVal(row, dims[i]);
+  return key;
+}
+
+function activeFilterSets(filters: Record<string, string[]>): Array<[string, Set<string>]> {
+  const out: Array<[string, Set<string>]> = [];
+  for (const [dim, allowed] of Object.entries(filters)) {
+    if (allowed && allowed.length > 0) out.push([dim, new Set(allowed)]);
+  }
+  return out;
+}
+
+function passesFilters(row: Record<string, unknown>, filters: Array<[string, Set<string>]>): boolean {
+  for (const [dim, allowed] of filters) {
+    if (!allowed.has(dimVal(row, dim))) return false;
+  }
+  return true;
+}
+
+/**
+ * Passada única sobre as linhas: filtra (com Set, não Array.includes) e
+ * calcula as chaves de linha/coluna/grupo de cada registro uma única vez.
+ * Estimativa de tamanho e agregação reaproveitam o mesmo índice — antes,
+ * cada chave era recalculada em até 4 passadas (estimativa, cabeçalhos de
+ * linha, de coluna e agregação).
+ */
+interface PivotIndex {
+  rows: Record<string, unknown>[];
+  rowKeys: string[];
+  colKeys: string[];
+  groupKeys: (string | null)[];
+  rowValues: Map<string, string[]>;
+  colValues: Map<string, string[]>;
+  groupCount: number;
+  observedCellCount: number;
+}
+
+function indexPivotRows(
   rows: Record<string, unknown>[],
-  dims: string[],
-): {
-  headers: PivotRowHeader[];
-  leafHeaders: PivotRowHeader[];
-  keyOf: (r: Record<string, unknown>) => string;
-  groupKeyOf: (r: Record<string, unknown>) => string | null;
-} {
-  const flat = buildHeaders(rows, dims);
-  const leafHeaders = flat.headers.map((header) => ({ ...header, isLeaf: true }));
-  if (dims.length <= 1) {
-    return {
-      headers: leafHeaders,
-      leafHeaders,
-      keyOf: flat.keyOf,
-      groupKeyOf: () => null,
-    };
+  config: Pick<PivotConfig, "rows" | "cols" | "filters">,
+  observedCellCap: number | null,
+): PivotIndex {
+  const filters = activeFilterSets(config.filters);
+  const rowDims = config.rows;
+  const colDims = config.cols;
+  const grouped = rowDims.length > 1;
+  const index: PivotIndex = {
+    rows: [],
+    rowKeys: [],
+    colKeys: [],
+    groupKeys: [],
+    rowValues: new Map(),
+    colValues: new Map(),
+    groupCount: 0,
+    observedCellCount: 0,
+  };
+  const groups = grouped ? new Set<string>() : null;
+  const observedCells = observedCellCap === null ? null : new Set<string>();
+
+  for (const row of rows) {
+    if (filters.length > 0 && !passesFilters(row, filters)) continue;
+    const rk = keyFor(row, rowDims);
+    const ck = keyFor(row, colDims);
+    if (rowDims.length > 0 && !index.rowValues.has(rk)) {
+      index.rowValues.set(rk, rowDims.map((dim) => dimVal(row, dim)));
+    }
+    if (colDims.length > 0 && !index.colValues.has(ck)) {
+      index.colValues.set(ck, colDims.map((dim) => dimVal(row, dim)));
+    }
+    const gk = grouped ? dimVal(row, rowDims[0]) : null;
+    if (groups && gk !== null) groups.add(gk);
+    if (observedCells && observedCellCap !== null && observedCells.size <= observedCellCap) {
+      observedCells.add(`${rk}${SEP}${ck}`);
+    }
+    index.rows.push(row);
+    index.rowKeys.push(rk);
+    index.colKeys.push(ck);
+    index.groupKeys.push(gk);
   }
 
-  const childrenByGroup = new Map<string, PivotRowHeader[]>();
-  const groupValues = new Map<string, string>();
-  for (const leaf of leafHeaders) {
-    const groupValue = leaf.values[0] ?? EMPTY;
-    const groupKey = groupValue;
-    const groupedLeaf = { ...leaf, depth: 1, parentKey: groupKey };
-    if (!childrenByGroup.has(groupKey)) childrenByGroup.set(groupKey, []);
-    childrenByGroup.get(groupKey)!.push(groupedLeaf);
-    groupValues.set(groupKey, groupValue);
-  }
+  index.groupCount = groups?.size ?? 0;
+  index.observedCellCount = observedCells?.size ?? 0;
+  return index;
+}
 
-  const headers: PivotRowHeader[] = [];
-  for (const [groupKey, children] of childrenByGroup) {
-    headers.push({
-      key: groupKey,
-      values: [groupValues.get(groupKey) ?? EMPTY],
-      depth: 0,
-      isLeaf: false,
-      childrenKeys: children.map((child) => child.key),
-    });
-    headers.push(...children);
-  }
-
+function estimateFromIndex(index: PivotIndex, config: Pick<PivotConfig, "rows" | "cols" | "values">): PivotSizeEstimate {
+  const filteredRowCount = index.rows.length;
+  const leafRowCount = config.rows.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : index.rowValues.size;
+  const rowHeaderCount = config.rows.length > 1 ? leafRowCount + index.groupCount : leafRowCount;
+  const colHeaderCount = config.cols.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : index.colValues.size;
+  const measureCount = Math.max(1, config.values.length);
   return {
-    headers,
-    leafHeaders: headers.filter((header) => header.isLeaf),
-    keyOf: flat.keyOf,
-    groupKeyOf: (r) => dimVal(r, dims[0]),
+    filteredRowCount,
+    rowHeaderCount,
+    leafRowCount,
+    colHeaderCount,
+    observedCellCount: index.observedCellCount,
+    visibleValueCellCount: rowHeaderCount * Math.max(1, colHeaderCount) * measureCount,
+    measureCount,
   };
 }
 
@@ -262,63 +296,49 @@ export function estimatePivotSize(
   config: Pick<PivotConfig, "rows" | "cols" | "values" | "filters">,
   options: { observedCellCap?: number } = {},
 ): PivotSizeEstimate {
-  const activeFilters = Object.entries(config.filters).filter(([, allowed]) => allowed && allowed.length > 0);
-  const rowKeys = new Set<string>();
-  const rowGroups = new Set<string>();
-  const colKeys = new Set<string>();
-  const observedCells = new Set<string>();
-  const observedCellCap = options.observedCellCap ?? Number.POSITIVE_INFINITY;
-  let filteredRowCount = 0;
-
-  for (const row of rows) {
-    let matches = true;
-    for (const [dim, allowed] of activeFilters) {
-      if (!allowed.includes(dimVal(row, dim))) {
-        matches = false;
-        break;
-      }
-    }
-    if (!matches) continue;
-
-    filteredRowCount += 1;
-    const rowValues = config.rows.map((dim) => dimVal(row, dim));
-    const rowKey = config.rows.length === 0 ? "__all__" : rowValues.join(SEP);
-    const colKey = config.cols.length === 0 ? "__all__" : config.cols.map((dim) => dimVal(row, dim)).join(SEP);
-    rowKeys.add(rowKey);
-    if (config.rows.length > 1) rowGroups.add(rowValues[0] ?? EMPTY);
-    colKeys.add(colKey);
-    if (observedCells.size <= observedCellCap) observedCells.add(`${rowKey}${SEP}${colKey}`);
-  }
-
-  const leafRowCount = config.rows.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : rowKeys.size;
-  const rowHeaderCount = config.rows.length > 1 ? leafRowCount + rowGroups.size : leafRowCount;
-  const colHeaderCount = config.cols.length === 0 ? (filteredRowCount > 0 ? 1 : 0) : colKeys.size;
-  const measureCount = Math.max(1, config.values.length);
-
-  return {
-    filteredRowCount,
-    rowHeaderCount,
-    leafRowCount,
-    colHeaderCount,
-    observedCellCount: observedCells.size,
-    visibleValueCellCount: rowHeaderCount * Math.max(1, colHeaderCount) * measureCount,
-    measureCount,
-  };
+  const index = indexPivotRows(rows, config, options.observedCellCap ?? Number.POSITIVE_INFINITY);
+  return estimateFromIndex(index, config);
 }
 
-export function computePivot(
-  rows: Record<string, unknown>[],
-  config: PivotConfig,
-): PivotResult {
-  // Aplicar filtros
-  let filteredRows = rows;
-  for (const [dim, allowed] of Object.entries(config.filters)) {
-    if (!allowed || allowed.length === 0) continue;
-    filteredRows = filteredRows.filter((row) => allowed.includes(dimVal(row, dim)));
+function buildRowHeaderTree(
+  index: PivotIndex,
+  dims: string[],
+): { headers: PivotRowHeader[]; leafHeaders: PivotRowHeader[] } {
+  if (dims.length === 0) {
+    const all: PivotRowHeader[] = [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
+    return { headers: all, leafHeaders: all };
+  }
+  const leafHeaders = sortedHeaders(index.rowValues, dims);
+  if (dims.length === 1) return { headers: leafHeaders, leafHeaders };
+
+  const childrenByGroup = new Map<string, PivotRowHeader[]>();
+  for (const leaf of leafHeaders) {
+    const groupKey = leaf.values[0] ?? EMPTY;
+    const children = childrenByGroup.get(groupKey);
+    const groupedLeaf = { ...leaf, depth: 1, parentKey: groupKey };
+    if (children) children.push(groupedLeaf);
+    else childrenByGroup.set(groupKey, [groupedLeaf]);
   }
 
-  const { headers: rowHeaders, leafHeaders: leafRowHeaders, keyOf: rowKeyOf, groupKeyOf } = buildRowHeaders(filteredRows, config.rows);
-  const { headers: colHeaders, keyOf: colKeyOf } = buildHeaders(filteredRows, config.cols);
+  const headers: PivotRowHeader[] = [];
+  for (const [groupKey, children] of childrenByGroup) {
+    headers.push({
+      key: groupKey,
+      values: [groupKey],
+      depth: 0,
+      isLeaf: false,
+      childrenKeys: children.map((child) => child.key),
+    });
+    headers.push(...children);
+  }
+  return { headers, leafHeaders: headers.filter((header) => header.isLeaf) };
+}
+
+function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
+  const { headers: rowHeaders, leafHeaders: leafRowHeaders } = buildRowHeaderTree(index, config.rows);
+  const colHeaders: PivotColHeader[] = config.cols.length === 0
+    ? [{ key: "__all__", values: [], depth: 0, isLeaf: true }]
+    : sortedHeaders(index.colValues, config.cols);
 
   // Buckets de acumuladores incrementais por (rowKey, colKey, measureField).
   // Evita manter listas completas de valores brutos em memória.
@@ -347,65 +367,55 @@ export function computePivot(
     .map((id) => measureById.get(id))
     .filter((measure): measure is PivotMeasure => !!measure);
 
-  const directFields = new Set<string>();
+  const directFieldSet = new Set<string>();
   for (const m of effectiveValues) {
-    if (!m.derive) directFields.add(m.field);
+    if (!m.derive) directFieldSet.add(m.field);
   }
+  const directFields = Array.from(directFieldSet);
 
-  function pushBucket(b: Bucket, field: string, val: number) {
-    if (!b[field]) b[field] = createAccumulator(val);
-    else addToAccumulator(b[field], val);
-  }
-
-  for (const r of filteredRows) {
-    const rk = rowKeyOf(r);
-    const gk = groupKeyOf(r);
-    const ck = colKeyOf(r);
-
-    let cellMap = cellBuckets.get(rk);
-    if (!cellMap) {
-      cellMap = new Map();
-      cellBuckets.set(rk, cellMap);
+  const pushBucket = (b: Bucket, field: string, val: number) => {
+    const acc = b[field];
+    if (!acc) b[field] = createAccumulator(val);
+    else addToAccumulator(acc, val);
+  };
+  const bucketIn = (map: Map<string, Bucket>, key: string): Bucket => {
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = {};
+      map.set(key, bucket);
     }
-    let cell = cellMap.get(ck);
-    if (!cell) {
-      cell = {};
-      cellMap.set(ck, cell);
+    return bucket;
+  };
+  const cellBucketIn = (rowKey: string, colKey: string): Bucket => {
+    let byCol = cellBuckets.get(rowKey);
+    if (!byCol) {
+      byCol = new Map();
+      cellBuckets.set(rowKey, byCol);
     }
-    let rb = rowBuckets.get(rk);
-    if (!rb) { rb = {}; rowBuckets.set(rk, rb); }
-    const groupCell = gk && gk !== rk ? (() => {
-      let groupCellMap = cellBuckets.get(gk);
-      if (!groupCellMap) {
-        groupCellMap = new Map();
-        cellBuckets.set(gk, groupCellMap);
-      }
-      let bucket = groupCellMap.get(ck);
-      if (!bucket) {
-        bucket = {};
-        groupCellMap.set(ck, bucket);
-      }
-      return bucket;
-    })() : null;
-    const groupRowBucket = gk && gk !== rk ? (() => {
-      let bucket = rowBuckets.get(gk);
-      if (!bucket) {
-        bucket = {};
-        rowBuckets.set(gk, bucket);
-      }
-      return bucket;
-    })() : null;
-    let cb = colBuckets.get(ck);
-    if (!cb) { cb = {}; colBuckets.set(ck, cb); }
+    return bucketIn(byCol, colKey);
+  };
 
-    for (const field of directFields) {
+  for (let i = 0; i < index.rows.length; i++) {
+    const r = index.rows[i];
+    const rk = index.rowKeys[i];
+    const ck = index.colKeys[i];
+    const gk = index.groupKeys[i];
+    const cell = cellBucketIn(rk, ck);
+    const rb = bucketIn(rowBuckets, rk);
+    const cb = bucketIn(colBuckets, ck);
+    const hasGroup = gk !== null && gk !== rk;
+    const groupCell = hasGroup ? cellBucketIn(gk, ck) : null;
+    const groupRow = hasGroup ? bucketIn(rowBuckets, gk) : null;
+
+    for (let f = 0; f < directFields.length; f++) {
+      const field = directFields[f];
       const raw = getField(r, field);
       const num = typeof raw === "number" ? raw : Number(raw);
       if (!isFinite(num)) continue;
       pushBucket(cell, field, num);
       pushBucket(rb, field, num);
       if (groupCell) pushBucket(groupCell, field, num);
-      if (groupRowBucket) pushBucket(groupRowBucket, field, num);
+      if (groupRow) pushBucket(groupRow, field, num);
       pushBucket(cb, field, num);
       pushBucket(grandBucket, field, num);
     }
@@ -453,34 +463,67 @@ export function computePivot(
   return { rowHeaders, leafRowHeaders, colHeaders, cells, drillRows: new Map(), rowTotals, colTotals, grandTotal, measureRange };
 }
 
+export function computePivot(
+  rows: Record<string, unknown>[],
+  config: PivotConfig,
+): PivotResult {
+  return aggregateIndex(indexPivotRows(rows, config, null), config);
+}
+
+export interface PivotLimits {
+  maxRowHeaders: number;
+  maxColHeaders: number;
+  maxObservedCells: number;
+  maxVisibleValueCells: number;
+}
+
+export function exceedsPivotLimits(estimate: PivotSizeEstimate, limits: PivotLimits): boolean {
+  return estimate.rowHeaderCount > limits.maxRowHeaders
+    || estimate.colHeaderCount > limits.maxColHeaders
+    || estimate.observedCellCount > limits.maxObservedCells
+    || estimate.visibleValueCellCount > limits.maxVisibleValueCells;
+}
+
+export interface GuardedPivotResult {
+  estimate: PivotSizeEstimate;
+  /** null quando a estimativa passa dos limites — o pivot não é materializado. */
+  result: PivotResult | null;
+}
+
+/**
+ * Estima e, se couber nos limites, agrega — tudo sobre o mesmo índice, numa
+ * única passada de chaveamento. Pensado pra rodar no worker: antes a
+ * estimativa rodava à parte no thread principal a cada mudança de config.
+ */
+export function computePivotGuarded(
+  rows: Record<string, unknown>[],
+  config: PivotConfig,
+  limits: PivotLimits,
+): GuardedPivotResult {
+  const index = indexPivotRows(rows, config, limits.maxObservedCells);
+  const estimate = estimateFromIndex(index, config);
+  if (exceedsPivotLimits(estimate, limits)) return { estimate, result: null };
+  return { estimate, result: aggregateIndex(index, config) };
+}
+
 export function getDrillRowsForCell(
   rows: Record<string, unknown>[],
   config: PivotConfig,
   rowKey: string,
   colKey: string,
 ): number[] {
-  const activeFilters = Object.entries(config.filters).filter(([, allowed]) => allowed && allowed.length > 0);
-  const { keyOf: rowKeyOf, groupKeyOf } = buildRowHeaders([], config.rows);
-  const { keyOf: colKeyOf } = buildHeaders([], config.cols);
+  const filters = activeFilterSets(config.filters);
+  const grouped = config.rows.length > 1;
   const indexes: number[] = [];
 
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
-    let matchesFilters = true;
-    for (const [dim, allowed] of activeFilters) {
-      if (!allowed.includes(dimVal(row, dim))) {
-        matchesFilters = false;
-        break;
-      }
-    }
-    if (!matchesFilters) continue;
-
-    const leafKey = rowKeyOf(row);
-    const groupKey = groupKeyOf(row);
+    if (filters.length > 0 && !passesFilters(row, filters)) continue;
+    const leafKey = keyFor(row, config.rows);
+    const groupKey = grouped ? dimVal(row, config.rows[0]) : null;
     const matchesRow = leafKey === rowKey || (groupKey != null && groupKey === rowKey);
     if (!matchesRow) continue;
-    if (colKeyOf(row) !== colKey) continue;
-
+    if (keyFor(row, config.cols) !== colKey) continue;
     indexes.push(index);
   }
 

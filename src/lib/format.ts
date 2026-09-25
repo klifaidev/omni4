@@ -1,28 +1,34 @@
+// toLocaleString com opções reconstrói as regras de formatação a cada chamada
+// (~30µs); um Intl.NumberFormat reaproveitado formata o mesmo texto em ~1µs.
+// Em tabelas com milhares de células isso era dezenas de ms por render.
+const numberFormatCache = new Map<string, Intl.NumberFormat>();
+
+function ptBrNumberFormat(digits: number, currency: boolean): Intl.NumberFormat {
+  const key = `${currency ? "brl" : "num"}:${digits}`;
+  let format = numberFormatCache.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat("pt-BR", currency
+      ? { style: "currency", currency: "BRL", minimumFractionDigits: digits, maximumFractionDigits: digits }
+      : { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    numberFormatCache.set(key, format);
+  }
+  return format;
+}
+
 export const formatBRL = (v: number, opts?: { compact?: boolean; digits?: number }) => {
   if (!isFinite(v)) return "—";
   const { digits = 0 } = opts ?? {};
-  return v.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  return ptBrNumberFormat(digits, true).format(v);
 };
 
 export const formatNum = (v: number, digits = 0, compact = false) => {
   if (!isFinite(v)) return "—";
-  return v.toLocaleString("pt-BR", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  return ptBrNumberFormat(digits, false).format(v);
 };
 
 export const formatPct = (v: number, digits = 1) => {
   if (!isFinite(v)) return "—";
-  return `${(v * 100).toLocaleString("pt-BR", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}%`;
+  return `${ptBrNumberFormat(digits, false).format(v * 100)}%`;
 };
 
 export const formatTon = (tons: number) => `${formatNum(tons, 0)} t`;

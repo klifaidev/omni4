@@ -1,4 +1,11 @@
-import { computePivot, type PivotConfig, type PivotMeasure, type PivotResult } from "@/lib/pivot";
+import {
+  computePivotGuarded,
+  type GuardedPivotResult,
+  type PivotConfig,
+  type PivotLimits,
+  type PivotMeasure,
+  type PivotResult,
+} from "@/lib/pivot";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -12,12 +19,13 @@ type PivotWorkerConfig = Omit<PivotConfig, "values" | "measureCatalog"> & {
 type PivotWorkerResponse = {
   id: number;
   ok: boolean;
-  result?: PivotResult;
+  estimate?: GuardedPivotResult["estimate"];
+  result?: PivotResult | null;
   error?: string;
 };
 
 type Pending = {
-  resolve: (value: PivotResult) => void;
+  resolve: (value: GuardedPivotResult) => void;
   reject: (error: Error) => void;
 };
 
@@ -97,7 +105,7 @@ function getWorker(): Worker | null {
       const entry = pending.get(message.id);
       if (!entry) return;
       pending.delete(message.id);
-      if (message.ok && message.result) entry.resolve(message.result);
+      if (message.ok && message.estimate) entry.resolve({ estimate: message.estimate, result: message.result ?? null });
       else entry.reject(new Error(message.error ?? "Erro no worker da tabela dinâmica."));
     };
     worker.onerror = (event) => {
@@ -118,20 +126,22 @@ function getWorker(): Worker | null {
 function postToWorker(
   rows: Record<string, unknown>[],
   config: PivotConfig,
-): Promise<PivotResult> {
+  limits: PivotLimits,
+): Promise<GuardedPivotResult> {
   const instance = getWorker();
   if (!instance) return Promise.reject(new Error("Worker indisponível."));
   const rowsKey = getRowsKey(rows);
   if (activeRowsKey && activeRowsKey !== rowsKey) releasePivotRows(activeRowsKey);
   activeRowsKey = rowsKey;
   const id = ++requestId;
-  return new Promise<PivotResult>((resolve, reject) => {
+  return new Promise<GuardedPivotResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
     instance.postMessage({
       id,
       rowsKey,
       rows: rowsPayload(rowsKey, rows),
       config: toWorkerConfig(config),
+      limits,
     });
   });
 }
@@ -148,9 +158,48 @@ export function releasePivotRows(rowsKey?: string): void {
   }
 }
 
-export function disposePivotWorker(): void {
-  const error = new Error("Calculo da tabela dinamica cancelado porque a pagina foi fechada.");
+function abortError(message: string): Error {
+  const error = new Error(message);
   error.name = "AbortError";
+  return error;
+}
+
+// Só o pedido mais recente é calculado. O worker processa um pedido por vez;
+// enquanto ele está ocupado, pedidos novos substituem o que estava na espera
+// (o substituído é rejeitado como AbortError). Sem isso, arrastar 3 campos em
+// sequência enfileirava 3 cálculos completos, 2 deles já obsoletos.
+type QueuedJob = {
+  rows: Record<string, unknown>[];
+  config: PivotConfig;
+  limits: PivotLimits;
+  resolve: (value: GuardedPivotResult) => void;
+  reject: (error: Error) => void;
+};
+let jobInFlight = false;
+let queuedJob: QueuedJob | null = null;
+
+function runJob(job: QueuedJob): void {
+  jobInFlight = true;
+  const compute = canUseWorker(job.config)
+    ? postToWorker(job.rows, job.config, job.limits).catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        return computePivotGuarded(job.rows, job.config, job.limits);
+      })
+    : Promise.resolve().then(() => computePivotGuarded(job.rows, job.config, job.limits));
+  compute
+    .then(job.resolve, job.reject)
+    .finally(() => {
+      jobInFlight = false;
+      const next = queuedJob;
+      queuedJob = null;
+      if (next) runJob(next);
+    });
+}
+
+export function disposePivotWorker(): void {
+  const error = abortError("Calculo da tabela dinamica cancelado porque a pagina foi fechada.");
+  queuedJob?.reject(error);
+  queuedJob = null;
   pending.forEach((entry) => entry.reject(error));
   pending.clear();
   registeredRows.clear();
@@ -159,15 +208,22 @@ export function disposePivotWorker(): void {
   worker = null;
 }
 
-export async function computePivotAsync(
+/**
+ * Estima o tamanho e, se couber nos limites, calcula o pivot — no worker.
+ * `result` vem null quando a configuração estoura os limites.
+ */
+export function computePivotGuardedAsync(
   rows: Record<string, unknown>[],
   config: PivotConfig,
-): Promise<PivotResult> {
-  if (!canUseWorker(config)) return computePivot(rows, config);
-  try {
-    return await postToWorker(rows, config);
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    return computePivot(rows, config);
-  }
+  limits: PivotLimits,
+): Promise<GuardedPivotResult> {
+  return new Promise<GuardedPivotResult>((resolve, reject) => {
+    const job: QueuedJob = { rows, config, limits, resolve, reject };
+    if (!jobInFlight) {
+      runJob(job);
+      return;
+    }
+    queuedJob?.reject(abortError("Substituido por um calculo mais recente."));
+    queuedJob = job;
+  });
 }
