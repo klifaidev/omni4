@@ -24,7 +24,16 @@ function recordIdleMetric(name: string, id?: string): void {
 export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: string | null): void {
   const generationRef = useRef(0);
   const runningRef = useRef(false);
-  const ordered = useMemo(() => itemsByDistanceFromSelection(items, selectedId), [items, selectedId]);
+  // Mesmo cuidado de useIdleSlidePrecompute: memoiza pela assinatura de ids
+  // (não por `items`, que ganha referência nova a cada edição) e exclui o
+  // slide selecionado — recalcular a série dele a cada tecla digitada é
+  // trabalho jogado fora, já que o conteúdo muda de novo no keystroke seguinte.
+  const itemIdsSignature = useMemo(() => items.map((item) => item.id).join("|"), [items]);
+  const ordered = useMemo(
+    () => itemsByDistanceFromSelection(items, selectedId).filter((item) => item.id !== selectedId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemIdsSignature, selectedId],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || ordered.length === 0) return undefined;

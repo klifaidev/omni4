@@ -21,7 +21,19 @@ function recordIdleMetric(name: string, id?: string): void {
 export function useIdleSlidePrecompute(items: SlideItem[], selectedId: string | null): void {
   const generationRef = useRef(0);
   const runningRef = useRef(false);
-  const ordered = useMemo(() => itemsByDistanceFromSelection(items, selectedId), [items, selectedId]);
+  // Memoiza pela assinatura de ids (não por `items`): o array inteiro ganha
+  // uma referência nova a cada edição de QUALQUER slide, o que reiniciaria
+  // esta fila (e o requestIdleCallback pendente) a cada tecla digitada. Só a
+  // ordem/composição do deck deve reiniciar a fila — o conteúdo de um slide
+  // sendo editado, não. O slide selecionado é excluído: sua miniatura usa o
+  // preview ao vivo (ver ScaledPreview/liveEditingActive) enquanto ativo, e
+  // pré-computá-lo aqui só re-capturava via html2canvas o slide em edição.
+  const itemIdsSignature = useMemo(() => items.map((item) => item.id).join("|"), [items]);
+  const ordered = useMemo(
+    () => itemsByDistanceFromSelection(items, selectedId).filter((item) => item.id !== selectedId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [itemIdsSignature, selectedId],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || ordered.length === 0) return undefined;

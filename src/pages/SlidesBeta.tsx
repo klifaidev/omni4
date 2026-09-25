@@ -1067,7 +1067,9 @@ function FullscreenCustomEditor({
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
-  const stripThumbnailScheduler = useThumbnailVisibilityScheduler(stripPreviewWindow.viewportRef);
+  const stripThumbnailScheduler = useThumbnailVisibilityScheduler(stripPreviewWindow.viewportRef, {
+    skipId: current?.id ?? null,
+  });
 
   return (
     <>
@@ -2155,7 +2157,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
   const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
-  const flowThumbnailScheduler = useThumbnailVisibilityScheduler(flowPreviewWindow.viewportRef);
+  const flowThumbnailScheduler = useThumbnailVisibilityScheduler(flowPreviewWindow.viewportRef, {
+    skipId: selectedId,
+  });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {

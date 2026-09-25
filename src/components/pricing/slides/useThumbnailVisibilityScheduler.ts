@@ -30,7 +30,7 @@ export interface ThumbnailVisibilityScheduler {
 
 export function useThumbnailVisibilityScheduler(
   containerRef: RefObject<HTMLElement | null>,
-  options?: { preloadRootMargin?: string; enabled?: boolean },
+  options?: { preloadRootMargin?: string; enabled?: boolean; skipId?: string | null },
 ): ThumbnailVisibilityScheduler {
   const enabled = options?.enabled ?? true;
   const preloadRootMargin = options?.preloadRootMargin ?? DEFAULT_PRELOAD_ROOT_MARGIN;
@@ -42,10 +42,20 @@ export function useThumbnailVisibilityScheduler(
   const preloadSetRef = useRef(new Set<Element>());
   const observersRef = useRef<{ visible: IntersectionObserver; preload: IntersectionObserver } | null>(null);
   const refCallbacksRef = useRef(new Map<string, (element: HTMLElement | null) => void>());
+  // Slide selecionado/em edição agora: sua miniatura usa o preview ao vivo
+  // (ver ScaledPreview/liveEditingActive) e não deve ser recapturada aqui.
+  // Guardado em ref (não em dependência do efeito dos observers) pra trocar
+  // de slide não recriar os IntersectionObserver — só o valor lido na
+  // próxima mudança de interseção.
+  const skipIdRef = useRef<string | null>(options?.skipId ?? null);
+  useEffect(() => {
+    skipIdRef.current = options?.skipId ?? null;
+  }, [options?.skipId]);
 
   const applyPriorityForElement = useCallback((element: Element) => {
     const id = idByElementRef.current.get(element);
     if (!id) return;
+    if (id === skipIdRef.current) return;
     const item = itemsByIdRef.current.get(id);
     if (!item) return;
     if (visibleSetRef.current.has(element)) {
