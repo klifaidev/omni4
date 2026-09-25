@@ -4,6 +4,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   AlertTriangle,
+  Bookmark,
+  BookmarkPlus,
   Check,
   ChevronDown,
   ChevronRight,
@@ -21,11 +23,13 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
+  Redo2,
   RotateCcw,
   Rows3,
   Search,
   Sigma,
   Sparkles,
+  Undo2,
   Wand2,
   X,
   Zap,
@@ -82,10 +86,17 @@ import {
 } from "@/components/ui/context-menu";
 import { exportTableCsv } from "@/lib/exportCsv";
 import { toast } from "sonner";
+import {
+  usePivotLayoutStore,
+  type PivotLayout,
+  type PivotSortState,
+  type PivotVizMode,
+  type SavedPivotView,
+} from "@/store/pivotLayout";
 
 type Zone = "rows" | "cols" | "values" | "filters";
-type VizMode = "heatmap" | "plain";
-type SortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
+type VizMode = PivotVizMode;
+type SortState = PivotSortState;
 type ShowAsMode = "normal" | "pctColuna" | "pctLinha" | "pctGeral";
 type PivotFieldKind = "dimension" | "measure";
 type PivotDetailRow = Record<string, unknown>;
@@ -323,6 +334,57 @@ function defaultConfig(mode: PivotMode) {
   };
 }
 
+function defaultLayout(mode: PivotMode): PivotLayout {
+  return {
+    ...defaultConfig(mode),
+    filterDims: [],
+    filterVals: {},
+    sort: null,
+    viz: "heatmap",
+    hideEmpty: true,
+  };
+}
+
+/**
+ * Montagens restauradas (última usada ou visão salva) podem citar campos que
+ * não existem no modo — ex.: Região numa visão do SuperBase, ou um campo que
+ * deixou de existir numa versão nova do app. Descarta o que não se aplica.
+ */
+function sanitizeLayout(layout: PivotLayout | undefined, mode: PivotMode): PivotLayout | null {
+  if (!layout) return null;
+  const dimIds = new Set(dimensionsForMode(mode).map((d) => d.id as string));
+  const measureIds = new Set(measuresFor(mode).map((m) => m.id));
+  const filterDims = (layout.filterDims ?? []).filter((d) => dimIds.has(d));
+  const values = (layout.values ?? []).filter((v) => measureIds.has(v));
+  const filterVals = Object.fromEntries(
+    Object.entries(layout.filterVals ?? {}).filter(([dim, vals]) => filterDims.includes(dim) && Array.isArray(vals)),
+  );
+  const sort = layout.sort && values.includes(layout.sort.measure) ? layout.sort : null;
+  return {
+    rows: (layout.rows ?? []).filter((d) => dimIds.has(d)),
+    cols: (layout.cols ?? []).filter((d) => dimIds.has(d)),
+    values,
+    filterDims,
+    filterVals,
+    sort,
+    viz: layout.viz === "plain" ? "plain" : "heatmap",
+    hideEmpty: layout.hideEmpty !== false,
+  };
+}
+
+function restoredLayoutFor(mode: PivotMode): PivotLayout {
+  return sanitizeLayout(usePivotLayoutStore.getState().layouts[mode], mode) ?? defaultLayout(mode);
+}
+
+function initialPivotState(hasBudget: boolean): { mode: PivotMode; layout: PivotLayout } {
+  const stored = usePivotLayoutStore.getState().mode;
+  // Sem base de Budget, SuperBase/Comparativo ficam indisponíveis — volta pro KE30.
+  const mode: PivotMode = stored !== "real" && !hasBudget ? "real" : stored;
+  return { mode, layout: restoredLayoutFor(mode) };
+}
+
+const MAX_LAYOUT_HISTORY = 50;
+
 // Quick start presets
 type Preset = {
   id: string;
@@ -500,18 +562,24 @@ export function PivotBuilder({
   budgetRows: BudgetRow[];
   onExportReady?: (fn: () => void) => void;
 }) {
-  const [mode, setMode] = useState<PivotMode>("real");
-  const [rowsDims, setRowsDims] = useState<string[]>(["marca"]);
-  const [colsDims, setColsDims] = useState<string[]>(["fy"]);
-  const [valueIds, setValueIds] = useState<string[]>(["rol_real", "cm_real", "cm_pct_real"]);
-  const [filterDims, setFilterDims] = useState<string[]>([]);
-  const [filterVals, setFilterVals] = useState<Record<string, string[]>>({});
+  // A montagem começa de onde a pessoa parou (último modo e última montagem
+  // de cada modo, persistidos) — antes tudo voltava pro padrão "Marca × FY"
+  // ao sair da aba e voltar.
+  const initialRef = useRef<{ mode: PivotMode; layout: PivotLayout } | null>(null);
+  if (!initialRef.current) initialRef.current = initialPivotState(budgetRows.length > 0);
+  const initial = initialRef.current;
+  const [mode, setMode] = useState<PivotMode>(initial.mode);
+  const [rowsDims, setRowsDims] = useState<string[]>(initial.layout.rows);
+  const [colsDims, setColsDims] = useState<string[]>(initial.layout.cols);
+  const [valueIds, setValueIds] = useState<string[]>(initial.layout.values);
+  const [filterDims, setFilterDims] = useState<string[]>(initial.layout.filterDims);
+  const [filterVals, setFilterVals] = useState<Record<string, string[]>>(initial.layout.filterVals);
   const [paletteQuery, setPaletteQuery] = useState("");
 
   // UX state
-  const [viz, setViz] = useState<VizMode>("heatmap");
-  const [hideEmpty, setHideEmpty] = useState(true);
-  const [sort, setSort] = useState<SortState>(null);
+  const [viz, setViz] = useState<VizMode>(initial.layout.viz);
+  const [hideEmpty, setHideEmpty] = useState(initial.layout.hideEmpty);
+  const [sort, setSort] = useState<SortState>(initial.layout.sort);
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [drillSelection, setDrillSelection] = useState<DrillSelection | null>(null);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Set<string>>(() => new Set());
@@ -534,15 +602,114 @@ export function PivotBuilder({
   const tableRef = useRef<HTMLDivElement>(null);
   const pivotRequestRef = useRef(0);
 
+  const layout = useMemo<PivotLayout>(
+    () => ({ rows: rowsDims, cols: colsDims, values: valueIds, filterDims, filterVals, sort, viz, hideEmpty }),
+    [rowsDims, colsDims, valueIds, filterDims, filterVals, sort, viz, hideEmpty],
+  );
+
+  const applyLayout = useCallback((next: PivotLayout) => {
+    setRowsDims(next.rows);
+    setColsDims(next.cols);
+    setValueIds(next.values);
+    setFilterDims(next.filterDims);
+    setFilterVals(next.filterVals);
+    setSort(next.sort);
+    setViz(next.viz);
+    setHideEmpty(next.hideEmpty);
+    setExpandedRowKeys(new Set());
+  }, []);
+
+  // Grava a montagem a cada mudança (por modo). É um objeto pequeno — só
+  // ids de campos e valores de filtro.
   useEffect(() => {
-    const def = defaultConfig(mode);
-    setRowsDims(def.rows);
-    setColsDims(def.cols);
-    setValueIds(def.values);
-    setFilterDims([]);
-    setFilterVals({});
-    setSort(null);
-  }, [mode]);
+    usePivotLayoutStore.getState().saveLayout(mode, layout);
+  }, [mode, layout]);
+
+  // ----- Desfazer / refazer -----
+  // Histórico em memória das montagens da sessão. `appliedJson` marca a
+  // montagem aplicada pelo próprio desfazer/refazer (ou troca de modo) pra ela
+  // não virar um novo passo do histórico.
+  const historyRef = useRef<{ past: PivotLayout[]; future: PivotLayout[]; last: PivotLayout | null; appliedJson: string | null }>({
+    past: [],
+    future: [],
+    last: null,
+    appliedJson: null,
+  });
+  const [, setHistoryTick] = useState(0);
+
+  useEffect(() => {
+    const history = historyRef.current;
+    if (history.appliedJson !== null && JSON.stringify(layout) === history.appliedJson) {
+      history.appliedJson = null;
+      history.last = layout;
+      setHistoryTick((tick) => tick + 1);
+      return;
+    }
+    history.appliedJson = null;
+    if (history.last && history.last !== layout) {
+      history.past.push(history.last);
+      if (history.past.length > MAX_LAYOUT_HISTORY) history.past.shift();
+      history.future = [];
+      setHistoryTick((tick) => tick + 1);
+    }
+    history.last = layout;
+  }, [layout]);
+
+  const canUndo = historyRef.current.past.length > 0;
+  const canRedo = historyRef.current.future.length > 0;
+
+  const undoLayout = useCallback(() => {
+    const history = historyRef.current;
+    const previous = history.past.pop();
+    if (!previous) return;
+    if (history.last) history.future.push(history.last);
+    history.appliedJson = JSON.stringify(previous);
+    applyLayout(previous);
+    setHistoryTick((tick) => tick + 1);
+  }, [applyLayout]);
+
+  const redoLayout = useCallback(() => {
+    const history = historyRef.current;
+    const next = history.future.pop();
+    if (!next) return;
+    if (history.last) history.past.push(history.last);
+    history.appliedJson = JSON.stringify(next);
+    applyLayout(next);
+    setHistoryTick((tick) => tick + 1);
+  }, [applyLayout]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoLayout();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redoLayout();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undoLayout, redoLayout]);
+
+  // Trocar de modo restaura a última montagem daquele modo (antes, qualquer
+  // troca apagava a montagem e voltava pro padrão).
+  const changeMode = useCallback((next: PivotMode) => {
+    if (next === mode) return;
+    const target = restoredLayoutFor(next);
+    const history = historyRef.current;
+    history.past = [];
+    history.future = [];
+    history.last = null;
+    history.appliedJson = JSON.stringify(target);
+    usePivotLayoutStore.getState().setMode(next);
+    setMode(next);
+    applyLayout(target);
+  }, [mode, applyLayout]);
 
   useEffect(() => {
     return () => {
@@ -876,6 +1043,22 @@ export function PivotBuilder({
     setExpandedRowKeys(new Set());
   }
 
+  function applySavedView(view: SavedPivotView) {
+    applyLayout(sanitizeLayout(view.layout, mode) ?? defaultLayout(mode));
+    toast.success(`Visão "${view.name}" aplicada`, { description: "Ctrl+Z desfaz." });
+  }
+
+  const suggestedViewName = useMemo(() => {
+    const dimLabel = (ids: string[]) => ids.map((id) => dimMap.get(id)?.label ?? id).join(" · ");
+    const measures = valueIds.map((id) => measureMap.get(id)?.label ?? id).join(", ");
+    const shape = [dimLabel(rowsDims), dimLabel(colsDims)].filter(Boolean).join(" × ");
+    const full = [shape, measures].filter(Boolean).join(" — ");
+    if (full.length <= 60) return full;
+    const cut = full.slice(0, 59);
+    const boundary = Math.max(cut.lastIndexOf(", "), cut.lastIndexOf(" "));
+    return `${(boundary > 20 ? cut.slice(0, boundary) : cut).replace(/[,\s—×·]+$/, "")}…`;
+  }, [rowsDims, colsDims, valueIds, dimMap, measureMap]);
+
   const usedItems = new Set([...rowsDims, ...colsDims, ...filterDims, ...valueIds]);
   const activeFiltersCount = Object.values(filterVals).reduce((acc, s) => acc + (s?.length ?? 0), 0);
 
@@ -933,7 +1116,7 @@ export function PivotBuilder({
               return (
                 <button
                   key={m}
-                  onClick={() => !disabled && setMode(m)}
+                  onClick={() => !disabled && changeMode(m)}
                   disabled={disabled}
                   title={disabled ? "Carregue dados de Budget para usar este modo" : undefined}
                   className={cn(
@@ -1000,6 +1183,29 @@ export function PivotBuilder({
             onExportReady={onExportReady}
           />
 
+          <div className="inline-flex items-center rounded-lg border border-border/50 bg-secondary/40">
+            <button
+              type="button"
+              onClick={undoLayout}
+              disabled={!canUndo}
+              title="Desfazer (Ctrl+Z)"
+              aria-label="Desfazer alteração na tabela"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-l-lg text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={redoLayout}
+              disabled={!canRedo}
+              title="Refazer (Ctrl+Shift+Z)"
+              aria-label="Refazer alteração na tabela"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-r-lg border-l border-border/50 text-muted-foreground outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60 disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
           <Button
             size="sm"
             variant="ghost"
@@ -1026,6 +1232,12 @@ export function PivotBuilder({
               {p.label}
             </button>
           ))}
+          <SavedViewsBar
+            mode={mode}
+            layout={layout}
+            suggestedName={suggestedViewName}
+            onApply={applySavedView}
+          />
         </div>
       </GlassCard>
 
@@ -1918,6 +2130,121 @@ function FilterChip({
         />
       </span>
     </span>
+  );
+}
+
+// "Minhas visões": montagens salvas com nome, por modo, ao lado dos presets.
+function SavedViewsBar({
+  mode,
+  layout,
+  suggestedName,
+  onApply,
+}: {
+  mode: PivotMode;
+  layout: PivotLayout;
+  suggestedName: string;
+  onApply: (view: SavedPivotView) => void;
+}) {
+  const allViews = usePivotLayoutStore((s) => s.savedViews);
+  const saveView = usePivotLayoutStore((s) => s.saveView);
+  const deleteView = usePivotLayoutStore((s) => s.deleteView);
+  const restoreView = usePivotLayoutStore((s) => s.restoreView);
+  const views = useMemo(() => allViews.filter((view) => view.mode === mode), [allViews, mode]);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+
+  const submit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const replacing = views.some((view) => view.name.toLowerCase() === trimmed.toLowerCase());
+    saveView(trimmed, mode, layout);
+    setOpen(false);
+    toast.success(replacing ? `Visão "${trimmed}" atualizada` : `Visão "${trimmed}" salva`);
+  };
+
+  const remove = (view: SavedPivotView) => {
+    const index = allViews.findIndex((existing) => existing.id === view.id);
+    deleteView(view.id);
+    toast(`Visão "${view.name}" excluída`, {
+      action: { label: "Desfazer", onClick: () => restoreView(view, index) },
+    });
+  };
+
+  return (
+    <>
+      <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
+      {views.length > 0 && (
+        <div className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <Bookmark className="h-3 w-3" /> Minhas visões
+        </div>
+      )}
+      {views.map((view) => (
+        <span
+          key={view.id}
+          className="group inline-flex items-center rounded-full border border-primary/30 bg-primary/10 text-[11px] font-medium text-primary transition-all hover:-translate-y-px hover:border-primary/50"
+        >
+          <button
+            type="button"
+            onClick={() => onApply(view)}
+            title={`Aplicar a visão "${view.name}"`}
+            className="max-w-[220px] truncate rounded-l-full py-1 pl-2.5 pr-1 outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            {view.name}
+          </button>
+          <button
+            type="button"
+            onClick={() => remove(view)}
+            aria-label={`Excluir a visão ${view.name}`}
+            title="Excluir visão"
+            className="rounded-r-full py-1 pl-0.5 pr-2 opacity-50 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) setName(suggestedName);
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground outline-none transition-all hover:border-primary/50 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            <BookmarkPlus className="h-3 w-3" />
+            Salvar visão
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 space-y-2 p-3" align="start">
+          <div className="text-xs font-semibold">Salvar esta montagem</div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Linhas, colunas, medidas, filtros e ordenação. Salvar com um nome que já existe atualiza a visão.
+          </p>
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            <Input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome da visão"
+              maxLength={60}
+              className="h-8 text-xs"
+            />
+            <Button type="submit" size="sm" className="h-8" disabled={!name.trim()}>
+              Salvar
+            </Button>
+          </form>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 
