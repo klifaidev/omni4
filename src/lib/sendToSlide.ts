@@ -12,6 +12,8 @@ export interface SendToSlidePayload {
     blockLabel: string;
   };
   config: Record<string, unknown>;
+  /** O que não cabe no elemento do slide — mostrado no diálogo antes de enviar. */
+  notes?: string[];
   capturedAt?: string;
 }
 

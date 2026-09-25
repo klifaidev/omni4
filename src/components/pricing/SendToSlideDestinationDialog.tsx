@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, FilePlus2, Lock, Presentation, Sparkles } from "lucide-react";
+import { Check, FilePlus2, Info, Lock, Presentation, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -132,6 +132,18 @@ export function SendToSlideDestinationDialog() {
             Escolha onde inserir "{payload.source.visualization}". O app vai levar a configuração da visualização, não uma imagem.
           </DialogDescription>
         </DialogHeader>
+
+        {payload.notes && payload.notes.length > 0 && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
+            <div className="mb-1 flex items-center gap-1.5 font-semibold">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              O slide leva uma versão simplificada
+            </div>
+            <ul className="list-disc space-y-0.5 pl-5">
+              {payload.notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          </div>
+        )}
 
         <div className="max-h-[64vh] overflow-y-auto pr-1">
           <button

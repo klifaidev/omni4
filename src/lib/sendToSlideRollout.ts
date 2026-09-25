@@ -3,6 +3,7 @@ const SEND_TO_SLIDE_ROLLOUT_PAGES = new Set([
   "Positivação",
   "Análise de Preço",
   "Inovação",
+  "Tabela Dinâmica",
 ]);
 
 export function isSendToSlideEnabledForPage(page: string): boolean {

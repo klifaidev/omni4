@@ -27,6 +27,7 @@ import {
   RotateCcw,
   Rows3,
   Search,
+  Send,
   Sigma,
   Sparkles,
   Undo2,
@@ -55,8 +56,11 @@ import {
   type PivotSizeEstimate,
 } from "@/lib/pivot";
 import { computePivotGuardedAsync, createEmptyPivotResult, disposePivotWorker } from "@/lib/pivotWorkerClient";
-import type { PricingRow } from "@/lib/types";
+import type { Filters, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
+import { buildPivotSlideTable } from "@/lib/pivotToSlide";
+import { captureSendToSlide } from "@/lib/sendToSlide";
+import { isSendToSlideEnabledForPage } from "@/lib/sendToSlideRollout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -579,10 +583,15 @@ export function PivotBuilder({
   realRows,
   budgetRows,
   onExportReady,
+  globalFilters,
+  globalPeriods,
 }: {
   realRows: PricingRow[];
   budgetRows: BudgetRow[];
   onExportReady?: (fn: () => void) => void;
+  /** Filtros/meses globais já aplicados às linhas — o slide precisa reaplicá-los. */
+  globalFilters?: Filters;
+  globalPeriods?: string[] | null;
 }) {
   // A montagem começa de onde a pessoa parou (último modo e última montagem
   // de cada modo, persistidos) — antes tudo voltava pro padrão "Marca × FY"
@@ -1072,16 +1081,48 @@ export function PivotBuilder({
     toast.success(`Visão "${view.name}" aplicada`, { description: "Ctrl+Z desfaz." });
   }
 
-  const suggestedViewName = useMemo(() => {
+  // Ex.: "Canal Ajustado · SKU × Mês — ROL", até 60 caracteres.
+  const layoutName = useCallback((rowIds: string[], colIds: string[], measureIds: string[]) => {
     const dimLabel = (ids: string[]) => ids.map((id) => dimMap.get(id)?.label ?? id).join(" · ");
-    const measures = valueIds.map((id) => measureMap.get(id)?.label ?? id).join(", ");
-    const shape = [dimLabel(rowsDims), dimLabel(colsDims)].filter(Boolean).join(" × ");
+    const measures = measureIds.map((id) => measureMap.get(id)?.label ?? id).join(", ");
+    const shape = [dimLabel(rowIds), dimLabel(colIds)].filter(Boolean).join(" × ");
     const full = [shape, measures].filter(Boolean).join(" — ");
     if (full.length <= 60) return full;
     const cut = full.slice(0, 59);
     const boundary = Math.max(cut.lastIndexOf(", "), cut.lastIndexOf(" "));
     return `${(boundary > 20 ? cut.slice(0, boundary) : cut).replace(/[,\s—×·]+$/, "")}…`;
-  }, [rowsDims, colsDims, valueIds, dimMap, measureMap]);
+  }, [dimMap, measureMap]);
+  const suggestedViewName = useMemo(
+    () => layoutName(rowsDims, colsDims, valueIds),
+    [layoutName, rowsDims, colsDims, valueIds],
+  );
+
+  const canSendToSlide = isSendToSlideEnabledForPage("Tabela Dinâmica");
+
+  function sendToSlide() {
+    const labelOf = (id: string) => dimMap.get(id)?.label ?? measureMap.get(id)?.label ?? id;
+    const { table, keptValues, notes } = buildPivotSlideTable({
+      mode,
+      layout: { rows: rowsDims, cols: colsDims, values: valueIds, filterVals, sort },
+      globalFilters: globalFilters ?? {},
+      globalPeriods: globalPeriods ?? null,
+      rows: unified,
+      labelOf,
+    });
+    if (!table) {
+      toast.error("Esta montagem não pode ir para o slide", { description: notes[0] });
+      return;
+    }
+    captureSendToSlide({
+      source: {
+        page: "Tabela Dinâmica",
+        visualization: layoutName(table.rowDims, table.colDim ? [table.colDim] : [], keptValues) || "Tabela dinâmica",
+      },
+      target: { blockKind: "table", blockLabel: "Tabela" },
+      config: { table: "pivot", ...table },
+      notes,
+    });
+  }
 
   const usedItems = new Set([...rowsDims, ...colsDims, ...filterDims, ...valueIds]);
   const activeFiltersCount = Object.values(filterVals).reduce((acc, s) => acc + (s?.length ?? 0), 0);
@@ -1206,6 +1247,21 @@ export function PivotBuilder({
             sortedRows={sortedRows}
             onExportReady={onExportReady}
           />
+
+          {canSendToSlide && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={sendToSlide}
+              disabled={valueIds.length === 0}
+              title="Inserir esta montagem como tabela num slide"
+              className="h-8 gap-1.5 border-border/50 bg-secondary/40 text-[11px]"
+            >
+              <Send className="h-3.5 w-3.5" />
+              Enviar para Slide
+            </Button>
+          )}
 
           <div className="inline-flex items-center rounded-lg border border-border/50 bg-secondary/40">
             <button

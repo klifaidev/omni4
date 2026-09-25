@@ -19,6 +19,7 @@ import {
 import type { Filters, FilterKey } from "@/lib/types";
 import type { BridgePvmSlideConfig, BudgetEvoSlideConfig, SlideItem } from "@/lib/slidesFlow";
 import type { SendToSlidePayload, SendToSlideTargetKind } from "@/lib/sendToSlide";
+import { SLIDE_FILTER_KEYS, SLIDE_TABLE_MEASURE_IDS } from "@/lib/pivotToSlide";
 
 const KPI_MEASURES = new Set<KpiMeasureId>([
   "rol",
@@ -35,26 +36,7 @@ const KPI_MEASURES = new Set<KpiMeasureId>([
   "ticketMedio",
 ]);
 
-const FILTER_KEYS: FilterKey[] = [
-  "marca",
-  "canal",
-  "canalAjustado",
-  "categoria",
-  "subcategoria",
-  "formato",
-  "sku",
-  "gestorResp",
-  "regiao",
-  "uf",
-  "regional",
-  "mercado",
-  "mercadoAjustado",
-  "sabor",
-  "tecnologia",
-  "faixaPeso",
-  "inovacao",
-  "legado",
-];
+const FILTER_KEYS: FilterKey[] = [...SLIDE_FILTER_KEYS];
 
 const RELATIVE_PRESETS = new Set<RelativePeriodPreset>([
   "latest_month",
@@ -301,7 +283,25 @@ export function buildCustomBlockFromPayload(payload: SendToSlidePayload, config:
     const table = block as TableBlock;
     table.filters = filters;
     table.dataSource = (asString(payload.config.dataSource) ?? table.dataSource ?? "ke30") as TableBlock["dataSource"];
-    table.rowDims = [asString(payload.config.dimension) ?? table.rowDims[0] ?? "marca"];
+    // Montagem vinda da Tabela Dinâmica (buildPivotSlideTable). Linhas vazias
+    // são válidas (tabela só com o total).
+    if (Array.isArray(payload.config.rowDims)) {
+      table.rowDims = asStringArray(payload.config.rowDims) ?? [];
+    } else {
+      table.rowDims = [asString(payload.config.dimension) ?? table.rowDims[0] ?? "marca"];
+    }
+    if ("colDim" in payload.config) table.colDim = asString(payload.config.colDim);
+    const measures = asStringArray(payload.config.measures)?.filter((id) => SLIDE_TABLE_MEASURE_IDS.has(id));
+    if (measures?.length) table.measures = measures;
+    const periods = asStringArray(payload.config.periods);
+    if (periods) table.monthFilter = { mode: "fixed", periods };
+    const sortMeasure = asString(payload.config.sortMeasure);
+    if (sortMeasure && table.measures.includes(sortMeasure)) {
+      table.sortMode = "kpi";
+      table.sortMeasure = sortMeasure;
+      table.sortDirection = payload.config.sortDirection === "asc" ? "asc" : "desc";
+    }
+    if (title) table.title = title;
     return table;
   }
 
