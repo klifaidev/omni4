@@ -5,7 +5,7 @@
 import type { BlockDataSource, ChartBlock, CustomTableChartOrientation, KpiMeasureId } from "@/lib/customSlide";
 import {
   KPI_MEASURES, BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  isFromBudgetBase,
+  CHART_TYPE_LABELS, defaultChartTitle, isFromBudgetBase,
 } from "@/lib/customSlide";
 import {
   ensureChartStyle, defaultChartStyle, DEFAULT_PALETTE,
@@ -361,11 +361,25 @@ export function ChartInspector({
     } as Patch);
   };
 
+  // O título automático ("CM % por mês", ou o nome do tipo em gráficos
+  // antigos) acompanha tipo e medida; um título escrito pela pessoa nunca
+  // é trocado.
+  const withAutoTitle = (next: { chartType?: ChartBlock["chartType"]; measure?: KpiMeasureId }): Patch => {
+    const isAutoTitle = !block.title
+      || block.title === defaultChartTitle(block.chartType, block.measure)
+      || block.title === CHART_TYPE_LABELS[block.chartType];
+    if (!isAutoTitle) return next as Patch;
+    return {
+      ...next,
+      title: defaultChartTitle(next.chartType ?? block.chartType, next.measure ?? block.measure),
+    } as Patch;
+  };
+
   return (
     <div className="space-y-3">
       {/* Chart type picker — always visible at top */}
       <div className="rounded-lg border border-border/50 bg-card/40 px-2 py-2">
-        <ChartTypePicker value={ct} onChange={(v) => onChange({ chartType: v })} />
+        <ChartTypePicker value={ct} onChange={(v) => onChange(withAutoTitle({ chartType: v }))} />
       </div>
 
       {/* Roteiro do Slides, item 1.4: busca dentro do inspector. O Chart é o
@@ -454,7 +468,7 @@ export function ChartInspector({
         )}
         <Row label={t.dataSection.measure}>
           <SelectField value={block.measure}
-            onChange={(v) => onChange({ measure: v as KpiMeasureId })}
+            onChange={(v) => onChange(withAutoTitle({ measure: v as KpiMeasureId }))}
             options={KPI_MEASURES.map((m) => {
               const unavailable = unavailableMeasuresForSource(block.dataSource);
               const disabled = unavailable.includes(m.id);

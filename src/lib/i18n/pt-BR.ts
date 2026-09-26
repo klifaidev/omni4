@@ -1394,6 +1394,7 @@ export const ptBR = {
         emptyTitle: "Nenhum slide selecionado",
         emptyHint: "Selecione um slide na esteira para ver a prévia e ajustar filtros.",
         tabs: { status: "Status", preview: "Prévia", config: "Config.", notes: "Notas" },
+        editSlide: "Editar slide",
         health: {
           section: "Saúde do slide",
           description: "Mostra se o slide tem a configuração mínima necessária para exibição e exportação.",
@@ -1563,7 +1564,8 @@ export const ptBR = {
           incomplete: (n: number) => `Existem ${n} slide${n > 1 ? "s" : ""} incompleto${n > 1 ? "s" : ""}.`,
         },
         templateApplyError: "Não foi possível aplicar o template.",
-        templateAppliedToast: (name: string) => `Template "${name}" aplicado`,
+        templateAppliedToast: (name: string, count: number) =>
+          `Template "${name}" aplicado — ${count} ${count === 1 ? "slide adicionado" : "slides adicionados"} ao fim do deck`,
       },
     },
   },

@@ -59,7 +59,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Trash2, Upload, X, MoreHorizontal,
-  MonitorPlay, PanelRightClose, Share2, Timer,
+  MonitorPlay, PanelRightClose, Pencil, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -72,7 +72,7 @@ import {
   type SlidesPreset, type SlidesFlowSaveStatus, type SlideTransition,
 } from "@/store/slidesFlow";
 import {
-  SLIDE_CATALOG, defaultItem, isItemReady, metaOf,
+  SLIDE_CATALOG, defaultItem, isItemReady, metaOf, slideDisplayName,
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
 import { smartDefaults } from "@/lib/slidesSmartDefaults";
@@ -670,7 +670,7 @@ function StripThumbnail({
   const Icon = ICON_MAP[meta.icon];
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
   const ready = isItemReady(item);
-  const displayName = item.label ?? meta.title;
+  const displayName = slideDisplayName(item, meta.title);
 
   // Subscribe to comment changes so the badge updates live.
   const [, force] = useState(0);
@@ -918,6 +918,42 @@ function CommentsThread({
   );
 }
 
+// Slide nativo (capa, bridge, budget) dentro do editor: prévia grande que se
+// ajusta ao espaço + o mesmo painel de configuração da esteira. Assim o editor
+// percorre o deck inteiro em vez de pular esses slides.
+function NativeSlidePane({ item, readOnly }: { item: SlideItem; readOnly: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [previewW, setPreviewW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const pad = 48;
+      setPreviewW(Math.max(0, Math.floor(Math.min(width - pad, (height - pad) * (CANVAS_W / CANVAS_H)))));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 gap-3">
+      <div ref={boxRef} className="flex min-w-0 flex-1 items-center justify-center rounded-lg border border-border/40 bg-muted/20">
+        {previewW > 0 && (
+          <div className="overflow-hidden rounded-md bg-white shadow-lg" style={{ width: previewW }}>
+            <ScaledPreview item={item} targetWidth={previewW} staggerMount="priority" />
+          </div>
+        )}
+      </div>
+      <aside className="w-[380px] shrink-0 overflow-hidden rounded-lg border border-border/40 bg-card/30">
+        <Inspector item={item} readOnly={readOnly} initialTab="config" />
+      </aside>
+    </div>
+  );
+}
+
 function FullscreenCustomEditor({
   open, onOpenChange,
   currentUser, onCommentEvent, readOnly = false,
@@ -944,21 +980,17 @@ function FullscreenCustomEditor({
   const isCustom = current?.kind === "custom";
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
 
-  // Se o slide selecionado deixou de ser custom, fecha o editor.
-  useEffect(() => {
-    if (open && current && !isCustom) onOpenChange(false);
-  }, [open, current, isCustom, onOpenChange]);
-
-  // Navegação sequencial (apenas slides custom).
+  // Navegação pelo deck inteiro. Antes o editor só conhecia slides
+  // personalizados: pulava capa/bridge/budget em silêncio ("Anterior" no 14
+  // ia pro 10) e fechava ao clicar num deles na faixa. Agora os nativos
+  // aparecem aqui com prévia + o mesmo painel de configuração da esteira.
   const goRel = useCallback((offset: number) => {
     if (idx < 0) return;
-    const dir = offset > 0 ? 1 : -1;
-    for (let i = idx + dir; i >= 0 && i < items.length; i += dir) {
-      if (items[i].kind === "custom") { select(items[i].id); return; }
-    }
+    const next = items[idx + (offset > 0 ? 1 : -1)];
+    if (next) select(next.id);
   }, [idx, items, select]);
-  const hasPrev = idx > 0 && items.slice(0, idx).some((i) => i.kind === "custom");
-  const hasNext = idx >= 0 && items.slice(idx + 1).some((i) => i.kind === "custom");
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < items.length - 1;
 
   // Atalhos Ctrl/Cmd + ? / ?. Capturamos antes do editor para evitar nudge.
   useEffect(() => {
@@ -1029,13 +1061,8 @@ function FullscreenCustomEditor({
     }
     const nextSel = items[idx + 1]?.id ?? items[idx - 1]?.id ?? null;
     removeItem(current.id);
-    if (nextSel) {
-      const after = useSlidesFlow.getState().items.find((i) => i.id === nextSel);
-      select(nextSel);
-      if (after?.kind !== "custom") onOpenChange(false);
-    } else {
-      onOpenChange(false);
-    }
+    if (nextSel) select(nextSel);
+    else onOpenChange(false);
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
@@ -1113,7 +1140,6 @@ function FullscreenCustomEditor({
                         onClick={() => {
                           if (it.id === current?.id) return;
                           select(it.id);
-                          if (it.kind !== "custom") onOpenChange(false);
                         }}
                       />
                     ))}
@@ -1152,6 +1178,8 @@ function FullscreenCustomEditor({
                 isStandby={isStandby}
                 onMinimize={onMinimize}
               />
+            ) : current ? (
+              <NativeSlidePane key={current.id} item={current} readOnly={readOnly} />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 {t.fullscreenEditor.emptySelection}
@@ -1195,14 +1223,25 @@ function InspectorSection({
   );
 }
 
+type InspectorTab = "status" | "preview" | "config" | "notes";
+
+// Personalizado: a edição é no canvas (botão no topo), então a prévia é o que
+// mais ajuda aqui. Nativos (capa, bridge, budget) se configuram neste painel.
+function defaultInspectorTab(item: SlideItem): InspectorTab {
+  return item.kind === "custom" ? "preview" : "config";
+}
+
 function Inspector({
   item,
   onOpenFullscreen,
   readOnly,
+  initialTab,
 }: {
   item: SlideItem | null;
-  onOpenFullscreen: () => void;
+  /** Ausente quando o painel já está dentro do editor. */
+  onOpenFullscreen?: () => void;
   readOnly: boolean;
+  initialTab?: InspectorTab;
 }) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
   const pricing = usePricing((s) => s.rows);
@@ -1255,12 +1294,18 @@ function Inspector({
               className="-ml-2 h-8 border-transparent bg-transparent px-2 slides-type-title hover:bg-secondary/40 focus-visible:bg-card"
             />
             <p className="mt-1 slides-type-helper">{meta.description}</p>
+            {item.kind === "custom" && onOpenFullscreen && (
+              <Button size="sm" className="mt-3 h-8 gap-1.5" onClick={onOpenFullscreen}>
+                <Pencil className="h-3.5 w-3.5" />
+                {t.inspector.editSlide}
+              </Button>
+            )}
           </div>
         </div>
 
         <Separator />
 
-        <Tabs defaultValue="status" className="space-y-4">
+        <Tabs key={item.id} defaultValue={initialTab ?? defaultInspectorTab(item)} className="space-y-4">
           <TabsList className="grid h-9 w-full grid-cols-4 rounded-lg bg-surface-raised p-1">
             <TabsTrigger value="status" className="text-[11px]">{t.inspector.tabs.status}</TabsTrigger>
             <TabsTrigger value="preview" className="text-[11px]">{t.inspector.tabs.preview}</TabsTrigger>
@@ -1346,7 +1391,7 @@ function Inspector({
                 </InspectorSection>
               )}
 
-              {item.kind === "custom" && (
+              {item.kind === "custom" && onOpenFullscreen && (
                 <InspectorSection
                   value="appearance"
                   title={t.inspector.config.appearanceCustom.title}
@@ -2054,15 +2099,32 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
     }
     // Insere cada slide via addItem + updateItem para reaproveitar a lógica
     // do store (sem precisar de uma nova action setItems).
+    let firstCreatedId: string | null = null;
     for (const slide of built) {
       addItem(slide.kind);
       const state = useSlidesFlow.getState();
       const created = state.items[state.items.length - 1];
       if (!created) continue;
+      firstCreatedId ??= created.id;
       updateItem(created.id, () => ({ ...slide, id: created.id } as SlideItem));
     }
         const nextDeck = useSlidesFlow.getState().items;
-        slideToastSuccess(t.page.templateAppliedToast(tpl.name));
+        // Leva a pessoa até o que acabou de ganhar: os slides entram no fim
+        // do deck, fora da área visível numa esteira longa.
+        if (firstCreatedId) {
+          const target = firstCreatedId;
+          select(target);
+          window.setTimeout(() => {
+            // Rola só a esteira (scrollIntoView rolava também a página e
+            // cortava a barra de cima). window.CSS: aqui `CSS` é o do dnd-kit.
+            const viewport = flowPreviewWindow.viewportRef.current;
+            const card = viewport?.querySelector(`[data-flow-id="${window.CSS.escape(target)}"]`);
+            if (!viewport || !card) return;
+            const offset = card.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+            viewport.scrollTo({ top: viewport.scrollTop + offset - 16, behavior: "smooth" });
+          }, 60);
+        }
+        slideToastSuccess(t.page.templateAppliedToast(tpl.name, built.length));
         setTemplateApplying(false);
         startDeckPreparation(nextDeck, t.deckPreparation.preparingTemplate(tpl.name));
         return;
@@ -2075,6 +2137,12 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   };
 
   const selected = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
+  // Sem seleção, o painel direito ocupava ¼ da tela com "Nenhum slide
+  // selecionado". Com deck, sempre há um slide em foco.
+  const firstItemId = items[0]?.id ?? null;
+  useEffect(() => {
+    if (!selected && firstItemId) select(firstItemId);
+  }, [selected, firstItemId, select]);
   useIdleSlideChartPrecompute(items, selectedId);
   useEffect(() => {
     if (initialDeckPreparationCheckedRef.current || items.length === 0) return;
@@ -2676,6 +2744,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                           selected={selectedId === item.id}
                           previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
                           onSelect={() => select(item.id)}
+                          onOpen={() => { select(item.id); setFullscreenOpen(true); }}
                           onRemove={() => removeItem(item.id)}
                           onDuplicate={() => duplicateItem(item.id)}
                           onToggleHidden={() => updateItem(item.id, (it) => ({ ...it, hidden: !it.hidden } as SlideItem))}

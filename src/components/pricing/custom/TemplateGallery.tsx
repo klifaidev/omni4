@@ -1,6 +1,6 @@
 // Galeria visual de templates de apresentação. Modal que abre na tela vazia
 // ou pelo botão "Templates" da toolbar.
-import { useMemo, useRef, useState, Component, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Sparkles, AlertTriangle, Search, Clock, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
+import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import {
   SLIDE_TEMPLATES, TEMPLATE_CATEGORIES,
   type TemplateCtx, type TemplateCategory, type SlideTemplate,
@@ -178,6 +179,39 @@ class ThumbErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
   }
 }
 
+const LIVE_PREVIEW_MAX_SLIDES = 4;
+
+// Prévia real do template (só no hover): os slides que ele vai criar, montados
+// com a base carregada — em vez do desenho esquemático, a pessoa vê os números
+// dela antes de aplicar. Renderiza sob demanda para abrir a galeria continuar leve.
+function TemplateLivePreview({ template, ctx, fallback }: { template: SlideTemplate; ctx: TemplateCtx; fallback: ReactNode }) {
+  const slides = useMemo(() => template.build(ctx).slice(0, LIVE_PREVIEW_MAX_SLIDES), [template, ctx]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    setBoxW(Math.floor(el.getBoundingClientRect().width));
+  }, []);
+  if (slides.length === 0) return <>{fallback}</>;
+  const single = slides.length === 1;
+  const gap = 2;
+  const slideW = single ? boxW : Math.floor((boxW - gap) / 2);
+  return (
+    <div
+      ref={boxRef}
+      className={cn("grid h-full w-full content-center bg-slate-200", single ? "grid-cols-1" : "grid-cols-2")}
+      style={{ gap }}
+    >
+      {slideW > 0 && slides.map((slide) => (
+        <div key={slide.id} className="overflow-hidden bg-white">
+          <ScaledPreview item={slide} targetWidth={slideW} staggerMount />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ctx: TemplateCtx; onSelect: () => void }) {
   const Thumb = template.thumbnail;
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -208,8 +242,18 @@ function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ct
     >
       <div className="relative aspect-video rounded-lg overflow-hidden border border-border/40 bg-muted/30">
         <ThumbErrorBoundary>
-          <Thumb className="w-full h-full" />
+          {/* No hover, o desenho esquemático dá lugar aos slides reais do
+              template com a base carregada — no próprio card (uma janela
+              flutuante ficava cortada pela área de rolagem da galeria). */}
+          {previewOpen && !disabled
+            ? <TemplateLivePreview template={template} ctx={ctx} fallback={<Thumb className="w-full h-full" />} />
+            : <Thumb className="w-full h-full" />}
         </ThumbErrorBoundary>
+        {previewOpen && !disabled && (
+          <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-background/85 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground shadow-sm">
+            Prévia com os seus dados
+          </span>
+        )}
         {disabled && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/70">
             <Badge variant="destructive" className="text-[10px] gap-1">
@@ -218,16 +262,6 @@ function TemplateCard({ template, ctx, onSelect }: { template: SlideTemplate; ct
           </div>
         )}
       </div>
-      {previewOpen && !disabled && (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-30 hidden w-[360px] -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-xl border border-border/60 bg-card p-3 shadow-2xl lg:block">
-          <div className="aspect-video overflow-hidden rounded-lg border border-border/40 bg-muted/30">
-            <ThumbErrorBoundary>
-              <Thumb className="h-full w-full" />
-            </ThumbErrorBoundary>
-          </div>
-          <div className="mt-2 text-xs font-medium">{template.name}</div>
-        </div>
-      )}
       <div className="mt-3 space-y-1.5">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-sm font-semibold leading-snug">{template.name}</h3>

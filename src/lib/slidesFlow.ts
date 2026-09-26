@@ -124,6 +124,29 @@ export function metaOf(kind: SlideKind): SlideTypeMeta {
   return SLIDE_CATALOG.find((s) => s.kind === kind)!;
 }
 
+const GENERIC_SLIDE_LABEL = /^(slide personalizado|slide em branco|novo slide|slide \d+)( \(c[óo]pia\))*$/i;
+const PLACEHOLDER_TITLE = "Título do slide";
+
+/**
+ * Nome que a esteira mostra. Rótulos genéricos ("Slide em branco (cópia)",
+ * repetido em vários cards) dão lugar ao título do próprio slide — como no
+ * PowerPoint, que lista os slides pelo título. Rótulo escrito pela pessoa
+ * sempre vence.
+ */
+export function slideDisplayName(item: SlideItem, fallback: string): string {
+  const label = item.label?.trim() ?? "";
+  if (label && !GENERIC_SLIDE_LABEL.test(label)) return label;
+  if (item.kind === "custom") {
+    const title = item.config.blocks
+      .filter((b) => b.kind === "title" && !b.hidden)
+      .sort((a, b) => a.y - b.y || a.x - b.x)[0] as { text?: string } | undefined;
+    const text = title?.text?.trim().split("\n")[0]?.trim();
+    if (text && text !== PLACEHOLDER_TITLE) return text;
+  }
+  if (item.kind === "cover" && item.config.title?.trim()) return item.config.title.trim();
+  return label || fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Default factories
 // ---------------------------------------------------------------------------

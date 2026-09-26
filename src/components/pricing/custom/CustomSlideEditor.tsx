@@ -451,6 +451,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [showLayers, setShowLayers] = useState(false);
   const [zoomEditing, setZoomEditing] = useState(false);
   const [palettePanelOpen, setPalettePanelOpen] = useState(false);
+  // O painel de blocos é uma sobreposição sobre o canvas: fecha depois de
+  // inserir, senão o bloco recém-criado fica escondido embaixo dele. Vale para
+  // qualquer caminho de inserção (gráfico, texto, layout, story, colar).
+  const blockCountRef = useRef({ slideId, count: config.blocks.length });
+  useEffect(() => {
+    const prev = blockCountRef.current;
+    if (prev.slideId === slideId && config.blocks.length > prev.count) setPalettePanelOpen(false);
+    blockCountRef.current = { slideId, count: config.blocks.length };
+  }, [slideId, config.blocks.length]);
   const [activePaletteCategory, setActivePaletteCategory] = useState<PaletteCategory>("models");
   const [palettePanelSide, setPalettePanelSide] = useState<PalettePanelSide>("right");
   const [templateApplying, setTemplateApplying] = useState(false);

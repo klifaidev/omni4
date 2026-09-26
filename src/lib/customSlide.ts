@@ -985,9 +985,31 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
 }
 
 /** Cria um ChartBlock já com chartType específico (para a paleta de gráficos). */
+// Título de slide: por extenso, sem abreviação de rótulo de formulário.
+const CHART_TITLE_MEASURE: Record<KpiMeasureId, string> = {
+  rol: "ROL", volume: "Volume", cm: "Contribuição Marginal", cv: "Custo Variável",
+  mb: "Margem Bruta", frete: "Frete", comissao: "Comissão", cmPct: "CM %", mbPct: "MB %",
+  precoMedio: "Preço médio", positivacao: "Positivação", ticketMedio: "Ticket médio",
+};
+// Tipos que nascem como série mensal (eixo de categorias = mês).
+const MONTHLY_SERIES_CHARTS = new Set<CustomChartType>([
+  "line", "area", "stackedArea", "column", "bar", "stackedColumn", "hbar", "stackedBar", "combo",
+]);
+
+/**
+ * Título inicial do gráfico: diz o que ele mostra ("Contribuição Marginal
+ * por mês"), não o tipo ("Coluna Agrupada"). Tipos sem eixo mensal mantêm
+ * o nome do tipo até a pessoa escolher o que mostrar.
+ */
+export function defaultChartTitle(chartType: CustomChartType, measure: KpiMeasureId): string {
+  return MONTHLY_SERIES_CHARTS.has(chartType)
+    ? `${CHART_TITLE_MEASURE[measure] ?? CHART_TYPE_LABELS[chartType]} por mês`
+    : CHART_TYPE_LABELS[chartType];
+}
+
 export function newChartBlock(chartType: CustomChartType, zTop: number): ChartBlock {
   const base = newBlock("chart", zTop) as ChartBlock;
-  const out: ChartBlock = { ...base, chartType, title: CHART_TYPE_LABELS[chartType] };
+  const out: ChartBlock = { ...base, chartType, title: defaultChartTitle(chartType, base.measure) };
   if (chartType === "waterfall") {
     out.title = "Bridge PVM";
     out.breakdown = null;

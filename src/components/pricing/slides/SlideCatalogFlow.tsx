@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertTriangle, Copy, Eye, EyeOff, Filter as FilterIcon, GripVertical, MessageSquare, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Eye, EyeOff, Filter as FilterIcon, GripVertical, MessageSquare, Pencil, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { cn } from "@/lib/utils";
-import { SLIDE_CATALOG, isItemReady, metaOf, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
+import { SLIDE_CATALOG, isItemReady, metaOf, slideDisplayName, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
 import type { SlidePreflightIssue, SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { SLIDE_ACCENT_BG, SLIDE_ICON_MAP } from "./slideUiTokens";
 import { getUnresolvedCount, subscribe as subscribeComments } from "@/lib/slideComments";
@@ -29,7 +29,7 @@ function highestPreflightSeverity(issues: SlidePreflightIssue[]): SlidePreflight
 function preflightSeverityLabel(severity: SlidePreflightSeverity | null): string {
   if (severity === "error") return "Incompleto";
   if (severity === "warning") return "Com alerta";
-  if (severity === "info") return "Com observacao";
+  if (severity === "info") return "Com observação";
   return "Pronto";
 }
 
@@ -155,6 +155,7 @@ export const FlowCard = React.memo(function FlowCard({
   preflightIssues = [],
   previewVisible = true,
   onSelect,
+  onOpen,
   onRemove,
   onDuplicate,
   onToggleHidden,
@@ -165,6 +166,8 @@ export const FlowCard = React.memo(function FlowCard({
   preflightIssues?: SlidePreflightIssue[];
   previewVisible?: boolean;
   onSelect: () => void;
+  /** Abre o slide no editor (duplo clique ou botão Editar). */
+  onOpen?: () => void;
   onRemove: () => void;
   onDuplicate: () => void;
   onToggleHidden: () => void;
@@ -180,7 +183,7 @@ export const FlowCard = React.memo(function FlowCard({
   const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
   const isHidden = !!item.hidden;
-  const displayName = item.label || meta.title;
+  const displayName = slideDisplayName(item, meta.title);
   const [, forceCommentsUpdate] = useState(0);
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const [hoverPreviewReady, setHoverPreviewReady] = useState(false);
@@ -228,7 +231,9 @@ export const FlowCard = React.memo(function FlowCard({
               preflightSeverity === "info" && !selected && "border-primary/35",
               isHidden && "opacity-50",
             )}
+            data-flow-id={item.id}
             onClick={onSelect}
+            onDoubleClick={onOpen}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -257,10 +262,11 @@ export const FlowCard = React.memo(function FlowCard({
               {String(index + 1).padStart(2, "0")}
             </span>
 
-            <div className="pointer-events-none relative w-[84px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[104px]">
+            {/* 160px (antes 104): dá pra reconhecer o slide pela miniatura. */}
+            <div className="pointer-events-none relative w-[104px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[160px]">
               <ScaledPreview
                 item={item}
-                targetWidth={104}
+                targetWidth={160}
                 deferUntilVisible={!previewVisible}
                 staggerMount={selected ? "priority" : true}
               />
@@ -282,7 +288,7 @@ export const FlowCard = React.memo(function FlowCard({
                 {hasNotes && (
                   <span
                     className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-sm"
-                    title="Possui anotacoes do apresentador"
+                    title="Possui anotações do apresentador"
                   >
                     <StickyNote className="h-3 w-3" />
                   </span>
@@ -291,7 +297,7 @@ export const FlowCard = React.memo(function FlowCard({
               {unresolvedCount > 0 && (
                 <span
                   className="absolute bottom-1 right-1 z-10 inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-background/70 bg-card/95 px-1 text-[9px] font-semibold text-foreground shadow-sm"
-                  title={`${unresolvedCount} comentario(s) pendente(s)`}
+                  title={`${unresolvedCount} comentário(s) pendente(s)`}
                 >
                   <MessageSquare className="h-3 w-3" />
                   {unresolvedCount}
@@ -326,7 +332,20 @@ export const FlowCard = React.memo(function FlowCard({
               )}
             </div>
 
-            <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <div className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100",
+              selected ? "opacity-100" : "opacity-0",
+            )}>
+              {onOpen && (
+                <Button
+                  variant="secondary" size="sm" className="h-7 gap-1 px-2 text-[11px]"
+                  onClick={(e) => { e.stopPropagation(); onOpen(); }}
+                  title="Editar slide (duplo clique no card)"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Editar
+                </Button>
+              )}
               <Button
                 variant="ghost" size="icon" className="h-7 w-7"
                 onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
@@ -362,7 +381,7 @@ export const FlowCard = React.memo(function FlowCard({
             )}
           </div>
           <div className="mt-1 px-1 text-[10px] font-medium text-muted-foreground tabular-nums">
-            Slide {index + 1} · {item.label || meta.title}
+            Slide {index + 1} · {displayName}
           </div>
         </TooltipContent>
       </Tooltip>
