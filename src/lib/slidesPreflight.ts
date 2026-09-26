@@ -32,7 +32,7 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
 
     if (item.kind === "cover") {
       if (!item.config.title.trim()) {
-        issues.push(issue("error", item.id, slideNumber, slideLabel, "Capa sem titulo", "Informe um titulo antes de exportar."));
+        issues.push(issue("error", item.id, slideNumber, slideLabel, "Capa sem título", "Informe um título antes de exportar."));
       }
       return;
     }
@@ -47,7 +47,7 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
 
     if (item.kind === "budget_evo") {
       if (item.config.start && item.config.end && item.config.start > item.config.end) {
-        issues.push(issue("warning", item.id, slideNumber, slideLabel, "Range invertido", "O periodo inicial parece estar depois do periodo final."));
+        issues.push(issue("warning", item.id, slideNumber, slideLabel, "Range invertido", "O período inicial parece estar depois do período final."));
       }
       return;
     }
@@ -56,7 +56,7 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
 
     const blocks = item.config.blocks;
     if (blocks.length === 0) {
-      issues.push(issue("info", item.id, slideNumber, slideLabel, "Slide em branco", "Este slide personalizado nao tem blocos."));
+      issues.push(issue("info", item.id, slideNumber, slideLabel, "Slide em branco", "Este slide personalizado não tem blocos."));
       return;
     }
 
@@ -73,7 +73,7 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
         slideNumber,
         slideLabel,
         "Blocos ocultos",
-        `${hiddenCount} bloco(s) oculto(s) nao entram na exportacao.`,
+        `${hiddenCount} bloco(s) oculto(s) não entram na exportação.`,
       ));
     }
   });
@@ -104,7 +104,7 @@ function checkBlockBounds(
       slideNumber,
       slideLabel,
       "Bloco pode sair cortado",
-      `${blockLabel(block)} esta parcialmente fora da area do slide.`,
+      `${blockLabel(block)} está parcialmente fora da área do slide.`,
       block.id,
     ));
   }
@@ -132,7 +132,7 @@ function checkBlockContent(
   if (block.kind === "title" || block.kind === "text") {
     const text = block.text.trim();
     if (!text) {
-      issues.push(issue("info", slideId, slideNumber, slideLabel, "Texto vazio", "Ha um bloco de texto sem conteudo.", block.id));
+      issues.push(issue("info", slideId, slideNumber, slideLabel, "Texto vazio", "Há um bloco de texto sem conteúdo.", block.id));
       return;
     }
 
@@ -144,7 +144,7 @@ function checkBlockContent(
         slideNumber,
         slideLabel,
         "Texto com risco de corte",
-        `${blockLabel(block)} parece ter mais texto do que a area comporta.`,
+        `${blockLabel(block)} parece ter mais texto do que a área comporta.`,
         block.id,
       ));
     }
@@ -152,14 +152,14 @@ function checkBlockContent(
 
   if (block.kind === "image") {
     if (!block.src) {
-      issues.push(issue("error", slideId, slideNumber, slideLabel, "Imagem sem arquivo", "Ha uma imagem sem origem definida.", block.id));
+      issues.push(issue("error", slideId, slideNumber, slideLabel, "Imagem sem arquivo", "Há uma imagem sem origem definida.", block.id));
     } else if (block.src.toLowerCase().includes(".svg") || block.src.startsWith("data:image/svg")) {
-      issues.push(issue("info", slideId, slideNumber, slideLabel, "Imagem SVG", "SVG sera rasterizado na exportacao para preservar fidelidade.", block.id));
+      issues.push(issue("info", slideId, slideNumber, slideLabel, "Imagem SVG", "SVG será rasterizado na exportação para preservar fidelidade.", block.id));
     }
   }
 
   if (block.kind === "chart" && block.w < 420) {
-    issues.push(issue("warning", slideId, slideNumber, slideLabel, "Grafico estreito", "Graficos muito estreitos podem comprimir rotulos e legenda.", block.id));
+    issues.push(issue("warning", slideId, slideNumber, slideLabel, "Gráfico estreito", "Gráficos muito estreitos podem comprimir rótulos e legenda.", block.id));
   }
 
   if (block.kind === "table" && block.h < 180) {
@@ -191,10 +191,10 @@ function defaultSlideLabel(kind: SlideItem["kind"]): string {
 }
 
 function blockLabel(block: CustomBlock): string {
-  if (block.kind === "title") return "Titulo";
+  if (block.kind === "title") return "Título";
   if (block.kind === "text") return "Texto";
   if (block.kind === "kpi") return `KPI ${block.label || ""}`.trim();
-  if (block.kind === "chart") return block.title ? `Grafico ${block.title}` : "Grafico";
+  if (block.kind === "chart") return block.title ? `Gráfico ${block.title}` : "Gráfico";
   if (block.kind === "table") return "Tabela";
   if (block.kind === "dre") return "DRE";
   if (block.kind === "topSku") return block.title ? `Ranking ${block.title}` : "Ranking";

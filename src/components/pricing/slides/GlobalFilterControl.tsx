@@ -104,9 +104,12 @@ export function GlobalFilterControl() {
           variant={activeCount > 0 ? "default" : "outline"}
           size="sm"
           className="h-8 gap-1.5 px-2.5 text-xs"
+          aria-label={t.openPanel}
+          title={t.openPanel}
         >
           <Globe2 className="h-3.5 w-3.5" />
-          {t.openPanel}
+          {/* Só ícone abaixo de 2xl: a barra da esteira não cabia em 1366px. */}
+          <span className="hidden 2xl:inline">{t.openPanel}</span>
           {activeCount > 0 && (
             <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-semibold">
               {activeCount}

@@ -58,7 +58,7 @@ describe("slides quality helpers", () => {
 
     expect(report.errors).toBe(2);
     expect(report.warnings).toBe(0);
-    expect(report.issues.map((issue) => issue.title)).toEqual(["Capa sem titulo", "Imagem sem arquivo"]);
+    expect(report.issues.map((issue) => issue.title)).toEqual(["Capa sem título", "Imagem sem arquivo"]);
   });
 
   it("computes smart defaults from available periods", () => {

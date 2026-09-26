@@ -159,12 +159,37 @@ export function sanitizeSlidesFlowItems(items: SlideItem[]): SlideItem[] {
   });
 }
 
+const DEFAULT_TITLE_TEXT = "Título do slide";
+
+type TitleLike = { kind: string; text?: string; x: number; y: number; w: number; h: number };
+
+/**
+ * Slides criados por template até a v1.19.0 guardavam o título de exemplo do
+ * slide padrão ("Título do slide") exatamente sob o título do template — os
+ * dois apareciam sobrepostos, inclusive no PPT. Remove só esse caso: título
+ * padrão intocado, na mesma caixa de outro título.
+ */
+export function removeShadowedDefaultTitles<T extends TitleLike>(blocks: T[]): T[] {
+  const titles = blocks.filter((b) => b.kind === "title");
+  if (titles.length < 2) return blocks;
+  const shadowed = new Set(
+    titles.filter((b) =>
+      b.text === DEFAULT_TITLE_TEXT
+      && titles.some((other) =>
+        other !== b && other.text !== DEFAULT_TITLE_TEXT
+        && other.x === b.x && other.y === b.y && other.w === b.w && other.h === b.h),
+    ),
+  );
+  return shadowed.size ? blocks.filter((b) => !shadowed.has(b)) : blocks;
+}
+
 export function migrateSlidesFlowItemsDataSources(items: SlideItem[]): SlideItem[] {
   if (!Array.isArray(items)) return [];
   for (const item of items) {
     try {
       if (item.kind !== "custom") continue;
       if (!item.config || !Array.isArray(item.config.blocks)) continue;
+      item.config.blocks = removeShadowedDefaultTitles(item.config.blocks);
       for (const blk of item.config.blocks) {
         const b = blk as { dataSource?: string };
         b.dataSource = migrateDataSource(b.dataSource);

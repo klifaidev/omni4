@@ -1200,6 +1200,13 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   const yAx = style.yAxis;
   const yAx2 = style.yAxis2 ?? yAx;
 
+  // Em barras e áreas o comprimento é o dado: o eixo parte do zero (ou do
+  // menor valor negativo). Com "auto" o eixo começava perto do menor valor e
+  // uma queda de 10% parecia uma queda de 90%. Linhas seguem "auto".
+  // Um mínimo definido pelo usuário continua valendo.
+  const zeroFloor = (dataMin: number) => Math.min(0, dataMin);
+  const valueAxisMin = ct === "line" ? "auto" : zeroFloor;
+
   // 1.2 X axis min/max â€” apply when numeric (scatter/bubble/hbar)
   const xDomain: [number | string, number | string] = [
     xAx.min ?? "auto", xAx.max ?? "auto",
@@ -1229,7 +1236,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       tick={{ fontSize: yAx.labelSize, fill: yAx.labelColor }}
       stroke={yAx.lineColor} tickLine={yAx.ticks}
       strokeWidth={yAx.lineWidth}
-      domain={[yAx.min ?? "auto", yAx.max ?? "auto"]}
+      domain={[yAx.min ?? valueAxisMin, yAx.max ?? "auto"]}
       tickFormatter={isStack100 ? (v: number) => `${v.toFixed(0)}%` : axisFmt(yAx, measureFmt)}
       label={yAx.titleText ? { value: yAx.titleText, angle: -90, position: "insideLeft",
         style: { fontSize: yAx.titleSize, fill: yAx.titleColor } } : undefined}
@@ -1547,7 +1554,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         {renderGrid}
         <XAxis type="number" tick={{ fontSize: xAx.labelSize, fill: xAx.labelColor }}
           stroke={xAx.lineColor} strokeWidth={xAx.lineWidth}
-          domain={xDomain}
+          domain={[xAx.min ?? zeroFloor, xAx.max ?? "auto"]}
           tickFormatter={isStack100 ? stack100Fmt : axisFmt(xAx, measureFmt)}
           label={xAx.titleText ? { value: xAx.titleText, position: "insideBottom", offset: -5,
             style: { fontSize: xAx.titleSize, fill: xAx.titleColor } } : undefined} />

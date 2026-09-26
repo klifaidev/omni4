@@ -10,7 +10,7 @@ import {
 } from "./customSlide";
 
 export type TemplateCategory =
-  | "Pricing Review" | "Budget vs Real" | "Bridge de Margem" | "DRE Executiva" | "Reuniao Mensal" | "Deck em branco";
+  | "Pricing Review" | "Budget vs Real" | "Bridge de Margem" | "DRE Executiva" | "Reunião Mensal" | "Deck em branco";
 
 export interface TemplateCtx {
   months: { periodo: string; mes: number; ano: number }[];
@@ -81,9 +81,10 @@ function cover(title: string, subtitle = "", variant: "cover" | "divider" = "cov
 function customSlide(label: string, builder: (z: number) => CustomBlock[]): SlideItem {
   return mk("custom", (it) => {
     if (it.kind !== "custom") return it;
+    // Só o fundo/rodapé do slide padrão: o título de exemplo dele ("Título
+    // do slide") ficava sob o título do template, na mesma posição.
     const cfg: CustomSlideConfig = defaultCustomSlide();
-    const blocks = builder(cfg.blocks.length);
-    cfg.blocks = [...cfg.blocks, ...blocks];
+    cfg.blocks = builder(0);
     it.config = cfg;
     it.label = label;
     return it;
@@ -96,14 +97,38 @@ function placeTitle(z: number, text: string): TitleBlock {
   return { ...b, text, x: 40, y: 30, w: 1240, h: 70 };
 }
 
-function placeKpi(z: number, x: number, label: string, measure: KpiBlock["measure"]): KpiBlock {
+// Período relativo: o deck se atualiza sozinho quando entra um mês novo.
+// "month" = último mês fechado (padrão do app); "fy" = ano fiscal mais recente.
+// Antes os KPIs usavam "todo o período" — "KPIs do mês" somava a base inteira.
+type TemplatePeriod = "month" | "fy";
+const TEMPLATE_PERIOD = {
+  month: {
+    periodMode: "month",
+    periodValue: null,
+    periodSelectionMode: "relative",
+    relativePeriod: "latest_month_minus_1",
+  },
+  fy: {
+    periodMode: "fy",
+    periodValue: null,
+    periodSelectionMode: "relative",
+    relativePeriod: "latest_fy",
+  },
+} as const satisfies Record<TemplatePeriod, Pick<KpiBlock, "periodMode" | "periodValue" | "periodSelectionMode" | "relativePeriod">>;
+
+function placeKpi(z: number, x: number, label: string, measure: KpiBlock["measure"], period: TemplatePeriod = "month"): KpiBlock {
   const b = newBlock("kpi", z) as KpiBlock;
-  return { ...b, x, y: 140, w: 280, h: 140, label, measure, periodMode: "all" };
+  return { ...b, x, y: 140, w: 280, h: 140, label, measure, ...TEMPLATE_PERIOD[period] };
 }
 
-function placeTopSku(z: number, x: number, w: number, title: string, measure: TopSkuBlock["measure"], topN = 5): TopSkuBlock {
+function placeTopSku(z: number, title: string, measure: TopSkuBlock["measure"], topN: number, period: TemplatePeriod = "month"): TopSkuBlock {
   const b = newBlock("topSku", z) as TopSkuBlock;
-  return { ...b, x, y: 310, w, h: 360, title, measure, topN, dim: "skuDesc" };
+  return { ...b, x: 40, y: 130, w: 1240, h: 540, title, measure, topN, dim: "skuDesc", ...TEMPLATE_PERIOD[period] };
+}
+
+function placeHeroisOfensores(z: number, title: string): CustomBlock {
+  const b = newBlock("omni_herois_ofensores", z);
+  return { ...b, x: 40, y: 130, w: 1240, h: 540, title } as CustomBlock;
 }
 
 function placeChart(z: number, title: string, chartType: ChartBlock["chartType"], measure: ChartBlock["measure"], breakdown: ChartBlock["breakdown"] = null): ChartBlock {
@@ -113,7 +138,8 @@ function placeChart(z: number, title: string, chartType: ChartBlock["chartType"]
 
 function placeTable(z: number, title: string, rowDims: TableBlock["rowDims"], measures: TableBlock["measures"]): TableBlock {
   const b = newBlock("table", z) as TableBlock;
-  return { ...b, x: 40, y: 130, w: 1240, h: 540, title, rowDims, measures, colDim: "periodo" };
+  // "mesLabel" (Jan/26) em vez de "periodo" (001.2026) no cabeçalho das colunas.
+  return { ...b, x: 40, y: 130, w: 1240, h: 540, title, rowDims, measures, colDim: "mesLabel" };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +437,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "resultado-mensal-completo",
     name: "Resultado Mensal Completo",
     description: "Capa, Bridge PVM, Budget Evolutivo, KPIs e Top SKUs.",
-    category: "Reuniao Mensal",
+    category: "Reunião Mensal",
     requires: ["months", "budget"],
     thumbnail: ({ className }) => Multi([Cover, BridgeBars, BudgetLines, KpiGrid, TopSkuLayout]),
     build: (ctx) => [
@@ -427,7 +453,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       ]),
       customSlide("Top SKUs", (z) => [
         placeTitle(z + 1, "Top SKUs por margem"),
-        placeTopSku(z + 2, 40, 1240, "Top 10 SKUs", "cm", 10),
+        placeTopSku(z + 2, "Top 10 SKUs", "cm", 10),
       ]),
     ],
   },
@@ -435,7 +461,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     id: "resultado-mensal-rapido",
     name: "Resultado Mensal Rápido",
     description: "Capa, Bridge PVM e KPIs essenciais.",
-    category: "Reuniao Mensal",
+    category: "Reunião Mensal",
     requires: ["months"],
     thumbnail: ({ className }) => Multi([Cover, BridgeBars, KpiGrid]),
     build: (ctx) => [
@@ -460,10 +486,11 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
     build: (ctx) => [
       cover("Resultado Quinzenal", "Acompanhamento de meio de mês", "divider"),
       withSmartBridge(ctx, "month"),
+      // Antes eram 2 blocos Top SKU iguais (o Top SKU não tem ordem
+      // crescente): "Ofensores" repetia os heróis.
       customSlide("Heróis e Ofensores", (z) => [
         placeTitle(z + 1, "Top 5 Heróis e Ofensores"),
-        placeTopSku(z + 2, 40, 600, "Top 5 Heróis", "cm", 5),
-        { ...placeTopSku(z + 3, 660, 620, "Top 5 Ofensores", "cm", 5), measure: "cm" } as TopSkuBlock,
+        placeHeroisOfensores(z + 2, "Heróis e Ofensores de margem"),
       ]),
     ],
   },
@@ -480,7 +507,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       cover("Revisão de Pricing", "Análise por SKU e canal", "divider"),
       customSlide("Pivot por SKU", (z) => [
         placeTitle(z + 1, "Performance por SKU"),
-        placeTable(z + 2, "Pivot SKU", ["skuDesc"], ["rol_real", "cm_real", "cmPct_real"]),
+        placeTable(z + 2, "Pivot SKU", ["skuDesc"], ["rol_real", "cm_real"]),
       ]),
       customSlide("Margem por canal", (z) => [
         placeTitle(z + 1, "Margem % por canal"),
@@ -503,7 +530,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       ]),
       customSlide("Tabela de canais", (z) => [
         placeTitle(z + 1, "Detalhamento por canal"),
-        placeTable(z + 2, "Canais", ["canal"], ["rol_real", "cm_real", "cmPct_real", "vol_real"]),
+        placeTable(z + 2, "Canais", ["canal"], ["rol_real", "cm_real", "vol_real"]),
       ]),
     ],
   },
@@ -520,15 +547,15 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       cover("Kick-off do Período", "Visão estratégica do FY"),
       customSlide("KPIs do FY", (z) => [
         placeTitle(z + 1, "Indicadores do ano fiscal"),
-        placeKpi(z + 2, 40, "ROL FY", "rol"),
-        placeKpi(z + 3, 360, "CM% FY", "cmPct"),
-        placeKpi(z + 4, 680, "Volume FY", "volume"),
-        placeKpi(z + 5, 1000, "MB FY", "mb"),
+        placeKpi(z + 2, 40, "ROL FY", "rol", "fy"),
+        placeKpi(z + 3, 360, "CM% FY", "cmPct", "fy"),
+        placeKpi(z + 4, 680, "Volume FY", "volume", "fy"),
+        placeKpi(z + 5, 1000, "MB FY", "mb", "fy"),
       ]),
       withSmartBudgetEvo(ctx),
       customSlide("Top SKUs do FY", (z) => [
         placeTitle(z + 1, "Top SKUs do ano fiscal"),
-        placeTopSku(z + 2, 40, 1240, "Top 10 SKUs FY", "cm", 10),
+        placeTopSku(z + 2, "Top 10 SKUs FY", "cm", 10, "fy"),
       ]),
     ],
   },
@@ -575,5 +602,5 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
 ];
 
 export const TEMPLATE_CATEGORIES: ("Todos" | TemplateCategory)[] = [
-  "Todos", "Pricing Review", "Budget vs Real", "Bridge de Margem", "DRE Executiva", "Reuniao Mensal", "Deck em branco",
+  "Todos", "Pricing Review", "Budget vs Real", "Bridge de Margem", "DRE Executiva", "Reunião Mensal", "Deck em branco",
 ];

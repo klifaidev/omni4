@@ -12,7 +12,7 @@ export function TransitionSelect() {
   const setTransition = useSlidesFlow((s) => s.setTransition);
   return (
     <Select value={transition} onValueChange={(v) => setTransition(v as never)}>
-      <SelectTrigger className="h-8 w-[140px] text-xs" aria-label="Transição entre slides">
+      <SelectTrigger className="h-8 w-[124px] text-xs" aria-label="Transição entre slides" title="Transição entre slides">
         <SelectValue placeholder="Transição" />
       </SelectTrigger>
       <SelectContent>

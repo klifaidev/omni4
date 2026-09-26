@@ -48,6 +48,8 @@ function TypeButton({ item, selected, onChange }: { item: Item; selected: boolea
         <button
           type="button"
           onClick={() => onChange(item.value)}
+          aria-label={item.label}
+          aria-pressed={selected}
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
             selected
@@ -74,7 +76,7 @@ export function ChartTypePicker({
     <TooltipProvider delayDuration={200}>
       <div className="space-y-1">
         {/* Main types — always visible */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-wrap items-center gap-1">
           {MAIN_TYPES.map((it) => (
             <TypeButton key={it.value} item={it} selected={value === it.value} onChange={onChange} />
           ))}
@@ -92,7 +94,7 @@ export function ChartTypePicker({
 
         {/* Advanced types — collapsible */}
         {showAdvanced && (
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex flex-wrap items-center gap-1">
             {ADVANCED_TYPES.map((it) => (
               <TypeButton key={it.value} item={it} selected={value === it.value} onChange={onChange} />
             ))}

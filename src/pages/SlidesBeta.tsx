@@ -2381,14 +2381,17 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
         {/* ===== Coluna central: esteira ===== */}
         <main className="surface-base relative flex flex-col overflow-hidden">
           {/* Header da esteira */}
-          <div className="surface-panel flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5">
+          {/* flex-wrap: em telas estreitas (1366px) a barra quebrava para fora
+              da tela e o botão Apresentar sumia. Abaixo de 2xl, os botões
+              secundários ficam só com ícone (nome segue no aria-label/tooltip). */}
+          <div className="surface-panel flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5">
             <div className="flex items-center gap-2.5">
               <h2 className="slides-type-section">{t.page.esteira.title}</h2>
               <Badge variant="secondary" className="h-5 px-2 slides-type-badge tabular-nums">
                 {items.length} {t.page.esteira.slideCount(items.length)}
               </Badge>
               {items.length > 0 && (
-                 <span className="slides-type-label text-muted-foreground/70 tabular-nums">
+                 <span className="hidden slides-type-label text-muted-foreground/70 tabular-nums 2xl:inline">
                   {t.page.esteira.minutesEstimate(Math.max(1, Math.round((items.length * 30) / 60)))}
                 </span>
               )}
@@ -2400,7 +2403,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               <LocalSaveStatusBadge status={localSaveStatus} />
             </div>
             <TooltipProvider delayDuration={200}>
-              <div className="flex items-center gap-1.5">
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -2409,7 +2412,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                       aria-label={t.page.esteira.templatesAriaLabel}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
-                      {t.page.esteira.templatesButton}
+                      <span className="hidden 2xl:inline">{t.page.esteira.templatesButton}</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>{t.page.esteira.templatesTooltip}</TooltipContent>
@@ -2425,7 +2428,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                         aria-label={t.page.esteira.minimizeAriaLabel}
                       >
                         <PanelRightClose className="h-3.5 w-3.5" />
-                        {t.page.esteira.minimizeButton}
+                        <span className="hidden 2xl:inline">{t.page.esteira.minimizeButton}</span>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>{t.page.esteira.minimizeTooltip}</TooltipContent>
@@ -2433,9 +2436,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 )}
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label={t.page.esteira.shareAriaLabel}>
+                    <Button variant="outline" size="sm" className="h-8 gap-1.5" aria-label={t.page.esteira.shareAriaLabel} title={t.page.esteira.shareButton}>
                       <Share2 className="h-3.5 w-3.5" />
-                      {t.page.esteira.shareButton}
+                      <span className="hidden 2xl:inline">{t.page.esteira.shareButton}</span>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="surface-overlay w-[360px] p-4">
@@ -2453,9 +2456,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 </Popover>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" aria-label={t.page.esteira.moreAriaLabel}>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" aria-label={t.page.esteira.moreAriaLabel} title={t.page.esteira.moreButton}>
                       <MoreHorizontal className="h-4 w-4" />
-                      {t.page.esteira.moreButton}
+                      <span className="hidden 2xl:inline">{t.page.esteira.moreButton}</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="surface-overlay w-72 p-2">

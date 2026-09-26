@@ -90,7 +90,7 @@ export function TemplateGallery({ open, onOpenChange, ctx, onSelect }: Props) {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar templates por analise, deck ou conteudo..."
+              placeholder="Buscar templates por análise, deck ou conteúdo..."
               className="h-10 bg-background pl-9"
             />
           </div>

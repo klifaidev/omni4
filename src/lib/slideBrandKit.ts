@@ -201,7 +201,7 @@ export const SLIDE_BRAND_STYLES: SlideBrandStyle[] = [
   {
     id: "dre-executive",
     name: "DRE executivo",
-    description: "Header Harald e texto escuro para apresentacao.",
+    description: "Header Harald e texto escuro para apresentação.",
     target: "dre",
     preview: { bg: "FFFFFF", fg: "1C2430", accent: "C8102E" },
     patch: {
