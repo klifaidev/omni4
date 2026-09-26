@@ -1048,6 +1048,7 @@ export const ptBR = {
           stylePasted: "Estilo colado",
           templateApplied: "Modelo aplicado",
           deckApplied: (n: number) => `Deck aplicado — ${n} slides criados`,
+          quickLayoutNewSlide: "Este slide já estava cheio — o layout entrou num slide novo, logo depois dele.",
           templateSaved: "Modelo salvo",
         },
         quickLayouts: {

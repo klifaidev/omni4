@@ -45,7 +45,7 @@ import { toast } from "sonner";
 
 import {
   CANVAS_W, CANVAS_H, FOOTER_H,
-  newBlock, newChartBlock, newPositivacaoChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS,
+  defaultCustomSlide, newBlock, newChartBlock, newPositivacaoChartBlock, BLOCK_LABELS, CHART_TYPE_LABELS,
   type CustomBlock, type CustomBlockKind, type CustomChartType, type CustomSlideConfig,
   type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type ImageBlock,
@@ -83,6 +83,7 @@ import {
 import { RotatableBlock } from "./RotatableBlock";
 import { Slider as UiSlider } from "@/components/ui/slider";
 import { applyTemplateDeckToSlidesFlow } from "./deckNavigation";
+import { placeQuickLayout } from "@/lib/quickLayoutPlacement";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -798,9 +799,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       ...(newBlock("text", 0) as TextBlock),
       id: localId(), x, y, w, h, text: content, size, color: "475569", lineHeight: 1.3,
     }) as CustomBlock;
+    // Período do padrão do KPI (último mês fechado, relativo). Antes era
+    // "all": o layout "Título + KPIs" mostrava a base inteira.
     const kpi = (label: string, measure: KpiBlock["measure"], x: number) => ({
       ...(newBlock("kpi", 0) as KpiBlock),
-      id: localId(), x, y: 155, w: 285, h: 145, label, measure, periodMode: "all", valueSize: 34,
+      id: localId(), x, y: 155, w: 285, h: 145, label, measure, valueSize: 34,
     }) as CustomBlock;
     const shape = (x: number, y: number, w: number, h: number, fill = "F8FAFC") => ({
       ...(newBlock("shape", 0) as ShapeBlock),
@@ -812,7 +815,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }) as CustomBlock;
     const table = () => ({
       ...(newBlock("table", 0) as TableBlock),
-      id: localId(), x: 60, y: 150, w: 1210, h: 500, title: t.quickLayouts.tableTitle, rowDims: ["categoria"], measures: ["rol_real", "cm_real", "cmPct_real"],
+      // Só medidas que o bloco de tabela conhece ("cmPct_real" sumia em silêncio).
+      id: localId(), x: 60, y: 150, w: 1210, h: 500, title: t.quickLayouts.tableTitle, rowDims: ["categoria"], measures: ["rol_real", "cm_real"],
     }) as CustomBlock;
 
     const blocksByLayout: Record<typeof layout, CustomBlock[]> = {
@@ -841,14 +845,34 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       ],
       bridgeComment: [
         title(t.quickLayouts.bridgeTitle, 60, 45, 940, 60),
-        { ...(newBlock("omniBridgePvm", 0) as OmniBridgePvmBlock), id: localId(), x: 60, y: 145, w: 790, h: 500 } as CustomBlock,
+        // "omni_bridge_pvm": com "omniBridgePvm" o newBlock não reconhecia o
+        // tipo e o deck ganhava um bloco sem `kind`, invisível sobre os demais.
+        { ...(newBlock("omni_bridge_pvm", 0) as OmniBridgePvmBlock), id: localId(), x: 60, y: 145, w: 790, h: 500 } as CustomBlock,
         shape(890, 145, 360, 260, "F8FAFC"),
         text(t.quickLayouts.bridgeNote, 920, 180, 300, 160, 20),
       ],
     };
-    const ids = insertBlocksAction(blocksByLayout[layout], t.blockActionLabels.addQuickLayout);
+    const [layoutTitle, ...content] = blocksByLayout[layout];
+    // Para 30px antes da faixa Harald (a onda do rodapé sobe até perto de
+    // CANVAS_H - FOOTER_H) — ou da borda, quando a faixa está desligada.
+    const contentBottomLimit = (config.showHaraldFooter ? CANVAS_H - FOOTER_H : CANVAS_H) - 30;
+    const placement = placeQuickLayout(config.blocks, layoutTitle, content, contentBottomLimit);
+    if (placement.target === "newSlide") {
+      setPalettePanelOpen(false);
+      // Slide atual sem espaço: o layout vira um slide novo logo depois dele.
+      const base = defaultCustomSlide();
+      applyTemplateDeckToSlidesFlow({
+        currentSlideId: slideId,
+        configs: [{ ...base, blocks: placement.blocks }],
+        mode: "insert",
+        name: (layoutTitle as TitleBlock).text,
+      });
+      toast.success(t.toasts.quickLayoutNewSlide);
+      return;
+    }
+    const ids = insertBlocksAction(placement.blocks, t.blockActionLabels.addQuickLayout);
     if (ids.length > 0) setSelection(ids);
-  }, [canEdit]);
+  }, [canEdit, config.blocks, config.showHaraldFooter, slideId]);
   const addInsightCard = () => {
     const x = 60;
     const y = 150;

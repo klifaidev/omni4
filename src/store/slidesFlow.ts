@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
-import { migrateDataSource, type FilterableBlock } from "@/lib/customSlide";
+import { migrateDataSource, newBlock, type FilterableBlock } from "@/lib/customSlide";
 import type { Filters } from "@/lib/types";
 
 const SLIDES_FLOW_STORAGE_KEY = "pricing.slidesFlow.v1";
@@ -190,13 +190,35 @@ export function removeShadowedDefaultTitles<T extends TitleLike>(blocks: T[]): T
   return shadowed.size ? blocks.filter((b) => !shadowed.has(b)) : blocks;
 }
 
+/**
+ * Até a v1.21.0 o layout rápido "Bridge + comentário" pedia o tipo com o nome
+ * errado e gravava o Bridge SEM `kind` — um bloco invisível que ficava por
+ * cima dos outros e capturava os cliques. É a única origem conhecida de bloco
+ * sem tipo: vira o Bridge PVM que a pessoa pediu, na mesma posição e tamanho.
+ */
+export function repairKindlessBlocks<T>(blocks: T[]): T[] {
+  let changed = false;
+  const next = blocks.map((block) => {
+    const b = block as unknown as { kind?: unknown; id?: string; x?: number; y?: number; w?: number; h?: number; z?: number };
+    if (!b || typeof b.kind === "string") return block;
+    changed = true;
+    const bridge = newBlock("omni_bridge_pvm", 0);
+    return {
+      ...bridge,
+      id: b.id ?? bridge.id,
+      x: b.x ?? bridge.x, y: b.y ?? bridge.y, w: b.w ?? bridge.w, h: b.h ?? bridge.h, z: b.z ?? bridge.z,
+    } as unknown as T;
+  });
+  return changed ? next : blocks;
+}
+
 export function migrateSlidesFlowItemsDataSources(items: SlideItem[]): SlideItem[] {
   if (!Array.isArray(items)) return [];
   for (const item of items) {
     try {
       if (item.kind !== "custom") continue;
       if (!item.config || !Array.isArray(item.config.blocks)) continue;
-      item.config.blocks = removeShadowedDefaultTitles(item.config.blocks);
+      item.config.blocks = removeShadowedDefaultTitles(repairKindlessBlocks(item.config.blocks));
       for (const blk of item.config.blocks) {
         const b = blk as { dataSource?: string };
         b.dataSource = migrateDataSource(b.dataSource);

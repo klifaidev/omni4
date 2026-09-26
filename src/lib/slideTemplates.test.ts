@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SLIDE_TEMPLATES, type TemplateCtx } from "./slideTemplates";
 import { SLIDE_TABLE_MEASURE_IDS } from "./pivotToSlide";
-import { removeShadowedDefaultTitles } from "@/store/slidesFlow";
+import { removeShadowedDefaultTitles, repairKindlessBlocks } from "@/store/slidesFlow";
 import type { CustomBlock, KpiBlock, TableBlock, TitleBlock, TopSkuBlock } from "./customSlide";
 
 const month = (m: number, ano: number) => ({ periodo: `${String(m).padStart(3, "0")}.${ano}`, mes: m, ano });
@@ -49,6 +49,21 @@ describe("templates de slides", () => {
         }
       }
     }
+  });
+});
+
+describe("repairKindlessBlocks (reparo de decks salvos)", () => {
+  it("bloco sem tipo do layout de Bridge volta a ser o Bridge PVM, na mesma posição", () => {
+    const broken = { id: "b1", x: 60, y: 145, w: 790, h: 500, z: 7 };
+    const title = { id: "t1", kind: "title", x: 40, y: 30, w: 1240, h: 70, z: 1 };
+    const [t, b] = repairKindlessBlocks([title, broken] as unknown as CustomBlock[]);
+    expect(t).toBe(title);
+    expect(b).toMatchObject({ id: "b1", kind: "omni_bridge_pvm", x: 60, y: 145, w: 790, h: 500, z: 7 });
+  });
+
+  it("deck sem bloco quebrado devolve o mesmo array", () => {
+    const blocks = [{ id: "t1", kind: "title", x: 0, y: 0, w: 1, h: 1, z: 1 }] as unknown as CustomBlock[];
+    expect(repairKindlessBlocks(blocks)).toBe(blocks);
   });
 });
 
