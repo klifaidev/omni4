@@ -6,13 +6,12 @@ import { useMemo } from "react";
 import { Package, Briefcase, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
-import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { getDeParaBySku } from "@/lib/depara";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BlockDataSource } from "@/lib/customSlide";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const SKU_FIELDS: { key: FilterKey; label: string }[] = [
   { key: "categoria", label: "Categoria" },
@@ -35,8 +34,8 @@ const COMERCIAL_FIELDS: { key: FilterKey; label: string }[] = [
 export function BlockFilters({
   filters, onChange, dataSource = "ke30",
 }: { filters: Filters; onChange: (next: Filters) => void; dataSource?: BlockDataSource }) {
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const baseRows = useMemo(() => {
     if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");

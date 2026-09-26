@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ChartTypePicker } from "./ChartTypePicker";
 import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { applyFilters } from "@/lib/analytics";
@@ -37,6 +36,7 @@ import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX } from "@/lib/slideDesignTokens";
 import { DraftInput, DraftNumberInput } from "../DraftInput";
 import { strings } from "@/lib/i18n";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const t = strings.slides.editor.inspectors.chart;
 const tc = t.common;
@@ -231,8 +231,8 @@ export function ChartInspector({
   const sectionsRef = useRef<HTMLDivElement>(null);
 
   // Detect actual series/categories present on canvas to drive per-item editors
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const customTables = useCustomTables((s) => s.tables);
   const dataSource = block.dataSource;
   const isCustomSource = dataSource === "personalizado";

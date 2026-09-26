@@ -18,6 +18,7 @@ import { applyFilters, calcPVM } from "@/lib/analytics";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const KPI_MEASURES_LABEL: Record<string, string> = Object.fromEntries(
   KPI_MEASURES.map((m) => [m.id, m.label]),
@@ -54,7 +55,6 @@ function safeMeasureForSource(
   return isMeasureAvailable(measure, dataSource) ? measure : undefined;
 }
 import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { buildCustomTableChartData } from "@/lib/customTableChartData";
@@ -641,8 +641,8 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   const safeTooltipMeasure = safeMeasureForSource(block.fieldWells?.tooltipMeasure ?? undefined, block.dataSource);
   const measureFmt = inferFormat(effectiveMeasure);
 
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const customTables = useCustomTables((s) => s.tables);
   const isCustomSource = block.dataSource === "personalizado";
   const customTable = useMemo(
@@ -2712,9 +2712,9 @@ function WaterfallChart({
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? "rol";
   const measureFmt = inferFormat(effectiveMeasure);
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const metric = usePricing((s) => s.metric);
-  const budget = useBudget((s) => s.rows);
+  const budget = useDeckBudgetRows();
   const dsRows = dsRowsProp
     ?? (block.dataSource === "budget" ? budgetRowsAsPricingFiltered(budget, "budget")
       : block.dataSource === "budget_real" ? budgetRowsAsPricingFiltered(budget, "real")

@@ -38,7 +38,6 @@ import { Waterfall } from "@/components/pricing/Waterfall";
 import { computePivot, type PivotConfig, type PivotMeasure } from "@/lib/pivot";
 import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { monthLabel, formatBRL, parsePeriod } from "@/lib/format";
 import {
   computeKpiBlock, computeTopRanking, formatValue, inferFormat,
@@ -62,6 +61,7 @@ import { getUfFromRegiao } from "@/lib/deparaComercial";
 import { buildSimpleBlockLayout, type CustomSlideLayoutNode } from "@/lib/customSlideLayout";
 import brMapRaw from "@/assets/br.svg?raw";
 import { strings } from "@/lib/i18n";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const t = strings.slides.editor.blockRenderer;
 
@@ -572,8 +572,8 @@ function SimpleLayoutRender({
 }
 
 function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
@@ -777,7 +777,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
 }
 
 function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSlideId?: string }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const metric = usePricing((s) => s.metric);
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricing), [pricing]);
   const filteredRows = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
@@ -1120,8 +1120,8 @@ function TableColumnResizeHandle({
 }
 
 function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readOnly?: boolean; onPatch?: (patch: Partial<CustomBlock>) => void }) {
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const missingData = missingLocalDataLabel(b.dataSource, {
     pricing: pricing.length,
     budget: budget.length,
@@ -1834,8 +1834,8 @@ function ChartRender({ block, cacheSlideId }: { block: ChartBlock; cacheSlideId?
 // Top SKU / Top Ranking
 // ---------------------------------------------------------------------------
 function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const missingData = missingLocalDataLabel(b.dataSource, {
     pricing: pricing.length,
     budget: budget.length,
@@ -2037,8 +2037,8 @@ function computeDreColumnWidths(args: {
 }
 
 function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
-  const pricingRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
+  const pricingRows = useDeckPricingRows();
+  const budgetRows = useDeckBudgetRows();
   const missingData = missingLocalDataLabel(blk.dataSource, {
     pricing: pricingRows.length,
     budget: budgetRows.length,
@@ -2492,7 +2492,7 @@ function omniAggregatedValue(sum: { value: number; rol: number }, metric: OmniMe
 
 // ---- omni_evolucao_mensal ----
 function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const series = useMemo(() => computeCanalTrend(filtered, null, "cm"), [filtered]);
   const info = omniMetricInfo(b.metric);
@@ -2547,7 +2547,7 @@ function heatColorOmni(v: number | null, min: number, max: number): { bg: string
 }
 
 function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonalidadeBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2634,7 +2634,7 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
 
 // ---- omni_herois_ofensores ----
 function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(() => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"), [filtered, b.dim]);
   const minRolForPct = useMemo(() => rows.reduce((s, r) => s + r.rol, 0) * 0.01, [rows]);
@@ -2667,7 +2667,7 @@ function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlo
 
 // ---- omni_canal_trend ----
 function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2727,7 +2727,7 @@ function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
 
 // ---- omni_canal_mix ----
 function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2778,7 +2778,7 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
 
 // ---- omni_custo_evolucao ----
 function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
@@ -2819,7 +2819,7 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
 
 // ---- omni_positivacao ----
 function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const dim = b.dim ?? "categoria";
   const series = useMemo(() => buildPositivacaoSeries(filtered, dim, 13), [filtered, dim]);
@@ -2861,7 +2861,7 @@ function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
 
 // ---- omni_uf_map ----
 function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const { states, labelPoints } = useMemo(() => parseBrazilSvg(brMapRaw), []);
   const labelPointByUf = useMemo(() => new Map(labelPoints.map((point) => [point.uf, point])), [labelPoints]);
@@ -2965,7 +2965,7 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
 
 // ---- omni_custo_composicao ----
 function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
@@ -3006,7 +3006,7 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
 
 // ---- omni_price_decomp ----
 function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const months  = useMonthsInfo();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
@@ -3055,8 +3055,8 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
 
 // ---- omni_bridge_pvm ----
 function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const metric = usePricing((s) => s.metric);
   const months  = useMonthsInfo();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
@@ -3097,7 +3097,7 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
 
 // ---- omni_farol ----
 function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
 
   const { result, skuRefLabel, skuCompLabel } = useMemo(() => {
     const rows = applyOmniFilters(pricing, b);
@@ -3179,7 +3179,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
 
 // ---- omni_abc_curva ----
 function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
@@ -3200,7 +3200,7 @@ function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
 
 // ---- omni_portfolio_matrix ----
 function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
   const rows = useMemo(
@@ -3222,7 +3222,7 @@ function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlo
 
 // ---- omni_abc_bars ----
 function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
@@ -3258,7 +3258,7 @@ function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
 
 // ---- omni_custo_pressao ----
 function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) {
-  const pricing = usePricing((s) => s.rows);
+  const pricing = useDeckPricingRows();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 

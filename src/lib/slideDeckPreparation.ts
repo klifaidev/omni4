@@ -2,8 +2,7 @@ import type { ChartBlock, CustomChartType, KpiMeasureId } from "@/lib/customSlid
 import type { SlideItem } from "@/lib/slidesFlow";
 import { isMeasureAvailable, newChartBlock, newPositivacaoChartBlock } from "@/lib/customSlide";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
-import { useBudget } from "@/store/budget";
-import { usePricing } from "@/store/pricing";
+import { getDeckBudgetRows, getDeckPricingRows } from "@/hooks/useDeckRows";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { computeChartSeriesAsync, computeTopRankingAsync } from "@/lib/slideCalcWorkerClient";
@@ -35,10 +34,12 @@ function safeMeasureForSource(
   return isMeasureAvailable(measure, dataSource) ? measure : undefined;
 }
 
+// Mesmas linhas que os blocos leem (limitadas ao mês de referência do deck):
+// aquecer com a base inteira preencheria o cache com chaves que ninguém usa.
 function rowsForDataSource(dataSource: ChartBlock["dataSource"]): PricingRow[] {
-  if (dataSource === "budget") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "budget");
-  if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(useBudget.getState().rows, "real");
-  return usePricing.getState().rows;
+  if (dataSource === "budget") return budgetRowsAsPricingFiltered(getDeckBudgetRows(), "budget");
+  if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(getDeckBudgetRows(), "real");
+  return getDeckPricingRows();
 }
 
 async function warmChartSeriesCache(input: SlideCalcCacheKeyInput, rows: PricingRow[], block: ChartBlock, measure: KpiMeasureId, breakdown: string | null, xDim?: string | null) {

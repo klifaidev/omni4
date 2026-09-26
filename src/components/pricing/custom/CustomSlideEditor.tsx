@@ -87,8 +87,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/customCapacity";
-import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
 import { getCachedRowsSignature } from "@/lib/slideCalcCache";
@@ -108,6 +106,7 @@ import {
   getSourceFooterText,
   type SourceRowsByDataSource,
 } from "@/lib/customSlideSourceFooter";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 function SlideSourceFooterEditor({
   config,
@@ -421,8 +420,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const config = useEditorLiveConfig(slideId, configFromParent);
   const undoRedo = useUndoRedoState();
   const { selectedIds, groupEditMemberId } = useSelection();
-  const pricingRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
+  const pricingRows = useDeckPricingRows();
+  const budgetRows = useDeckBudgetRows();
   const sourceFooterRows = useMemo<SourceRowsByDataSource>(() => ({
     ke30: pricingRows,
     budget: budgetRowsAsPricingFiltered(budgetRows, "budget"),

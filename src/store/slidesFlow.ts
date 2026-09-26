@@ -60,6 +60,13 @@ interface SlidesFlowState {
    *  de bloco. Blocos com `useGlobalFilter: true` usam isto em vez do seu
    *  filtro individual. Visível na esteira, salvo junto com os presets. */
   globalFilters: Filters;
+  /**
+   * Mês de referência do deck ("008.2026"); null = automático (último mês da
+   * base). Não entra nas pré-definições: uma referência fixa não deve viajar
+   * para o deck do mês seguinte. Ver lib/deckPeriod.ts.
+   */
+  referencePeriod: string | null;
+  setReferencePeriod: (periodo: string | null) => void;
 
   // Itens
   addItem: (kind: SlideKind) => void;
@@ -437,8 +444,10 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       selectedId: null,
       transition: "fade",
       globalFilters: {},
+      referencePeriod: null,
 
       setTransition: (t) => set({ transition: t }),
+      setReferencePeriod: (periodo) => set({ referencePeriod: periodo }),
 
       setGlobalFilters: (next) => set({ globalFilters: next }),
       clearGlobalFilters: () => set({ globalFilters: {} }),
@@ -604,6 +613,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         presets: s.presets,
         transition: s.transition,
         globalFilters: s.globalFilters,
+        referencePeriod: s.referencePeriod,
       }),
       onRehydrateStorage: () => {
         // O backup preventivo por localStorage so faz sentido no fallback de
@@ -619,6 +629,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           if (!state.globalFilters || typeof state.globalFilters !== "object") {
             state.globalFilters = {};
           }
+          if (typeof state.referencePeriod !== "string") state.referencePeriod = null;
           try {
             const safeItems = sanitizeSlidesFlowItems(Array.isArray(state.items) ? state.items : []);
             state.items = migrateSlidesFlowItemsDataSources(safeItems);

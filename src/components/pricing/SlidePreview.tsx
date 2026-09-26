@@ -16,7 +16,6 @@ import {
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "@/lib/fiscalYear";
 import { monthLabel } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { useCustomTables } from "@/store/customTables";
 import { AlertCircle, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,6 +33,7 @@ import { localDataMissingMessage } from "@/lib/slideLocalDataStatus";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const C = SLIDE_PREVIEW_COLORS;
 
@@ -160,7 +160,7 @@ function CoverPreview({ item }: { item: Extract<SlideItem, { kind: "cover" }> })
 //    com rótulos rotacionados 270°, legenda REAL/BUDGET embaixo
 // ---------------------------------------------------------------------------
 function BudgetEvoPreview({ item }: { item: Extract<SlideItem, { kind: "budget_evo" }> }) {
-  const budgetRows = useBudget((s) => s.rows);
+  const budgetRows = useDeckBudgetRows();
   const budgetSignature = useMemo(() => getCachedRowsSignature(budgetRows), [budgetRows]);
   const data = useMemo(
     () => getOrComputeSlideCalc({
@@ -516,8 +516,8 @@ function VolBarsRow({
 // já que o foco visual da bridge é o waterfall inferior.
 // ---------------------------------------------------------------------------
 function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_pvm" }> }) {
-  const pricingRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
+  const pricingRows = useDeckPricingRows();
+  const budgetRows = useDeckBudgetRows();
   const metric = usePricing((s) => s.metric);
   const ready = isItemReady(item);
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricingRows), [pricingRows]);

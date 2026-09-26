@@ -48,7 +48,6 @@ import { ChartInspector } from "../chart/ChartInspector";
 import { CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "../BlockRenderer";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
 import { useBudget } from "@/store/budget";
-import { usePricing } from "@/store/pricing";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
 import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/customCapacity";
@@ -82,6 +81,7 @@ import {
 } from "../editorStore";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 // Alias: este arquivo já tem cssEscapeId() usando o CSS global do browser
 // (window.CSS.escape) — importar o CSS do dnd-kit sem alias sombrearia esse
 // identificador e quebraria aquela função (ela compilava só porque "CSS"
@@ -1083,8 +1083,8 @@ function TableBlockEditor({ block, onChange }: {
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
   const dims = CUSTOM_TABLE_DIMS;
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
   const sourceRows = useMemo(() => {
     const ds = block.dataSource ?? "ke30";
     if (ds === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
@@ -2362,7 +2362,7 @@ function OmniFiltersSection({ block, onChange }: {
   block: OmniBaseBlock;
   onChange: (patch: Partial<OmniBaseBlock>) => void;
 }) {
-  const rows = usePricing((s) => s.rows);
+  const rows = useDeckPricingRows();
   const unique = (field: keyof PricingRow) =>
     Array.from(new Set(rows.map((r) => r[field] as string | undefined).filter(Boolean))).sort() as string[];
   const dimOpt = (field: keyof PricingRow, placeholder: string) => [
@@ -2716,7 +2716,7 @@ function OmniFarolInspector({ block, onChange }: {
   block: OmniFarolBlock;
   onChange: (p: Partial<OmniFarolBlock>) => void;
 }) {
-  const rows = usePricing((s) => s.rows);
+  const rows = useDeckPricingRows();
   const skuOptions = useMemo(() => buildFarolSkuOptions(rows), [rows]);
   return (
     <div className="space-y-2">

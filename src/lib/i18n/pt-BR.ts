@@ -439,6 +439,30 @@ export const ptBR = {
             applyToAllDone: (n: number) => `Filtro global ativado em ${n} bloco(s).`,
             clearAll: "Limpar filtro global",
           },
+          // Período global do deck (lib/deckPeriod.ts).
+          deckReference: {
+            buttonAuto: "Referência",
+            buttonManual: (month: string) => `Ref.: ${month}`,
+            ariaLabel: "Mês de referência do deck",
+            panelTitle: "Mês de referência do deck",
+            panelDescription: "O deck mostra o realizado até este mês. Períodos relativos (\"mês mais recente\", \"últimos 6 meses\", FY mais recente) contam a partir dele e os gráficos de evolução param nele. O plano de Budget não é cortado.",
+            autoOption: (month: string) => `Automático — último mês da base (${month})`,
+            autoOptionEmpty: "Automático — último mês da base",
+            manualHint: (month: string, hidden: number) =>
+              hidden > 0
+                ? `Mostrando dados até ${month}. ${hidden} ${hidden === 1 ? "mês mais recente fica" : "meses mais recentes ficam"} de fora do deck.`
+                : `Mostrando dados até ${month}.`,
+            advanceTitle: "Avançar o deck",
+            advanceDescription: "Empurra +1 mês os períodos escolhidos à mão (KPIs, Top SKUs, tabelas, DRE, Bridge, Budget Evolutivo…). Os períodos relativos já acompanham a base sozinhos.",
+            advanceButton: "Avançar períodos fixos 1 mês",
+            advanceNone: "Nenhum período fixo para avançar — os períodos deste deck são relativos e já acompanham a base.",
+            advanceDone: (changed: number, slides: number) =>
+              `${changed} ${changed === 1 ? "período avançado" : "períodos avançados"} em ${slides} ${slides === 1 ? "slide" : "slides"}`,
+            advanceSkippedFiscal: (n: number) => `${n} ${n === 1 ? "período em ano fiscal ficou" : "períodos em ano fiscal ficaram"} como estava(m).`,
+            advancePastData: (month: string) => `Alguns períodos passaram do último mês da base (${month}) e ficam sem dados até a próxima carga.`,
+            undo: "Desfazer",
+            undone: "Avanço desfeito",
+          },
           dataSourcePicker: {
             recalculating: "Recalculando bloco...",
             onlyKe30Hint: "Carregue Budget para mais opções.",

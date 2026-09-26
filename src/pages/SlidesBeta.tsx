@@ -65,7 +65,6 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import {
   useSlidesFlow, getSlidesFlowSaveStatus, subscribeSlidesFlowSaveStatus,
@@ -107,9 +106,11 @@ import { DraggableCatalogItem, EmptyFlow, FlowCard, FlowDropZone } from "@/compo
 import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/components/pricing/slides/slideUiTokens";
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { GlobalFilterControl } from "@/components/pricing/slides/GlobalFilterControl";
+import { DeckReferenceControl } from "@/components/pricing/slides/DeckReferenceControl";
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useSlideExport } from "@/hooks/useSlideExport";
 import { strings } from "@/lib/i18n";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const t = strings.slides.beta;
 
@@ -163,20 +164,28 @@ function useSlideConfirm() {
 const LOCAL_COMMENT_AUTHOR = { name: "Você", color: "#457B9D" };
 
 function LocalSaveStatusBadge({ status }: { status: SlidesFlowSaveStatus }) {
+  const label = status === "saving" ? t.localSaveStatus.saving : status === "error" ? t.localSaveStatus.error : t.localSaveStatus.saved;
   return (
-    <span className={cn(
-      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 slides-type-badge",
-      status === "error"
-        ? "border-destructive/35 bg-destructive/10 text-destructive"
-        : "border-success/35 bg-success/10 text-success",
-    )}>
+    <span
+      title={label}
+      aria-label={label}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 slides-type-badge",
+        status === "error"
+          ? "border-destructive/35 bg-destructive/10 text-destructive"
+          : "border-success/35 bg-success/10 text-success",
+      )}
+    >
       {status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}
-      {status === "saving" ? t.localSaveStatus.saving : status === "error" ? t.localSaveStatus.error : t.localSaveStatus.saved}
+      {/* Abaixo de 2xl, "Salvo" vira só o ícone (a barra não cabia em 1366px);
+          erro de salvamento sempre mostra o texto. */}
+      <span className={status === "error" ? undefined : "hidden 2xl:inline"}>{label}</span>
     </span>
   );
 }
 const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
-const FLOW_CARD_ESTIMATED_HEIGHT = 98;
+// Card (110px com a miniatura de 160px) + 8px de espaço entre cards.
+const FLOW_CARD_ESTIMATED_HEIGHT = 118;
 const SLIDE_PREVIEW_OVERSCAN = 8;
 const DECK_PREP_THRESHOLD = 8;
 const DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE = 2;
@@ -535,7 +544,7 @@ function BudgetEvoConfigPanel({
   onChange: (next: SlideItem) => void;
   readOnly?: boolean;
 }) {
-  const budgetRows = useBudget((s) => s.rows);
+  const budgetRows = useDeckBudgetRows();
   const months = useMemo(() => {
     const map = new Map<string, { periodo: string; mes: number; ano: number; label: string }>();
     for (const r of budgetRows) {
@@ -1244,8 +1253,8 @@ function Inspector({
   initialTab?: InspectorTab;
 }) {
   const updateItem = useSlidesFlow((s) => s.updateItem);
-  const pricing = usePricing((s) => s.rows);
-  const budget = useBudget((s) => s.rows);
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
 
   if (!item) {
     return (
@@ -1905,7 +1914,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const transition = useSlidesFlow((s) => s.transition);
 
   const months = useMonthsInfo();
-  const budgetRowsAll = useBudget((s) => s.rows);
+  const budgetRowsAll = useDeckBudgetRows();
   const budgetMonths = useMemo(() => {
     const map = new Map<string, { periodo: string; mes: number; ano: number }>();
     for (const r of budgetRowsAll) {
@@ -1944,8 +1953,8 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   };
 
 
-  const pricingRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
+  const pricingRows = useDeckPricingRows();
+  const budgetRows = useDeckBudgetRows();
   const metric = usePricing((s) => s.metric);
 
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -2650,6 +2659,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 )}
                 <div className="mx-2 h-6 w-px bg-border/50" />
                 <GlobalFilterControl />
+                <DeckReferenceControl />
                 <div className="mx-1 h-5 w-px bg-border/50" />
                 <TransitionSelect />
                 <div className="mx-1 h-5 w-px bg-border/50" />

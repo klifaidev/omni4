@@ -24,10 +24,9 @@ import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFil
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
-import { usePricing } from "@/store/pricing";
-import { useBudget } from "@/store/budget";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
+import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
 /** Depois da transição mais longa (350ms): o aquecimento não disputa o quadro da animação. */
@@ -551,8 +550,8 @@ function SlideRenderArea({
 }
 
 function useSourceFooterRows(): SourceRowsByDataSource {
-  const pricingRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
+  const pricingRows = useDeckPricingRows();
+  const budgetRows = useDeckBudgetRows();
 
   return useMemo<SourceRowsByDataSource>(() => ({
     ke30: pricingRows,
