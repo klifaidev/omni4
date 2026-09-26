@@ -39,6 +39,8 @@ export type EditorActionLabel =
   | "Redimensionar grupo"
   | "Alterar estilo"
   | "Alterar dados"
+  | "Editar texto"
+  | "Adicionar layout rápido"
   | "Duplicar bloco"
   | "Duplicar blocos"
   | "Alterar ordem"
@@ -207,6 +209,7 @@ export function bindEditorStore(
   // Reset undo history when binding to a new slide (or first mount).
   if (prevSlide !== slideId) {
     baseStore.temporal.getState().clear();
+    lastPatch = null;
   }
   suppressEmit = false;
 }
@@ -349,11 +352,26 @@ export function insertBlocksAction(blocks: CustomBlock[], label: EditorActionLab
   return next.map((blk) => blk.id);
 }
 
+// Edições seguidas do mesmo campo (digitar um rótulo, arrastar um slider de
+// cor) viram UM passo de desfazer, não um por tecla. Mover/redimensionar/
+// ordem/bloqueio continuam passo a passo: são gestos discretos.
+const COALESCE_WINDOW_MS = 1200;
+const COALESCIBLE_LABELS = new Set<EditorActionLabel>(["Alterar dados", "Editar texto", "Alterar estilo"]);
+let lastPatch: { key: string; at: number } | null = null;
+
 export function patchBlockAction(id: string, patch: Partial<CustomBlock>, label: EditorActionLabel) {
-  mutate(label, (c) => ({
+  const run = () => mutate(label, (c) => ({
     ...c,
     blocks: c.blocks.map((b) => (b.id === id ? ({ ...b, ...patch } as CustomBlock) : b)),
   }));
+  const now = Date.now();
+  const key = `${baseStore.getState().slideId}|${id}|${label}|${Object.keys(patch).sort().join(",")}`;
+  const coalesce = COALESCIBLE_LABELS.has(label)
+    && lastPatch?.key === key
+    && now - lastPatch.at < COALESCE_WINDOW_MS;
+  lastPatch = { key, at: now };
+  if (coalesce) withTemporalPaused(run);
+  else run();
 }
 
 /** Renormaliza z-indices para inteiros consecutivos 1..N preservando a ordem relativa. */
@@ -436,6 +454,7 @@ export function toggleLockAction(id: string) {
 export function undo(): CustomSlideConfig | null {
   const t = baseStore.temporal.getState();
   if (t.pastStates.length === 0) return null;
+  lastPatch = null; // a próxima edição abre um passo novo
   t.undo();
   const cur = baseStore.getState().config;
   if (cur) emitImmediate(cur);
@@ -445,6 +464,7 @@ export function undo(): CustomSlideConfig | null {
 export function redo(): CustomSlideConfig | null {
   const t = baseStore.temporal.getState();
   if (t.futureStates.length === 0) return null;
+  lastPatch = null;
   t.redo();
   const cur = baseStore.getState().config;
   if (cur) emitImmediate(cur);

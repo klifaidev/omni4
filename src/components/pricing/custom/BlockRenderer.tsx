@@ -44,6 +44,7 @@ import {
 } from "@/lib/customKpi";
 import { calcFarol } from "@/lib/farol";
 import { KPI_MEASURES, resolveEffectiveBlock } from "@/lib/customSlide";
+import { computeCustomTablePivot } from "@/lib/customTablePivot";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -1129,31 +1130,19 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   const sourceRows = useDataSource(b.dataSource, pricing, budget);
 
   const data = useMemo(() => {
-    const dimensionFilteredRows = applyTableDimensionFilters(sourceRows, b.filters);
-    const resolvedMonths = resolveMonthRangeSelection(dimensionFilteredRows, b.monthFilter);
-    const monthSet = resolvedMonths?.length ? new Set(resolvedMonths) : null;
-    const tableRows = monthSet
-      ? dimensionFilteredRows.filter((row) => monthSet.has(row.periodo))
-      : dimensionFilteredRows;
-    const unified = buildUnifiedRows(tableRows, [], "real");
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
+    // Cálculo compartilhado com o painel de propriedades (lib/customTablePivot).
+    const { unified, result } = computeCustomTablePivot(sourceRows, b, measures);
     const filters = {};
     const gapColumns = (b.gapColumns ?? []).filter((gap) => measures.some((measure) => measure.id === gap.measureId));
     const gapValues = buildTableGapValues(
-      unified as unknown as Record<string, unknown>[],
+      unified,
       b.rowDims,
       filters,
       measures,
       gapColumns,
     );
-    const cfg: PivotConfig = {
-      rows: b.rowDims,
-      cols: b.colDim ? [b.colDim] : [],
-      values: measures,
-      filters,
-    };
-    const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
 
     const rowLabel = (header: { values: string[] }) => header.values.join(" / ") || t.table.totalFallback;
     const sortKey = b.sortMeasure && measures.find((m) => m.id === b.sortMeasure)

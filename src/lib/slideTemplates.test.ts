@@ -71,7 +71,9 @@ describe("removeShadowedDefaultTitles (reparo de decks salvos)", () => {
   const title = (text: string, x = 40, y = 30) => ({ kind: "title", text, x, y, w: 1240, h: 70 });
 
   it("remove o título padrão escondido sob o título do template", () => {
-    const blocks = [title("Título do slide"), title("KPIs do mês"), { kind: "kpi", x: 40, y: 140, w: 280, h: 140 }];
+    const blocks: Array<{ kind: string; text?: string; x: number; y: number; w: number; h: number }> = [
+      title("Título do slide"), title("KPIs do mês"), { kind: "kpi", x: 40, y: 140, w: 280, h: 140 },
+    ];
     expect(removeShadowedDefaultTitles(blocks).map((b) => b.kind === "title" ? b.text : b.kind)).toEqual(["KPIs do mês", "kpi"]);
   });
 

@@ -5,6 +5,12 @@ import { cn } from "@/lib/utils";
 
 type CommitReason = "blur" | "enter" | "debounce" | "unmount";
 
+// Era 350ms: o texto digitado no painel levava ~400ms para aparecer no slide.
+// 90ms fica abaixo do que se percebe como atraso e ainda junta rajadas de
+// teclas. O Desfazer agrupa edições seguidas do mesmo campo (editorStore),
+// então enviar mais vezes não enche o histórico.
+export const DRAFT_COMMIT_DELAY_MS = 90;
+
 type DraftInputProps = Omit<ComponentProps<typeof Input>, "value" | "onChange" | "onBlur" | "onKeyDown"> & {
   value: string;
   onCommit: (value: string) => void;
@@ -16,7 +22,7 @@ export function DraftInput({
   value,
   onCommit,
   normalize,
-  commitDelayMs = 350,
+  commitDelayMs = DRAFT_COMMIT_DELAY_MS,
   onFocus,
   className,
   ...props
@@ -115,7 +121,7 @@ export function DraftTextarea({
   value,
   onCommit,
   normalize,
-  commitDelayMs = 350,
+  commitDelayMs = DRAFT_COMMIT_DELAY_MS,
   onFocus,
   className,
   ...props
@@ -216,7 +222,7 @@ export function DraftNumberInput({
   min,
   max,
   fallback = null,
-  commitDelayMs = 350,
+  commitDelayMs = DRAFT_COMMIT_DELAY_MS,
   className,
   ...props
 }: DraftNumberInputProps) {

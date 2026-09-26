@@ -28,7 +28,7 @@ describe("DraftInput", () => {
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Título A editado" } });
 
-    // Troca de bloco antes do debounce (350ms) disparar.
+    // Troca de bloco antes do debounce disparar.
     rerender(<DraftInput key="bloco-b" value="Título B" onCommit={commitBlocoB} />);
 
     expect(commitBlocoA).toHaveBeenCalledTimes(1);

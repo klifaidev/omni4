@@ -3,7 +3,7 @@
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
+import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -232,6 +232,71 @@ import { strings } from "@/lib/i18n";
 const tGlobalFilter = strings.slides.editor.inspectors.blocks.globalFilter;
 
 const t = strings.slides.editor.customSlideEditor;
+
+// Nome do passo no Desfazer conforme o que mudou ("Desfazer: Editar texto"),
+// em vez de "Alterar dados" para tudo.
+const UNDO_TEXT_KEYS = new Set(["text", "label", "title", "manualValue", "subtitle"]);
+const UNDO_STYLE_KEYS = new Set([
+  "color", "size", "bold", "italic", "align", "fontFamily", "letterSpacing", "lineHeight",
+  "textTransform", "textShadow", "fill", "fillOpacity", "strokeColor", "strokeWidth", "strokeStyle",
+  "radius", "opacity", "backgroundColor", "borderRadius", "padding", "valueSize",
+  "shadowEnabled", "shadowColor", "shadowOpacity", "shadowBlur", "shadowX", "shadowY", "style",
+]);
+
+// Painel de propriedades de UM bloco. Memoizado: na renderização urgente do
+// clique (seleção nova, painel ainda adiado) ele recebe as mesmas props e não
+// redesenha — só a renderização adiada monta o painel do bloco novo.
+const SingleBlockInspector = memo(function SingleBlockInspector({
+  block, onChange, styleFocusRequest, stylePanelHighlight, inspectorStyleRef,
+}: {
+  block: CustomBlock;
+  onChange: (patch: Partial<CustomBlock>) => void;
+  styleFocusRequest: number;
+  stylePanelHighlight: boolean;
+  inspectorStyleRef: RefObject<HTMLDivElement>;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <Badge variant="secondary" className="slides-type-badge">{BLOCK_LABELS[block.kind]}</Badge>
+          {block.locked && (
+            <Badge variant="outline" className="slides-type-badge gap-1">
+              <Lock className="h-3 w-3" /> {t.inspector.lockedBadge}
+            </Badge>
+          )}
+        </div>
+        <p className="slides-type-helper">
+          {t.inspector.blockHint}
+        </p>
+      </div>
+
+      {/* key por bloco: sem ela, trocar de bloco selecionado reaproveita
+        * as MESMAS instâncias de input (React reconcilia por tipo +
+        * posição). Como os campos guardam rascunho local (DraftInput),
+        * o texto digitado no bloco anterior continuava na tela e era
+        * gravado no bloco novo — a edição "pulava" de um card pro
+        * outro. Com a key, cada bloco tem seus próprios inputs. */}
+      <PositionInputs key={`pos-${block.id}`} block={block} onChange={onChange} />
+      <BlockAppearanceControls key={`appearance-${block.id}`} block={block} onChange={onChange} />
+      <Separator />
+      <div
+        ref={inspectorStyleRef}
+        className={cn(
+          "rounded-lg transition-[box-shadow,background-color] duration-300",
+          stylePanelHighlight && "bg-primary/5 shadow-[0_0_0_2px_hsl(var(--primary)/0.35)]",
+        )}
+      >
+        <BlockSpecificEditor
+          key={`specific-${block.id}`}
+          block={block}
+          onChange={onChange}
+          styleFocusRequest={styleFocusRequest}
+        />
+      </div>
+    </div>
+  );
+});
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -604,6 +669,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       : isOrder ? t.blockActionLabels.reorder
       : isResize ? t.blockActionLabels.resize
       : isMove ? t.blockActionLabels.move
+      : keys.every((k) => UNDO_TEXT_KEYS.has(k)) ? t.blockActionLabels.editText
+      : keys.every((k) => UNDO_STYLE_KEYS.has(k)) ? t.blockActionLabels.style
       : t.blockActionLabels.edit;
     patchBlockAction(id, patch, label);
   }, [canEdit]);
@@ -622,6 +689,20 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   // fiquem presos a uma versão antiga — ex.: se canEdit/readOnly mudar.
   const updateBlockRef = useRef(updateBlock);
   updateBlockRef.current = updateBlock;
+
+  // Painel de propriedades em renderização adiada: o clique marca a seleção
+  // no slide na hora e o painel (a parte cara — até ~95ms montando um
+  // gráfico) vem em seguida, numa renderização que o React pode fatiar. Até
+  // lá o painel anterior fica esmaecido.
+  const deferredInspectorId = useDeferredValue(selected?.id ?? null);
+  const inspectorBlockId = selected ? deferredInspectorId : null;
+  const inspectorBlock = inspectorBlockId
+    ? (config.blocks.find((b) => b.id === inspectorBlockId) ?? null)
+    : null;
+  const inspectorPending = !!selected && inspectorBlock?.id !== selected.id;
+  const handleInspectorChange = useCallback((patch: Partial<CustomBlock>) => {
+    if (inspectorBlockId) updateBlockRef.current(inspectorBlockId, patch);
+  }, [inspectorBlockId]);
   const getBlockOnPatch = useCallback((id: string) => {
     let fn = onPatchCache.current.get(id);
     if (!fn) {
@@ -2851,46 +2932,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <p>{t.inspector.emptyStateLine2}</p>
               <p>{t.inspector.emptyStateLine3Prefix} <kbd>Shift</kbd> {t.inspector.emptyStateLine3Suffix}</p>
             </div>
+          ) : inspectorBlock ? (
+            <div
+              className={cn("transition-opacity duration-100", inspectorPending && "pointer-events-none opacity-50")}
+              aria-busy={inspectorPending || undefined}
+            >
+              <SingleBlockInspector
+                block={inspectorBlock}
+                onChange={handleInspectorChange}
+                styleFocusRequest={styleFocusRequest}
+                stylePanelHighlight={stylePanelHighlight}
+                inspectorStyleRef={inspectorStyleRef}
+              />
+            </div>
           ) : (
-            <>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <Badge variant="secondary" className="slides-type-badge">{BLOCK_LABELS[selected.kind]}</Badge>
-                  {selected.locked && (
-                    <Badge variant="outline" className="slides-type-badge gap-1">
-                      <Lock className="h-3 w-3" /> {t.inspector.lockedBadge}
-                    </Badge>
-                  )}
-                </div>
-                <p className="slides-type-helper">
-                  {t.inspector.blockHint}
-                </p>
-              </div>
-
-              {/* key por bloco: sem ela, trocar de bloco selecionado reaproveita
-                * as MESMAS instâncias de input (React reconcilia por tipo +
-                * posição). Como os campos guardam rascunho local (DraftInput),
-                * o texto digitado no bloco anterior continuava na tela e era
-                * gravado no bloco novo — a edição "pulava" de um card pro
-                * outro. Com a key, cada bloco tem seus próprios inputs. */}
-              <PositionInputs key={`pos-${selected.id}`} block={selected} onChange={(p) => updateBlock(selected.id, p)} />
-              <BlockAppearanceControls key={`appearance-${selected.id}`} block={selected} onChange={(p) => updateBlock(selected.id, p)} />
-              <Separator />
-              <div
-                ref={inspectorStyleRef}
-                className={cn(
-                  "rounded-lg transition-[box-shadow,background-color] duration-300",
-                  stylePanelHighlight && "bg-primary/5 shadow-[0_0_0_2px_hsl(var(--primary)/0.35)]",
-                )}
-              >
-                <BlockSpecificEditor
-                  key={`specific-${selected.id}`}
-                  block={selected}
-                  onChange={(p) => updateBlock(selected.id, p)}
-                  styleFocusRequest={styleFocusRequest}
-                />
-              </div>
-            </>
+            // Primeiro clique (vindo de "nada selecionado"): o painel chega na
+            // renderização adiada logo em seguida.
+            <div aria-busy="true" className="h-24" />
           )}
         </div>
         </ScrollArea>

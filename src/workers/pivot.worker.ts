@@ -105,13 +105,14 @@ self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseReq
     return;
   }
 
+  const job = request as PivotWorkerRequest;
   try {
-    const rows = rowsFor(request);
-    const { estimate, result } = computePivotGuarded(rows, hydrateConfig(request.config), request.limits);
-    self.postMessage({ id: request.id, ok: true, estimate, result });
+    const rows = rowsFor(job);
+    const { estimate, result } = computePivotGuarded(rows, hydrateConfig(job.config), job.limits);
+    self.postMessage({ id: job.id, ok: true, estimate, result });
   } catch (error) {
     self.postMessage({
-      id: request.id,
+      id: job.id,
       ok: false,
       error: error instanceof Error ? error.message : "Erro ao calcular tabela dinâmica no worker.",
     });

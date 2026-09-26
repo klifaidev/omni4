@@ -44,6 +44,7 @@ function slideWithCharts(blocks: ChartBlock[]): SlideItem {
     label: "Slide com grafico",
     config: {
       background: "FFFFFF",
+      showHaraldFooter: false,
       blocks,
     },
   };

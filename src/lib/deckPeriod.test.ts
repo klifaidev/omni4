@@ -49,7 +49,7 @@ describe("advanceDeckFixedPeriods", () => {
 
     const result = advanceDeckFixedPeriods(deck);
     const [c, br, bu] = result.items as Array<SlideItem & { config: Record<string, unknown> }>;
-    const blocks = (c.config as { blocks: Array<Record<string, unknown>> }).blocks;
+    const blocks = (c.config as unknown as { blocks: Array<Record<string, unknown>> }).blocks;
 
     expect(blocks[0].periodValue).toBe("008.2026");
     expect(blocks[1].periodValue).toBeNull();

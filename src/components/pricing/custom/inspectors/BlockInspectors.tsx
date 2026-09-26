@@ -82,6 +82,7 @@ import {
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
+import { computeCustomTablePivot } from "@/lib/customTablePivot";
 // Alias: este arquivo já tem cssEscapeId() usando o CSS global do browser
 // (window.CSS.escape) — importar o CSS do dnd-kit sem alias sombrearia esse
 // identificador e quebraria aquela função (ela compilava só porque "CSS"
@@ -1127,19 +1128,9 @@ function TableBlockEditor({ block, onChange }: {
   const tablePreview = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => block.measures.includes(m.id));
     if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
-    const dimensionFilteredRows = applyTableEditorDimensionFilters(sourceRows, block.filters);
-    const resolvedMonths = resolveMonthRangeSelection(dimensionFilteredRows, block.monthFilter);
-    const monthSet = resolvedMonths?.length ? new Set(resolvedMonths) : null;
-    const tableRows = monthSet
-      ? dimensionFilteredRows.filter((row) => monthSet.has(row.periodo))
-      : dimensionFilteredRows;
-    const unified = buildUnifiedRows(tableRows, [], "real");
-    const cfg: PivotConfig = {
-      rows: block.rowDims, cols: block.colDim ? [block.colDim] : [],
-      values: measures,
-      filters: {},
-    };
-    const result = computePivot(unified as unknown as Record<string, unknown>[], cfg);
+    // Mesmo cálculo (e cache) do bloco na tela: selecionar a tabela não refaz
+    // a tabela dinâmica inteira só para contar linhas.
+    const { result } = computeCustomTablePivot(sourceRows, block, measures);
     return {
       totalRows: result.leafRowHeaders.length,
       rowHeaders: result.leafRowHeaders.map((row) => ({
