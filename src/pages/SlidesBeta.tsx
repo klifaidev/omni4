@@ -112,7 +112,7 @@ import { hasEditorSelection } from "@/components/pricing/custom/editorStore";
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useSlideExport } from "@/hooks/useSlideExport";
 import { strings } from "@/lib/i18n";
-import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
+import { useDeckBudgetRows, useDeckPricingRows, useDeckTokenValues } from "@/hooks/useDeckRows";
 
 const t = strings.slides.beta;
 
@@ -681,7 +681,8 @@ function StripThumbnail({
   const Icon = ICON_MAP[meta.icon];
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
   const ready = isItemReady(item);
-  const displayName = slideDisplayName(item, meta.title);
+  const tokenValues = useDeckTokenValues();
+  const displayName = slideDisplayName(item, meta.title, tokenValues);
 
   // Subscribe to comment changes so the badge updates live.
   const [, force] = useState(0);

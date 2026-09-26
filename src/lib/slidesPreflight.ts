@@ -1,6 +1,8 @@
 import { CANVAS_H, CANVAS_W, type CustomBlock } from "./customSlide";
 import type { SlideItem } from "./slidesFlow";
 import { isSampleText } from "./sampleTexts";
+import { stripInlineMarkup } from "./richText";
+import { findUnknownTokens } from "./textTokens";
 
 export type SlidePreflightSeverity = "error" | "warning" | "info";
 
@@ -144,9 +146,18 @@ function checkBlockContent(
         block.id,
       ));
     }
+    const unknownTokens = block.hidden ? [] : findUnknownTokens(text);
+    if (unknownTokens.length > 0) {
+      issues.push(issue(
+        "warning", slideId, slideNumber, slideLabel,
+        "Valor não reconhecido",
+        `${unknownTokens.join(", ")} não é um valor conhecido e vai aparecer assim no slide. Use "Inserir valor" na barra do texto.`,
+        block.id,
+      ));
+    }
 
     const roughCapacity = Math.max(8, Math.floor((block.w * block.h) / Math.max(1, block.size * block.size * 0.38)));
-    if (text.length > roughCapacity) {
+    if (stripInlineMarkup(text).length > roughCapacity) {
       issues.push(issue(
         "warning",
         slideId,

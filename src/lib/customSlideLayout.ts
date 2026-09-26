@@ -76,7 +76,7 @@ function textCommon(block: TitleBlock | TextBlock, role: "title" | "body"): Extr
       justifyContent: justifyMap[block.align],
       fontFamily: block.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
       fontSize: block.size,
-      fontWeight: isTitle ? (block.bold ? 700 : 400) : undefined,
+      fontWeight: isTitle ? (block.bold ? 700 : 400) : (block.bold ? 700 : undefined),
       fontStyle: block.italic ? "italic" : "normal",
       color: `#${block.color}`,
       lineHeight: block.lineHeight ?? (isTitle ? 1.1 : 1.3),

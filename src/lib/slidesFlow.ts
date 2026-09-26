@@ -17,6 +17,8 @@ import { useBudget } from "@/store/budget";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "./bridgeYtdBudget";
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
+import { stripInlineMarkup } from "./richText";
+import { resolveTextTokens } from "./textTokens";
 import type { SlideFlowItem, BudgetEvoRow } from "./exportPpt";
 import { defaultCustomSlide, type CustomSlideConfig } from "./customSlide";
 
@@ -131,16 +133,22 @@ const PLACEHOLDER_TITLE = "Título do slide";
  * Nome que a esteira mostra. Rótulos genéricos ("Slide em branco (cópia)",
  * repetido em vários cards) dão lugar ao título do próprio slide — como no
  * PowerPoint, que lista os slides pelo título. Rótulo escrito pela pessoa
- * sempre vence.
+ * sempre vence. O título entra como aparece no slide: sem **marcação** e,
+ * com `tokenValues`, com {mês}/{ROL do mês} já resolvidos.
  */
-export function slideDisplayName(item: SlideItem, fallback: string): string {
+export function slideDisplayName(
+  item: SlideItem,
+  fallback: string,
+  tokenValues?: ReadonlyMap<string, string>,
+): string {
   const label = item.label?.trim() ?? "";
   if (label && !GENERIC_SLIDE_LABEL.test(label)) return label;
   if (item.kind === "custom") {
     const title = item.config.blocks
       .filter((b) => b.kind === "title" && !b.hidden)
       .sort((a, b) => a.y - b.y || a.x - b.x)[0] as { text?: string } | undefined;
-    const text = title?.text?.trim().split("\n")[0]?.trim();
+    const raw = title?.text?.trim().split("\n")[0]?.trim() ?? "";
+    const text = stripInlineMarkup(tokenValues ? resolveTextTokens(raw, tokenValues) : raw).trim();
     if (text && text !== PLACEHOLDER_TITLE) return text;
   }
   if (item.kind === "cover" && item.config.title?.trim()) return item.config.title.trim();

@@ -90,6 +90,8 @@ export interface TextBlock extends BaseBlock {
   kind: "text";
   text: string;
   size: number;
+  /** Negrito do bloco inteiro (trechos usam **marcação**, ver lib/richText). */
+  bold?: boolean;
   italic?: boolean;
   color: string;
   align: "left" | "center" | "right";

@@ -2,14 +2,32 @@
 // Canva/PowerPoint: double-click no canvas → textarea posicionado sobre o
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 import { isSampleText } from "@/lib/sampleTexts";
+import { toggleInlineMarker, type TextSelectionEdit } from "@/lib/richText";
+import { TEXT_TOKENS, normalizeTokenName, tokenText } from "@/lib/textTokens";
+import { useDeckTokenValues } from "@/hooks/useDeckRows";
+import { strings } from "@/lib/i18n";
+
+const tText = strings.slides.editor.inspectors.blocks.textTitle;
 
 type TextLikeBlock = TitleBlock | TextBlock;
+
+// Ponte entre a barra flutuante e o campo em edição (renderizados em lugares
+// diferentes do canvas): B/I aplicam a marcação no trecho selecionado do campo
+// e "Inserir valor" escreve no cursor. Só existe um campo em edição por vez.
+interface InlineEditorApi {
+  /** Marca/desmarca o trecho selecionado. `false` se não havia seleção. */
+  toggleMarker: (marker: "**" | "*") => boolean;
+  insert: (text: string) => void;
+  exit: () => void;
+  isOwnField: (el: Element | null) => boolean;
+}
+const inlineEditorBridge: { current: InlineEditorApi | null } = { current: null };
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48];
 const SWATCHES = [
@@ -88,6 +106,55 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
     clearCommitTimer();
   }, [clearCommitTimer, commitTextValue]);
 
+  // Trocar o valor de um textarea controlado joga o cursor pro fim; a seleção
+  // pedida pela edição (B/I, inserir valor) é reposta logo depois do commit.
+  const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  useLayoutEffect(() => {
+    const sel = pendingSelectionRef.current;
+    const ta = ref.current;
+    if (!sel || !ta) return;
+    pendingSelectionRef.current = null;
+    ta.focus();
+    ta.setSelectionRange(sel.start, sel.end);
+  }, [draftValue]);
+
+  const applyEdit = useCallback((edit: TextSelectionEdit) => {
+    pendingSelectionRef.current = { start: edit.start, end: edit.end };
+    setDraftValue(edit.value);
+    scheduleTextCommit(edit.value);
+  }, [scheduleTextCommit]);
+
+  const toggleMarker = useCallback((marker: "**" | "*") => {
+    const ta = ref.current;
+    if (!ta || ta.selectionStart === ta.selectionEnd) return false;
+    const edit = toggleInlineMarker(ta.value, ta.selectionStart, ta.selectionEnd, marker);
+    if (edit.value === ta.value) return false;
+    applyEdit(edit);
+    return true;
+  }, [applyEdit]);
+
+  const onExitRef = useRef(onExit);
+  useEffect(() => { onExitRef.current = onExit; }, [onExit]);
+
+  useEffect(() => {
+    const api: InlineEditorApi = {
+      toggleMarker,
+      insert: (text) => {
+        const ta = ref.current;
+        if (!ta) return;
+        const start = ta.selectionStart;
+        const caret = start + text.length;
+        applyEdit({ value: ta.value.slice(0, start) + text + ta.value.slice(ta.selectionEnd), start: caret, end: caret });
+      },
+      exit: () => onExitRef.current(),
+      isOwnField: (el) => !!el && el === ref.current,
+    };
+    inlineEditorBridge.current = api;
+    return () => {
+      if (inlineEditorBridge.current === api) inlineEditorBridge.current = null;
+    };
+  }, [toggleMarker, applyEdit]);
+
   return (
     <>
     <textarea
@@ -110,6 +177,20 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
           onExit();
           return;
         }
+        // Ctrl/Cmd+B e +I: com trecho selecionado, formata só o trecho;
+        // sem seleção, o bloco inteiro (mesmo efeito dos botões da barra).
+        const mod = e.ctrlKey || e.metaKey;
+        const k = e.key.toLowerCase();
+        if (mod && !e.shiftKey && !e.altKey && (k === "b" || k === "i")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!toggleMarker(k === "b" ? "**" : "*")) {
+            onPatchRef.current(
+              (k === "b" ? { bold: !block.bold } : { italic: !block.italic }) as Partial<CustomBlock>,
+            );
+          }
+          return;
+        }
         // Impede atalhos do editor (Delete, setas) de propagar.
         e.stopPropagation();
       }}
@@ -128,7 +209,7 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
         background: "transparent",
         fontFamily: block.fontFamily ?? SLIDE_DEFAULT_FONT_FAMILY,
         fontSize: block.size,
-        fontWeight: isTitle && (block as TitleBlock).bold ? 700 : 400,
+        fontWeight: block.bold ? 700 : 400,
         fontStyle: block.italic ? "italic" : "normal",
         color: `#${block.color}`,
         textAlign: block.align,
@@ -155,8 +236,9 @@ interface ToolbarProps {
 }
 
 export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
-  const isTitle = block.kind === "title";
   const [hexDraft, setHexDraft] = useState(`#${block.color}`);
+  // "Inserir valor" mostra o que cada valor vale agora neste deck.
+  const tokenValues = useDeckTokenValues();
   // Se o bloco está perto do topo do canvas, mostra a toolbar abaixo.
   const placeBelow = block.y < 80;
   const inv = 1 / scale;
@@ -169,10 +251,20 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
     setHexDraft(`#${block.color}`);
   }, [block.color]);
 
+  // Foco saindo de um controle da barra (tamanho, inserir valor, cor) para
+  // fora dela e do campo: encerra a edição, como o blur do próprio campo faz.
+  const onToolbarBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget as Element | null;
+    if (next && event.currentTarget.contains(next)) return;
+    if (inlineEditorBridge.current?.isOwnField(next)) return;
+    inlineEditorBridge.current?.exit();
+  };
+
   return (
     <div
       data-export-hide="true"
       data-inline-text-toolbar="true"
+      onBlur={onToolbarBlur}
       onMouseDown={(e) => {
         e.stopPropagation();
       }}
@@ -198,29 +290,35 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
       }}
       className="text-foreground"
     >
-      {isTitle && (
-        <button
-          type="button"
-          aria-label="Negrito"
-          onMouseDown={keepTextFocus}
-          onClick={() =>
-            onPatch({ bold: !(block as TitleBlock).bold } as Partial<CustomBlock>)
+      <button
+        type="button"
+        aria-label="Negrito"
+        title="Negrito (Ctrl+B) — no trecho selecionado ou no bloco inteiro"
+        onMouseDown={keepTextFocus}
+        onClick={() => {
+          if (!inlineEditorBridge.current?.toggleMarker("**")) {
+            onPatch({ bold: !block.bold } as Partial<CustomBlock>);
           }
-          className={cn(
-            "h-7 w-7 rounded inline-flex items-center justify-center text-sm font-bold border",
-            (block as TitleBlock).bold
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-transparent border-border hover:bg-accent",
-          )}
-        >
-          <Bold className="h-3.5 w-3.5" />
-        </button>
-      )}
+        }}
+        className={cn(
+          "h-7 w-7 rounded inline-flex items-center justify-center text-sm font-bold border",
+          block.bold
+            ? "bg-primary text-primary-foreground border-primary"
+            : "bg-transparent border-border hover:bg-accent",
+        )}
+      >
+        <Bold className="h-3.5 w-3.5" />
+      </button>
       <button
         type="button"
         aria-label="Itálico"
+        title="Itálico (Ctrl+I) — no trecho selecionado ou no bloco inteiro"
         onMouseDown={keepTextFocus}
-        onClick={() => onPatch({ italic: !block.italic } as Partial<CustomBlock>)}
+        onClick={() => {
+          if (!inlineEditorBridge.current?.toggleMarker("*")) {
+            onPatch({ italic: !block.italic } as Partial<CustomBlock>);
+          }
+        }}
         className={cn(
           "h-7 w-7 rounded inline-flex items-center justify-center border",
           block.italic
@@ -300,6 +398,29 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
             </button>
           );
         })}
+      </div>
+
+      <div className="border-l border-border pl-2 ml-1">
+        <select
+          aria-label={tText.insertValue}
+          value=""
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value) inlineEditorBridge.current?.insert(value);
+          }}
+          className="h-7 max-w-[150px] rounded border border-border bg-background px-1 text-xs"
+        >
+          <option value="">{tText.insertValue}</option>
+          {(["date", "number"] as const).map((group) => (
+            <optgroup key={group} label={tText.tokenGroups[group]}>
+              {TEXT_TOKENS.filter((tk) => tk.group === group).map((tk) => (
+                <option key={tk.label} value={tokenText(tk)}>
+                  {tk.label} — {tokenValues.get(normalizeTokenName(tk.label)) ?? tk.hint}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
       </div>
     </div>
   );

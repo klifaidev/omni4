@@ -50,6 +50,7 @@ import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { ShapeRenderer } from "./ShapeRenderer";
+import { RichTextContent } from "./RichTextContent";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
@@ -528,7 +529,7 @@ function SimpleLayoutRender({
         overflow: readOnly ? "visible" : "hidden",
         visibility: isEditing ? "hidden" : "visible",
       }}>
-        {node.text}
+        <RichTextContent text={node.text} />
       </div>
     );
   }

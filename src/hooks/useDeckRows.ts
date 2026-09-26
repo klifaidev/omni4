@@ -6,6 +6,7 @@ import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { capRowsAtReference } from "@/lib/deckPeriod";
+import { computeTokenValues } from "@/lib/textTokens";
 import type { PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 
@@ -22,6 +23,14 @@ export function useDeckBudgetRows(): BudgetRow[] {
   const rows = useBudget((s) => s.rows);
   const reference = useSlidesFlow((s) => s.referencePeriod);
   return useMemo(() => capRowsAtReference(rows, reference, isBudgetPlan), [rows, reference]);
+}
+
+/** Valores de {mês}, {ROL do mês}… para o deck (lib/textTokens), com cache. */
+export function useDeckTokenValues(): Map<string, string> {
+  const pricing = useDeckPricingRows();
+  const budget = useDeckBudgetRows();
+  const reference = useSlidesFlow((s) => s.referencePeriod);
+  return computeTokenValues(pricing, budget, reference);
 }
 
 /** Fora de componentes (pré-cálculo): mesmas linhas que os hooks devolvem. */

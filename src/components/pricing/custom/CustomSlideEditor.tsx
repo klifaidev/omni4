@@ -84,6 +84,7 @@ import { RotatableBlock } from "./RotatableBlock";
 import { Slider as UiSlider } from "@/components/ui/slider";
 import { applyTemplateDeckToSlidesFlow } from "./deckNavigation";
 import { placeQuickLayout } from "@/lib/quickLayoutPlacement";
+import { stripInlineMarkup } from "@/lib/richText";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -1594,6 +1595,21 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           e.preventDefault();
           if (!canEdit()) return;
           if (selectedIds.length > 0) ungroupBlocksAction(selectedIds);
+          return;
+        }
+        // Ctrl/Cmd+B / +I com título/texto selecionado (sem editar): bloco
+        // inteiro, como no PowerPoint. Dentro do texto, o campo trata (trecho).
+        if ((k === "b" || k === "i") && !e.shiftKey) {
+          const texts = config.blocks.filter(
+            (b): b is TitleBlock | TextBlock =>
+              selectedIds.includes(b.id) && (b.kind === "title" || b.kind === "text") && !b.locked,
+          );
+          if (texts.length === 0) return;
+          e.preventDefault();
+          if (!canEdit()) return;
+          const field = k === "b" ? "bold" : "italic";
+          const next = !texts.every((b) => b[field]);
+          for (const b of texts) patchBlockAction(b.id, { [field]: next } as Partial<CustomBlock>, t.blockActionLabels.style);
           return;
         }
         if (e.shiftKey && k === "h") { e.preventDefault(); centerSelectedH(); return; }
@@ -3192,8 +3208,8 @@ function FloatingBlockToolbar({
 
 function blockLayerName(blk: CustomBlock): string {
   if (blk.kind === "title" || blk.kind === "text") {
-    const t = (blk as { text: string }).text;
-    return t ? t.slice(0, 20) + (t.length > 20 ? "?" : "") : BLOCK_LABELS[blk.kind];
+    const t = stripInlineMarkup((blk as { text: string }).text);
+    return t ? t.slice(0, 20) + (t.length > 20 ? "…" : "") : BLOCK_LABELS[blk.kind];
   }
   if (blk.kind === "chart") {
     const cb = blk as ChartBlock;
@@ -3380,6 +3396,7 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         [`${mod} + D`, t.shortcuts.items.duplicateSelected],
         ["Delete  /  Backspace", t.shortcuts.items.deleteSelected],
         [`${mod} + A`, t.shortcuts.items.selectAll],
+        [`${mod} + B  /  ${mod} + I`, t.shortcuts.items.boldItalic],
         ["Esc", t.shortcuts.items.deselect],
       ],
     },

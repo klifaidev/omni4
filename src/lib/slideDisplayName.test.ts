@@ -22,6 +22,13 @@ describe("slideDisplayName", () => {
   it("sem título útil, mantém o rótulo", () => {
     expect(slideDisplayName(customWithTitle("Slide em branco", "Título do slide"), "Personalizado")).toBe("Slide em branco");
   });
+
+  it("título com **marcação** e {valores} aparece como no slide", () => {
+    const item = customWithTitle("Slide em branco", "Resultado de {mês}: **{ROL do mês}**");
+    const values = new Map([["mes", "agosto/2026"], ["rol do mes", "R$ 8,4 mi"]]);
+    expect(slideDisplayName(item, "Personalizado", values)).toBe("Resultado de agosto/2026: R$ 8,4 mi");
+    expect(slideDisplayName(item, "Personalizado")).toBe("Resultado de {mês}: {ROL do mês}");
+  });
 });
 
 describe("defaultChartTitle", () => {

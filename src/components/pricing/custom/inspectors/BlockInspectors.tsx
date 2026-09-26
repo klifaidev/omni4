@@ -116,6 +116,7 @@ import {
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
 import { strings } from "@/lib/i18n";
+import { TEXT_TOKENS, tokenText } from "@/lib/textTokens";
 
 const t = strings.slides.editor.inspectors.blocks;
 // Reaproveita o vocabulário de Borda/Sombra do inspector de Forma pro novo
@@ -1953,6 +1954,12 @@ function TextTitleInspector({ block, onChange }: {
           onCommit={(value) => onChange({ text: value })}
           className="text-xs"
         />
+        <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+          {t.textTitle.markupHint}{" "}
+          {TEXT_TOKENS.map((tk) => (
+            <code key={tk.label} className="mr-1 whitespace-nowrap rounded bg-muted px-1">{tokenText(tk)}</code>
+          ))}
+        </p>
       </Section>
 
       <Section title={t.textTitle.typography} defaultOpen>
@@ -1985,10 +1992,8 @@ function TextTitleInspector({ block, onChange }: {
             ]}
           />
         </Row>
-        {isTitle && (
-          <ToggleField label={t.textTitle.bold} value={(block as TitleBlock).bold}
-            onChange={(v) => onChange({ bold: v } as Partial<TitleBlock>)} />
-        )}
+        <ToggleField label={t.textTitle.bold} value={block.bold ?? false}
+          onChange={(v) => onChange({ bold: v })} />
         <ToggleField label={t.textTitle.italic} value={block.italic ?? false}
           onChange={(v) => onChange({ italic: v })} />
         <Row label={t.textTitle.transform}>

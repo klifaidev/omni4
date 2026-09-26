@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { cn } from "@/lib/utils";
 import { SLIDE_CATALOG, isItemReady, metaOf, slideDisplayName, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
+import { useDeckTokenValues } from "@/hooks/useDeckRows";
 import type { SlidePreflightIssue, SlidePreflightSeverity } from "@/lib/slidesPreflight";
 import { SLIDE_ACCENT_BG, SLIDE_ICON_MAP } from "./slideUiTokens";
 import { getUnresolvedCount, subscribe as subscribeComments } from "@/lib/slideComments";
@@ -183,7 +184,8 @@ export const FlowCard = React.memo(function FlowCard({
   const statusCount = preflightIssues.length + (!ready.ok ? 1 : 0);
   const hasNotes = !!((item.config as { speakerNotes?: string }).speakerNotes ?? "").trim();
   const isHidden = !!item.hidden;
-  const displayName = slideDisplayName(item, meta.title);
+  const tokenValues = useDeckTokenValues();
+  const displayName = slideDisplayName(item, meta.title, tokenValues);
   const [, forceCommentsUpdate] = useState(0);
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const [hoverPreviewReady, setHoverPreviewReady] = useState(false);
