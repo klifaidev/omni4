@@ -12,7 +12,7 @@
 //
 // Exit: Escape, ✕ button, or document.exitFullscreen.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { X, ChevronLeft, ChevronRight, Filter as FunnelIcon, Download, Eye, EyeOff, Image as ImageIcon, Timer } from "lucide-react";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,9 @@ import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
 
 const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
+/** Depois da transição mais longa (350ms): o aquecimento não disputa o quadro da animação. */
+const WARM_NEIGHBORS_DELAY_MS = 450;
+type LayerRole = "current" | "exit" | "warm";
 
 interface Props {
   /** Editor's current slide id — used as initial slide. */
@@ -140,6 +143,27 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
 
   const slide = slides[idx];
   const prevSlide = prevIdx !== null ? slides[prevIdx] : null;
+
+  // Vizinhos pré-aquecidos (montados, invisíveis). Entram só depois da
+  // transição e dentro de startTransition: montar o próximo slide no mesmo
+  // quadro da animação é exatamente o travamento que se quer evitar.
+  const neighborKey = [slides[idx - 1]?.id, slides[idx + 1]?.id].filter(Boolean).join("|");
+  const [warmIds, setWarmIds] = useState<string[]>([]);
+  useEffect(() => {
+    const ids = neighborKey ? neighborKey.split("|") : [];
+    const timer = setTimeout(() => startTransition(() => setWarmIds(ids)), WARM_NEIGHBORS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [neighborKey]);
+
+  const layers = useMemo(() => {
+    const roles = new Map<string, LayerRole>();
+    for (const id of warmIds) roles.set(id, "warm");
+    if (prevSlide) roles.set(prevSlide.id, "exit");
+    if (slide) roles.set(slide.id, "current");
+    return slides
+      .filter((s) => roles.has(s.id))
+      .map((s) => ({ slide: s as DeckSlide, role: roles.get(s.id)! }));
+  }, [slides, warmIds, prevSlide, slide]);
   const factor = fitCanvasScale(screen.w, screen.h, { safetyMultiplier: 0.95 });
   const progress = slides.length > 1 ? ((idx + 1) / slides.length) * 100 : 100;
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
@@ -181,34 +205,34 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {prevSlide && (
+          {/* Camadas com chave pelo id do slide: o que sai só troca de animação
+              (antes era desmontado e montado de novo só pra animar a saída), e
+              os vizinhos já estão montados e invisíveis — avançar/voltar não
+              renderiza um slide inteiro do zero no meio da transição.
+              Ordem estável (posição no deck) + zIndex: o React só insere/remove,
+              nunca move um nó existente (mover reiniciaria as animações). */}
+          {layers.map(({ slide: layerSlide, role }) => (
             <div
-              key={`prev-${animKey}`}
+              key={layerSlide.id}
+              aria-hidden={role === "warm" || undefined}
               style={{
                 position: "absolute", display: "flex", alignItems: "center", justifyContent: "center",
-                inset: 0, animation: exitAnim(transition),
-              }}
-            >
-              <SlideRenderArea slide={prevSlide} factor={factor} animateBlocks={false} />
-            </div>
-          )}
-          {slide && (
-            <div
-              key={`cur-${animKey}`}
-              style={{
-                position: "absolute", display: "flex", alignItems: "center", justifyContent: "center",
-                inset: 0, animation: enterAnim(transition),
+                inset: 0,
+                zIndex: role === "current" ? 3 : role === "exit" ? 2 : 1,
+                visibility: role === "warm" ? "hidden" : undefined,
+                pointerEvents: role === "current" ? undefined : "none",
+                animation: role === "current" ? enterAnim(transition) : role === "exit" ? exitAnim(transition) : undefined,
               }}
             >
               <SlideRenderArea
-                slide={slide}
-                liveConfig={slide.id === currentSlideId ? currentConfig : undefined}
+                slide={layerSlide}
+                liveConfig={layerSlide.id === currentSlideId ? currentConfig : undefined}
                 factor={factor}
-                animateBlocks
+                animateBlocks={role === "current"}
                 animKey={animKey}
               />
             </div>
-          )}
+          ))}
         </div>
 
         {/* Top-left: download PDF */}
@@ -584,15 +608,19 @@ export function CustomCanvasReadOnly({
       {sorted.map((blk: CustomBlock, i) => {
         const anim = animateBlocks ? (blk.enterAnimation ?? "none") : "none";
         const delay = i * 80;
+        // Reinicia a animação de entrada trocando o nome do keyframe (A/B a
+        // cada avanço) em vez de recriar o bloco — antes a chave levava o
+        // animKey e todo gráfico/tabela era remontado a cada slide.
+        const k = animKey % 2 === 0 ? "" : "B";
         const animation =
-          anim === "fade" ? `blkFade 320ms ease-out ${delay}ms both` :
-          anim === "slide-up" ? `blkSlideUp 350ms ease-out ${delay}ms both` :
-          anim === "pop" ? `blkPop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms both` :
+          anim === "fade" ? `blkFade${k} 320ms ease-out ${delay}ms both` :
+          anim === "slide-up" ? `blkSlideUp${k} 350ms ease-out ${delay}ms both` :
+          anim === "pop" ? `blkPop${k} 320ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms both` :
           undefined;
         const rotation = readOnlyRotation(blk);
         return (
           <div
-            key={`${blk.id}-${animKey}`}
+            key={blk.id}
             data-slide-block-id={blk.id}
             data-slide-block-kind={blk.kind}
             style={{
@@ -648,6 +676,9 @@ const TRANSITION_CSS = `
 @keyframes blkFade    { from { opacity: 0; } to { opacity: 1; } }
 @keyframes blkSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes blkPop     { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+@keyframes blkFadeB    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes blkSlideUpB { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes blkPopB     { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 `;
 
 function enterAnim(t: string): string | undefined {
