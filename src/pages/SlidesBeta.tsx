@@ -59,7 +59,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, ArrowRight, BookOpen, Bookmark, ChevronLeft, ChevronRight, Copy, Download, FileText, Filter as FilterIcon,
   GitBranch, GripVertical, Image as ImageIcon, Layers, LayoutTemplate, Loader2, MessageSquare, CheckCheck, Send, Plus, Play, RotateCcw, Save, ShieldCheck, Sparkles, StickyNote, Trash2, Upload, X, MoreHorizontal,
-  MonitorPlay, PanelRightClose, Pencil, Share2, Timer,
+  MonitorPlay, PanelLeftClose, PanelLeftOpen, PanelRightClose, Pencil, Share2, Timer,
   Search,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -107,6 +107,8 @@ import { SLIDE_ACCENT_BG as ACCENT_BG, SLIDE_ICON_MAP as ICON_MAP } from "@/comp
 import { TransitionSelect } from "@/components/pricing/slides/TransitionSelect";
 import { GlobalFilterControl } from "@/components/pricing/slides/GlobalFilterControl";
 import { DeckReferenceControl } from "@/components/pricing/slides/DeckReferenceControl";
+import { useEditorPrefs } from "@/components/pricing/custom/editorPrefs";
+import { hasEditorSelection } from "@/components/pricing/custom/editorStore";
 import { useIdleSlideChartPrecompute } from "@/components/pricing/slides/useIdleSlideChartPrecompute";
 import { useSlideExport } from "@/hooks/useSlideExport";
 import { strings } from "@/lib/i18n";
@@ -987,6 +989,7 @@ function FullscreenCustomEditor({
   const current = items.find((i) => i.id === selectedId) ?? null;
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
   const isCustom = current?.kind === "custom";
+  const editorPrefs = useEditorPrefs();
   const { requestConfirm, dialog: confirmDialog } = useSlideConfirm();
 
   // Navegação pelo deck inteiro. Antes o editor só conhecia slides
@@ -1082,6 +1085,18 @@ function FullscreenCustomEditor({
       <DialogContent
         className="flex h-[100vh] w-[100vw] max-w-none flex-col gap-3 rounded-none border-0 p-3 sm:rounded-none"
         style={{ height: "100vh", maxHeight: "100vh" }}
+        // O editor ocupa a tela inteira: foco indo para fora (um toast, um
+        // popover em outro portal) nunca é intenção de fechar.
+        onFocusOutside={(event) => event.preventDefault()}
+        // Esc em camadas, como no PowerPoint: o Radix escuta o Esc na captura,
+        // antes do campo — então Esc para sair da edição de um texto fechava o
+        // editor inteiro. Agora o 1º Esc sai do campo, o 2º tira a seleção e só
+        // com nada aberto o Esc fecha a tela.
+        onEscapeKeyDown={(event) => {
+          const active = document.activeElement as HTMLElement | null;
+          const inField = !!active && (active.isContentEditable || active.matches("input, textarea, select"));
+          if (inField || hasEditorSelection()) event.preventDefault();
+        }}
       >
         <DialogHeader className="flex flex-row items-center justify-between gap-3 space-y-0 px-1">
           <div className="flex items-center gap-1.5">
@@ -1094,6 +1109,15 @@ function FullscreenCustomEditor({
             <span className="hidden text-[10px] text-muted-foreground/70 lg:inline">
               {t.fullscreenEditor.shortcutHint}
             </span>
+            <Button
+              variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"
+              onClick={() => editorPrefs.setStripCollapsed(!editorPrefs.stripCollapsed)}
+              title={editorPrefs.stripCollapsed ? t.fullscreenEditor.showStrip : t.fullscreenEditor.hideStrip}
+              aria-label={editorPrefs.stripCollapsed ? t.fullscreenEditor.showStrip : t.fullscreenEditor.hideStrip}
+              aria-pressed={!editorPrefs.stripCollapsed}
+            >
+              {editorPrefs.stripCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
           </div>
           {readOnly && (
             <Badge variant="outline" className="h-6 border-amber-500/50 bg-amber-500/10 px-2 text-[10px] font-semibold text-amber-600">
@@ -1124,8 +1148,11 @@ function FullscreenCustomEditor({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 gap-3">
-          {/* Strip lateral */}
-          <aside className="flex w-[120px] shrink-0 flex-col overflow-hidden rounded-lg border border-border/40 bg-card/30">
+          {/* Strip lateral (recolhível: devolve ~130px ao slide) */}
+          <aside className={cn(
+            "w-[120px] shrink-0 flex-col overflow-hidden rounded-lg border border-border/40 bg-card/30",
+            editorPrefs.stripCollapsed ? "hidden" : "flex",
+          )}>
             <div className="border-b border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t.fullscreenEditor.stripHeader(items.length)}
             </div>

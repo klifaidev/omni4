@@ -7,6 +7,7 @@ import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
+import { isSampleText } from "@/lib/sampleTexts";
 
 type TextLikeBlock = TitleBlock | TextBlock;
 
@@ -71,7 +72,13 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
     const ta = ref.current;
     if (!ta) return;
     ta.focus();
-    // Coloca o cursor no fim sem selecionar tudo (mais natural ao editar).
+    // Texto de exemplo ("Título do slide", "Clique para editar este texto.")
+    // entra selecionado: a primeira tecla substitui, como o marcador do
+    // PowerPoint. Texto real: cursor no fim, sem selecionar tudo.
+    if (isSampleText(ta.value)) {
+      ta.select();
+      return;
+    }
     const len = ta.value.length;
     ta.setSelectionRange(len, len);
   }, []);

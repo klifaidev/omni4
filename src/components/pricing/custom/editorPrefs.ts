@@ -9,10 +9,14 @@ interface EditorPrefs {
   gridEnabled: boolean;
   gridSize: GridSize;
   zoom: number;
+  /** Painel de propriedades recolhido num trilho fino (mais área pro slide). */
+  inspectorCollapsed: boolean;
+  /** Faixa de miniaturas do editor em tela cheia recolhida. */
+  stripCollapsed: boolean;
 }
 
 const STORAGE_KEY = "harald.editorPrefs.v1";
-const DEFAULT: EditorPrefs = { gridEnabled: false, gridSize: 8, zoom: 1 };
+const DEFAULT: EditorPrefs = { gridEnabled: false, gridSize: 8, zoom: 1, inspectorCollapsed: false, stripCollapsed: false };
 
 function read(): EditorPrefs {
   try {
@@ -28,6 +32,8 @@ function read(): EditorPrefs {
         ? (parsed.gridSize as GridSize)
         : 8,
       zoom,
+      inspectorCollapsed: parsed.inspectorCollapsed === true,
+      stripCollapsed: parsed.stripCollapsed === true,
     };
   } catch {
     return DEFAULT;
@@ -53,6 +59,8 @@ export function useEditorPrefs(): EditorPrefs & {
   setGridEnabled: (v: boolean) => void;
   setGridSize: (s: GridSize) => void;
   setZoom: (z: number) => void;
+  setInspectorCollapsed: (v: boolean) => void;
+  setStripCollapsed: (v: boolean) => void;
 } {
   const [, force] = useState(0);
   useEffect(() => {
@@ -65,6 +73,8 @@ export function useEditorPrefs(): EditorPrefs & {
     setGridEnabled: (v) => setEditorPrefs({ gridEnabled: v }),
     setGridSize: (s) => setEditorPrefs({ gridSize: s }),
     setZoom: (z) => setEditorPrefs({ zoom: Math.min(1.5, Math.max(0.5, z)) }),
+    setInspectorCollapsed: (v) => setEditorPrefs({ inspectorCollapsed: v }),
+    setStripCollapsed: (v) => setEditorPrefs({ stripCollapsed: v }),
   };
 }
 

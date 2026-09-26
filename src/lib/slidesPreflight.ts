@@ -1,5 +1,6 @@
 import { CANVAS_H, CANVAS_W, type CustomBlock } from "./customSlide";
 import type { SlideItem } from "./slidesFlow";
+import { isSampleText } from "./sampleTexts";
 
 export type SlidePreflightSeverity = "error" | "warning" | "info";
 
@@ -134,6 +135,14 @@ function checkBlockContent(
     if (!text) {
       issues.push(issue("info", slideId, slideNumber, slideLabel, "Texto vazio", "Há um bloco de texto sem conteúdo.", block.id));
       return;
+    }
+    if (!block.hidden && isSampleText(text)) {
+      issues.push(issue(
+        "warning", slideId, slideNumber, slideLabel,
+        "Texto de exemplo",
+        `"${text.length > 40 ? `${text.slice(0, 40)}…` : text}" ainda é o texto de exemplo do bloco.`,
+        block.id,
+      ));
     }
 
     const roughCapacity = Math.max(8, Math.floor((block.w * block.h) / Math.max(1, block.size * block.size * 0.38)));

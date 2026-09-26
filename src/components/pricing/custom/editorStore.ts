@@ -607,6 +607,12 @@ export function clearSelection() {
   baseStore.setState({ selectedIds: [], groupEditMemberId: null });
 }
 
+/** Há seleção (ou grupo em edição) que o Esc deve desfazer antes de fechar o editor. */
+export function hasEditorSelection(): boolean {
+  const s = baseStore.getState();
+  return s.selectedIds.length > 0 || s.groupEditMemberId !== null;
+}
+
 export function selectBlock(id: string, opts?: { additive?: boolean }) {
   const cfg = baseStore.getState().config;
   if (!cfg) return;

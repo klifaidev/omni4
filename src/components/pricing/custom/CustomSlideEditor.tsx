@@ -33,7 +33,7 @@ import {
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
   Play, Paintbrush, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Loader2, Minus, MoreHorizontal,
-  PanelRightClose, Globe2 as Globe2Icon,
+  PanelRightClose, PanelRightOpen, Globe2 as Globe2Icon,
 } from "lucide-react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
@@ -266,9 +266,6 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
             </Badge>
           )}
         </div>
-        <p className="slides-type-helper">
-          {t.inspector.blockHint}
-        </p>
       </div>
 
       {/* key por bloco: sem ela, trocar de bloco selecionado reaproveita
@@ -277,9 +274,9 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
         * o texto digitado no bloco anterior continuava na tela e era
         * gravado no bloco novo — a edição "pulava" de um card pro
         * outro. Com a key, cada bloco tem seus próprios inputs. */}
-      <PositionInputs key={`pos-${block.id}`} block={block} onChange={onChange} />
-      <BlockAppearanceControls key={`appearance-${block.id}`} block={block} onChange={onChange} />
-      <Separator />
+      {/* Primeiro o que o bloco mostra (medida, período, dados, estilo);
+          posição/tamanho/opacidade — o menos usado, já que se ajusta
+          arrastando no slide — ficam numa seção recolhida no fim. */}
       <div
         ref={inspectorStyleRef}
         className={cn(
@@ -294,6 +291,20 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
           styleFocusRequest={styleFocusRequest}
         />
       </div>
+      <Separator />
+      <Collapsible>
+        <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+          {t.inspector.positionSection}
+          <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-3 pt-2">
+          <PositionInputs key={`pos-${block.id}`} block={block} onChange={onChange} />
+          <BlockAppearanceControls key={`appearance-${block.id}`} block={block} onChange={onChange} />
+        </CollapsibleContent>
+      </Collapsible>
+      <p className="slides-type-helper">
+        {t.inspector.blockHint}
+      </p>
     </div>
   );
 });
@@ -597,6 +608,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   }, [slideId]);
 
   scaleRef.current = scale;
+  // Zoom mostrado como tamanho real (58% num notebook), não relativo ao
+  // "ajustar à tela" — antes aparecia "100%" com o slide em 58%.
+  const fitScale = prefs.zoom > 0 ? scale / prefs.zoom : scale;
+  const realZoomPct = Math.round(scale * 100);
 
   const selected = selectedIds.length === 1
     ? (config.blocks.find((b) => b.id === selectedIds[0]) ?? null)
@@ -1708,7 +1723,18 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   return (
     <SlideFilterProvider slideKey={slideId}>
-    <div className={cn("surface-base relative grid h-full min-h-0 gap-3", showLayers ? "grid-cols-[56px_240px_minmax(0,1fr)_380px]" : "grid-cols-[56px_minmax(0,1fr)_380px]")}>
+    <div className={cn(
+      "surface-base relative grid h-full min-h-0 gap-3",
+      // Painel de propriedades: 340px abaixo de 2xl (em 1366px o slide ficava
+      // com 55% da largura), 380px acima, ou trilho de 44px quando recolhido.
+      showLayers
+        ? (prefs.inspectorCollapsed
+          ? "grid-cols-[56px_240px_minmax(0,1fr)_44px]"
+          : "grid-cols-[56px_240px_minmax(0,1fr)_340px] 2xl:grid-cols-[56px_240px_minmax(0,1fr)_380px]")
+        : (prefs.inspectorCollapsed
+          ? "grid-cols-[56px_minmax(0,1fr)_44px]"
+          : "grid-cols-[56px_minmax(0,1fr)_340px] 2xl:grid-cols-[56px_minmax(0,1fr)_380px]"),
+    )}>
       <OnboardingTour />
       {templateApplying && (
         <div className="absolute inset-0 z-[99999999] flex items-center justify-center bg-background/55 backdrop-blur-sm">
@@ -2487,7 +2513,16 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                           <InlineTextEditor
                             block={blk as TitleBlock | TextBlock}
                             onPatch={(patch) => { if (canEdit()) patchBlockAction(blk.id, patch, t.blockActionLabels.style); }}
-                            onExit={() => setInlineEditId(null)}
+                            onExit={() => {
+                              setInlineEditId(null);
+                              // O campo de texto some ao sair da edição; sem
+                              // isto o foco caía no <body>, fora do editor.
+                              const frameId = blk.id;
+                              window.setTimeout(() => {
+                                document.querySelector<HTMLElement>(`[data-block-frame-id="${window.CSS.escape(frameId)}"]`)
+                                  ?.focus({ preventScroll: true });
+                              }, 0);
+                            }}
                           />
                         )}
                         {isInlineEditable && !isEditing && !blk.locked && (
@@ -2778,10 +2813,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <Input
                 autoFocus
                 className="h-6 w-14 px-1 text-center text-[11px]"
-                defaultValue={String(Math.round(prefs.zoom * 100))}
+                defaultValue={String(realZoomPct)}
                 onBlur={(e) => {
                   const next = Number(e.currentTarget.value);
-                  if (Number.isFinite(next)) prefs.setZoom(next / 100);
+                  // A pessoa digita o tamanho real (como no PowerPoint); o
+                  // zoom interno é relativo ao "ajustar à tela".
+                  if (Number.isFinite(next) && next > 0 && fitScale > 0) prefs.setZoom(next / 100 / fitScale);
                   setZoomEditing(false);
                 }}
                 onKeyDown={(e) => {
@@ -2793,10 +2830,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <button
                 className="min-w-[42px] rounded px-1 py-0.5 text-center text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-secondary hover:text-primary"
                 onClick={() => setZoomEditing(true)}
-                title={t.toolbar.editZoom}
-                aria-label={t.toolbar.editZoomAria(Math.round(prefs.zoom * 100))}
+                title={prefs.zoom === 1 ? `${t.toolbar.editZoom} · ${t.toolbar.fitToScreen}` : t.toolbar.editZoom}
+                aria-label={t.toolbar.editZoomAria(realZoomPct)}
               >
-                {Math.round(prefs.zoom * 100)}%
+                {realZoomPct}%
               </button>
             )}
             <Button size="icon" variant="ghost" className="h-6 w-6"
@@ -2884,6 +2921,24 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       </div>
 
       {/* ====== Inspector ====== */}
+      {prefs.inspectorCollapsed ? (
+        // Recolhido: trilho fino, o slide ganha a largura do painel.
+        <button
+          type="button"
+          onClick={() => prefs.setInspectorCollapsed(false)}
+          title={t.inspector.expandPanel}
+          aria-label={t.inspector.expandPanel}
+          className="relative flex min-h-0 flex-col items-center gap-3 rounded-lg border border-border/40 bg-card/40 py-3 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        >
+          <PanelRightOpen className="h-4 w-4" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] [writing-mode:vertical-rl]">
+            {t.inspector.railLabel}
+          </span>
+          {(selected || multiSelected.length >= 2) && (
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+          )}
+        </button>
+      ) : (
       <div className="min-w-0 min-h-0 flex flex-col rounded-lg border border-border/40 bg-card/40">
         {/* Contextual header ? shows which block is being edited */}
         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/30 px-3">
@@ -2909,8 +2964,16 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               </button>
             </>
           ) : (
-            <span className="text-[11px] text-muted-foreground">{t.inspector.noneSelected}</span>
+            <span className="flex-1 text-[11px] text-muted-foreground">{t.inspector.noneSelected}</span>
           )}
+          <button
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+            onClick={() => prefs.setInspectorCollapsed(true)}
+            title={t.inspector.collapsePanel}
+            aria-label={t.inspector.collapsePanel}
+          >
+            <PanelRightClose className="h-3.5 w-3.5" />
+          </button>
         </div>
         {/* Scrollable content */}
         <ScrollArea className="flex-1">
@@ -2953,6 +3016,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         </div>
         </ScrollArea>
       </div>
+      )}
 
       {/* Asset library */}
       <AssetLibrary open={assetsOpen} onOpenChange={setAssetsOpen} />
