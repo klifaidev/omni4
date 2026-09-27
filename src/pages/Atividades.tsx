@@ -17,22 +17,29 @@ import {
   formatDueShort,
   getKanbanSaveStatus,
   initials,
-  loadState,
+  loadStateWithMaintenance,
   newId,
   saveState,
   subscribeKanbanSaveStatus,
 } from "@/lib/kanban";
 import {
   DndContext,
+  DragCancelEvent,
   DragEndEvent,
+  DragOverEvent,
+  DragOverlay,
+  DragStartEvent,
+  KeyboardSensor,
   PointerSensor,
   closestCenter,
+  useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -137,11 +144,24 @@ type PendingDelete =
 /* ---------------------------------------------------------------- */
 export default function Atividades() {
   usePageTitle("Atividades");
-  const [state, setState] = useState<KanbanState>(() => loadState());
+  // loadStateWithMaintenance (não loadState) de propósito: só esta tela
+  // dispara a manutenção que semeia "Top 3" e gera recorrências vencidas —
+  // ver o comentário da função em lib/kanban.ts.
+  const [state, setState] = useState<KanbanState>(() => loadStateWithMaintenance());
   const [editingCard, setEditingCard] = useState<{ card?: KanbanCard; columnId: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-  const [dragCard, setDragCard] = useState<{ cardId: string; fromCol: string } | null>(null);
-  const [dragOver, setDragOver] = useState<{ colId: string; index: number } | null>(null);
+  // Arrastar no Kanban — @dnd-kit (mesma lib do checklist logo abaixo neste
+  // arquivo), no lugar do drag-and-drop HTML5 nativo de antes: ganha suporte
+  // a toque/tablet e a teclado (Space pega, setas movem, Space solta, Esc
+  // cancela). `dragPreview` é só visual — uma cópia das colunas reordenada
+  // ao vivo enquanto arrasta; o `state` de verdade (e a gravação) só muda
+  // UMA vez, ao soltar, igual ao comportamento anterior.
+  const [dragPreview, setDragPreview] = useState<KanbanColumn[] | null>(null);
+  const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
+  const boardSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const [saveStatus, setSaveStatusState] = useState<KanbanSaveStatus>(() => getKanbanSaveStatus());
   useEffect(() => subscribeKanbanSaveStatus(setSaveStatusState), []);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -389,7 +409,24 @@ export default function Atividades() {
     setPendingDelete(null);
   }
 
-  /* ---------- DnD ---------- */
+  /** Ajusta completedAt de um card ao entrar/sair da última coluna do board
+   *  ("concluído") — único lugar que decide isso, usado tanto pelo drag
+   *  quanto pelo checkbox da Lista e pela troca de Status no dialog. */
+  function withCompletionStamp(s: KanbanState, cardId: string, fromColId: string, toColId: string): KanbanState["cards"] {
+    const lastColId = s.columns[s.columns.length - 1]?.id;
+    if (!lastColId || fromColId === toColId) return s.cards;
+    const card = s.cards[cardId];
+    if (!card) return s.cards;
+    if (toColId === lastColId && !card.completedAt) {
+      return { ...s.cards, [cardId]: { ...card, completedAt: new Date().toISOString() } };
+    }
+    if (fromColId === lastColId && toColId !== lastColId && card.completedAt) {
+      return { ...s.cards, [cardId]: { ...card, completedAt: undefined } };
+    }
+    return s.cards;
+  }
+
+  /* ---------- DnD (checkbox da Lista, trocar Status no dialog) ---------- */
   function moveCard(cardId: string, fromCol: string, toCol: string, toIndex: number) {
     setState((s) => {
       const columns = s.columns.map((c) => ({ ...c, cardIds: [...c.cardIds] }));
@@ -400,24 +437,73 @@ export default function Atividades() {
       if (idx >= 0) from.cardIds.splice(idx, 1);
       const insertAt = Math.min(toIndex, to.cardIds.length);
       to.cardIds.splice(insertAt, 0, cardId);
-
-      // Carimba quando a atividade entra/sai da última coluna ("concluído")
-      // — base real de "concluídas esta semana" nas métricas, em vez de
-      // adivinhar por createdAt/dueDate.
-      let cards = s.cards;
-      const lastColId = s.columns[s.columns.length - 1]?.id;
-      if (lastColId && fromCol !== toCol) {
-        const card = s.cards[cardId];
-        if (card) {
-          if (toCol === lastColId && !card.completedAt) {
-            cards = { ...s.cards, [cardId]: { ...card, completedAt: new Date().toISOString() } };
-          } else if (fromCol === lastColId && toCol !== lastColId && card.completedAt) {
-            cards = { ...s.cards, [cardId]: { ...card, completedAt: undefined } };
-          }
-        }
-      }
-      return { cards, columns };
+      return { columns, cards: withCompletionStamp(s, cardId, fromCol, toCol) };
     });
+  }
+
+  /* ---------- DnD do board Kanban (@dnd-kit) ---------- */
+  function boardColumnOf(columns: KanbanColumn[], cardId: string): KanbanColumn | undefined {
+    return columns.find((c) => c.cardIds.includes(cardId));
+  }
+  function handleBoardDragStart(event: DragStartEvent) {
+    const id = String(event.active.id);
+    setActiveCard(state.cards[id] ?? null);
+    setDragPreview(state.columns.map((c) => ({ ...c, cardIds: [...c.cardIds] })));
+  }
+  function handleBoardDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+    setDragPreview((prev) => {
+      const cols = prev ?? state.columns;
+      const fromCol = boardColumnOf(cols, activeId);
+      if (!fromCol) return prev;
+      const overIsColumn = cols.some((c) => c.id === overId);
+      const toCol = overIsColumn ? cols.find((c) => c.id === overId) : boardColumnOf(cols, overId);
+      if (!toCol) return prev;
+      const fromIdx = fromCol.cardIds.indexOf(activeId);
+      if (fromCol.id === toCol.id) {
+        const overIdx = overIsColumn ? fromCol.cardIds.length - 1 : toCol.cardIds.indexOf(overId);
+        if (overIdx < 0 || fromIdx === overIdx) return prev;
+        return cols.map((c) => (c.id === fromCol.id ? { ...c, cardIds: arrayMove(c.cardIds, fromIdx, overIdx) } : c));
+      }
+      const overIdx = overIsColumn ? toCol.cardIds.length : toCol.cardIds.indexOf(overId);
+      const insertAt = overIdx < 0 ? toCol.cardIds.length : overIdx;
+      return cols.map((c) => {
+        if (c.id === fromCol.id) return { ...c, cardIds: c.cardIds.filter((id) => id !== activeId) };
+        if (c.id === toCol.id) {
+          const ids = [...c.cardIds];
+          ids.splice(insertAt, 0, activeId);
+          return { ...c, cardIds: ids };
+        }
+        return c;
+      });
+    });
+  }
+  function handleBoardDragEnd(event: DragEndEvent) {
+    const activeId = String(event.active.id);
+    const finalColumns = dragPreview;
+    setDragPreview(null);
+    setActiveCard(null);
+    if (!finalColumns) return;
+    const fromCol = boardColumnOf(state.columns, activeId);
+    const toCol = boardColumnOf(finalColumns, activeId);
+    if (!fromCol || !toCol) return;
+    const unchanged = fromCol.id === toCol.id
+      && fromCol.cardIds.length === toCol.cardIds.length
+      && fromCol.cardIds.every((id, i) => id === toCol.cardIds[i]);
+    if (unchanged) return; // solto no mesmo lugar — não grava à toa
+    setState((s) => ({
+      columns: finalColumns.map((c) => ({ ...c, cardIds: [...c.cardIds] })),
+      cards: withCompletionStamp(s, activeId, fromCol.id, toCol.id),
+    }));
+  }
+  function handleBoardDragCancel() {
+    // `state` real nunca foi tocado durante o arraste — só descarta a prévia.
+    setDragPreview(null);
+    setActiveCard(null);
   }
 
   return (
@@ -634,49 +720,49 @@ export default function Atividades() {
 
       {/* Views */}
       {viewMode === "kanban" && (
-        <div className="flex w-full gap-4 overflow-x-auto px-8 pb-10 pt-6">
-          {state.columns.map((column, colIndex) => (
-            <Column
-              key={column.id}
-              column={column}
-              cards={column.cardIds.map((id) => state.cards[id]).filter(Boolean)}
-              isLastColumn={colIndex === state.columns.length - 1}
-              isDragOver={dragOver?.colId === column.id}
-              dragOverIndex={dragOver?.colId === column.id ? dragOver.index : -1}
-              onAddCard={() => setEditingCard({ columnId: column.id })}
-              onEditCard={(c) => setEditingCard({ card: c, columnId: column.id })}
-              onDeleteCard={requestDeleteCard}
-              onUpdateColumn={(patch) => updateColumn(column.id, patch)}
-              onDeleteColumn={() => requestDeleteColumn(column.id)}
-              onCardDragStart={(cardId) => setDragCard({ cardId, fromCol: column.id })}
-              onCardDragEnd={() => {
-                setDragCard(null);
-                setDragOver(null);
-              }}
-              onColumnDragOver={(index) => {
-                if (!dragCard) return;
-                setDragOver({ colId: column.id, index });
-              }}
-              onColumnDrop={(index) => {
-                if (!dragCard) return;
-                moveCard(dragCard.cardId, dragCard.fromCol, column.id, index);
-                setDragCard(null);
-                setDragOver(null);
-              }}
-              dimmedIds={dimmedIds}
-            />
-          ))}
+        <DndContext
+          sensors={boardSensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleBoardDragStart}
+          onDragOver={handleBoardDragOver}
+          onDragEnd={handleBoardDragEnd}
+          onDragCancel={handleBoardDragCancel}
+        >
+          <div className="flex w-full gap-4 overflow-x-auto px-8 pb-10 pt-6">
+            {(dragPreview ?? state.columns).map((column, colIndex) => (
+              <Column
+                key={column.id}
+                column={column}
+                cards={column.cardIds.map((id) => state.cards[id]).filter(Boolean)}
+                isLastColumn={colIndex === state.columns.length - 1}
+                onAddCard={() => setEditingCard({ columnId: column.id })}
+                onEditCard={(c) => setEditingCard({ card: c, columnId: column.id })}
+                onDeleteCard={requestDeleteCard}
+                onUpdateColumn={(patch) => updateColumn(column.id, patch)}
+                onDeleteColumn={() => requestDeleteColumn(column.id)}
+                dimmedIds={dimmedIds}
+              />
+            ))}
 
-          {/* Add column */}
-          <button
-            type="button"
-            onClick={addColumn}
-            className="group flex h-14 w-[280px] shrink-0 items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-sm text-muted-foreground transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar coluna
-          </button>
-        </div>
+            {/* Add column */}
+            <button
+              type="button"
+              onClick={addColumn}
+              className="group flex h-14 w-[280px] shrink-0 items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 text-sm text-muted-foreground transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar coluna
+            </button>
+          </div>
+
+          <DragOverlay>
+            {activeCard && (
+              <div className="w-[276px] rotate-2 cursor-grabbing rounded-xl border border-primary/40 bg-card p-3 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                <CardBody card={activeCard} />
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {viewMode === "list" && (
@@ -771,17 +857,11 @@ interface ColumnProps {
   column: KanbanColumn;
   cards: KanbanCard[];
   isLastColumn: boolean;
-  isDragOver: boolean;
-  dragOverIndex: number;
   onAddCard: () => void;
   onEditCard: (c: KanbanCard) => void;
   onDeleteCard: (id: string) => void;
   onUpdateColumn: (patch: Partial<KanbanColumn>) => void;
   onDeleteColumn: () => void;
-  onCardDragStart: (cardId: string) => void;
-  onCardDragEnd: () => void;
-  onColumnDragOver: (index: number) => void;
-  onColumnDrop: (index: number) => void;
   dimmedIds?: Set<string>;
 }
 
@@ -790,22 +870,20 @@ function Column(props: ColumnProps) {
     column,
     cards,
     isLastColumn,
-    isDragOver,
-    dragOverIndex,
     onAddCard,
     onEditCard,
     onDeleteCard,
     onUpdateColumn,
     onDeleteColumn,
-    onCardDragStart,
-    onCardDragEnd,
-    onColumnDragOver,
-    onColumnDrop,
     dimmedIds,
   } = props;
   // A última coluna é o "concluído" do board: muitos cards ali é bom, não
   // sobrecarga — o aviso de WIP alto só faz sentido nas colunas de trabalho.
   const overloaded = !isLastColumn && cards.length > 8;
+  // A coluna inteira é o alvo de soltar do @dnd-kit — cobre tanto largar
+  // sobre um card específico (o SortableContext resolve) quanto no espaço
+  // vazio abaixo do último card ou numa coluna sem nenhum card ainda.
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   const [editTitle, setEditTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(column.title);
@@ -813,19 +891,12 @@ function Column(props: ColumnProps) {
 
   return (
     <div
+      ref={setNodeRef}
       className={cn(
         "flex w-[300px] shrink-0 flex-col rounded-2xl border border-border/40 bg-card/40 backdrop-blur-xl transition-colors",
-        isDragOver && "border-primary/40 bg-primary/[0.04]",
+        isOver && "border-primary/40 bg-primary/[0.04]",
         overloaded && "border-warning/40 bg-warning/5",
       )}
-      onDragOver={(e) => {
-        e.preventDefault();
-        if (cards.length === 0) onColumnDragOver(0);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (cards.length === 0) onColumnDrop(0);
-      }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3.5 pt-3.5 pb-2">
@@ -910,40 +981,26 @@ function Column(props: ColumnProps) {
 
       {/* Cards */}
       <div className="flex flex-1 flex-col gap-2 px-2.5 pb-2.5">
-        {cards.map((card, i) => {
-          const dim = dimmedIds?.has(card.id);
-          return (
-            <div
-              key={card.id}
-              className={cn(dim && "pointer-events-none opacity-35")}
-            >
-              {isDragOver && dragOverIndex === i && <DropIndicator />}
-              <CardItem
-                card={card}
-                onEdit={() => onEditCard(card)}
-                onDelete={() => onDeleteCard(card.id)}
-                onDragStart={() => onCardDragStart(card.id)}
-                onDragEnd={onCardDragEnd}
-                onDragOverItem={() => onColumnDragOver(i)}
-                onDropOnItem={() => onColumnDrop(i)}
-              />
-            </div>
-          );
-        })}
-        {/* trailing drop zone */}
-        <div
-          className="min-h-[24px] flex-1"
-          onDragOver={(e) => {
-            e.preventDefault();
-            onColumnDragOver(cards.length);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            onColumnDrop(cards.length);
-          }}
-        >
-          {isDragOver && dragOverIndex >= cards.length && <DropIndicator />}
-        </div>
+        <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+          {cards.map((card) => {
+            const dim = dimmedIds?.has(card.id);
+            return (
+              <div
+                key={card.id}
+                className={cn(dim && "pointer-events-none opacity-35")}
+              >
+                <CardItem
+                  card={card}
+                  onEdit={() => onEditCard(card)}
+                  onDelete={() => onDeleteCard(card.id)}
+                />
+              </div>
+            );
+          })}
+        </SortableContext>
+        {/* Espaço vazio abaixo do último card — ainda faz parte da coluna
+            droppable (setNodeRef acima), então soltar aqui também conta. */}
+        <div className="min-h-[24px] flex-1" />
 
         {/* Add card */}
         <button
@@ -959,10 +1016,6 @@ function Column(props: ColumnProps) {
   );
 }
 
-function DropIndicator() {
-  return <div className="my-0.5 h-0.5 rounded-full bg-primary/70" />;
-}
-
 /* ---------------------------------------------------------------- */
 /* CARD                                                              */
 /* ---------------------------------------------------------------- */
@@ -970,53 +1023,43 @@ interface CardItemProps {
   card: KanbanCard;
   onEdit: () => void;
   onDelete: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDragOverItem: () => void;
-  onDropOnItem: () => void;
 }
 
-function CardItem({
-  card,
-  onEdit,
-  onDelete,
-  onDragStart,
-  onDragEnd,
-  onDragOverItem,
-  onDropOnItem,
-}: CardItemProps) {
+function CardItem({ card, onEdit, onDelete }: CardItemProps) {
   const [hover, setHover] = useState(false);
-  const status = dueStatus(card.dueDate);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
 
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onDragOver={(e) => {
-        e.preventDefault();
-        onDragOverItem();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        onDropOnItem();
-      }}
+      ref={setNodeRef}
+      style={style}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
       className="group cursor-pointer rounded-xl border border-border/40 bg-card/80 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-all hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
     >
-      {/* Top row: title + actions */}
+      {/* Top row: alça de arrastar + título + excluir */}
       <div className="flex items-start gap-2">
-        <GripVertical
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Arrastar atividade"
+          style={{ touchAction: "none" }}
           className={cn(
-            "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-opacity",
-            hover ? "opacity-100" : "opacity-0",
+            "mt-0.5 cursor-grab rounded text-muted-foreground/40 transition-opacity active:cursor-grabbing",
+            "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            hover ? "opacity-100" : "opacity-40",
           )}
-        />
+        >
+          <GripVertical className="h-3.5 w-3.5 shrink-0" />
+        </button>
         <div className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-foreground">
           {card.title || <span className="italic text-muted-foreground">Sem título</span>}
         </div>
@@ -1034,6 +1077,17 @@ function CardItem({
         </button>
       </div>
 
+      <CardBody card={card} />
+    </div>
+  );
+}
+
+/** Conteúdo do card (sem a alça/título/excluir) — reaproveitado no
+ *  DragOverlay, que mostra uma cópia estática flutuando junto do cursor. */
+function CardBody({ card }: { card: KanbanCard }) {
+  const status = dueStatus(card.dueDate);
+  return (
+    <>
       {card.description && (
         <p className="mt-1.5 line-clamp-2 pl-5 text-[11.5px] leading-relaxed text-muted-foreground">
           {card.description}
@@ -1106,7 +1160,7 @@ function CardItem({
           {card.assignee && <Avatar name={card.assignee} />}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

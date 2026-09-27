@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadState, type KanbanCard, type KanbanState } from "./kanban";
+import { loadState, loadStateWithMaintenance, type KanbanCard, type KanbanState } from "./kanban";
 
 const STORAGE_KEY = "harald.kanban.v1";
 const SEED_FLAG = "harald.kanban.seed.top3.v1";
@@ -38,7 +38,7 @@ describe("recorrência — próxima instância ao concluir uma atividade vencida
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 1, 15)); // 15/fev/2026
 
-    const next = loadState();
+    const next = loadStateWithMaintenance();
 
     const todo = next.columns[0].cardIds.map((id) => next.cards[id]);
     expect(todo).toHaveLength(1);
@@ -54,7 +54,7 @@ describe("recorrência — próxima instância ao concluir uma atividade vencida
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 10)); // 10/jun/2026 — 5 meses depois
 
-    const next = loadState();
+    const next = loadStateWithMaintenance();
 
     const todo = next.columns[0].cardIds.map((id) => next.cards[id]);
     expect(todo).toHaveLength(1);
@@ -73,7 +73,7 @@ describe("recorrência — próxima instância ao concluir uma atividade vencida
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 5)); // 05/mar/2026
 
-    const next = loadState();
+    const next = loadStateWithMaintenance();
 
     const todo = next.columns[0].cardIds.map((id) => next.cards[id]);
     expect(todo).toHaveLength(1);
@@ -87,16 +87,16 @@ describe("recorrência — próxima instância ao concluir uma atividade vencida
     }));
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 10));
-    expect(loadState().columns[0].cardIds).toHaveLength(0);
+    expect(loadStateWithMaintenance().columns[0].cardIds).toHaveLength(0);
 
     seed(stateWithDoneCard({
       id: "c2", title: "Ainda não venceu", recurrence: "weekly",
       dueDate: "2099-01-01", createdAt: "2026-01-01T00:00:00.000Z",
     }));
-    expect(loadState().columns[0].cardIds).toHaveLength(0);
+    expect(loadStateWithMaintenance().columns[0].cardIds).toHaveLength(0);
   });
 
-  it("reabrir a página (loadState de novo) não duplica a próxima instância", () => {
+  it("reabrir a página (loadStateWithMaintenance de novo) não duplica a próxima instância", () => {
     seed(stateWithDoneCard({
       id: "c1", title: "Fechar relatório", recurrence: "monthly",
       dueDate: "2026-01-31", createdAt: "2026-01-01T00:00:00.000Z",
@@ -104,9 +104,27 @@ describe("recorrência — próxima instância ao concluir uma atividade vencida
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 1, 15));
 
-    loadState();
-    const second = loadState();
+    loadStateWithMaintenance();
+    const second = loadStateWithMaintenance();
 
     expect(second.columns[0].cardIds).toHaveLength(1);
+  });
+
+  it("loadState puro nunca escreve no localStorage (quem gera é loadStateWithMaintenance)", () => {
+    seed(stateWithDoneCard({
+      id: "c1", title: "Fechar relatório", recurrence: "monthly",
+      dueDate: "2026-01-31", createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 1, 15));
+
+    const raw = localStorage.getItem("harald.kanban.v1");
+    const read = loadState();
+    expect(read.columns[0].cardIds).toHaveLength(0); // não gerou nada
+    expect(localStorage.getItem("harald.kanban.v1")).toBe(raw); // e não escreveu
+
+    const maintained = loadStateWithMaintenance();
+    expect(maintained.columns[0].cardIds).toHaveLength(1);
+    expect(localStorage.getItem("harald.kanban.v1")).not.toBe(raw);
   });
 });

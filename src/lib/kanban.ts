@@ -158,16 +158,32 @@ export function newId(prefix = "k") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** Leitura pura do estado persistido — nunca escreve no localStorage. */
 export function loadState(): KanbanState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return generateRecurring(seedTop3(defaultState()));
+    if (!raw) return defaultState();
     const parsed = JSON.parse(raw) as KanbanState;
-    if (!parsed.columns || !parsed.cards) return generateRecurring(seedTop3(defaultState()));
-    return generateRecurring(seedTop3(parsed));
+    if (!parsed.columns || !parsed.cards) return defaultState();
+    return parsed;
   } catch {
-    return generateRecurring(seedTop3(defaultState()));
+    return defaultState();
   }
+}
+
+/**
+ * Como `loadState`, mas também roda a manutenção periódica: semeia "Top 3"
+ * na primeira vez e gera a próxima instância de atividades recorrentes já
+ * vencidas — o que PODE escrever no localStorage. Só a aba Atividades chama
+ * esta versão, de propósito: mantém num único lugar quem tem permissão de
+ * gerar essas gravações, então outros leitores independentes do mesmo
+ * estado — o diálogo rápido, o resumo da Home, o scan diário de
+ * notificações do AppShell — nunca disputam essa escrita nem correm o
+ * risco de sobrescrever uma recorrência que acabou de ser criada; eles usam
+ * `loadState` puro.
+ */
+export function loadStateWithMaintenance(): KanbanState {
+  return generateRecurring(seedTop3(loadState()));
 }
 
 /**
