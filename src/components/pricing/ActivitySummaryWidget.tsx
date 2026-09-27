@@ -28,8 +28,12 @@ export function ActivitySummaryWidget() {
     const all = Object.values(state.cards);
     const open = all.filter((c) => !lastColIds.has(c.id));
     const overdue = open.filter((c) => c.dueDate && c.dueDate < todayIso);
+    // completedAt é carimbado só na transição pra última coluna (ver
+    // moveCard/saveCard em Atividades.tsx) — usar createdAt aqui contava
+    // tarefas criadas recentemente e já feitas, mas ignorava tarefas antigas
+    // concluídas agora, e discordava do mesmo KPI dentro da própria aba.
     const completedThisWeek = all.filter(
-      (c) => lastColIds.has(c.id) && new Date(c.createdAt) >= weekAgo,
+      (c) => lastColIds.has(c.id) && c.completedAt && new Date(c.completedAt) >= weekAgo,
     );
     const upcoming = [...open]
       .filter((c) => c.dueDate)

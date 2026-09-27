@@ -3,6 +3,7 @@ import {
   ChecklistItem,
   KanbanCard,
   KanbanColumn,
+  KanbanSaveStatus,
   KanbanState,
   PRIORITY_LABEL,
   PRIORITY_TONE,
@@ -14,10 +15,12 @@ import {
   defaultState,
   dueStatus,
   formatDueShort,
+  getKanbanSaveStatus,
   initials,
   loadState,
   newId,
   saveState,
+  subscribeKanbanSaveStatus,
 } from "@/lib/kanban";
 import {
   DndContext,
@@ -46,6 +49,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Popover,
   PopoverContent,
@@ -114,6 +127,11 @@ import { usePageTitle } from "@/hooks/use-page-title";
 type ViewMode = "kanban" | "list" | "calendar";
 const VIEW_STORAGE_KEY = "atividades-viewmode";
 
+/** Exclusão pendente de confirmação — card ou coluna (com quantas atividades leva junto). */
+type PendingDelete =
+  | { kind: "card"; id: string; title: string }
+  | { kind: "column"; id: string; title: string; cardCount: number };
+
 /* ---------------------------------------------------------------- */
 /* PAGE                                                              */
 /* ---------------------------------------------------------------- */
@@ -121,8 +139,11 @@ export default function Atividades() {
   usePageTitle("Atividades");
   const [state, setState] = useState<KanbanState>(() => loadState());
   const [editingCard, setEditingCard] = useState<{ card?: KanbanCard; columnId: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [dragCard, setDragCard] = useState<{ cardId: string; fromCol: string } | null>(null);
   const [dragOver, setDragOver] = useState<{ colId: string; index: number } | null>(null);
+  const [saveStatus, setSaveStatusState] = useState<KanbanSaveStatus>(() => getKanbanSaveStatus());
+  useEffect(() => subscribeKanbanSaveStatus(setSaveStatusState), []);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       const v = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -260,10 +281,12 @@ export default function Atividades() {
     if (lastCol) {
       lastCol.cardIds.forEach((id) => {
         const c = state.cards[id];
-        if (!c) return;
-        const refStr = c.dueDate ?? c.createdAt;
-        if (!refStr) return;
-        const t = new Date(refStr).getTime();
+        // completedAt é o carimbo real de quando a atividade entrou nesta
+        // coluna (ver moveCard/saveCard) — antes usava dueDate/createdAt
+        // como aproximação, o que podia contar (ou deixar de contar) uma
+        // tarefa sem relação com quando ela foi de fato concluída.
+        if (!c?.completedAt) return;
+        const t = new Date(c.completedAt).getTime();
         if (!isNaN(t) && t >= weekAgo) doneWeek += 1;
       });
     }
@@ -311,12 +334,23 @@ export default function Atividades() {
       };
     });
   }
+  /** Abre a confirmação — excluir a coluna leva junto todas as atividades nela. */
+  function requestDeleteColumn(colId: string) {
+    const col = state.columns.find((c) => c.id === colId);
+    if (!col) return;
+    setPendingDelete({ kind: "column", id: colId, title: col.title, cardCount: col.cardIds.length });
+  }
 
   /* ---------- card ops ---------- */
   function saveCard(card: KanbanCard, columnId: string) {
     setState((s) => {
       const exists = !!s.cards[card.id];
-      const cards = { ...s.cards, [card.id]: card };
+      const lastColId = s.columns[s.columns.length - 1]?.id;
+      // Card novo criado direto na última coluna já nasce "concluído".
+      const toSave = !exists && columnId === lastColId && !card.completedAt
+        ? { ...card, completedAt: new Date().toISOString() }
+        : card;
+      const cards = { ...s.cards, [card.id]: toSave };
       let columns = s.columns;
       if (!exists) {
         columns = s.columns.map((c) =>
@@ -339,6 +373,21 @@ export default function Atividades() {
       };
     });
   }
+  /** Abre a confirmação de exclusão — mesmo diálogo usado para colunas. */
+  function requestDeleteCard(cardId: string) {
+    const card = state.cards[cardId];
+    setPendingDelete({ kind: "card", id: cardId, title: card?.title || "Sem título" });
+  }
+  function confirmPendingDelete() {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === "card") {
+      deleteCard(pendingDelete.id);
+      if (editingCard?.card?.id === pendingDelete.id) setEditingCard(null);
+    } else {
+      deleteColumn(pendingDelete.id);
+    }
+    setPendingDelete(null);
+  }
 
   /* ---------- DnD ---------- */
   function moveCard(cardId: string, fromCol: string, toCol: string, toIndex: number) {
@@ -351,7 +400,23 @@ export default function Atividades() {
       if (idx >= 0) from.cardIds.splice(idx, 1);
       const insertAt = Math.min(toIndex, to.cardIds.length);
       to.cardIds.splice(insertAt, 0, cardId);
-      return { ...s, columns };
+
+      // Carimba quando a atividade entra/sai da última coluna ("concluído")
+      // — base real de "concluídas esta semana" nas métricas, em vez de
+      // adivinhar por createdAt/dueDate.
+      let cards = s.cards;
+      const lastColId = s.columns[s.columns.length - 1]?.id;
+      if (lastColId && fromCol !== toCol) {
+        const card = s.cards[cardId];
+        if (card) {
+          if (toCol === lastColId && !card.completedAt) {
+            cards = { ...s.cards, [cardId]: { ...card, completedAt: new Date().toISOString() } };
+          } else if (fromCol === lastColId && toCol !== lastColId && card.completedAt) {
+            cards = { ...s.cards, [cardId]: { ...card, completedAt: undefined } };
+          }
+        }
+      }
+      return { cards, columns };
     });
   }
 
@@ -475,6 +540,25 @@ export default function Atividades() {
           )}
         </div>
 
+        {/* Aviso persistente: gravação local falhando (cota do navegador
+            cheia, modo privado, etc.) — sem isso, uma falha ficava
+            invisível e as mudanças se perdiam ao fechar o app. */}
+        {saveStatus === "error" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-destructive/30 bg-destructive/10 px-8 py-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Não foi possível salvar as atividades neste navegador. Suas mudanças podem se perder ao fechar o app.
+            </span>
+            <button
+              type="button"
+              onClick={() => saveState(state)}
+              className="rounded-full border border-destructive/40 px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/15"
+            >
+              Tentar salvar de novo
+            </button>
+          </div>
+        )}
+
         {/* Metrics panel */}
         {showMetrics && (
           <div className="border-t border-border/30 bg-muted/10 px-8 py-4">
@@ -551,18 +635,19 @@ export default function Atividades() {
       {/* Views */}
       {viewMode === "kanban" && (
         <div className="flex w-full gap-4 overflow-x-auto px-8 pb-10 pt-6">
-          {state.columns.map((column) => (
+          {state.columns.map((column, colIndex) => (
             <Column
               key={column.id}
               column={column}
               cards={column.cardIds.map((id) => state.cards[id]).filter(Boolean)}
+              isLastColumn={colIndex === state.columns.length - 1}
               isDragOver={dragOver?.colId === column.id}
               dragOverIndex={dragOver?.colId === column.id ? dragOver.index : -1}
               onAddCard={() => setEditingCard({ columnId: column.id })}
               onEditCard={(c) => setEditingCard({ card: c, columnId: column.id })}
-              onDeleteCard={deleteCard}
+              onDeleteCard={requestDeleteCard}
               onUpdateColumn={(patch) => updateColumn(column.id, patch)}
-              onDeleteColumn={() => deleteColumn(column.id)}
+              onDeleteColumn={() => requestDeleteColumn(column.id)}
               onCardDragStart={(cardId) => setDragCard({ cardId, fromCol: column.id })}
               onCardDragEnd={() => {
                 setDragCard(null);
@@ -644,7 +729,37 @@ export default function Atividades() {
             moveCard(card.id, fromCol.id, toColId, state.columns.find((c) => c.id === toColId)?.cardIds.length ?? 0);
           }
         }}
+        onRequestDelete={(card) => requestDeleteCard(card.id)}
       />
+
+      {/* Confirmação de exclusão — card ou coluna (com as atividades dela) */}
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete?.kind === "column"
+                ? `Excluir a coluna "${pendingDelete.title}"?`
+                : `Excluir "${pendingDelete?.title}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.kind === "column"
+                ? pendingDelete.cardCount > 0
+                  ? `Isso também exclui ${pendingDelete.cardCount} atividade${pendingDelete.cardCount === 1 ? "" : "s"} que ${pendingDelete.cardCount === 1 ? "está" : "estão"} nela. Essa ação não pode ser desfeita.`
+                  : "Esta coluna está vazia. Essa ação não pode ser desfeita."
+                : "Essa ação não pode ser desfeita."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmPendingDelete}
+            >
+              {pendingDelete?.kind === "column" ? "Excluir coluna" : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -655,6 +770,7 @@ export default function Atividades() {
 interface ColumnProps {
   column: KanbanColumn;
   cards: KanbanCard[];
+  isLastColumn: boolean;
   isDragOver: boolean;
   dragOverIndex: number;
   onAddCard: () => void;
@@ -673,6 +789,7 @@ function Column(props: ColumnProps) {
   const {
     column,
     cards,
+    isLastColumn,
     isDragOver,
     dragOverIndex,
     onAddCard,
@@ -686,7 +803,9 @@ function Column(props: ColumnProps) {
     onColumnDrop,
     dimmedIds,
   } = props;
-  const overloaded = cards.length > 8;
+  // A última coluna é o "concluído" do board: muitos cards ali é bom, não
+  // sobrecarga — o aviso de WIP alto só faz sentido nas colunas de trabalho.
+  const overloaded = !isLastColumn && cards.length > 8;
 
   const [editTitle, setEditTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(column.title);
@@ -904,7 +1023,7 @@ function CardItem({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (confirm("Excluir esta atividade?")) onDelete();
+            onDelete();
           }}
           className={cn(
             "rounded p-0.5 text-muted-foreground transition-all hover:bg-destructive/15 hover:text-destructive",
@@ -1042,6 +1161,7 @@ interface CardDialogProps {
   columns: KanbanColumn[];
   onSave: (card: KanbanCard, columnId: string) => void;
   onMove: (card: KanbanCard, toColId: string) => void;
+  onRequestDelete: (card: KanbanCard) => void;
 }
 
 function CardDialog({
@@ -1052,6 +1172,7 @@ function CardDialog({
   columns,
   onSave,
   onMove,
+  onRequestDelete,
 }: CardDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1101,6 +1222,9 @@ function CardDialog({
       checklist: checklist.length ? checklist : undefined,
       recurrence: recurrence === "none" ? null : recurrence,
       createdAt: initial?.createdAt ?? new Date().toISOString(),
+      // Preserva o carimbo de conclusão de uma edição comum; se a coluna
+      // mudar, quem decide se carimba/apaga é o moveCard logo abaixo.
+      completedAt: initial?.completedAt,
     };
     onSave(card, colId);
     if (initial && colId !== columnId) onMove(card, colId);
@@ -1279,6 +1403,16 @@ function CardDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
+          {initial && (
+            <Button
+              variant="ghost"
+              className="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => onRequestDelete(initial)}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Excluir
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
@@ -1532,8 +1666,12 @@ function ListView({
     }
   }
 
-  function sortCards(cards: KanbanCard[], colTitle: string): KanbanCard[] {
-    if (!sortKey) return cards;
+  function sortCards(cards: KanbanCard[]): KanbanCard[] {
+    // "column" não entra aqui: os cards já vêm agrupados por coluna (cada
+    // seção da lista É uma coluna), então esse critério nunca teria o que
+    // desempatar dentro do grupo — ordenar por "Status" reordena as SEÇÕES
+    // (ver orderedColumns), não os cards dentro de cada uma.
+    if (!sortKey || sortKey === "column") return cards;
     const dir = sortDir === "asc" ? 1 : -1;
     return [...cards].sort((a, b) => {
       let av: string | number = "";
@@ -1546,10 +1684,6 @@ function ListView({
         case "title":
           av = (a.title ?? "").toLowerCase();
           bv = (b.title ?? "").toLowerCase();
-          break;
-        case "column":
-          av = colTitle.toLowerCase();
-          bv = colTitle.toLowerCase();
           break;
         case "assignee":
           av = (a.assignee ?? "").toLowerCase();
@@ -1569,6 +1703,13 @@ function ListView({
       return 0;
     });
   }
+
+  // "Status" ordena as próprias seções (colunas), já que dentro de cada uma
+  // o valor de status é sempre o mesmo — asc segue a ordem do quadro, desc
+  // inverte (útil pra ver "Concluído" primeiro, por exemplo).
+  const orderedColumns = sortKey === "column" && sortDir === "desc"
+    ? [...state.columns].reverse()
+    : state.columns;
 
   const Header = ({ k, label, className }: { k: SortKey; label: string; className?: string }) => (
     <button
@@ -1601,10 +1742,9 @@ function ListView({
       </div>
 
       <div className="space-y-3">
-        {state.columns.map((column) => {
+        {orderedColumns.map((column) => {
           const cards = sortCards(
             column.cardIds.map((id) => state.cards[id]).filter(Boolean),
-            column.title,
           );
           const isCollapsed = !!collapsed[column.id];
           return (

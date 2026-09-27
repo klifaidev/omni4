@@ -1,4 +1,6 @@
 // Kanban — tipos e persistência local
+import { toast } from "sonner";
+
 export type Priority = "low" | "med" | "high";
 
 export interface ChecklistItem {
@@ -20,6 +22,10 @@ export interface KanbanCard {
   checklist?: ChecklistItem[];
   recurrence?: Recurrence | null;
   createdAt: string;
+  /** Quando a atividade entrou na última coluna (ISO datetime). Carimbado só
+   *  na transição — editar outros campos ou mover entre colunas do meio não
+   *  mexe aqui. Base real de "concluídas esta semana" (ver metrics). */
+  completedAt?: string;
 }
 
 export const RECURRENCE_LABEL: Record<Recurrence, string> = {
@@ -28,11 +34,28 @@ export const RECURRENCE_LABEL: Record<Recurrence, string> = {
   monthly: "Mensalmente",
 };
 
-const RECURRENCE_DAYS: Record<Recurrence, number> = {
+// "monthly" não entra aqui: soma de dias fixos faz a data recorrente
+// "deslizar" (dia 31 vira dia 2, depois dia 4...). Mês usa aritmética de
+// calendário própria (addMonthsClamped) para manter sempre o mesmo dia.
+const RECURRENCE_DAYS: Record<"weekly" | "biweekly", number> = {
   weekly: 7,
   biweekly: 14,
-  monthly: 30,
 };
+
+/** Soma N meses de calendário, preso ao dia original (30/jan +1 mês = 28 ou
+ *  29/fev, nunca março) — sempre a partir da data-base, nunca encadeado, pra
+ *  não ficar "preso" num dia menor depois de vários meses perdidos. */
+function addMonthsClamped(date: Date, months: number): Date {
+  const day = date.getDate();
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const daysInTargetMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, daysInTargetMonth));
+  return target;
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 export interface KanbanColumn {
   id: string;
@@ -47,6 +70,52 @@ export interface KanbanState {
 }
 
 const STORAGE_KEY = "harald.kanban.v1";
+
+// ---------------------------------------------------------------------------
+// Status de gravação — antes, uma falha ao gravar no localStorage (cota
+// cheia, modo privado, etc.) era engolida em silêncio: a sessão continuava
+// normal na tela, mas nada novo era salvo. Foi a causa raiz do incidente
+// crítico da esteira de Slides (v1.9.337); aqui usamos a mesma prevenção,
+// só que sem precisar do arquivo do Electron (o volume de dados é pequeno).
+// ---------------------------------------------------------------------------
+export type KanbanSaveStatus = "ok" | "error";
+let saveStatus: KanbanSaveStatus = "ok";
+const saveStatusListeners = new Set<(s: KanbanSaveStatus) => void>();
+
+export function getKanbanSaveStatus(): KanbanSaveStatus {
+  return saveStatus;
+}
+
+/** Devolve uma função para cancelar a inscrição. */
+export function subscribeKanbanSaveStatus(cb: (s: KanbanSaveStatus) => void): () => void {
+  saveStatusListeners.add(cb);
+  return () => saveStatusListeners.delete(cb);
+}
+
+function setSaveStatus(next: KanbanSaveStatus) {
+  if (next === saveStatus) return;
+  saveStatus = next;
+  saveStatusListeners.forEach((cb) => cb(next));
+}
+
+/** Único ponto que grava o estado das atividades no localStorage. */
+function writeStorage(state: KanbanState): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    setSaveStatus("ok");
+    return true;
+  } catch (err) {
+    console.error("[kanban] falha ao salvar atividades:", err);
+    if (saveStatus === "ok") {
+      toast.error("Não foi possível salvar as atividades", {
+        description: "As mudanças desta sessão podem se perder ao fechar o app. Tente liberar espaço no navegador ou salvar de novo em instantes.",
+        duration: 10000,
+      });
+    }
+    setSaveStatus("error");
+    return false;
+  }
+}
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
   low: "Baixa",
@@ -111,7 +180,7 @@ function generateRecurring(state: KanbanState): KanbanState {
   const lastCol = state.columns[state.columns.length - 1];
   if (!firstCol || !lastCol || firstCol.id === lastCol.id) return state;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = isoDate(new Date());
 
   const newCards: Record<string, KanbanCard> = { ...state.cards };
   const newIds: string[] = [];
@@ -124,13 +193,25 @@ function generateRecurring(state: KanbanState): KanbanState {
     if (c.dueDate >= todayIso) continue;
 
     const base = new Date(c.dueDate + "T00:00:00");
-    const days = RECURRENCE_DAYS[c.recurrence];
-    let next = new Date(base.getTime() + days * 86400000);
-    // Avança até futuro
-    while (next.toISOString().slice(0, 10) < todayIso) {
-      next = new Date(next.getTime() + days * 86400000);
+    let next: Date;
+    if (c.recurrence === "monthly") {
+      // Sempre a partir da data-base original (nunca encadeado a partir do
+      // `next` anterior), pra não "grudar" num dia menor depois de pular
+      // vários meses sem abrir o app.
+      let months = 1;
+      next = addMonthsClamped(base, months);
+      while (isoDate(next) < todayIso) {
+        months += 1;
+        next = addMonthsClamped(base, months);
+      }
+    } else {
+      const days = RECURRENCE_DAYS[c.recurrence];
+      next = new Date(base.getTime() + days * 86400000);
+      while (isoDate(next) < todayIso) {
+        next = new Date(next.getTime() + days * 86400000);
+      }
     }
-    const nextIso = next.toISOString().slice(0, 10);
+    const nextIso = isoDate(next);
 
     // Evitar duplicar caso já exista uma instância com mesmo título e prazo na 1ª coluna
     const dup = firstCol.cardIds.some((id) => {
@@ -164,11 +245,7 @@ function generateRecurring(state: KanbanState): KanbanState {
     col.id === firstCol.id ? { ...col, cardIds: [...newIds, ...col.cardIds] } : col,
   );
   const next = { cards: newCards, columns };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    /* noop */
-  }
+  writeStorage(next);
   return next;
 }
 
@@ -247,11 +324,7 @@ function seedTop3(state: KanbanState): KanbanState {
 
 
 export function saveState(state: KanbanState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    /* noop */
-  }
+  writeStorage(state);
 }
 
 export function initials(name?: string) {
