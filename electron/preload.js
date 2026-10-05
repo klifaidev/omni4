@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   installUpdate: () => ipcRenderer.send("install-update"),
   checkForUpdates: () => ipcRenderer.send("check-for-updates"),
   reportRendererError: (payload) => ipcRenderer.send("renderer:error", payload),
+  // Recuperação de crash
+  app: {
+    reopen: (route) => ipcRenderer.send("app:reopen", { route }),
+    consumeCrashState: () => ipcRenderer.invoke("app:consume-crash-state"),
+    breadcrumb: (payload) => ipcRenderer.send("renderer:breadcrumb", payload),
+  },
   // Bases locais
   bases: {
     salvar: (tipo, nomeArquivo, conteudoBase64) =>

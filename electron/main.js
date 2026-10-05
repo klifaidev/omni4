@@ -28,16 +28,53 @@ function getAppEntryUrl() {
   return pathToFileURL(path.join(__dirname, "../dist/index.html")).toString();
 }
 
-function rendererRecoveryHtml(details) {
+// Rotas do app (HashRouter) aceitas pra reabrir depois de um crash. Vem do
+// próprio main (URL do renderer que caiu) ou do botão da página de
+// recuperação — validado do mesmo jeito que os parâmetros de IPC das bases.
+function sanitizeRoute(route) {
+  return typeof route === "string" && /^\/[a-z0-9-]*$/i.test(route) ? route : "/";
+}
+
+function routeFromUrl(url) {
+  const hash = typeof url === "string" ? url.split("#")[1] : "";
+  return sanitizeRoute(hash ? hash.split("?")[0] : "/");
+}
+
+// Último rastro enviado pela Tabela Dinâmica (tamanho da montagem na tela).
+// Fica só em memória; vai pro log e pro estado de crash se o renderer cair —
+// antes disso o log dizia apenas "oom", sem nenhuma pista de qual montagem.
+let lastRendererBreadcrumb = null;
+
+function getCrashStatePath() {
+  return path.join(app.getPath("userData"), "crash-state.json");
+}
+
+function writeCrashState(state) {
+  try {
+    fs.writeFileSync(getCrashStatePath(), JSON.stringify(state));
+  } catch (err) {
+    log.warn("Falha ao gravar estado de crash:", err.message);
+  }
+}
+
+function rendererRecoveryHtml(details, route) {
   const reason = details?.reason || "unknown";
   const exitCode = details?.exitCode ?? "unknown";
-  const appUrl = getAppEntryUrl();
+  const fromPivot = route === "/detalhe";
+  const outOfMemory = reason === "oom";
+  const lead = fromPivot
+    ? `${outOfMemory ? "A Tabela Dinâmica ficou pesada demais para a memória disponível." : "A Tabela Dinâmica parou de responder."} Ao reabrir, ela volta em modo seguro: a última montagem não é recalculada sozinha.`
+    : "Isso normalmente acontece quando uma operação fica pesada demais para a memória disponível. O evento foi registrado no log técnico para diagnóstico.";
+  // O botão chama o processo principal por IPC (preload). Navegar direto da
+  // página data: pra file:// é bloqueado pelo Chromium ("Not allowed to load
+  // local resource") — por isso o "Reabrir" antigo nunca funcionava no app
+  // instalado (além de ter as aspas do onclick quebradas).
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Omni4 - Recuperacao</title>
+  <title>Omni4 - Recuperação</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, Arial, sans-serif; background: #0A0D1C; color: #F8FAFC; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, rgba(59,130,246,.20), transparent 34%), #0A0D1C; }
@@ -52,19 +89,26 @@ function rendererRecoveryHtml(details) {
 </head>
 <body>
   <main>
-    <div class="eyebrow">Recuperacao do aplicativo</div>
-    <h1>O Omni4 precisou reiniciar a area visual.</h1>
-    <p>Isso normalmente acontece quando uma operacao fica pesada demais para a memoria disponivel. O evento foi registrado no log tecnico para diagnostico.</p>
-    <div class="meta">Motivo reportado pelo Electron: <strong>${reason}</strong><br />Codigo de saida: <strong>${exitCode}</strong></div>
-    <button type="button" onclick="window.location.href = ${JSON.stringify(appUrl)}">Reabrir Omni4</button>
+    <div class="eyebrow">Recuperação do aplicativo</div>
+    <h1>O Omni4 precisou reiniciar a área visual.</h1>
+    <p>${lead}</p>
+    <div class="meta">Motivo reportado pelo Electron: <strong>${reason}</strong><br />Código de saída: <strong>${exitCode}</strong></div>
+    <button type="button" id="reopen" autofocus>Reabrir Omni4</button>
   </main>
+  <script>
+    document.getElementById("reopen").addEventListener("click", function () {
+      this.disabled = true;
+      this.textContent = "Reabrindo…";
+      if (window.electronAPI && window.electronAPI.app) window.electronAPI.app.reopen(${JSON.stringify(route)});
+    });
+  </script>
 </body>
 </html>`;
 }
 
-function showRendererRecovery(details) {
+function showRendererRecovery(details, route) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(rendererRecoveryHtml(details))}`);
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(rendererRecoveryHtml(details, route))}`);
 }
 
 function createWindow() {
@@ -101,13 +145,28 @@ function createWindow() {
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     const payload = details || {};
+    const url = mainWindow?.webContents?.getURL?.() || "unknown";
+    const route = routeFromUrl(url);
     log.error("=== RENDER PROCESS GONE ===");
     log.error("Reason:", payload.reason || "unknown");
     log.error("Exit code:", payload.exitCode ?? "unknown");
-    log.error("URL:", mainWindow?.webContents?.getURL?.() || "unknown");
+    log.error("URL:", url);
     log.error("Timestamp:", new Date().toISOString());
+    if (lastRendererBreadcrumb) log.error("Último rastro do renderer:", JSON.stringify(lastRendererBreadcrumb));
     log.error("=== FIM RENDER PROCESS GONE ===");
-    if (payload.reason !== "clean-exit") showRendererRecovery(payload);
+    if (payload.reason === "clean-exit") return;
+    // Lido (e apagado) pelo renderer na próxima abertura — inclusive se a
+    // pessoa fechar e abrir o app na mão — pra Tabela Dinâmica abrir em modo
+    // seguro em vez de restaurar a mesma montagem que acabou de derrubar tudo.
+    writeCrashState({
+      reason: payload.reason || "unknown",
+      exitCode: payload.exitCode ?? null,
+      route,
+      at: new Date().toISOString(),
+      breadcrumb: lastRendererBreadcrumb,
+    });
+    lastRendererBreadcrumb = null;
+    showRendererRecovery(payload, route);
   });
 
   // Mostrar quando estiver pronto para evitar flash branco
@@ -209,6 +268,42 @@ ipcMain.on("renderer:error", (event, payload = {}) => {
   if (payload.componentStack) log.error("Component stack:", payload.componentStack);
   if (payload.stack) log.error("Stack:", payload.stack);
   log.error("=== FIM ERRO DE RENDERIZACAO ===");
+});
+
+ipcMain.on("renderer:breadcrumb", (_event, payload) => {
+  try {
+    const json = JSON.stringify(payload ?? null);
+    // Rastro é um objeto pequeno de contagens; qualquer coisa grande é descartada.
+    lastRendererBreadcrumb = json && json.length <= 2000 ? JSON.parse(json) : null;
+  } catch {
+    lastRendererBreadcrumb = null;
+  }
+});
+
+// Estado do último crash (gravado no render-process-gone). Consumido uma vez:
+// quem lê apaga, pra o modo seguro não reaparecer em toda abertura.
+ipcMain.handle("app:consume-crash-state", async () => {
+  const filePath = getCrashStatePath();
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const state = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    fs.unlinkSync(filePath);
+    return state && typeof state === "object" ? state : null;
+  } catch (err) {
+    log.warn("Estado de crash ilegível, descartado:", err.message);
+    try { fs.unlinkSync(filePath); } catch { /* já não existe */ }
+    return null;
+  }
+});
+
+// Botão "Reabrir Omni4" da página de recuperação. Carregar a URL do app a
+// partir do processo principal não sofre o bloqueio data: → file:// que a
+// navegação feita pela própria página sofria.
+ipcMain.on("app:reopen", (_event, payload) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const route = sanitizeRoute(payload?.route);
+  log.info("Reabrindo o app após recuperação, rota:", route);
+  mainWindow.loadURL(`${getAppEntryUrl()}#${route}`);
 });
 
 // Bases locais: armazenamento de arquivos de dados

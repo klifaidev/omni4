@@ -22,6 +22,11 @@ interface Window {
         userAgent: string;
       };
     }) => void;
+    app?: {
+      reopen?: (route: string) => void;
+      consumeCrashState?: () => Promise<unknown>;
+      breadcrumb?: (payload: import("./lib/crashRecovery").PivotCrashBreadcrumb | null) => void;
+    };
     bases?: import("./hooks/use-bases-locais").ElectronBasesAPI;
     slidesFlow?: import("./store/slidesFlow").ElectronSlidesFlowAPI;
     isElectron?: boolean;

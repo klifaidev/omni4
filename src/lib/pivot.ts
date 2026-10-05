@@ -37,7 +37,21 @@ export interface PivotConfig {
   values: PivotMeasure[];
   measureCatalog?: PivotMeasure[];
   filters: Record<string, string[]>; // {dim: allowed values}
+  /**
+   * Acima de `threshold` colunas, mantém só as `top` maiores (pela 1ª medida)
+   * e soma o resto numa coluna "Outros" — agregada a partir das linhas, então
+   * medidas derivadas (CM%, R$/kg) saem certas, não somadas.
+   */
+  colLimit?: PivotColLimit | null;
 }
+
+export interface PivotColLimit {
+  top: number;
+  threshold: number;
+}
+
+/** Chave da coluna "Outros" criada por `colLimit`. */
+export const PIVOT_OTHERS_COL_KEY = "__outros__";
 
 export interface PivotResult {
   /** árvore de linhas: array de {keys, isTotal, depth, cells: {colKey: {measureId: number}}} */
@@ -84,6 +98,10 @@ export interface PivotSizeEstimate {
   observedCellCount: number;
   visibleValueCellCount: number;
   measureCount: number;
+  /** Colunas somadas em "Outros" por `colLimit` (0 quando não aplicou). */
+  hiddenColCount: number;
+  /** Medida usada pra escolher as maiores colunas, quando `colLimit` aplicou. */
+  colLimitMeasureId: string | null;
 }
 
 export interface PivotRowHeader {
@@ -231,11 +249,63 @@ interface PivotIndex {
   colValues: Map<string, string[]>;
   groupCount: number;
   observedCellCount: number;
+  hiddenColCount: number;
+  colLimitMeasureId: string | null;
+}
+
+type IndexConfig = Pick<PivotConfig, "rows" | "cols" | "filters"> &
+  Partial<Pick<PivotConfig, "values" | "measureCatalog" | "colLimit">>;
+
+/**
+ * Campo usado pra ranquear as colunas no `colLimit`: o da 1ª medida visível;
+ * se ela for derivada (CM%), o da 1ª medida direta de que ela depende.
+ */
+function colRankingField(config: IndexConfig): { measureId: string; field: string } | null {
+  const byId = new Map<string, PivotMeasure>();
+  for (const m of [...(config.measureCatalog ?? []), ...(config.values ?? [])]) byId.set(m.id, m);
+  for (const m of config.values ?? []) {
+    if (!m.derive) return { measureId: m.id, field: m.field };
+    for (const depId of m.dependsOn ?? []) {
+      const dep = byId.get(depId);
+      if (dep && !dep.derive) return { measureId: dep.id, field: dep.field };
+    }
+  }
+  return null;
+}
+
+/** Mantém as `top` maiores colunas e remapeia o resto pra "Outros". */
+function applyColLimit(index: PivotIndex, config: IndexConfig): boolean {
+  const limit = config.colLimit;
+  if (!limit || config.cols.length === 0 || index.colValues.size <= limit.threshold) return false;
+  const ranking = colRankingField(config);
+  if (!ranking) return false;
+  const totals = new Map<string, number>();
+  for (let i = 0; i < index.rows.length; i++) {
+    const raw = index.rows[i][ranking.field];
+    const num = typeof raw === "number" ? raw : Number(raw);
+    if (!isFinite(num)) continue;
+    const ck = index.colKeys[i];
+    totals.set(ck, (totals.get(ck) ?? 0) + num);
+  }
+  const ranked = Array.from(index.colValues.keys()).sort(
+    (a, b) => Math.abs(totals.get(b) ?? 0) - Math.abs(totals.get(a) ?? 0),
+  );
+  const keep = new Set(ranked.slice(0, limit.top));
+  const hidden = ranked.length - keep.size;
+  if (hidden <= 0) return false;
+  for (let i = 0; i < index.colKeys.length; i++) {
+    if (!keep.has(index.colKeys[i])) index.colKeys[i] = PIVOT_OTHERS_COL_KEY;
+  }
+  for (const key of ranked.slice(limit.top)) index.colValues.delete(key);
+  index.colValues.set(PIVOT_OTHERS_COL_KEY, [`Outros (${hidden.toLocaleString("pt-BR")})`]);
+  index.hiddenColCount = hidden;
+  index.colLimitMeasureId = ranking.measureId;
+  return true;
 }
 
 function indexPivotRows(
   rows: Record<string, unknown>[],
-  config: Pick<PivotConfig, "rows" | "cols" | "filters">,
+  config: IndexConfig,
   observedCellCap: number | null,
 ): PivotIndex {
   const filters = activeFilterSets(config.filters);
@@ -251,6 +321,8 @@ function indexPivotRows(
     colValues: new Map(),
     groupCount: 0,
     observedCellCount: 0,
+    hiddenColCount: 0,
+    colLimitMeasureId: null,
   };
   const groups = grouped ? new Set<string>() : null;
   const observedCells = observedCellCap === null ? null : new Set<string>();
@@ -277,6 +349,13 @@ function indexPivotRows(
   }
 
   index.groupCount = groups?.size ?? 0;
+  if (applyColLimit(index, config) && observedCells && observedCellCap !== null) {
+    // As combinações linha×coluna mudam com o "Outros" — reconta.
+    observedCells.clear();
+    for (let i = 0; i < index.rows.length && observedCells.size <= observedCellCap; i++) {
+      observedCells.add(`${index.rowKeys[i]}${SEP}${index.colKeys[i]}`);
+    }
+  }
   index.observedCellCount = observedCells?.size ?? 0;
   return index;
 }
@@ -295,12 +374,14 @@ function estimateFromIndex(index: PivotIndex, config: Pick<PivotConfig, "rows" |
     observedCellCount: index.observedCellCount,
     visibleValueCellCount: rowHeaderCount * Math.max(1, colHeaderCount) * measureCount,
     measureCount,
+    hiddenColCount: index.hiddenColCount,
+    colLimitMeasureId: index.colLimitMeasureId,
   };
 }
 
 export function estimatePivotSize(
   rows: Record<string, unknown>[],
-  config: Pick<PivotConfig, "rows" | "cols" | "values" | "filters">,
+  config: Pick<PivotConfig, "rows" | "cols" | "values" | "filters"> & Partial<Pick<PivotConfig, "measureCatalog" | "colLimit">>,
   options: { observedCellCap?: number } = {},
 ): PivotSizeEstimate {
   const index = indexPivotRows(rows, config, options.observedCellCap ?? Number.POSITIVE_INFINITY);
@@ -343,9 +424,17 @@ function buildRowHeaderTree(
 
 function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
   const { headers: rowHeaders, leafHeaders: leafRowHeaders } = buildRowHeaderTree(index, config.rows);
+  // "Outros" (colLimit) fica sempre por último, fora da ordenação natural.
+  const othersValues = index.colValues.get(PIVOT_OTHERS_COL_KEY);
+  const regularColValues = othersValues
+    ? new Map(Array.from(index.colValues).filter(([key]) => key !== PIVOT_OTHERS_COL_KEY))
+    : index.colValues;
   const colHeaders: PivotColHeader[] = config.cols.length === 0
     ? [{ key: "__all__", values: [], depth: 0, isLeaf: true }]
-    : sortedHeaders(index.colValues, config.cols);
+    : sortedHeaders(regularColValues, config.cols);
+  if (config.cols.length > 0 && othersValues) {
+    colHeaders.push({ key: PIVOT_OTHERS_COL_KEY, values: othersValues, depth: 0, isLeaf: true });
+  }
 
   // Buckets de acumuladores incrementais por (rowKey, colKey, measureField).
   // Evita manter listas completas de valores brutos em memória.
@@ -535,15 +624,21 @@ export function computePivotGuarded(
   return { estimate, result: aggregateIndex(index, config) };
 }
 
+/**
+ * `explicitColKeys`: colunas mostradas uma a uma — necessárias pra célula
+ * "Outros" (colLimit), que reúne toda linha cuja coluna NÃO está nesse conjunto.
+ */
 export function getDrillRowsForCell(
   rows: Record<string, unknown>[],
   config: PivotConfig,
   rowKey: string,
   colKey: string,
+  explicitColKeys?: Set<string>,
 ): number[] {
   const filters = activeFilterSets(config.filters);
   const grouped = config.rows.length > 1;
   const indexes: number[] = [];
+  const isOthers = colKey === PIVOT_OTHERS_COL_KEY && !!explicitColKeys;
 
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
@@ -552,7 +647,8 @@ export function getDrillRowsForCell(
     const groupKey = grouped ? dimVal(row, config.rows[0]) : null;
     const matchesRow = leafKey === rowKey || (groupKey != null && groupKey === rowKey);
     if (!matchesRow) continue;
-    if (keyFor(row, config.cols) !== colKey) continue;
+    const rowColKey = keyFor(row, config.cols);
+    if (isOthers ? explicitColKeys!.has(rowColKey) : rowColKey !== colKey) continue;
     indexes.push(index);
   }
 

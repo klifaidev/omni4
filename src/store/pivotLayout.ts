@@ -36,6 +36,8 @@ interface PivotLayoutState {
    *  base de Budget) não deve sobrescrever a preferência. */
   setMode: (mode: PivotMode) => void;
   saveLayout: (mode: PivotMode, layout: PivotLayout) => void;
+  /** Esquece a última montagem do modo — a próxima abertura usa o padrão. */
+  clearLayout: (mode: PivotMode) => void;
   /** Salvar com um nome que já existe no mesmo modo substitui a visão anterior. */
   saveView: (name: string, mode: PivotMode, layout: PivotLayout) => SavedPivotView;
   deleteView: (id: string) => void;
@@ -58,6 +60,12 @@ export const usePivotLayoutStore = create<PivotLayoutState>()(
       setMode: (mode) => set({ mode }),
       saveLayout: (mode, layout) =>
         set((state) => ({ layouts: { ...state.layouts, [mode]: layout } })),
+      clearLayout: (mode) =>
+        set((state) => {
+          const layouts = { ...state.layouts };
+          delete layouts[mode];
+          return { layouts };
+        }),
       saveView: (name, mode, layout) => {
         const view: SavedPivotView = { id: newViewId(), name: name.trim(), mode, layout, createdAt: Date.now() };
         set((state) => {

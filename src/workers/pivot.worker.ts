@@ -94,6 +94,7 @@ function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
     filters: config.filters,
     values: config.values.map(hydrateMeasure),
     measureCatalog: config.measureCatalog?.map(hydrateMeasure),
+    colLimit: config.colLimit ?? null,
   };
 }
 

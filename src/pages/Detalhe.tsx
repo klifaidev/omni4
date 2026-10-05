@@ -12,21 +12,32 @@ import { MoveHorizontal, FileSpreadsheet, FilterX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { usePivotLayoutStore } from "@/store/pivotLayout";
+import { reportRendererError } from "@/lib/rendererErrorReporting";
 
 class PivotErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { error: Error | null }
+  { error: Error | null; resetKey: number }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { error: null };
+    this.state = { error: null, resetKey: 0 };
   }
   static getDerivedStateFromError(error: Error) {
     return { error };
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("[PivotBuilder] Erro crítico:", error, info);
+    reportRendererError("pivot.error-boundary", error, info.componentStack ?? undefined);
   }
+  // "Tentar novamente" sozinho redesenhava a mesma montagem que acabou de
+  // falhar — quase sempre falhava de novo. Esta opção esquece a montagem do
+  // modo atual e remonta a tabela do zero (key nova).
+  private startFresh = () => {
+    const store = usePivotLayoutStore.getState();
+    store.clearLayout(store.mode);
+    this.setState((s) => ({ error: null, resetKey: s.resetKey + 1 }));
+  };
   render() {
     if (this.state.error) {
       return (
@@ -36,16 +47,18 @@ class PivotErrorBoundary extends React.Component<
           <p className="max-w-md text-sm text-muted-foreground">
             {this.state.error.message}
           </p>
-          <button
-            className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground"
-            onClick={() => this.setState({ error: null })}
-          >
-            Tentar novamente
-          </button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" onClick={this.startFresh}>
+              Começar com a montagem padrão
+            </Button>
+            <Button type="button" variant="outline" onClick={() => this.setState({ error: null })}>
+              Tentar novamente
+            </Button>
+          </div>
         </div>
       );
     }
-    return this.props.children;
+    return <React.Fragment key={this.state.resetKey}>{this.props.children}</React.Fragment>;
   }
 }
 

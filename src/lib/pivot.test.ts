@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computePivot, computePivotGuarded, estimatePivotSize, getDrillRowsForCell, type PivotConfig } from "./pivot";
+import {
+  computePivot,
+  computePivotGuarded,
+  estimatePivotSize,
+  getDrillRowsForCell,
+  PIVOT_OTHERS_COL_KEY,
+  type PivotConfig,
+} from "./pivot";
 
 describe("computePivot weighted ratio measures", () => {
   it("estimates pivot result size before materializing the full aggregation", () => {
@@ -300,5 +307,66 @@ describe("computePivot weighted ratio measures", () => {
     expect(cell?.cm_kg_real).toBeCloseTo(450 / 150, 6);
     expect(cell).not.toHaveProperty("vol_real");
     expect(cell).not.toHaveProperty("cm_real");
+  });
+});
+
+describe("colLimit — Top N colunas + Outros", () => {
+  const rol = { id: "rol", label: "ROL", field: "rol", agg: "sum" as const, format: "currency" as const };
+  const cm = { id: "cm", label: "CM", field: "cm", agg: "sum" as const, format: "currency" as const };
+  const cmPct = {
+    id: "cm_pct",
+    label: "CM %",
+    field: "cm_pct",
+    agg: "sum" as const,
+    format: "percent" as const,
+    dependsOn: ["rol", "cm"],
+    derive: (a: Record<string, number | null>) => (a.rol && a.cm != null ? a.cm / a.rol : null),
+  };
+  // 5 SKUs: ROL 500, 400, 300, 200, 100 (CM = 10%, 20%, 30%, 40%, 50% do ROL).
+  const rows = [5, 4, 3, 2, 1].map((n, i) => ({ marca: "M", sku: `S${n}`, rol: n * 100, cm: n * 100 * (i + 1) / 10 }));
+
+  it("mantém as maiores colunas e soma o resto em Outros, por último", () => {
+    const config: PivotConfig = {
+      rows: ["marca"], cols: ["sku"], filters: {}, values: [rol],
+      colLimit: { top: 2, threshold: 3 },
+    };
+    const { estimate, result } = computePivotGuarded(rows, config, {
+      maxRowHeaders: 1e6, maxColHeaders: 1e6, maxObservedCells: 1e6, maxVisibleValueCells: 1e6,
+    });
+    expect(result!.colHeaders.map((c) => c.key)).toEqual(["S4", "S5", PIVOT_OTHERS_COL_KEY]);
+    expect(result!.colHeaders.at(-1)!.values).toEqual(["Outros (3)"]);
+    expect(result!.cells.get("M")?.get(PIVOT_OTHERS_COL_KEY)?.rol).toBe(600);
+    expect(result!.grandTotal.rol).toBe(1500);
+    expect(estimate.colHeaderCount).toBe(3);
+    expect(estimate.hiddenColCount).toBe(3);
+    expect(estimate.colLimitMeasureId).toBe("rol");
+  });
+
+  it("recalcula medida derivada no Outros a partir das linhas (não soma percentuais)", () => {
+    const pivot = computePivot(rows, {
+      rows: ["marca"], cols: ["sku"], filters: {}, values: [cmPct], measureCatalog: [rol, cm, cmPct],
+      colLimit: { top: 2, threshold: 3 },
+    });
+    // Outros = S3+S2+S1: ROL 600, CM 90+80+50 = 220 → 36,7%.
+    const others = pivot.cells.get("M")?.get(PIVOT_OTHERS_COL_KEY);
+    expect(others?.cm_pct).toBeCloseTo(220 / 600, 6);
+  });
+
+  it("não aplica abaixo do limite", () => {
+    const { estimate, result } = computePivotGuarded(rows, {
+      rows: ["marca"], cols: ["sku"], filters: {}, values: [rol], colLimit: { top: 2, threshold: 10 },
+    }, { maxRowHeaders: 1e6, maxColHeaders: 1e6, maxObservedCells: 1e6, maxVisibleValueCells: 1e6 });
+    expect(result!.colHeaders).toHaveLength(5);
+    expect(estimate.hiddenColCount).toBe(0);
+  });
+
+  it("detalhamento da célula Outros traz as linhas das colunas não mostradas", () => {
+    const config: PivotConfig = {
+      rows: ["marca"], cols: ["sku"], filters: {}, values: [rol], colLimit: { top: 2, threshold: 3 },
+    };
+    const pivot = computePivot(rows, config);
+    const explicit = new Set(pivot.colHeaders.map((c) => c.key));
+    expect(getDrillRowsForCell(rows, config, "M", PIVOT_OTHERS_COL_KEY, explicit)).toEqual([2, 3, 4]);
+    expect(getDrillRowsForCell(rows, config, "M", "S5", explicit)).toEqual([0]);
   });
 });

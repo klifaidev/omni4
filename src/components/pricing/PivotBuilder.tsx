@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowDown,
   ArrowUp,
@@ -47,7 +48,9 @@ import {
 } from "@/lib/pivotData";
 import {
   getDrillRowsForCell,
+  PIVOT_OTHERS_COL_KEY,
   type PivotColHeader,
+  type PivotColLimit,
   type PivotConfig,
   type PivotLimits,
   type PivotMeasure,
@@ -80,15 +83,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuLabel,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import { exportTableCsv } from "@/lib/exportCsv";
+import {
+  currentHeapMB,
+  getPendingPivotCrash,
+  resolvePendingPivotCrash,
+  sendPivotBreadcrumb,
+  type CrashState,
+} from "@/lib/crashRecovery";
 import { toast } from "sonner";
 import {
   usePivotLayoutStore,
@@ -126,6 +128,8 @@ const PIVOT_MAX_OBSERVED_CELLS = 350_000;
 const PIVOT_MAX_ROW_HEADERS = 120_000;
 const PIVOT_MAX_COL_HEADERS = 3_000;
 const PIVOT_CLEAR_PREVIOUS_CELL_THRESHOLD = 200_000;
+/** Acima de 60 colunas, mostra as 50 maiores e soma o resto em "Outros". */
+const PIVOT_COL_LIMIT: PivotColLimit = { top: 50, threshold: 60 };
 const PIVOT_LIMITS: PivotLimits = {
   maxRowHeaders: PIVOT_MAX_ROW_HEADERS,
   maxColHeaders: PIVOT_MAX_COL_HEADERS,
@@ -816,6 +820,15 @@ export function PivotBuilder({
     return map;
   }, [unified, filterValsForEngine, filterDims]);
 
+  // Muitas colunas (ex.: SKU nas colunas): por padrão só as maiores aparecem
+  // uma a uma e o resto vira "Outros". "Mostrar todas" desliga — volta ao
+  // padrão quando a dimensão das colunas muda.
+  const [showAllCols, setShowAllCols] = useState(false);
+  const colsKey = colsDims.join("|");
+  useEffect(() => {
+    setShowAllCols(false);
+  }, [colsKey]);
+
   const pivotConfig = useMemo<PivotConfig>(
     () => ({
       rows: rowsDims,
@@ -823,8 +836,9 @@ export function PivotBuilder({
       values: selectedMeasures,
       measureCatalog,
       filters: filterValsForEngine,
+      colLimit: showAllCols ? null : PIVOT_COL_LIMIT,
     }),
-    [rowsDims, colsDims, selectedMeasures, measureCatalog, filterValsForEngine],
+    [rowsDims, colsDims, selectedMeasures, measureCatalog, filterValsForEngine, showAllCols],
   );
   // A estimativa de tamanho roda no worker, no mesmo passe do cálculo: antes
   // ela percorria a base inteira no thread principal a cada mudança de config
@@ -844,7 +858,22 @@ export function PivotBuilder({
   }));
   const [pivotLoading, setPivotLoading] = useState(false);
 
+  // Modo seguro: o app caiu por falta de memória nesta aba. A montagem
+  // restaurada fica nas zonas (dá pra ver e mexer), mas não é recalculada
+  // sozinha — antes ela derrubava o app de novo assim que a aba abria.
+  // Qualquer mudança na montagem (ou "Abrir mesmo assim") sai do modo seguro.
+  const [crashNotice, setCrashNotice] = useState<CrashState | null>(() => getPendingPivotCrash());
+  const crashConfigRef = useRef(pivotConfig);
+  const leaveSafeMode = useCallback(() => {
+    resolvePendingPivotCrash();
+    setCrashNotice(null);
+  }, []);
   useEffect(() => {
+    if (crashNotice && pivotConfig !== crashConfigRef.current) leaveSafeMode();
+  }, [crashNotice, pivotConfig, leaveSafeMode]);
+
+  useEffect(() => {
+    if (crashNotice) return;
     const requestId = ++pivotRequestRef.current;
     let cancelled = false;
 
@@ -861,6 +890,17 @@ export function PivotBuilder({
         lastEstimateRef.current = estimate;
         setPivotSafety(buildPivotSafety(estimate));
         setPivot(result ?? createEmptyPivotResult());
+        sendPivotBreadcrumb({
+          area: "pivot",
+          mode,
+          rows: pivotConfig.rows,
+          cols: pivotConfig.cols,
+          measures: pivotConfig.values.length,
+          rowHeaders: estimate.rowHeaderCount,
+          colHeaders: estimate.colHeaderCount,
+          cells: estimate.visibleValueCellCount,
+          heapMB: currentHeapMB(),
+        });
         setPivotShape({
           measures: pivotConfig.values,
           rowDims: pivotConfig.rows,
@@ -882,7 +922,13 @@ export function PivotBuilder({
     return () => {
       cancelled = true;
     };
-  }, [unified, pivotConfig]);
+    // `mode` só entra no rastro; o cálculo depende de unified/pivotConfig.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unified, pivotConfig, crashNotice]);
+
+  // Saindo da aba, o rastro deixa de valer: um crash em outra tela não pode
+  // ser atribuído à última montagem da tabela.
+  useEffect(() => () => sendPivotBreadcrumb(null), []);
 
   useEffect(() => {
     const groupKeys = pivot.rowHeaders.filter((row) => !row.isLeaf).map((row) => row.key);
@@ -1640,7 +1686,30 @@ export function PivotBuilder({
             </div>
           )}
 
-          <div ref={tableRef} className="min-w-0 max-w-full">
+          {!crashNotice && !pivotSafety?.blocked && (
+            <PivotColLimitNotice
+              estimate={pivotSafety?.estimate ?? null}
+              showAll={showAllCols}
+              colsLabel={colsDims.map((d) => dimMap.get(d)?.label ?? d).join(" · ")}
+              measureLabel={(id) => measureMap.get(id)?.label ?? id}
+              onShowAll={() => setShowAllCols(true)}
+              onShowTop={() => setShowAllCols(false)}
+            />
+          )}
+
+          {crashNotice && (
+            <PivotCrashNotice
+              crash={crashNotice}
+              labelOf={(id) => dimMap.get(id)?.label ?? id}
+              onOpenAnyway={leaveSafeMode}
+              onStartLight={() => {
+                leaveSafeMode();
+                resetAll();
+              }}
+            />
+          )}
+
+          <div ref={tableRef} className={cn("min-w-0 max-w-full", crashNotice && "hidden")}>
             <PivotTable
               pivot={pivot}
               measures={pivotShape.measures}
@@ -1675,6 +1744,109 @@ export function PivotBuilder({
 // ============================================================
 //                       SUB-COMPONENTS
 // ============================================================
+function PivotColLimitNotice({
+  estimate,
+  showAll,
+  colsLabel,
+  measureLabel,
+  onShowAll,
+  onShowTop,
+}: {
+  estimate: PivotSizeEstimate | null;
+  showAll: boolean;
+  colsLabel: string;
+  measureLabel: (id: string) => string;
+  onShowAll: () => void;
+  onShowTop: () => void;
+}) {
+  if (!estimate) return null;
+  const limited = estimate.hiddenColCount > 0;
+  const canLimit = showAll && estimate.colHeaderCount > PIVOT_COL_LIMIT.threshold;
+  if (!limited && !canLimit) return null;
+  const total = limited ? estimate.colHeaderCount - 1 + estimate.hiddenColCount : estimate.colHeaderCount;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-primary/25 bg-primary/[0.06] px-3 py-2 text-xs text-muted-foreground animate-fade-in">
+      <Columns3 className="h-3.5 w-3.5 shrink-0 text-primary" />
+      {limited ? (
+        <span>
+          Mostrando as <strong className="font-semibold text-foreground">{PIVOT_COL_LIMIT.top}</strong> colunas de{" "}
+          {colsLabel} com maior {measureLabel(estimate.colLimitMeasureId ?? "")}; as outras{" "}
+          <strong className="font-semibold text-foreground">{estimate.hiddenColCount.toLocaleString("pt-BR")}</strong> estão
+          somadas em "Outros".
+        </span>
+      ) : (
+        <span>
+          Mostrando todas as <strong className="font-semibold text-foreground">{total.toLocaleString("pt-BR")}</strong> colunas
+          de {colsLabel}.
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={limited ? onShowAll : onShowTop}
+        className="rounded-md px-1.5 py-0.5 font-medium text-primary outline-none hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary/60"
+      >
+        {limited ? `Mostrar todas as ${total.toLocaleString("pt-BR")}` : `Voltar às ${PIVOT_COL_LIMIT.top} maiores`}
+      </button>
+    </div>
+  );
+}
+
+function PivotCrashNotice({
+  crash,
+  labelOf,
+  onOpenAnyway,
+  onStartLight,
+}: {
+  crash: CrashState;
+  labelOf: (id: string) => string;
+  onOpenAnyway: () => void;
+  onStartLight: () => void;
+}) {
+  const crumb = crash.breadcrumb;
+  const when = new Date(crash.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const describe = (ids: string[]) => (ids.length ? ids.map(labelOf).join(" · ") : "—");
+  return (
+    <GlassCard surface="panel" className="border-warning/35 p-5" role="alert">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning/15 text-warning">
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">
+              {crash.reason === "oom"
+                ? "A Tabela Dinâmica fechou o app por falta de memória"
+                : "A Tabela Dinâmica fechou o app inesperadamente"}
+            </h3>
+            <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              Foi em {when}. Para não travar de novo, a última montagem foi restaurada nas zonas acima, mas não foi
+              recalculada. A tabela agora só desenha as células que estão na tela, então essa montagem deve abrir
+              normalmente.
+            </p>
+          </div>
+          {crumb && (
+            <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-border/50 bg-background/40 px-2 py-1">Linhas: {describe(crumb.rows)}</span>
+              <span className="rounded-full border border-border/50 bg-background/40 px-2 py-1">Colunas: {describe(crumb.cols)}</span>
+              <span className="rounded-full border border-border/50 bg-background/40 px-2 py-1">
+                {formatNum(crumb.cells, 0, true)} células de valor
+              </span>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={onOpenAnyway} className="h-8 text-xs">
+              Abrir a montagem mesmo assim
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={onStartLight} className="h-8 text-xs">
+              Começar com a montagem padrão
+            </Button>
+          </div>
+        </div>
+      </div>
+    </GlassCard>
+  );
+}
+
 // Achado 10 da análise de UX/UI: uma zona vazia sem nenhum indício visual
 // de que aceita um campo solto ali. O texto já existia (por zona), mas
 // sem destaque — agora ganha borda tracejada, o padrão universal de
@@ -2483,6 +2655,16 @@ interface DimMeta { id: string; label: string; group: string }
 // linhas visíveis: ~60-100ms por passo de rolagem com 12 meses × 3 medidas.
 // Agora a rolagem só monta as linhas que entram na janela, e o realce da
 // linha sob o cursor é CSS puro.
+//
+// Crash por falta de memória (rodada 3): só as LINHAS eram virtualizadas —
+// as colunas eram sempre desenhadas inteiras. Com SKU nas colunas, 32 linhas
+// × 400 SKUs × 6 medidas já davam 66 mil <td>, 91 mil nós de DOM e 2,4 mil
+// elementos com backdrop-blur (+170 MB de heap, 2 s travado); com a base real
+// e o limite de 3.000 colunas o processo visual estourava a memória ("oom" no
+// log do Electron). Agora as colunas também entram por janela, cada célula é
+// só um <td> sem closures (clique/teclado delegados no <tbody>), o menu
+// "mostrar como" é um só pra tabela inteira e as células fixas usam fundo
+// opaco em vez de backdrop-blur (cada uma virava uma camada de composição).
 type ShowAsMap = Record<string, ShowAsMode>;
 type PivotCellsByCol = Map<string, Record<string, number | null>>;
 
@@ -2499,31 +2681,95 @@ const EMPTY_TOTAL: Record<string, number | null> = {};
 // A janela de linhas virtualizadas anda em saltos de N linhas: rolar dentro do
 // salto não re-renderiza nada (o overscan cobre a folga).
 const PIVOT_VIRTUAL_WINDOW_STEP = 6;
+/** Acima de tantas colunas de valor (grupos de coluna × medidas), as colunas entram por janela. */
+const PIVOT_COL_VIRTUAL_THRESHOLD = 48;
+/** Grupos de coluna extras desenhados de cada lado da área visível. */
+const PIVOT_COL_OVERSCAN = 2;
+/** Largura média de um caractere em text-xs com tabular-nums (px). */
+const PIVOT_CHAR_PX = 7.2;
+
+/** Um cabeçalho de coluna do pivot (ou o Total) — ocupa uma coluna por medida. */
+type ColGroup = { col: PivotColHeader; isTotal: boolean };
+
+type ColWindow = {
+  /** Grupos desenhados agora (todos, quando as colunas não estão virtualizadas). */
+  groups: ColGroup[];
+  virtual: boolean;
+  /** Largura dos espaçadores à esquerda/direita da janela, em px. */
+  leftPx: number;
+  rightPx: number;
+};
+
+/**
+ * Largura fixa de uma coluna de medida quando as colunas estão virtualizadas
+ * (a janela precisa saber onde cada coluna começa). Estimada pelo maior
+ * número que a medida exibe — total geral, mín/máx das células e totais de
+ * coluna — e pelo rótulo do cabeçalho.
+ */
+function measureColumnWidth(m: PivotMeasure, pivot: PivotResult): number {
+  let chars = 4;
+  const consider = (v: number | null | undefined) => {
+    if (v == null || !isFinite(v)) return;
+    const len = fmtValue(m, v).length;
+    if (len > chars) chars = len;
+  };
+  consider(pivot.grandTotal[m.id]);
+  consider(pivot.measureMin[m.id]);
+  consider(pivot.measureMax[m.id]);
+  for (const totals of pivot.colTotals.values()) consider(totals[m.id]);
+  const valuePx = chars * PIVOT_CHAR_PX + 20;
+  // Rótulo em caixa alta + ícones de "mostrar como" e de ordenação.
+  const headerPx = m.label.length * PIVOT_CHAR_PX + 48;
+  return Math.round(Math.min(220, Math.max(76, valuePx, headerPx)));
+}
+
+function rowDimColumnWidth(idx: number, label: string, rows: PivotRowHeader[], hasRowGroups: boolean): number {
+  let chars = label.length;
+  for (const row of rows) {
+    const len = row.values[idx]?.length ?? 0;
+    if (len > chars) chars = len;
+    if (chars >= 48) {
+      chars = 48;
+      break;
+    }
+  }
+  let px = chars * PIVOT_CHAR_PX + 24;
+  if (idx === 0 && hasRowGroups) px += 24 + 9 * PIVOT_CHAR_PX; // botão de expandir + " subtotal"
+  if (idx === 1 && hasRowGroups) px += 14; // recuo das linhas dentro do grupo
+  return Math.round(Math.min(360, Math.max(88, px)));
+}
 
 const PivotHeader = memo(function PivotHeader({
   rowDims,
-  cols,
+  colWindow,
   hasCols,
   measures,
   dimMap,
   sort,
   onToggleSort,
   showAsByMeasure,
-  onChangeShowAs,
-  showTotal,
+  onOpenShowAsMenu,
+  groupLabelStickyLeft,
+  rowDimStickyLefts,
 }: {
   rowDims: string[];
-  cols: PivotColHeader[];
+  colWindow: ColWindow;
+  /** Colunas virtualizadas: o rótulo do grupo gruda logo após as colunas fixas. */
+  groupLabelStickyLeft: number | null;
+  /** Colunas virtualizadas: deslocamento `left` de cada coluna de dimensão (todas fixas). */
+  rowDimStickyLefts: number[] | null;
   hasCols: boolean;
   measures: PivotMeasure[];
   dimMap: Map<string, DimMeta>;
   sort: SortState;
   onToggleSort: (colKey: string, measureId: string) => void;
   showAsByMeasure: ShowAsMap;
-  onChangeShowAs: (measureId: string, mode: ShowAsMode) => void;
-  showTotal: boolean;
+  onOpenShowAsMenu: (measureId: string, x: number, y: number, returnFocus: HTMLElement | null) => void;
 }) {
   const headerPad = "py-1.5 px-2";
+  const thBase = "border-b border-border/40 bg-card";
+  const dimTh = cn(thBase, "text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground", headerPad);
+  const spacer = (key: string) => (colWindow.virtual ? <th key={key} aria-hidden className={cn(thBase, "p-0")} /> : null);
   const totalSortIcon = (measureId: string) => {
     const isSorted = sort && sort.col === TOTAL_COL_KEY && sort.measure === measureId;
     if (!isSorted) return <ArrowUpDown className="h-3 w-3 opacity-20" />;
@@ -2536,163 +2782,136 @@ const PivotHeader = memo(function PivotHeader({
           {rowDims.map((d, i) => (
             <th
               key={`rh-${d}`}
-              className={cn(
-                "border-b border-border/40 bg-card/95 backdrop-blur text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-                headerPad,
-                i === 0 && "sticky left-0 z-10",
-              )}
+              className={cn(dimTh, (i === 0 || rowDimStickyLefts) && "sticky left-0 z-10")}
+              style={rowDimStickyLefts && i > 0 ? { left: rowDimStickyLefts[i] } : undefined}
             >
               {dimMap.get(d)?.label ?? d}
             </th>
           ))}
-          {rowDims.length === 0 && (
-            <th className={cn("sticky left-0 z-10 border-b border-border/40 bg-card/95 backdrop-blur", headerPad)} />
-          )}
-          {cols.map((c) => (
-            <th
-              key={`ch-${c.key}`}
-              colSpan={measures.length}
-              className={cn(
-                "border-b border-l border-border/40 bg-card/95 backdrop-blur text-center text-[11px] font-semibold",
-                headerPad,
-              )}
-            >
-              {c.values.join(" · ") || ""}
-            </th>
-          ))}
-          {showTotal && (
-            <th
-              colSpan={measures.length}
-              className={cn(
-                "border-b border-l-2 border-border/50 bg-card/95 backdrop-blur text-center text-[11px] font-semibold",
-                headerPad,
-              )}
-            >
-              Total
-            </th>
-          )}
+          {rowDims.length === 0 && <th className={cn("sticky left-0 z-10", thBase, headerPad)} />}
+          {spacer("ls-1")}
+          {colWindow.groups.map(({ col, isTotal }) => {
+            const label = isTotal ? "Total" : col.values.join(" · ") || "";
+            return (
+              <th
+                key={`ch-${col.key}`}
+                colSpan={measures.length}
+                title={colWindow.virtual ? label : undefined}
+                className={cn(
+                  thBase,
+                  isTotal ? "border-l-2 border-l-border/50" : "border-l",
+                  "text-[11px] font-semibold",
+                  headerPad,
+                  groupLabelStickyLeft === null ? "text-center" : "text-left",
+                )}
+              >
+                {groupLabelStickyLeft === null ? label : (
+                  // Um grupo com várias medidas passa fácil da largura da tela;
+                  // centralizado, o rótulo sumia no meio da rolagem.
+                  <span className="sticky inline-block max-w-full truncate align-bottom" style={{ left: groupLabelStickyLeft + 8 }}>
+                    {label}
+                  </span>
+                )}
+              </th>
+            );
+          })}
+          {spacer("rs-1")}
         </tr>
       )}
       <tr>
         {rowDims.map((d, idx) => (
           <th
             key={`rh2-${d}`}
-            className={cn(
-              "border-b border-border/40 bg-card/95 backdrop-blur text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-              headerPad,
-              idx === 0 && "sticky left-0 z-10",
-            )}
+            className={cn(dimTh, (idx === 0 || rowDimStickyLefts) && "sticky left-0 z-10")}
+            style={rowDimStickyLefts && idx > 0 ? { left: rowDimStickyLefts[idx] } : undefined}
           >
             {!hasCols && (dimMap.get(d)?.label ?? d)}
           </th>
         ))}
-        {rowDims.length === 0 && !hasCols && (
-          <th className={cn("sticky left-0 z-10 border-b border-border/40 bg-card/95 backdrop-blur", headerPad)} />
-        )}
-        {cols.map((c) =>
-          measures.map((m) => {
-            const isSorted = sort && sort.col === c.key && sort.measure === m.id;
+        {/* Sem dimensões de linha, a 1ª coluna é um espaço reservado nas duas
+            linhas do cabeçalho — antes faltava nesta quando havia colunas, e
+            os rótulos das medidas ficavam deslocados uma coluna pra esquerda. */}
+        {rowDims.length === 0 && <th className={cn("sticky left-0 z-10", thBase, headerPad)} />}
+        {spacer("ls-2")}
+        {colWindow.groups.map(({ col, isTotal }) =>
+          measures.map((m, idx) => {
+            if (isTotal) {
+              const isSorted = sort && sort.col === TOTAL_COL_KEY && sort.measure === m.id;
+              return (
+                <th
+                  key={`mh-total-${m.id}`}
+                  onClick={() => onToggleSort(TOTAL_COL_KEY, m.id)}
+                  title="Clique para ordenar pelo total da linha"
+                  className={cn(
+                    thBase,
+                    "cursor-pointer select-none text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary",
+                    headerPad,
+                    idx === 0 ? "border-l-2 border-l-border/50" : "border-l",
+                    toneClass(m.tone),
+                    isSorted && "text-primary",
+                    colWindow.virtual && "truncate",
+                  )}
+                >
+                  <span className="inline-flex items-center justify-end gap-1">
+                    {m.label}
+                    {totalSortIcon(m.id)}
+                  </span>
+                </th>
+              );
+            }
+            const isSorted = sort && sort.col === col.key && sort.measure === m.id;
             const showAs = showAsByMeasure[m.id] ?? "normal";
             return (
-              <ContextMenu key={`mh-menu-${c.key}-${m.id}`}>
-                <ContextMenuTrigger asChild>
-                  <th
-                    key={`mh-${c.key}-${m.id}`}
-                    onClick={() => onToggleSort(c.key, m.id)}
-                    className={cn(
-                      "cursor-pointer select-none border-b border-l border-border/40 bg-card/95 backdrop-blur text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary/80",
-                      headerPad,
-                      toneClass(m.tone),
-                      isSorted && "text-primary",
-                      showAs !== "normal" && "bg-primary/10 text-primary",
-                    )}
-                    title="Clique para ordenar. Clique com o botão direito (ou no ⋮) para mostrar valores como."
+              <th
+                key={`mh-${col.key}-${m.id}`}
+                onClick={() => onToggleSort(col.key, m.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  onOpenShowAsMenu(m.id, event.clientX, event.clientY, null);
+                }}
+                className={cn(
+                  thBase,
+                  "cursor-pointer select-none border-l text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary",
+                  headerPad,
+                  toneClass(m.tone),
+                  isSorted && "text-primary",
+                  showAs !== "normal" && "text-primary shadow-[inset_0_-2px_0_hsl(var(--primary))]",
+                  colWindow.virtual && "truncate",
+                )}
+                title="Clique para ordenar. Clique com o botão direito (ou no ⋯) para mostrar valores como."
+              >
+                <span className="group inline-flex items-center justify-end gap-1">
+                  {m.label}
+                  {showAs !== "normal" && (
+                    <span className="rounded-full bg-primary/15 px-1 text-[9px] normal-case tracking-normal text-primary">%</span>
+                  )}
+                  {/* Achado 07 da análise de UX/UI: "mostrar como %" só existia via
+                      clique-direito — baixa descoberta. Este gatilho visível abre o
+                      mesmo menu (um só pra tabela inteira), sem tirar o clique-direito. */}
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      onOpenShowAsMenu(m.id, rect.left, rect.bottom, event.currentTarget);
+                    }}
+                    className="rounded p-0.5 normal-case opacity-0 outline-none transition-opacity hover:bg-foreground/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-60 hover:opacity-100"
+                    aria-label={`Mostrar ${m.label} como…`}
+                    title="Mostrar valores como"
                   >
-                    <span className="group inline-flex items-center justify-end gap-1">
-                      {m.label}
-                      {showAs !== "normal" && (
-                        <span className="rounded-full bg-primary/15 px-1 text-[9px] normal-case tracking-normal text-primary">%</span>
-                      )}
-                      {/* Achado 07 da análise de UX/UI: "mostrar como %" só existia via
-                          clique-direito — baixa descoberta. Este gatilho visível abre o
-                          mesmo menu, sem tirar o atalho de clique-direito. */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            className="rounded p-0.5 normal-case opacity-0 outline-none transition-opacity hover:bg-foreground/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 group-hover:opacity-60 hover:opacity-100"
-                            aria-label={`Mostrar ${m.label} como…`}
-                            title="Mostrar valores como"
-                          >
-                            <MoreHorizontal className="h-3 w-3" />
-                          </span>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-64">
-                          <DropdownMenuLabel>Mostrar valores como</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {SHOW_AS_OPTIONS.map((option) => (
-                            <DropdownMenuItem
-                              key={option.mode}
-                              onClick={() => onChangeShowAs(m.id, option.mode)}
-                              className="gap-2"
-                            >
-                              <Check className={cn("h-4 w-4", showAs === option.mode ? "opacity-100" : "opacity-0")} />
-                              <span>{option.label}</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      {isSorted ? (
-                        sort!.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
-                      ) : (
-                        <ArrowUpDown className="h-3 w-3 opacity-20" />
-                      )}
-                    </span>
-                  </th>
-                </ContextMenuTrigger>
-                <ContextMenuContent className="w-64">
-                  <ContextMenuLabel>Mostrar valores como</ContextMenuLabel>
-                  <ContextMenuSeparator />
-                  {SHOW_AS_OPTIONS.map((option) => (
-                    <ContextMenuItem
-                      key={option.mode}
-                      onSelect={() => onChangeShowAs(m.id, option.mode)}
-                      className="gap-2"
-                    >
-                      <Check className={cn("h-4 w-4", showAs === option.mode ? "opacity-100" : "opacity-0")} />
-                      <span>{option.label}</span>
-                    </ContextMenuItem>
-                  ))}
-                </ContextMenuContent>
-              </ContextMenu>
+                    <MoreHorizontal className="h-3 w-3" />
+                  </button>
+                  {isSorted ? (
+                    sort!.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-20" />
+                  )}
+                </span>
+              </th>
             );
           }),
         )}
-        {showTotal && measures.map((m, idx) => {
-          const isSorted = sort && sort.col === TOTAL_COL_KEY && sort.measure === m.id;
-          return (
-            <th
-              key={`mh-total-${m.id}`}
-              onClick={() => onToggleSort(TOTAL_COL_KEY, m.id)}
-              title="Clique para ordenar pelo total da linha"
-              className={cn(
-                "cursor-pointer select-none border-b border-border/40 bg-card/95 backdrop-blur text-right text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-secondary/80",
-                headerPad,
-                idx === 0 ? "border-l-2 border-l-border/50" : "border-l",
-                toneClass(m.tone),
-                isSorted && "text-primary",
-              )}
-            >
-              <span className="inline-flex items-center justify-end gap-1">
-                {m.label}
-                {totalSortIcon(m.id)}
-              </span>
-            </th>
-          );
-        })}
+        {spacer("rs-2")}
       </tr>
     </thead>
   );
@@ -2705,7 +2924,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
   rowDims,
   hasRowGroups,
   expanded,
-  cols,
+  colWindow,
   measures,
   cells,
   rowTotal,
@@ -2714,17 +2933,17 @@ const PivotBodyRow = memo(function PivotBodyRow({
   viz,
   showAsByMeasure,
   rangeByMeasure,
-  showTotal,
   onToggleRowGroup,
-  onOpenCell,
+  rowDimStickyLefts,
 }: {
+  rowDimStickyLefts: number[] | null;
   row: PivotRowHeader;
   index: number;
   virtualized: boolean;
   rowDims: string[];
   hasRowGroups: boolean;
   expanded: boolean;
-  cols: PivotColHeader[];
+  colWindow: ColWindow;
   measures: PivotMeasure[];
   cells: PivotCellsByCol;
   rowTotal: Record<string, number | null>;
@@ -2733,15 +2952,15 @@ const PivotBodyRow = memo(function PivotBodyRow({
   viz: VizMode;
   showAsByMeasure: ShowAsMap;
   rangeByMeasure: Map<string, HeatRange>;
-  showTotal: boolean;
   onToggleRowGroup: (key: string) => void;
-  onOpenCell: (row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => void;
 }) {
   const cellPad = "py-1 px-2";
   const isGroup = !row.isLeaf;
   const isGroupedLeaf = hasRowGroups && row.isLeaf && !!row.parentKey;
+  const clip = colWindow.virtual && "overflow-hidden text-ellipsis";
   return (
     <tr
+      data-rk={row.key}
       style={virtualized ? { height: PIVOT_VIRTUAL_ROW_HEIGHT } : undefined}
       className={cn(
         "group border-b border-border/15 transition-colors hover:bg-primary/[0.06]",
@@ -2758,15 +2977,23 @@ const PivotBodyRow = memo(function PivotBodyRow({
         return (
           <td
             key={`rv-${idx}`}
+            style={rowDimStickyLefts && idx > 0 ? { left: rowDimStickyLefts[idx] } : undefined}
             className={cn(
               "text-foreground",
               cellPad,
-              idx === 0 && "sticky left-0 z-[1] bg-card/85 backdrop-blur font-medium group-hover:bg-card",
-              isGroup && "bg-secondary/35 font-semibold",
+              clip,
+              idx === 0 && "sticky left-0 z-[1] bg-card font-medium",
+              // Rolando dezenas de colunas pro lado, a 2ª dimensão (ex.: Marca
+              // dentro da Categoria) sumia e a linha ficava sem identificação.
+              idx > 0 && rowDimStickyLefts && "sticky z-[1] bg-card",
+              // Tom do subtotal por sombra interna: mantém o fundo opaco da
+              // célula fixa (um fundo translúcido deixaria a rolagem horizontal
+              // aparecer por baixo dela).
+              isGroup && "font-semibold shadow-[inset_0_0_0_9999px_hsl(var(--secondary)/0.35)]",
             )}
           >
             <span
-              className="inline-flex min-w-0 items-center gap-1.5"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5"
               style={shouldShowLeafIndent ? { paddingLeft: `${row.depth * 14}px` } : undefined}
             >
               {isGroup && idx === 0 && (
@@ -2782,7 +3009,10 @@ const PivotBodyRow = memo(function PivotBodyRow({
                   {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 </button>
               )}
-              <span className={cn("truncate", isGroup && idx === 0 && "text-foreground")}>
+              <span
+                className={cn("min-w-0 truncate", isGroup && idx === 0 && "text-foreground")}
+                title={colWindow.virtual && value ? value : undefined}
+              >
                 {value}
                 {isGroup && idx === 0 ? " subtotal" : ""}
               </span>
@@ -2791,39 +3021,64 @@ const PivotBodyRow = memo(function PivotBodyRow({
         );
       })}
       {rowDims.length === 0 && (
-        <td className={cn("sticky left-0 z-[1] bg-card/85 backdrop-blur font-semibold text-muted-foreground", cellPad)}>—</td>
+        <td className={cn("sticky left-0 z-[1] bg-card font-semibold text-muted-foreground", cellPad)}>—</td>
       )}
-      {cols.map((c) => {
-        const cell = cells.get(c.key);
+      {colWindow.virtual && <td aria-hidden className="p-0" />}
+      {colWindow.groups.map(({ col, isTotal }) => {
+        if (isTotal) {
+          return measures.map((m, idx) => {
+            const showAs = showAsByMeasure[m.id] ?? "normal";
+            // Na coluna Total, o "total da coluna" é o total geral.
+            const displayValue = applyShowAs(rowTotal[m.id] ?? null, showAs, {
+              rowTotal: rowTotal[m.id],
+              colTotal: grandTotal[m.id],
+              grandTotal: grandTotal[m.id],
+            });
+            return (
+              <td
+                key={`t-${m.id}`}
+                data-ck={TOTAL_COL_KEY}
+                data-m={m.id}
+                role="button"
+                tabIndex={0}
+                title="Clique para ver as linhas que compõem o total da linha"
+                className={cn(
+                  "cursor-zoom-in whitespace-nowrap bg-secondary/20 text-right font-semibold tabular-nums outline-none transition-colors hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
+                  cellPad,
+                  clip,
+                  idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
+                  toneClass(m.tone, displayValue),
+                )}
+              >
+                {fmtPivotDisplay(m, displayValue, showAs)}
+              </td>
+            );
+          });
+        }
+        const cell = cells.get(col.key);
         const canDrill = cell !== undefined;
         return measures.map((m) => {
           const rawValue = cell?.[m.id] ?? null;
           const showAs = showAsByMeasure[m.id] ?? "normal";
           const displayValue = applyShowAs(rawValue, showAs, {
             rowTotal: rowTotal[m.id],
-            colTotal: colTotals.get(c.key)?.[m.id],
+            colTotal: colTotals.get(col.key)?.[m.id],
             grandTotal: grandTotal[m.id],
           });
           const range = showAs === "normal" ? (rangeByMeasure.get(m.id) ?? EMPTY_HEAT_RANGE) : PERCENT_HEAT_RANGE;
           return (
             <td
-              key={`v-${c.key}-${m.id}`}
-              role="button"
-              tabIndex={canDrill ? 0 : -1}
+              key={`v-${col.key}-${m.id}`}
+              data-ck={canDrill ? col.key : undefined}
+              data-m={canDrill ? m.id : undefined}
+              role={canDrill ? "button" : undefined}
+              tabIndex={canDrill ? 0 : undefined}
               title={canDrill ? "Clique para ver as linhas que compõem este valor" : undefined}
-              onClick={() => {
-                if (canDrill) onOpenCell(row, c, m);
-              }}
-              onKeyDown={(event) => {
-                if (!canDrill) return;
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                onOpenCell(row, c, m);
-              }}
               style={isGroup ? undefined : cellBg(viz, m, displayValue, range)}
               className={cn(
                 "whitespace-nowrap border-l border-border/10 text-right tabular-nums transition-colors",
                 cellPad,
+                clip,
                 isGroup && "bg-secondary/25 font-semibold",
                 toneClass(m.tone, displayValue),
                 canDrill && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
@@ -2834,37 +3089,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
           );
         });
       })}
-      {showTotal && measures.map((m, idx) => {
-        const showAs = showAsByMeasure[m.id] ?? "normal";
-        // Na coluna Total, o "total da coluna" é o total geral.
-        const displayValue = applyShowAs(rowTotal[m.id] ?? null, showAs, {
-          rowTotal: rowTotal[m.id],
-          colTotal: grandTotal[m.id],
-          grandTotal: grandTotal[m.id],
-        });
-        return (
-          <td
-            key={`t-${m.id}`}
-            role="button"
-            tabIndex={0}
-            title="Clique para ver as linhas que compõem o total da linha"
-            onClick={() => onOpenCell(row, TOTAL_COL_HEADER, m)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              onOpenCell(row, TOTAL_COL_HEADER, m);
-            }}
-            className={cn(
-              "cursor-zoom-in whitespace-nowrap bg-secondary/20 text-right font-semibold tabular-nums outline-none transition-colors hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
-              cellPad,
-              idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
-              toneClass(m.tone, displayValue),
-            )}
-          >
-            {fmtPivotDisplay(m, displayValue, showAs)}
-          </td>
-        );
-      })}
+      {colWindow.virtual && <td aria-hidden className="p-0" />}
     </tr>
   );
 });
@@ -2904,14 +3129,61 @@ const PivotTable = memo(function PivotTable({
   const hasRowGroups = useMemo(() => pivot.rowHeaders.some((row) => !row.isLeaf), [pivot.rowHeaders]);
   const cols = hasCols ? pivot.colHeaders : NO_COL_HEADERS;
   const [showAsByMeasure, setShowAsByMeasure] = useState<ShowAsMap>({});
+  const [showAsMenu, setShowAsMenu] = useState<{ measureId: string; x: number; y: number } | null>(null);
+  const showAsReturnFocusRef = useRef<HTMLElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [windowStart, setWindowStart] = useState(0);
   const windowStartRef = useRef(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
+  const [colStart, setColStart] = useState(0);
+  const colStartRef = useRef(0);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   // Com colunas, a coluna Total fecha a tabela (como no Excel exportado).
   const showTotal = hasCols;
-  const totalColumnCount = Math.max(1, rowDims.length) + (cols.length + (showTotal ? 1 : 0)) * measures.length;
   const shouldVirtualize = sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD;
+
+  const allGroups = useMemo<ColGroup[]>(() => {
+    const groups: ColGroup[] = cols.map((col) => ({ col, isTotal: false }));
+    if (showTotal) groups.push({ col: TOTAL_COL_HEADER, isTotal: true });
+    return groups;
+  }, [cols, showTotal]);
+  const colVirtual = allGroups.length * measures.length > PIVOT_COL_VIRTUAL_THRESHOLD;
+  const measureWidths = useMemo(
+    () => (colVirtual ? measures.map((m) => measureColumnWidth(m, pivot)) : []),
+    [colVirtual, measures, pivot],
+  );
+  const groupWidth = Math.max(1, measureWidths.reduce((sum, w) => sum + w, 0));
+  const rowDimWidths = useMemo(() => {
+    if (!colVirtual) return [];
+    if (rowDims.length === 0) return [64];
+    return rowDims.map((d, idx) => rowDimColumnWidth(idx, dimMap.get(d)?.label ?? d, pivot.rowHeaders, hasRowGroups));
+  }, [colVirtual, rowDims, dimMap, pivot.rowHeaders, hasRowGroups]);
+
+  const colWindow = useMemo<ColWindow>(() => {
+    if (!colVirtual) return { groups: allGroups, virtual: false, leftPx: 0, rightPx: 0 };
+    const visibleCount = Math.ceil(Math.max(viewport.width, groupWidth) / groupWidth);
+    const start = Math.min(colStart, Math.max(0, allGroups.length - 1));
+    const end = Math.min(allGroups.length, start + visibleCount + PIVOT_COL_OVERSCAN * 2);
+    return {
+      groups: allGroups.slice(start, end),
+      virtual: true,
+      leftPx: start * groupWidth,
+      rightPx: (allGroups.length - end) * groupWidth,
+    };
+  }, [colVirtual, allGroups, colStart, viewport.width, groupWidth]);
+
+  const rowDimsWidth = rowDimWidths.reduce((sum, w) => sum + w, 0);
+  const rowDimStickyLefts = useMemo(() => {
+    if (!colVirtual || rowDims.length === 0) return null;
+    let left = 0;
+    return rowDimWidths.map((w) => {
+      const offset = left;
+      left += w;
+      return offset;
+    });
+  }, [colVirtual, rowDims.length, rowDimWidths]);
+  const tableWidth = colVirtual ? rowDimsWidth + allGroups.length * groupWidth : undefined;
+  const renderedColumnCount =
+    Math.max(1, rowDims.length) + (colWindow.virtual ? 2 : 0) + colWindow.groups.length * measures.length;
 
   const handleOpenCell = useCallback((row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => {
     // O total da linha é a mesma célula num pivot sem colunas.
@@ -2921,6 +3193,7 @@ const PivotTable = memo(function PivotTable({
       isTotal ? { ...pivotConfig, cols: [] } : pivotConfig,
       row.key,
       isTotal ? "__all__" : col.key,
+      col.key === PIVOT_OTHERS_COL_KEY ? new Set(cols.map((c) => c.key)) : undefined,
     );
     if (drillIndexes.length === 0) return;
     onOpenDrill({
@@ -2929,7 +3202,35 @@ const PivotTable = memo(function PivotTable({
       measure,
       rows: drillIndexes.map((idx) => sourceRows[idx]).filter(Boolean),
     });
-  }, [sourceRows, pivotConfig, onOpenDrill]);
+  }, [sourceRows, pivotConfig, onOpenDrill, cols]);
+
+  // Clique e Enter/Espaço numa célula de valor: um único tratador no <tbody>
+  // (lê linha/coluna/medida dos data-attributes) em vez de 2 closures por <td>.
+  const rowByKey = useMemo(() => new Map(sortedRows.map((row) => [row.key, row])), [sortedRows]);
+  const colByKey = useMemo(() => {
+    const map = new Map(cols.map((col) => [col.key, col]));
+    map.set(TOTAL_COL_KEY, TOTAL_COL_HEADER);
+    return map;
+  }, [cols]);
+  const measureById = useMemo(() => new Map(measures.map((m) => [m.id, m])), [measures]);
+  const openCellFrom = useCallback((target: EventTarget | null): boolean => {
+    const td = (target as HTMLElement | null)?.closest?.("td[data-m]") as HTMLElement | null;
+    if (!td) return false;
+    const rowKey = (td.parentElement as HTMLElement | null)?.dataset.rk;
+    const row = rowKey != null ? rowByKey.get(rowKey) : undefined;
+    const col = td.dataset.ck != null ? colByKey.get(td.dataset.ck) : undefined;
+    const measure = td.dataset.m ? measureById.get(td.dataset.m) : undefined;
+    if (!row || !col || !measure) return false;
+    handleOpenCell(row, col, measure);
+    return true;
+  }, [rowByKey, colByKey, measureById, handleOpenCell]);
+  const handleBodyClick = useCallback((event: React.MouseEvent) => {
+    openCellFrom(event.target);
+  }, [openCellFrom]);
+  const handleBodyKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (openCellFrom(event.target)) event.preventDefault();
+  }, [openCellFrom]);
 
   const handleToggleSort = useCallback((colKey: string, measureId: string) => {
     if (sort && sort.col === colKey && sort.measure === measureId) {
@@ -2944,11 +3245,20 @@ const PivotTable = memo(function PivotTable({
     setShowAsByMeasure((prev) => ({ ...prev, [measureId]: mode }));
   }, []);
 
+  const handleOpenShowAsMenu = useCallback((measureId: string, x: number, y: number, returnFocus: HTMLElement | null) => {
+    showAsReturnFocusRef.current = returnFocus;
+    setShowAsMenu({ measureId, x, y });
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const updateViewport = () => setViewportHeight(el.clientHeight);
+    const updateViewport = () => setViewport((prev) => (
+      prev.width === el.clientWidth && prev.height === el.clientHeight
+        ? prev
+        : { width: el.clientWidth, height: el.clientHeight }
+    ));
     updateViewport();
     if (typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(updateViewport);
@@ -2957,22 +3267,34 @@ const PivotTable = memo(function PivotTable({
   }, []);
 
   const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    if (!shouldVirtualize) return;
-    const firstVisible = Math.floor(event.currentTarget.scrollTop / PIVOT_VIRTUAL_ROW_HEIGHT);
-    const next = Math.max(
-      0,
-      Math.floor(firstVisible / PIVOT_VIRTUAL_WINDOW_STEP) * PIVOT_VIRTUAL_WINDOW_STEP - PIVOT_VIRTUAL_OVERSCAN,
-    );
-    if (next === windowStartRef.current) return;
-    windowStartRef.current = next;
-    setWindowStart(next);
-  }, [shouldVirtualize]);
+    const el = event.currentTarget;
+    if (shouldVirtualize) {
+      const firstVisible = Math.floor(el.scrollTop / PIVOT_VIRTUAL_ROW_HEIGHT);
+      const next = Math.max(
+        0,
+        Math.floor(firstVisible / PIVOT_VIRTUAL_WINDOW_STEP) * PIVOT_VIRTUAL_WINDOW_STEP - PIVOT_VIRTUAL_OVERSCAN,
+      );
+      if (next !== windowStartRef.current) {
+        windowStartRef.current = next;
+        setWindowStart(next);
+      }
+    }
+    if (colVirtual) {
+      // As colunas de dimensão ficam fixas à esquerda e cobrem o começo da
+      // área rolada — o 1º grupo visível é o que está sob scrollLeft.
+      const next = Math.max(0, Math.floor(el.scrollLeft / groupWidth) - PIVOT_COL_OVERSCAN);
+      if (next !== colStartRef.current) {
+        colStartRef.current = next;
+        setColStart(next);
+      }
+    }
+  }, [shouldVirtualize, colVirtual, groupWidth]);
 
   const virtualRange = useMemo(() => {
     if (!shouldVirtualize) {
       return { rows: sortedRows, start: 0, topSpacer: 0, bottomSpacer: 0 };
     }
-    const visibleCount = Math.ceil(Math.max(viewportHeight, PIVOT_VIRTUAL_ROW_HEIGHT) / PIVOT_VIRTUAL_ROW_HEIGHT);
+    const visibleCount = Math.ceil(Math.max(viewport.height, PIVOT_VIRTUAL_ROW_HEIGHT) / PIVOT_VIRTUAL_ROW_HEIGHT);
     const start = Math.min(windowStart, Math.max(0, sortedRows.length - 1));
     const end = Math.min(
       sortedRows.length,
@@ -2984,7 +3306,7 @@ const PivotTable = memo(function PivotTable({
       topSpacer: start * PIVOT_VIRTUAL_ROW_HEIGHT,
       bottomSpacer: Math.max(0, (sortedRows.length - end) * PIVOT_VIRTUAL_ROW_HEIGHT),
     };
-  }, [windowStart, shouldVirtualize, sortedRows, viewportHeight]);
+  }, [windowStart, shouldVirtualize, sortedRows, viewport.height]);
 
   // Mín/máx por medida vêm prontos da agregação (computePivot). A escala vai
   // do mínimo ao máximo — com 0→máx, uma CM% entre 29% e 32% ficava toda
@@ -2998,6 +3320,7 @@ const PivotTable = memo(function PivotTable({
   }, [measures, pivot]);
 
   const cellPad = "py-1 px-2";
+  const clip = colWindow.virtual && "overflow-hidden text-ellipsis";
 
   if (measures.length === 0) {
     return (
@@ -3013,6 +3336,8 @@ const PivotTable = memo(function PivotTable({
     );
   }
 
+  const showAsCurrent = showAsMenu ? (showAsByMeasure[showAsMenu.measureId] ?? "normal") : "normal";
+
   return (
     <GlassCard surface="panel" className="min-w-0 max-w-full overflow-hidden p-0">
       <div
@@ -3020,24 +3345,38 @@ const PivotTable = memo(function PivotTable({
         className="relative max-h-[68vh] min-w-0 max-w-full overflow-auto"
         onScroll={handleScroll}
       >
-        <table className="min-w-full border-collapse text-xs">
+        <table
+          className={cn("border-collapse text-xs", !colWindow.virtual && "min-w-full")}
+          style={colWindow.virtual ? { tableLayout: "fixed", width: tableWidth } : undefined}
+        >
+          {colWindow.virtual && (
+            <colgroup>
+              {rowDimWidths.map((width, idx) => <col key={`rd-${idx}`} style={{ width }} />)}
+              <col style={{ width: colWindow.leftPx }} />
+              {colWindow.groups.flatMap(({ col }) =>
+                measureWidths.map((width, idx) => <col key={`c-${col.key}-${idx}`} style={{ width }} />),
+              )}
+              <col style={{ width: colWindow.rightPx }} />
+            </colgroup>
+          )}
           <PivotHeader
             rowDims={rowDims}
-            cols={cols}
+            colWindow={colWindow}
             hasCols={hasCols}
-            showTotal={showTotal}
             measures={measures}
             dimMap={dimMap}
             sort={sort}
             onToggleSort={handleToggleSort}
             showAsByMeasure={showAsByMeasure}
-            onChangeShowAs={handleChangeShowAs}
+            onOpenShowAsMenu={handleOpenShowAsMenu}
+            groupLabelStickyLeft={colWindow.virtual ? rowDimsWidth : null}
+            rowDimStickyLefts={rowDimStickyLefts}
           />
-          <tbody>
+          <tbody onClick={handleBodyClick} onKeyDown={handleBodyKeyDown}>
             {sortedRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={totalColumnCount}
+                  colSpan={renderedColumnCount}
                   className="px-3 py-12 text-center text-sm text-muted-foreground"
                 >
                   Sem dados para exibir. Ajuste filtros ou desative "ocultar linhas vazias".
@@ -3046,7 +3385,7 @@ const PivotTable = memo(function PivotTable({
             )}
             {shouldVirtualize && virtualRange.topSpacer > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={totalColumnCount} style={{ height: virtualRange.topSpacer, padding: 0, border: 0 }} />
+                <td colSpan={renderedColumnCount} style={{ height: virtualRange.topSpacer, padding: 0, border: 0 }} />
               </tr>
             )}
             {virtualRange.rows.map((rh, virtualIndex) => (
@@ -3058,7 +3397,7 @@ const PivotTable = memo(function PivotTable({
                 rowDims={rowDims}
                 hasRowGroups={hasRowGroups}
                 expanded={expandedRowKeys.has(rh.key)}
-                cols={cols}
+                colWindow={colWindow}
                 measures={measures}
                 cells={pivot.cells.get(rh.key) ?? EMPTY_ROW_CELLS}
                 rowTotal={pivot.rowTotals.get(rh.key) ?? EMPTY_TOTAL}
@@ -3067,40 +3406,63 @@ const PivotTable = memo(function PivotTable({
                 viz={viz}
                 showAsByMeasure={showAsByMeasure}
                 rangeByMeasure={rangeByMeasure}
-                showTotal={showTotal}
                 onToggleRowGroup={onToggleRowGroup}
-                onOpenCell={handleOpenCell}
+                rowDimStickyLefts={rowDimStickyLefts}
               />
             ))}
             {shouldVirtualize && virtualRange.bottomSpacer > 0 && (
               <tr aria-hidden="true">
-                <td colSpan={totalColumnCount} style={{ height: virtualRange.bottomSpacer, padding: 0, border: 0 }} />
+                <td colSpan={renderedColumnCount} style={{ height: virtualRange.bottomSpacer, padding: 0, border: 0 }} />
               </tr>
             )}
           </tbody>
           <tfoot className="sticky bottom-0 z-10">
-            <tr className="border-t border-border/50 bg-card/95 font-semibold shadow-[0_-8px_16px_rgba(15,23,42,0.08)] backdrop-blur">
+            <tr className="border-t border-border/50 bg-card font-semibold shadow-[0_-8px_16px_rgba(15,23,42,0.08)]">
               <td
                 colSpan={Math.max(1, rowDims.length)}
-                className={cn("sticky left-0 z-[2] bg-card/95 text-left text-[10px] uppercase tracking-wider text-muted-foreground", cellPad)}
+                className={cn("sticky left-0 z-[2] bg-card text-left text-[10px] uppercase tracking-wider text-muted-foreground", cellPad)}
               >
                 Total
               </td>
-              {cols.map((c) =>
-                measures.map((m) => {
-                  const rawValue = pivot.colTotals.get(c.key)?.[m.id] ?? (c.key === "__all__" ? pivot.grandTotal[m.id] : null);
+              {colWindow.virtual && <td aria-hidden className="p-0" />}
+              {colWindow.groups.map(({ col, isTotal }) =>
+                measures.map((m, idx) => {
                   const showAs = showAsByMeasure[m.id] ?? "normal";
+                  if (isTotal) {
+                    const rawValue = pivot.grandTotal[m.id] ?? null;
+                    const displayValue = applyShowAs(rawValue, showAs, {
+                      rowTotal: rawValue,
+                      colTotal: rawValue,
+                      grandTotal: rawValue,
+                    });
+                    return (
+                      <td
+                        key={`ft-total-${m.id}`}
+                        className={cn(
+                          "whitespace-nowrap text-right tabular-nums",
+                          cellPad,
+                          clip,
+                          idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/20",
+                          toneClass(m.tone, displayValue),
+                        )}
+                      >
+                        {fmtPivotDisplay(m, displayValue, showAs)}
+                      </td>
+                    );
+                  }
+                  const rawValue = pivot.colTotals.get(col.key)?.[m.id] ?? (col.key === "__all__" ? pivot.grandTotal[m.id] : null);
                   const displayValue = applyShowAs(rawValue, showAs, {
                     rowTotal: pivot.grandTotal[m.id],
-                    colTotal: pivot.colTotals.get(c.key)?.[m.id],
+                    colTotal: pivot.colTotals.get(col.key)?.[m.id],
                     grandTotal: pivot.grandTotal[m.id],
                   });
                   return (
                     <td
-                      key={`ft-${c.key}-${m.id}`}
+                      key={`ft-${col.key}-${m.id}`}
                       className={cn(
                         "whitespace-nowrap border-l border-border/20 text-right tabular-nums",
                         cellPad,
+                        clip,
                         toneClass(m.tone, displayValue),
                       )}
                     >
@@ -3109,32 +3471,55 @@ const PivotTable = memo(function PivotTable({
                   );
                 }),
               )}
-              {showTotal && measures.map((m, idx) => {
-                const showAs = showAsByMeasure[m.id] ?? "normal";
-                const rawValue = pivot.grandTotal[m.id] ?? null;
-                const displayValue = applyShowAs(rawValue, showAs, {
-                  rowTotal: rawValue,
-                  colTotal: rawValue,
-                  grandTotal: rawValue,
-                });
-                return (
-                  <td
-                    key={`ft-total-${m.id}`}
-                    className={cn(
-                      "whitespace-nowrap text-right tabular-nums",
-                      cellPad,
-                      idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/20",
-                      toneClass(m.tone, displayValue),
-                    )}
-                  >
-                    {fmtPivotDisplay(m, displayValue, showAs)}
-                  </td>
-                );
-              })}
+              {colWindow.virtual && <td aria-hidden className="p-0" />}
             </tr>
           </tfoot>
         </table>
       </div>
+      {/* Um único menu "mostrar como" pra tabela inteira (antes: um
+          ContextMenu + um DropdownMenu do Radix por coluna × medida). A
+          âncora vai pro <body> porque o GlassCard tem backdrop-filter, que
+          vira o bloco de contenção de elementos position: fixed. */}
+      <DropdownMenu
+        open={showAsMenu !== null}
+        onOpenChange={(open) => {
+          if (!open) setShowAsMenu(null);
+        }}
+        modal={false}
+      >
+        {showAsMenu && createPortal(
+          <DropdownMenuTrigger asChild>
+            <span
+              aria-hidden
+              style={{ position: "fixed", left: showAsMenu.x, top: showAsMenu.y, width: 1, height: 1, pointerEvents: "none" }}
+            />
+          </DropdownMenuTrigger>,
+          document.body,
+        )}
+        <DropdownMenuContent
+          align="start"
+          className="w-64"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            showAsReturnFocusRef.current?.focus();
+          }}
+        >
+          <DropdownMenuLabel>Mostrar valores como</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {SHOW_AS_OPTIONS.map((option) => (
+            <DropdownMenuItem
+              key={option.mode}
+              onSelect={() => {
+                if (showAsMenu) handleChangeShowAs(showAsMenu.measureId, option.mode);
+              }}
+              className="gap-2"
+            >
+              <Check className={cn("h-4 w-4", showAsCurrent === option.mode ? "opacity-100" : "opacity-0")} />
+              <span>{option.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </GlassCard>
   );
 });
@@ -3305,8 +3690,10 @@ function ExportMenu({
       // DOM só contém as linhas visíveis no momento — o PNG sairia cortado
       // sem explicação. Avisa antes de capturar em vez de deixar o usuário
       // descobrir sozinho que a imagem está incompleta.
-      if (sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD) {
-        toast.warning("A imagem vai capturar só as linhas visíveis na tela agora", {
+      const colsVirtualized = colDims.length > 0
+        && (pivot.colHeaders.length + 1) * measures.length > PIVOT_COL_VIRTUAL_THRESHOLD;
+      if (sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD || colsVirtualized) {
+        toast.warning("A imagem vai capturar só a parte da tabela visível na tela agora", {
           description: "Tabelas grandes são renderizadas por partes. Pra exportar tudo, use \"Exportar Excel\".",
         });
       }

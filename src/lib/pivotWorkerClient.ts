@@ -90,6 +90,7 @@ function toWorkerConfig(config: PivotConfig): PivotWorkerConfig {
     filters: config.filters,
     values: config.values.map(serializeMeasure),
     measureCatalog: config.measureCatalog?.map(serializeMeasure),
+    colLimit: config.colLimit ?? null,
   };
 }
 
