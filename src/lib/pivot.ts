@@ -240,11 +240,14 @@ function passesFilters(row: Record<string, unknown>, filters: Array<[string, Set
  * cada chave era recalculada em até 4 passadas (estimativa, cabeçalhos de
  * linha, de coluna e agregação).
  */
+const NO_GROUP_KEYS: string[] = [];
+
 interface PivotIndex {
   rows: Record<string, unknown>[];
   rowKeys: string[];
   colKeys: string[];
-  groupKeys: (string | null)[];
+  /** Chave de cada grupo-ancestral da linha, do 1º nível ao penúltimo. */
+  groupKeys: string[][];
   rowValues: Map<string, string[]>;
   colValues: Map<string, string[]>;
   groupCount: number;
@@ -311,7 +314,9 @@ function indexPivotRows(
   const filters = activeFilterSets(config.filters);
   const rowDims = config.rows;
   const colDims = config.cols;
-  const grouped = rowDims.length > 1;
+  // Hierarquia: com N dimensões de linha, cada prefixo (1ª; 1ª+2ª; ...; até
+  // N-1) é um grupo com subtotal. Antes só a 1ª dimensão agrupava.
+  const groupLevels = Math.max(0, rowDims.length - 1);
   const index: PivotIndex = {
     rows: [],
     rowKeys: [],
@@ -324,7 +329,7 @@ function indexPivotRows(
     hiddenColCount: 0,
     colLimitMeasureId: null,
   };
-  const groups = grouped ? new Set<string>() : null;
+  const groupSets = Array.from({ length: groupLevels }, () => new Set<string>());
   const observedCells = observedCellCap === null ? null : new Set<string>();
 
   for (const row of rows) {
@@ -337,18 +342,26 @@ function indexPivotRows(
     if (colDims.length > 0 && !index.colValues.has(ck)) {
       index.colValues.set(ck, colDims.map((dim) => dimVal(row, dim)));
     }
-    const gk = grouped ? dimVal(row, rowDims[0]) : null;
-    if (groups && gk !== null) groups.add(gk);
+    let prefixes = NO_GROUP_KEYS;
+    if (groupLevels > 0) {
+      prefixes = new Array<string>(groupLevels);
+      let key = dimVal(row, rowDims[0]);
+      for (let level = 0; level < groupLevels; level++) {
+        if (level > 0) key += SEP + dimVal(row, rowDims[level]);
+        prefixes[level] = key;
+        groupSets[level].add(key);
+      }
+    }
     if (observedCells && observedCellCap !== null && observedCells.size <= observedCellCap) {
       observedCells.add(`${rk}${SEP}${ck}`);
     }
     index.rows.push(row);
     index.rowKeys.push(rk);
     index.colKeys.push(ck);
-    index.groupKeys.push(gk);
+    index.groupKeys.push(prefixes);
   }
 
-  index.groupCount = groups?.size ?? 0;
+  index.groupCount = groupSets.reduce((sum, set) => sum + set.size, 0);
   if (applyColLimit(index, config) && observedCells && observedCellCap !== null) {
     // As combinações linha×coluna mudam com o "Outros" — reconta.
     observedCells.clear();
@@ -399,27 +412,41 @@ function buildRowHeaderTree(
   const leafHeaders = sortedHeaders(index.rowValues, dims);
   if (dims.length === 1) return { headers: leafHeaders, leafHeaders };
 
-  const childrenByGroup = new Map<string, PivotRowHeader[]>();
-  for (const leaf of leafHeaders) {
-    const groupKey = leaf.values[0] ?? EMPTY;
-    const children = childrenByGroup.get(groupKey);
-    const groupedLeaf = { ...leaf, depth: 1, parentKey: groupKey };
-    if (children) children.push(groupedLeaf);
-    else childrenByGroup.set(groupKey, [groupedLeaf]);
-  }
-
+  // As folhas já vêm ordenadas dimensão a dimensão, então cada grupo é um
+  // trecho contíguo: abre um cabeçalho de grupo sempre que o prefixo de um
+  // nível muda (ordem de profundidade: grupo, subgrupos, folhas).
+  const levels = dims.length - 1;
+  const open: Array<PivotRowHeader | null> = new Array(levels).fill(null);
   const headers: PivotRowHeader[] = [];
-  for (const [groupKey, children] of childrenByGroup) {
-    headers.push({
-      key: groupKey,
-      values: [groupKey],
-      depth: 0,
-      isLeaf: false,
-      childrenKeys: children.map((child) => child.key),
-    });
-    headers.push(...children);
+  const groupedLeaves: PivotRowHeader[] = [];
+  for (const leaf of leafHeaders) {
+    let prefix = "";
+    let parent: PivotRowHeader | null = null;
+    for (let level = 0; level < levels; level++) {
+      prefix = level === 0 ? (leaf.values[0] ?? EMPTY) : `${prefix}${SEP}${leaf.values[level] ?? EMPTY}`;
+      let group = open[level];
+      if (!group || group.key !== prefix) {
+        group = {
+          key: prefix,
+          values: leaf.values.slice(0, level + 1),
+          depth: level,
+          isLeaf: false,
+          parentKey: parent?.key,
+          childrenKeys: [],
+        };
+        headers.push(group);
+        parent?.childrenKeys!.push(prefix);
+        open[level] = group;
+        for (let deeper = level + 1; deeper < levels; deeper++) open[deeper] = null;
+      }
+      parent = group;
+    }
+    const groupedLeaf: PivotRowHeader = { ...leaf, depth: levels, parentKey: parent!.key };
+    parent!.childrenKeys!.push(leaf.key);
+    headers.push(groupedLeaf);
+    groupedLeaves.push(groupedLeaf);
   }
-  return { headers, leafHeaders: headers.filter((header) => header.isLeaf) };
+  return { headers, leafHeaders: groupedLeaves };
 }
 
 function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
@@ -495,13 +522,13 @@ function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
     const r = index.rows[i];
     const rk = index.rowKeys[i];
     const ck = index.colKeys[i];
-    const gk = index.groupKeys[i];
+    const prefixes = index.groupKeys[i];
     const cell = cellBucketIn(rk, ck);
     const rb = bucketIn(rowBuckets, rk);
     const cb = bucketIn(colBuckets, ck);
-    const hasGroup = gk !== null && gk !== rk;
-    const groupCell = hasGroup ? cellBucketIn(gk, ck) : null;
-    const groupRow = hasGroup ? bucketIn(rowBuckets, gk) : null;
+    // Subtotais de cada grupo-ancestral (todos os níveis da hierarquia).
+    const groupCells = prefixes.length ? prefixes.map((gk) => cellBucketIn(gk, ck)) : null;
+    const groupRows = prefixes.length ? prefixes.map((gk) => bucketIn(rowBuckets, gk)) : null;
 
     for (let f = 0; f < directFields.length; f++) {
       const field = directFields[f];
@@ -510,8 +537,8 @@ function aggregateIndex(index: PivotIndex, config: PivotConfig): PivotResult {
       if (!isFinite(num)) continue;
       pushBucket(cell, field, num);
       pushBucket(rb, field, num);
-      if (groupCell) pushBucket(groupCell, field, num);
-      if (groupRow) pushBucket(groupRow, field, num);
+      if (groupCells) for (let g = 0; g < groupCells.length; g++) pushBucket(groupCells[g], field, num);
+      if (groupRows) for (let g = 0; g < groupRows.length; g++) pushBucket(groupRows[g], field, num);
       pushBucket(cb, field, num);
       pushBucket(grandBucket, field, num);
     }
@@ -636,16 +663,21 @@ export function getDrillRowsForCell(
   explicitColKeys?: Set<string>,
 ): number[] {
   const filters = activeFilterSets(config.filters);
-  const grouped = config.rows.length > 1;
+  const groupLevels = Math.max(0, config.rows.length - 1);
   const indexes: number[] = [];
   const isOthers = colKey === PIVOT_OTHERS_COL_KEY && !!explicitColKeys;
 
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
     if (filters.length > 0 && !passesFilters(row, filters)) continue;
-    const leafKey = keyFor(row, config.rows);
-    const groupKey = grouped ? dimVal(row, config.rows[0]) : null;
-    const matchesRow = leafKey === rowKey || (groupKey != null && groupKey === rowKey);
+    // A linha bate com a folha ou com qualquer grupo-ancestral (subtotal).
+    let matchesRow = false;
+    let prefix = "";
+    for (let level = 0; level < groupLevels && !matchesRow; level++) {
+      prefix = level === 0 ? dimVal(row, config.rows[0]) : `${prefix}${SEP}${dimVal(row, config.rows[level])}`;
+      if (prefix === rowKey) matchesRow = true;
+    }
+    if (!matchesRow) matchesRow = keyFor(row, config.rows) === rowKey;
     if (!matchesRow) continue;
     const rowColKey = keyFor(row, config.cols);
     if (isOthers ? explicitColKeys!.has(rowColKey) : rowColKey !== colKey) continue;

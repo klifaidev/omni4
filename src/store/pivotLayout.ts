@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PivotMode } from "@/lib/pivotData";
 
-export type PivotVizMode = "heatmap" | "plain";
+export type PivotVizMode = "heatmap" | "plain" | "bars";
 export type PivotSortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
 
 /** Montagem da Tabela Dinâmica — tudo que a pessoa configura na tela. */

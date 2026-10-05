@@ -118,8 +118,9 @@ export function estimateLayoutSize(
   countCombos: (dims: string[]) => number,
   limits: LayoutSizeLimits,
 ): LayoutSizeEstimate {
-  const leafRows = countCombos(layout.rows);
-  const rows = layout.rows.length > 1 ? leafRows + countCombos(layout.rows.slice(0, 1)) : leafRows;
+  // Folhas + um subtotal por grupo em cada nível da hierarquia.
+  let rows = countCombos(layout.rows);
+  for (let level = 1; level < layout.rows.length; level++) rows += countCombos(layout.rows.slice(0, level));
   const cols = layout.cols.length ? countCombos(layout.cols) : 1;
   const colsLimited = !!limits.colLimit && layout.cols.length > 0 && cols > limits.colLimit.threshold;
   const colsShown = colsLimited ? limits.colLimit!.top + 1 : cols;

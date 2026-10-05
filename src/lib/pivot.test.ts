@@ -370,3 +370,56 @@ describe("colLimit — Top N colunas + Outros", () => {
     expect(getDrillRowsForCell(rows, config, "M", "S5", explicit)).toEqual([0]);
   });
 });
+
+describe("hierarquia de linhas com N níveis", () => {
+  const rows = [
+    { cat: "Choc", marca: "A", sku: "1", mes: "Jan", v: 10 },
+    { cat: "Choc", marca: "A", sku: "2", mes: "Jan", v: 20 },
+    { cat: "Choc", marca: "B", sku: "3", mes: "Jan", v: 30 },
+    { cat: "Cob", marca: "A", sku: "4", mes: "Jan", v: 40 },
+    { cat: "Cob", marca: "A", sku: "4", mes: "Fev", v: 5 },
+  ];
+  const config: PivotConfig = {
+    rows: ["cat", "marca", "sku"], cols: ["mes"], filters: {},
+    values: [{ id: "v", label: "V", field: "v", agg: "sum", format: "number" }],
+  };
+
+  it("cria grupos em cada prefixo, em ordem de profundidade, com subtotais", () => {
+    const pivot = computePivot(rows, config);
+    const S = "\u001f";
+    expect(pivot.rowHeaders.map((h) => [h.key, h.depth, h.isLeaf])).toEqual([
+      ["Choc", 0, false],
+      [`Choc${S}A`, 1, false],
+      [`Choc${S}A${S}1`, 2, true],
+      [`Choc${S}A${S}2`, 2, true],
+      [`Choc${S}B`, 1, false],
+      [`Choc${S}B${S}3`, 2, true],
+      ["Cob", 0, false],
+      [`Cob${S}A`, 1, false],
+      [`Cob${S}A${S}4`, 2, true],
+    ]);
+    expect(pivot.rowTotals.get("Choc")?.v).toBe(60);
+    expect(pivot.rowTotals.get(`Choc${S}A`)?.v).toBe(30);
+    expect(pivot.rowTotals.get(`Cob${S}A`)?.v).toBe(45);
+    expect(pivot.cells.get(`Cob${S}A`)?.get("Fev")?.v).toBe(5);
+    expect(pivot.grandTotal.v).toBe(105);
+    const choc = pivot.rowHeaders[0];
+    expect(choc.childrenKeys).toEqual([`Choc${S}A`, `Choc${S}B`]);
+    expect(pivot.rowHeaders[2].parentKey).toBe(`Choc${S}A`);
+    expect(pivot.leafRowHeaders).toHaveLength(4);
+    // Subtotais fora da escala do heatmap: só folhas contam.
+    expect(pivot.measureMax.v).toBe(40);
+  });
+
+  it("estimativa conta os grupos de todos os níveis", () => {
+    const estimate = estimatePivotSize(rows, config);
+    expect(estimate.leafRowCount).toBe(4);
+    expect(estimate.rowHeaderCount).toBe(4 + 2 + 3);
+  });
+
+  it("detalhamento de um subgrupo traz só as linhas dele", () => {
+    const S = "\u001f";
+    expect(getDrillRowsForCell(rows, config, `Choc${S}A`, "Jan")).toEqual([0, 1]);
+    expect(getDrillRowsForCell(rows, config, "Cob", "Fev")).toEqual([4]);
+  });
+});

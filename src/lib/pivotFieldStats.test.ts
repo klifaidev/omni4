@@ -23,6 +23,12 @@ describe("prévia de tamanho da montagem", () => {
     expect(e.tone).toBe("ok");
   });
 
+  it("hierarquia de 3 níveis soma os subtotais de cada nível", () => {
+    const e = estimateLayoutSize({ rows: ["marca", "sku", "mes"], cols: [], values: ["rol"] }, counter, limits);
+    // 18 folhas (marca×sku×mês) + 6 (marca×sku) + 2 (marca)
+    expect(e.rows).toBe(18 + 6 + 2);
+  });
+
   it("aplica o Top N + Outros acima do limite e classifica o peso", () => {
     const e = estimateLayoutSize({ rows: ["mes"], cols: ["sku"], values: ["rol", "cm"] }, counter, limits);
     expect(e.cols).toBe(6);

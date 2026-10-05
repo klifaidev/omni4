@@ -5,6 +5,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   AlertTriangle,
+  BarChart3,
+  TrendingUp,
   Bookmark,
   BookmarkPlus,
   Check,
@@ -390,7 +392,7 @@ function sanitizeLayout(layout: PivotLayout | undefined, mode: PivotMode): Pivot
     filterDims,
     filterVals,
     sort,
-    viz: layout.viz === "plain" ? "plain" : "heatmap",
+    viz: layout.viz === "plain" || layout.viz === "bars" ? layout.viz : "heatmap",
     hideEmpty: layout.hideEmpty !== false,
   };
 }
@@ -565,6 +567,17 @@ type HeatRange = { min: number; max: number };
 function cellBg(viz: VizMode, m: PivotMeasure, v: number | null, range: HeatRange): React.CSSProperties | undefined {
   if (viz === "plain" || v === null || !isFinite(v)) return undefined;
   const { min, max } = range;
+  if (viz === "bars") {
+    // Barra de dados (como a do Excel): comprimento proporcional ao valor
+    // absoluto; a cor diz o sinal (Δ: verde/vermelho; demais: azul/vermelho).
+    const absMax = Math.max(Math.abs(min), Math.abs(max));
+    if (absMax === 0 || v === 0) return undefined;
+    const pct = Math.max(2, Math.min(100, (Math.abs(v) / absMax) * 100));
+    const hsl = m.tone === "delta" ? (v >= 0 ? "158 64% 45%" : "0 84% 60%") : v > 0 ? "217 91% 60%" : "0 72% 51%";
+    return {
+      backgroundImage: `linear-gradient(to right, hsl(${hsl} / 0.32) ${pct}%, transparent ${pct}%)`,
+    };
+  }
   let intensity: number;
   if (m.tone === "delta" || (min < 0 && max > 0)) {
     // Divergente a partir do zero: o sinal é a informação principal.
@@ -978,7 +991,7 @@ export function PivotBuilder({
         return false;
     };
     const filterLeaves = (rows: PivotRowHeader[]) => hideEmpty ? rows.filter(rowHasValue) : rows;
-    const sortLeaves = (rows: PivotRowHeader[]) => {
+    const sortRows = (rows: PivotRowHeader[]) => {
       if (!sort) return rows;
       const getter = (k: string) => {
         const v = sort.col === TOTAL_COL_KEY
@@ -993,30 +1006,68 @@ export function PivotBuilder({
       });
     };
 
-    if (!hasGroups) return sortLeaves(filterLeaves(pivot.leafRowHeaders));
+    if (!hasGroups) return sortRows(filterLeaves(pivot.leafRowHeaders));
 
-    const childrenByParent = new Map<string, PivotRowHeader[]>();
-    for (const leaf of filterLeaves(pivot.leafRowHeaders)) {
-      const parent = leaf.parentKey ?? "";
-      const current = childrenByParent.get(parent) ?? [];
-      current.push(leaf);
-      childrenByParent.set(parent, current);
-    }
-
+    // Hierarquia de N níveis: em cada nível, os irmãos são ordenados (grupos
+    // pelo subtotal) e cada grupo é seguido pelos seus filhos.
+    const byKey = new Map(pivot.rowHeaders.map((header) => [header.key, header]));
     const rows: PivotRowHeader[] = [];
-    for (const header of sortLeaves(pivot.rowHeaders.filter((row) => !row.isLeaf))) {
-      const children = sortLeaves(childrenByParent.get(header.key) ?? []);
-      if (hideEmpty && children.length === 0 && !rowHasValue(header)) continue;
-      rows.push(header);
-      rows.push(...children);
-    }
+    const emit = (keys: string[]) => {
+      const nodes: PivotRowHeader[] = [];
+      for (const key of keys) {
+        const node = byKey.get(key);
+        if (node && (!node.isLeaf || !hideEmpty || rowHasValue(node))) nodes.push(node);
+      }
+      for (const node of sortRows(nodes)) {
+        if (node.isLeaf) {
+          rows.push(node);
+          continue;
+        }
+        const at = rows.length;
+        rows.push(node);
+        emit(node.childrenKeys ?? []);
+        if (hideEmpty && rows.length === at + 1 && !rowHasValue(node)) rows.pop();
+      }
+    };
+    emit(pivot.rowHeaders.filter((header) => header.depth === 0 && !header.isLeaf).map((header) => header.key));
     return rows;
   }, [pivot, pivotShape.measures, sort, hideEmpty]);
 
-  const visibleRows = useMemo(
-    () => sortedRows.filter((row) => !row.isLeaf || !row.parentKey || expandedRowKeys.has(row.parentKey)),
-    [expandedRowKeys, sortedRows],
-  );
+  // Esconde os descendentes de grupos recolhidos (qualquer nível).
+  const visibleRows = useMemo(() => {
+    const out: PivotRowHeader[] = [];
+    let collapsedDepth = Infinity;
+    for (const row of sortedRows) {
+      if (row.depth > collapsedDepth) continue;
+      collapsedDepth = Infinity;
+      out.push(row);
+      if (!row.isLeaf && !expandedRowKeys.has(row.key)) collapsedDepth = row.depth;
+    }
+    return out;
+  }, [expandedRowKeys, sortedRows]);
+
+  // Minigráfico de tendência por linha: só quando as colunas são de tempo
+  // (FY, Período, Mês) e há pelo menos 3 pontos na série.
+  const [showTrend, setShowTrend] = useState(true);
+  const trendAvailable = pivotShape.colDims.length > 0
+    && pivotShape.colDims.every((d) => TIME_DIM_IDS.has(d))
+    && pivotShape.measures.length > 0
+    && pivot.colHeaders.filter((c) => c.key !== PIVOT_OTHERS_COL_KEY).length >= 3;
+
+  // "Mostrar até: Categoria · Marca · SKU" — abre os grupos até o nível
+  // escolhido e fecha os de baixo.
+  const groupDepthCount = Math.max(0, pivotShape.rowDims.length - 1);
+  const expandToLevel = useCallback((level: number) => {
+    setExpandedRowKeys(new Set(pivot.rowHeaders.filter((h) => !h.isLeaf && h.depth < level).map((h) => h.key)));
+  }, [pivot.rowHeaders]);
+  const currentLevel = useMemo(() => {
+    if (groupDepthCount === 0) return null;
+    const groups = pivot.rowHeaders.filter((h) => !h.isLeaf);
+    for (let level = 0; level <= groupDepthCount; level++) {
+      if (groups.every((h) => (h.depth < level) === expandedRowKeys.has(h.key))) return level;
+    }
+    return null;
+  }, [groupDepthCount, pivot.rowHeaders, expandedRowKeys]);
 
   // ----- Drag & Drop (HTML5) -----
   const [dragging, setDragging] = useState<{ id: string; from: Zone | "palette" } | null>(null);
@@ -1376,6 +1427,7 @@ export function PivotBuilder({
           <div className="inline-flex rounded-xl border border-border/50 bg-secondary/40 p-1">
             {([
               { id: "heatmap" as const, icon: Flame, label: "Heatmap" },
+              { id: "bars" as const, icon: BarChart3, label: "Barras" },
               { id: "plain" as const, icon: Hash, label: "Valor" },
             ]).map((v) => (
               <button
@@ -1392,6 +1444,22 @@ export function PivotBuilder({
               </button>
             ))}
           </div>
+
+          {trendAvailable && (
+            <button
+              type="button"
+              onClick={() => setShowTrend((v) => !v)}
+              aria-pressed={showTrend}
+              title={showTrend ? "Esconder o minigráfico de tendência" : "Mostrar o minigráfico de tendência por linha"}
+              className={cn(
+                "inline-flex h-8 items-center gap-1 rounded-lg border border-border/50 px-2.5 text-[11px] font-medium transition-colors",
+                showTrend ? "bg-primary/10 text-primary" : "bg-secondary/40 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <TrendingUp className="h-3.5 w-3.5" />
+              Tendência
+            </button>
+          )}
 
           {/* Hide empty */}
           <button
@@ -1823,6 +1891,29 @@ export function PivotBuilder({
             </div>
           )}
 
+          {!crashNotice && !pivotSafety?.blocked && groupDepthCount > 0 && pivot.rowHeaders.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Rows3 className="h-3.5 w-3.5" />
+              <span>Mostrar até</span>
+              <div className="inline-flex rounded-lg border border-border/50 bg-secondary/40 p-0.5" role="group" aria-label="Nível da hierarquia">
+                {pivotShape.rowDims.map((dim, level) => (
+                  <button
+                    key={dim}
+                    type="button"
+                    onClick={() => expandToLevel(level)}
+                    aria-pressed={currentLevel === level}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
+                      currentLevel === level ? "bg-card text-foreground shadow-sm" : "hover:text-foreground",
+                    )}
+                  >
+                    {dimMap.get(dim)?.label ?? dim}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {!crashNotice && !pivotSafety?.blocked && (
             <PivotColLimitNotice
               estimate={pivotSafety?.estimate ?? null}
@@ -1862,6 +1953,7 @@ export function PivotBuilder({
               onOpenDrill={handleOpenDrill}
               sourceRows={unifiedRecords}
               pivotConfig={pivotShape.config}
+              trendMeasure={trendAvailable && showTrend ? pivotShape.measures[0] ?? null : null}
             />
           </div>
         </div>
@@ -3019,7 +3111,7 @@ function measureColumnWidth(m: PivotMeasure, pivot: PivotResult): number {
   return Math.round(Math.min(220, Math.max(76, valuePx, headerPx)));
 }
 
-function rowDimColumnWidth(idx: number, label: string, rows: PivotRowHeader[], hasRowGroups: boolean): number {
+function rowDimColumnWidth(idx: number, dimCount: number, label: string, rows: PivotRowHeader[], hasRowGroups: boolean): number {
   let chars = label.length;
   for (const row of rows) {
     const len = row.values[idx]?.length ?? 0;
@@ -3030,10 +3122,60 @@ function rowDimColumnWidth(idx: number, label: string, rows: PivotRowHeader[], h
     }
   }
   let px = chars * PIVOT_CHAR_PX + 24;
-  if (idx === 0 && hasRowGroups) px += 24 + 9 * PIVOT_CHAR_PX; // botão de expandir + " subtotal"
-  if (idx === 1 && hasRowGroups) px += 14; // recuo das linhas dentro do grupo
+  if (hasRowGroups && idx < dimCount - 1) px += 24 + 9 * PIVOT_CHAR_PX; // botão de expandir + " subtotal"
+  if (hasRowGroups && idx === dimCount - 1) px += 14; // recuo das folhas
   return Math.round(Math.min(360, Math.max(88, px)));
 }
+
+// ----- Tendência (minigráfico por linha) -----
+/** Dimensões de tempo: com só elas nas colunas, cada linha vira uma série. */
+const TIME_DIM_IDS = new Set(["fy", "periodo", "mesLabel"]);
+const TREND_COL_WIDTH = 108;
+const TREND_W = 84;
+const TREND_H = 20;
+
+const Sparkline = memo(function Sparkline({
+  values,
+  tone,
+  label,
+  format,
+}: {
+  values: Array<number | null | undefined>;
+  tone?: PivotMeasure["tone"];
+  label: string;
+  format: (v: number) => string;
+}) {
+  const points: Array<[number, number]> = [];
+  values.forEach((v, i) => {
+    if (v != null && isFinite(v)) points.push([i, v]);
+  });
+  if (points.length < 2) return <span className="text-[10px] text-muted-foreground/50">—</span>;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const [, v] of points) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const span = max - min || 1;
+  const pad = 2.5;
+  const x = (i: number) => pad + (i / Math.max(1, values.length - 1)) * (TREND_W - pad * 2);
+  const y = (v: number) => TREND_H - pad - ((v - min) / span) * (TREND_H - pad * 2);
+  const line = points.map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(points[points.length - 1][0]).toFixed(1)},${TREND_H} L${x(points[0][0]).toFixed(1)},${TREND_H} Z`;
+  const [lastI, last] = points[points.length - 1];
+  const first = points[0][1];
+  const change = first !== 0 ? (last - first) / Math.abs(first) : null;
+  const color = tone === "budget" ? "hsl(var(--accent))" : "hsl(var(--primary))";
+  const summary = `${label}: de ${format(first)} para ${format(last)}${change != null ? ` (${change >= 0 ? "+" : ""}${(change * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)` : ""}`;
+  return (
+    <svg width={TREND_W} height={TREND_H} viewBox={`0 0 ${TREND_W} ${TREND_H}`} role="img" aria-label={summary} className="block overflow-visible">
+      <title>{summary}</title>
+      <path d={area} fill={color} opacity={0.12} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(lastI)} cy={y(last)} r={2.2} fill={color} />
+    </svg>
+  );
+});
 
 // ----- Seleção estilo planilha -----
 type CellPos = { r: number; c: number };
@@ -3127,7 +3269,16 @@ const PivotHeader = memo(function PivotHeader({
   onOpenShowAsMenu,
   groupLabelStickyLeft,
   rowDimStickyLefts,
+  colLevels,
+  trendLabel,
+  trendStickyLeft,
 }: {
+  /** Coluna "Tendência": rótulo da medida, ou null quando não há. */
+  trendLabel: string | null;
+  /** Colunas virtualizadas: a Tendência fica fixa logo após as dimensões. */
+  trendStickyLeft: number | null;
+  /** Quantas dimensões de coluna — uma linha de cabeçalho por dimensão. */
+  colLevels: number;
   rowDims: string[];
   colWindow: ColWindow;
   /** Colunas virtualizadas: o rótulo do grupo gruda logo após as colunas fixas. */
@@ -3151,49 +3302,90 @@ const PivotHeader = memo(function PivotHeader({
     if (!isSorted) return <ArrowUpDown className="h-3 w-3 opacity-20" />;
     return sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
+  // Rótulo de grupo de coluna: centralizado; com colunas virtualizadas, gruda
+  // na borda (um grupo com várias medidas passa fácil da largura da tela).
+  const groupLabel = (label: string) => (groupLabelStickyLeft === null ? label : (
+    <span className="sticky inline-block max-w-full truncate align-bottom" style={{ left: groupLabelStickyLeft + 8 }}>
+      {label}
+    </span>
+  ));
+  // Uma linha de cabeçalho por dimensão de coluna: FY em cima, mês embaixo,
+  // com o FY mesclado sobre os seus meses. (Antes: um rótulo só, "FY25/26 ·
+  // Jan/26", repetido em cada coluna.)
+  const levels = Math.max(1, colLevels);
+  const levelRows = hasCols
+    ? Array.from({ length: levels }, (_, level) => {
+        const spans: Array<{ key: string; label: string; count: number; fullHeight: boolean }> = [];
+        for (const { col, isTotal } of colWindow.groups) {
+          // Total e "Outros" (Top N) não têm níveis: ocupam todas as linhas.
+          const fullHeight = isTotal || col.key === PIVOT_OTHERS_COL_KEY;
+          if (fullHeight) {
+            if (level === 0) spans.push({ key: col.key, label: isTotal ? "Total" : col.values.join(" · "), count: 1, fullHeight: levels > 1 || isTotal });
+            continue;
+          }
+          const label = levels === 1 ? col.values.join(" · ") : (col.values[level] ?? "");
+          const prefix = levels === 1 ? col.key : col.values.slice(0, level + 1).join("\u001f");
+          const last = spans[spans.length - 1];
+          if (last && !last.fullHeight && last.key === prefix) last.count += 1;
+          else spans.push({ key: prefix, label, count: 1, fullHeight: false });
+        }
+        return spans;
+      })
+    : [];
   return (
     <thead className="sticky top-0 z-20">
-      {hasCols && (
-        <tr>
+      {levelRows.map((spans, level) => (
+        <tr key={`lvl-${level}`}>
           {rowDims.map((d, i) => (
             <th
               key={`rh-${d}`}
               className={cn(dimTh, (i === 0 || rowDimStickyLefts) && "sticky left-0 z-10")}
               style={rowDimStickyLefts && i > 0 ? { left: rowDimStickyLefts[i] } : undefined}
             >
-              {dimMap.get(d)?.label ?? d}
+              {level === 0 && (dimMap.get(d)?.label ?? d)}
             </th>
           ))}
           {rowDims.length === 0 && <th className={cn("sticky left-0 z-10", thBase, headerPad)} />}
-          {spacer("ls-1")}
-          {colWindow.groups.map(({ col, isTotal }) => {
-            const label = isTotal ? "Total" : col.values.join(" · ") || "";
+          {level === 0 && trendLabel && (
+            <th
+              rowSpan={levels + 1}
+              className={cn(dimTh, "border-l normal-case tracking-normal", trendStickyLeft !== null && "sticky z-10")}
+              style={trendStickyLeft !== null ? { left: trendStickyLeft } : undefined}
+            >
+              <span className="flex items-center gap-1 uppercase tracking-wider">
+                <TrendingUp className="h-3 w-3" /> Tendência
+              </span>
+              <span className="block truncate text-[10px] font-medium text-muted-foreground/70">{trendLabel}</span>
+            </th>
+          )}
+          {spacer(`ls-l${level}`)}
+          {spans.map((span) => {
+            const isTotal = span.key === TOTAL_COL_KEY;
+            const rowSpan = span.fullHeight && levels > 1 ? levels : undefined;
             return (
               <th
-                key={`ch-${col.key}`}
-                colSpan={measures.length}
-                title={colWindow.virtual ? label : undefined}
+                key={`ch-${level}-${span.key}`}
+                colSpan={span.count * measures.length}
+                rowSpan={rowSpan}
+                title={colWindow.virtual ? span.label : undefined}
                 className={cn(
                   thBase,
                   isTotal ? "border-l-2 border-l-border/50" : "border-l",
                   "text-[11px] font-semibold",
+                  level < levels - 1 && !rowSpan && "text-muted-foreground",
                   headerPad,
-                  groupLabelStickyLeft === null ? "text-center" : "text-left",
+                  // Níveis de cima abrangem várias colunas: rótulo no começo do
+                  // trecho (centralizado, sumia fora da tela).
+                  groupLabelStickyLeft === null && (levels === 1 || level === levels - 1 || rowSpan) ? "text-center" : "text-left",
                 )}
               >
-                {groupLabelStickyLeft === null ? label : (
-                  // Um grupo com várias medidas passa fácil da largura da tela;
-                  // centralizado, o rótulo sumia no meio da rolagem.
-                  <span className="sticky inline-block max-w-full truncate align-bottom" style={{ left: groupLabelStickyLeft + 8 }}>
-                    {label}
-                  </span>
-                )}
+                {groupLabel(span.label)}
               </th>
             );
           })}
-          {spacer("rs-1")}
+          {spacer(`rs-l${level}`)}
         </tr>
-      )}
+      ))}
       <tr>
         {rowDims.map((d, idx) => (
           <th
@@ -3315,7 +3507,13 @@ const PivotBodyRow = memo(function PivotBodyRow({
   selC1,
   selEdges,
   focusC,
+  trendMeasure,
+  trendCols,
+  trendLeft,
 }: {
+  trendMeasure: PivotMeasure | null;
+  trendCols: PivotColHeader[];
+  trendLeft: number | null;
   rowDimStickyLefts: number[] | null;
   /** Esta linha é a 1ª (1) e/ou a última (2) da seleção — pra desenhar a borda do retângulo. */
   selEdges: number;
@@ -3370,16 +3568,21 @@ const PivotBodyRow = memo(function PivotBodyRow({
       )}
     >
       {rowDims.map((_, idx) => {
-        const value = isGroup
-          ? (idx === 0 ? row.values[0] : "")
-          : isGroupedLeaf && idx === 0
-            ? ""
-            : row.values[idx] ?? "";
-        const shouldShowLeafIndent = isGroupedLeaf && idx === Math.min(1, rowDims.length - 1);
+        // Cada nível mostra o rótulo na coluna da sua dimensão: grupo de
+        // profundidade d na coluna d; folha agrupada só na última.
+        const labelCol = isGroup ? row.depth : isGroupedLeaf ? rowDims.length - 1 : -1;
+        const value = labelCol < 0 ? row.values[idx] ?? "" : idx === labelCol ? row.values[idx] ?? "" : "";
+        const shouldShowLeafIndent = isGroupedLeaf && idx === labelCol;
+        const isLabelCell = isGroup && idx === row.depth;
+        // Tom do subtotal por sombra interna (mantém opaco o fundo da célula
+        // fixa); mais leve nos níveis mais fundos da hierarquia.
+        const groupTint = isGroup ? `inset 0 0 0 9999px hsl(var(--secondary) / ${Math.max(0.12, 0.38 - row.depth * 0.12)})` : undefined;
+        const cellStyle: React.CSSProperties | undefined =
+          rowDimStickyLefts && idx > 0 ? { left: rowDimStickyLefts[idx], boxShadow: groupTint } : groupTint ? { boxShadow: groupTint } : undefined;
         return (
           <td
             key={`rv-${idx}`}
-            style={rowDimStickyLefts && idx > 0 ? { left: rowDimStickyLefts[idx] } : undefined}
+            style={cellStyle}
             className={cn(
               "text-foreground",
               cellPad,
@@ -3388,17 +3591,14 @@ const PivotBodyRow = memo(function PivotBodyRow({
               // Rolando dezenas de colunas pro lado, a 2ª dimensão (ex.: Marca
               // dentro da Categoria) sumia e a linha ficava sem identificação.
               idx > 0 && rowDimStickyLefts && "sticky z-[1] bg-card",
-              // Tom do subtotal por sombra interna: mantém o fundo opaco da
-              // célula fixa (um fundo translúcido deixaria a rolagem horizontal
-              // aparecer por baixo dela).
-              isGroup && "font-semibold shadow-[inset_0_0_0_9999px_hsl(var(--secondary)/0.35)]",
+              isGroup && "font-semibold",
             )}
           >
             <span
               className="inline-flex min-w-0 max-w-full items-center gap-1.5"
-              style={shouldShowLeafIndent ? { paddingLeft: `${row.depth * 14}px` } : undefined}
+              style={shouldShowLeafIndent ? { paddingLeft: "14px" } : undefined}
             >
-              {isGroup && idx === 0 && (
+              {isLabelCell && (
                 <button
                   type="button"
                   aria-label={expanded ? "Recolher grupo" : "Expandir grupo"}
@@ -3412,11 +3612,11 @@ const PivotBodyRow = memo(function PivotBodyRow({
                 </button>
               )}
               <span
-                className={cn("min-w-0 truncate", isGroup && idx === 0 && "text-foreground")}
+                className={cn("min-w-0 truncate", isLabelCell && "text-foreground")}
                 title={colWindow.virtual && value ? value : undefined}
               >
                 {value}
-                {isGroup && idx === 0 ? " subtotal" : ""}
+                {isLabelCell ? " subtotal" : ""}
               </span>
             </span>
           </td>
@@ -3424,6 +3624,19 @@ const PivotBodyRow = memo(function PivotBodyRow({
       })}
       {rowDims.length === 0 && (
         <td className={cn("sticky left-0 z-[1] bg-card font-semibold text-muted-foreground", cellPad)}>—</td>
+      )}
+      {trendMeasure && (
+        <td
+          className={cn("border-l border-border/10 px-2 py-0.5", trendLeft !== null && "sticky z-[1] bg-card")}
+          style={trendLeft !== null ? { left: trendLeft } : undefined}
+        >
+          <Sparkline
+            values={trendCols.map((c) => cells.get(c.key)?.[trendMeasure.id])}
+            tone={trendMeasure.tone}
+            label={trendMeasure.label}
+            format={(v) => fmtValue(trendMeasure, v)}
+          />
+        </td>
       )}
       {colWindow.virtual && <td aria-hidden className="p-0" />}
       {colWindow.groups.map(({ col, isTotal }, gi) => {
@@ -3485,7 +3698,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
               aria-selected={c >= selC0 && c <= selC1}
               tabIndex={c === focusC ? 0 : -1}
               title={canDrill ? "Duplo clique (ou Enter) para ver as linhas que compõem este valor" : undefined}
-              style={withShadow(isGroup ? undefined : cellBg(viz, m, displayValue, range), selectShadow(c))}
+              style={withShadow(cellBg(viz, m, displayValue, range), selectShadow(c))}
               className={cn(
                 "cursor-cell whitespace-nowrap border-l border-border/10 text-right tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
                 cellPad,
@@ -3521,7 +3734,10 @@ const PivotTable = memo(function PivotTable({
   onOpenDrill,
   sourceRows,
   pivotConfig,
+  trendMeasure,
 }: {
+  /** Medida do minigráfico de tendência (null = sem coluna Tendência). */
+  trendMeasure: PivotMeasure | null;
   pivot: PivotResult;
   measures: PivotMeasure[];
   rowDims: string[];
@@ -3567,7 +3783,7 @@ const PivotTable = memo(function PivotTable({
   const rowDimWidths = useMemo(() => {
     if (!colVirtual) return [];
     if (rowDims.length === 0) return [64];
-    return rowDims.map((d, idx) => rowDimColumnWidth(idx, dimMap.get(d)?.label ?? d, pivot.rowHeaders, hasRowGroups));
+    return rowDims.map((d, idx) => rowDimColumnWidth(idx, rowDims.length, dimMap.get(d)?.label ?? d, pivot.rowHeaders, hasRowGroups));
   }, [colVirtual, rowDims, dimMap, pivot.rowHeaders, hasRowGroups]);
 
   const colWindow = useMemo<ColWindow>(() => {
@@ -3584,6 +3800,12 @@ const PivotTable = memo(function PivotTable({
     };
   }, [colVirtual, allGroups, colStart, viewport.width, groupWidth]);
 
+  const trendCols = useMemo(
+    () => (trendMeasure && hasCols ? pivot.colHeaders.filter((c) => c.key !== PIVOT_OTHERS_COL_KEY) : []),
+    [trendMeasure, hasCols, pivot.colHeaders],
+  );
+  const trend = trendCols.length >= 3 ? trendMeasure : null;
+  const trendWidth = colVirtual && trend ? TREND_COL_WIDTH : 0;
   const rowDimsWidth = rowDimWidths.reduce((sum, w) => sum + w, 0);
   const rowDimStickyLefts = useMemo(() => {
     if (!colVirtual || rowDims.length === 0) return null;
@@ -3594,9 +3816,12 @@ const PivotTable = memo(function PivotTable({
       return offset;
     });
   }, [colVirtual, rowDims.length, rowDimWidths]);
-  const tableWidth = colVirtual ? rowDimsWidth + allGroups.length * groupWidth : undefined;
+  const tableWidth = colVirtual ? rowDimsWidth + trendWidth + allGroups.length * groupWidth : undefined;
   const renderedColumnCount =
-    Math.max(1, rowDims.length) + (colWindow.virtual ? 2 : 0) + colWindow.groups.length * measures.length;
+    Math.max(1, rowDims.length) + (trend ? 1 : 0) + (colWindow.virtual ? 2 : 0) + colWindow.groups.length * measures.length;
+  // Com colunas virtualizadas, a Tendência fica fixa junto das dimensões.
+  const trendLeft = colVirtual && trend ? rowDimsWidth : null;
+  const frozenWidth = rowDimsWidth + trendWidth;
 
   const handleOpenCell = useCallback((row: PivotRowHeader, col: PivotColHeader, measure: PivotMeasure) => {
     // O total da linha é a mesma célula num pivot sem colunas.
@@ -3763,7 +3988,7 @@ const PivotTable = memo(function PivotTable({
       if (withHeaders) {
         if (rowDims.length === 0) out.push("");
         rowDims.forEach((_, i) => {
-          out.push(clean(!row.isLeaf ? (i === 0 ? `${row.values[0] ?? ""} subtotal` : "") : (row.values[i] ?? "")));
+          out.push(clean(!row.isLeaf ? (i === row.depth ? `${row.values[i] ?? ""} subtotal` : "") : (row.values[i] ?? "")));
         });
       }
       for (let c = range.c0; c <= range.c1; c++) {
@@ -3955,6 +4180,36 @@ const PivotTable = memo(function PivotTable({
     return map;
   }, [measures, pivot]);
 
+  // Subtotais têm escala própria por nível da hierarquia: comparam-se entre
+  // si (Categorias com Categorias), não com as folhas — senão, com tudo
+  // recolhido, a tabela ficava sem cor nenhuma.
+  const groupRangesByDepth = useMemo(() => {
+    const byDepth = new Map<number, Map<string, HeatRange>>();
+    for (const header of pivot.rowHeaders) {
+      if (header.isLeaf) continue;
+      const rowCells = pivot.cells.get(header.key);
+      if (!rowCells) continue;
+      let ranges = byDepth.get(header.depth);
+      if (!ranges) {
+        ranges = new Map();
+        byDepth.set(header.depth, ranges);
+      }
+      for (const cell of rowCells.values()) {
+        for (const m of measures) {
+          const v = cell[m.id];
+          if (v == null || !isFinite(v)) continue;
+          const range = ranges.get(m.id);
+          if (!range) ranges.set(m.id, { min: v, max: v });
+          else {
+            if (v < range.min) range.min = v;
+            if (v > range.max) range.max = v;
+          }
+        }
+      }
+    }
+    return byDepth;
+  }, [pivot, measures]);
+
   const cellPad = "py-1 px-2";
   const clip = colWindow.virtual && "overflow-hidden text-ellipsis";
 
@@ -3990,6 +4245,7 @@ const PivotTable = memo(function PivotTable({
           {colWindow.virtual && (
             <colgroup>
               {rowDimWidths.map((width, idx) => <col key={`rd-${idx}`} style={{ width }} />)}
+              {trend && <col style={{ width: TREND_COL_WIDTH }} />}
               <col style={{ width: colWindow.leftPx }} />
               {colWindow.groups.flatMap(({ col }) =>
                 measureWidths.map((width, idx) => <col key={`c-${col.key}-${idx}`} style={{ width }} />),
@@ -4007,8 +4263,11 @@ const PivotTable = memo(function PivotTable({
             onToggleSort={handleToggleSort}
             showAsByMeasure={showAsByMeasure}
             onOpenShowAsMenu={handleOpenShowAsMenu}
-            groupLabelStickyLeft={colWindow.virtual ? rowDimsWidth : null}
+            groupLabelStickyLeft={colWindow.virtual ? frozenWidth : null}
             rowDimStickyLefts={rowDimStickyLefts}
+            colLevels={colDims.length}
+            trendLabel={trend ? trend.label : null}
+            trendStickyLeft={trendLeft}
           />
           <tbody
             onMouseDown={handleBodyMouseDown}
@@ -4057,9 +4316,12 @@ const PivotTable = memo(function PivotTable({
                 grandTotal={pivot.grandTotal}
                 viz={viz}
                 showAsByMeasure={showAsByMeasure}
-                rangeByMeasure={rangeByMeasure}
+                rangeByMeasure={rh.isLeaf ? rangeByMeasure : groupRangesByDepth.get(rh.depth) ?? rangeByMeasure}
                 onToggleRowGroup={onToggleRowGroup}
                 rowDimStickyLefts={rowDimStickyLefts}
+                trendMeasure={trend}
+                trendCols={trendCols}
+                trendLeft={trendLeft}
               />
               );
             })}
@@ -4077,6 +4339,19 @@ const PivotTable = memo(function PivotTable({
               >
                 Total
               </td>
+              {trend && (
+                <td
+                  className={cn("border-l border-border/20 px-2 py-0.5", trendLeft !== null && "sticky z-[2] bg-card")}
+                  style={trendLeft !== null ? { left: trendLeft } : undefined}
+                >
+                  <Sparkline
+                    values={trendCols.map((c) => pivot.colTotals.get(c.key)?.[trend.id])}
+                    tone={trend.tone}
+                    label={`${trend.label} total`}
+                    format={(v) => fmtValue(trend, v)}
+                  />
+                </td>
+              )}
               {colWindow.virtual && <td aria-hidden className="p-0" />}
               {colWindow.groups.map(({ col, isTotal }) =>
                 measures.map((m, idx) => {
@@ -4305,11 +4580,13 @@ function ExportMenu({
         const rh = sortedRows[i];
         const row: (string | number | null)[] = [];
         rowDims.forEach((_, di) => {
+          // Hierarquia: grupo de profundidade d na coluna d; folha agrupada
+          // só na última coluna (as de cima já aparecem nos subtotais).
           if (!rh.isLeaf) {
-            row.push(di === 0 ? `${rh.values[0] ?? ""} subtotal` : null);
-          } else if (rh.parentKey && di === 0) {
+            row.push(di === rh.depth ? `${rh.values[di] ?? ""} subtotal` : null);
+          } else if (rh.parentKey && di < rowDims.length - 1) {
             row.push(null);
-          } else if (rh.parentKey && di === Math.min(1, rowDims.length - 1)) {
+          } else if (rh.parentKey) {
             row.push(`  ${rh.values[di] ?? ""}`);
           } else {
             row.push(rh.values[di] ?? null);
