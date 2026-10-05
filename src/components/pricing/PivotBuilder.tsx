@@ -85,6 +85,19 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportTableCsv } from "@/lib/exportCsv";
 import {
+  computeFieldStatsInIdle,
+  countDistinctCombos,
+  estimateLayoutSize,
+  type LayoutSizeEstimate,
+  type LayoutSizeLimits,
+  type PivotFieldStats,
+} from "@/lib/pivotFieldStats";
+import {
+  describePivotLayout,
+  parsePivotPhrase,
+  type PivotPhraseResult,
+} from "@/lib/pivotPhrase";
+import {
   currentHeapMB,
   getPendingPivotCrash,
   resolvePendingPivotCrash,
@@ -130,6 +143,8 @@ const PIVOT_MAX_COL_HEADERS = 3_000;
 const PIVOT_CLEAR_PREVIOUS_CELL_THRESHOLD = 200_000;
 /** Acima de 60 colunas, mostra as 50 maiores e soma o resto em "Outros". */
 const PIVOT_COL_LIMIT: PivotColLimit = { top: 50, threshold: 60 };
+/** Prévia de tamanho: acima disso a montagem é "pesada" (âmbar). */
+const PIVOT_WARN_CELLS = 100_000;
 const PIVOT_LIMITS: PivotLimits = {
   maxRowHeaders: PIVOT_MAX_ROW_HEADERS,
   maxColHeaders: PIVOT_MAX_COL_HEADERS,
@@ -1007,6 +1022,66 @@ export function PivotBuilder({
   const [dragging, setDragging] = useState<{ id: string; from: Zone | "palette" } | null>(null);
   const [dragOver, setDragOver] = useState<Zone | null>(null);
 
+  // Valores distintos por dimensão (em segundo plano): prévia de tamanho ao
+  // arrastar e reconhecimento de valores na frase ("só Varejo").
+  const [fieldStats, setFieldStats] = useState<PivotFieldStats | null>(null);
+  useEffect(() => {
+    setFieldStats(null);
+    return computeFieldStatsInIdle(
+      unified as unknown as Record<string, unknown>[],
+      dims.map((d) => d.id as string),
+      setFieldStats,
+    );
+  }, [unified, dims]);
+
+  const sizeLimits = useMemo<LayoutSizeLimits>(() => ({
+    colLimit: showAllCols ? null : PIVOT_COL_LIMIT,
+    maxRows: PIVOT_MAX_ROW_HEADERS,
+    maxCols: PIVOT_MAX_COL_HEADERS,
+    maxCells: PIVOT_MAX_VISIBLE_VALUE_CELLS,
+    warnCells: PIVOT_WARN_CELLS,
+  }), [showAllCols]);
+
+  // Como a montagem ficaria se o campo arrastado fosse solto nesta zona.
+  function simulateDrop(id: string, from: Zone | "palette", zone: Zone): { rows: string[]; cols: string[]; values: string[] } | null {
+    if (zone === "values") {
+      if (!measureMap.has(id)) return null;
+      return { rows: rowsDims, cols: colsDims, values: valueIds.includes(id) ? valueIds : [...valueIds, id] };
+    }
+    if (!dimMap.has(id)) return null;
+    let rows = rowsDims.filter((x) => x !== id);
+    let cols = colsDims.filter((x) => x !== id);
+    if (zone === "rows") rows = from === "rows" ? rowsDims : [...rows, id];
+    else if (zone === "cols") cols = from === "cols" ? colsDims : [...cols, id];
+    return { rows, cols, values: valueIds };
+  }
+
+  // Combinações reais por conjunto de dimensões (cache por base): a prévia
+  // de "SKU dentro de Marca" é ~400 linhas, não 14 × 400.
+  const comboCacheRef = useRef<{ rows: unknown; counts: Map<string, number> }>({ rows: null, counts: new Map() });
+  const countCombos = useCallback((dimIds: string[]) => {
+    if (dimIds.length === 0) return 1;
+    if (dimIds.length === 1 && fieldStats?.distinct[dimIds[0]]) return Math.max(1, fieldStats.distinct[dimIds[0]].length);
+    const cache = comboCacheRef.current;
+    if (cache.rows !== unified) {
+      cache.rows = unified;
+      cache.counts = new Map();
+    }
+    const key = dimIds.join("\u001f");
+    let n = cache.counts.get(key);
+    if (n === undefined) {
+      n = countDistinctCombos(unified as unknown as Record<string, unknown>[], dimIds);
+      cache.counts.set(key, n);
+    }
+    return n;
+  }, [unified, fieldStats]);
+
+  function dropPreview(zone: Zone): LayoutSizeEstimate | null {
+    if (!dragging || dragOver !== zone || !fieldStats) return null;
+    const next = simulateDrop(dragging.id, dragging.from, zone);
+    return next ? estimateLayoutSize(next, countCombos, sizeLimits) : null;
+  }
+
   function isDimension(id: string) {
     return dimMap.has(id);
   }
@@ -1126,6 +1201,55 @@ export function PivotBuilder({
     applyLayout(sanitizeLayout(view.layout, mode) ?? defaultLayout(mode));
     toast.success(`Visão "${view.name}" aplicada`, { description: "Ctrl+Z desfaz." });
   }
+
+  // ----- Frase viva -----
+  const phraseInputRef = useRef<HTMLInputElement>(null);
+  const parsePhrase = useCallback(
+    (text: string) => parsePivotPhrase(
+      text,
+      dims.map((d) => ({ id: d.id as string, label: d.label })),
+      measureCatalog.map((m) => ({ id: m.id, label: m.label })),
+      fieldStats?.distinct,
+    ),
+    [dims, measureCatalog, fieldStats],
+  );
+  // A frase descreve a tabela: o que ela não cita continua como está (só
+  // medidas → mantém linhas/colunas; sem "só …" → mantém os filtros).
+  function phraseToLayout(result: PivotPhraseResult): PivotLayout {
+    const hasDims = result.rows.length + result.cols.length > 0;
+    const hasFilters = result.filters.length > 0;
+    const values = result.values.length ? result.values : valueIds;
+    return {
+      ...layout,
+      rows: hasDims ? result.rows : rowsDims,
+      cols: hasDims ? result.cols : colsDims,
+      values,
+      filterDims: hasFilters ? result.filters.map((f) => f.dim) : filterDims,
+      filterVals: hasFilters ? Object.fromEntries(result.filters.map((f) => [f.dim, f.values])) : filterVals,
+      sort: sort && values.includes(sort.measure) ? sort : null,
+    };
+  }
+  function applyPhrase(result: PivotPhraseResult) {
+    if (!result.understood) return;
+    applyLayout(phraseToLayout(result));
+    toast.success("Tabela montada pela frase", { description: "Ctrl+Z desfaz." });
+  }
+  const estimatePhrase = (result: PivotPhraseResult): LayoutSizeEstimate | null =>
+    fieldStats ? estimateLayoutSize(phraseToLayout(result), countCombos, sizeLimits) : null;
+  const currentSentence = describePivotLayout(layout, (id) => dimMap.get(id)?.label ?? measureMap.get(id)?.label ?? id);
+
+  // "/" leva pra barra de frase (fora de campos de texto), como em buscadores.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      phraseInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Ex.: "Canal Ajustado · SKU × Mês — ROL", até 60 caracteres.
   const layoutName = useCallback((rowIds: string[], colIds: string[], measureIds: string[]) => {
@@ -1419,6 +1543,7 @@ export function PivotBuilder({
                         <Chip
                           key={d.id as string}
                           label={d.label}
+                          hint={fieldStats ? `${d.label} · ${(fieldStats.distinct[d.id as string]?.length ?? 0).toLocaleString("pt-BR")} valores distintos` : undefined}
                           faded={usedItems.has(d.id as string)}
                           draggable
                           onClick={() => quickAdd(d.id as string)}
@@ -1456,6 +1581,14 @@ export function PivotBuilder({
 
         {/* CONFIG ZONES + TABLE */}
         <div className="min-w-0 max-w-full space-y-3 overflow-hidden">
+          <PivotPhraseBar
+            inputRef={phraseInputRef}
+            currentSentence={currentSentence}
+            parse={parsePhrase}
+            estimate={estimatePhrase}
+            labelOf={(id) => dimMap.get(id)?.label ?? measureMap.get(id)?.label ?? id}
+            onApply={applyPhrase}
+          />
           <div className="grid min-w-0 w-full grid-cols-2 gap-2 lg:grid-cols-4">
             <DropZone
               label="Filtros"
@@ -1464,6 +1597,7 @@ export function PivotBuilder({
               zone="filters"
               count={filterDims.length}
               dragOver={dragOver === "filters"}
+              preview={dropPreview("filters")}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("filters")}
               headerAction={
@@ -1518,6 +1652,7 @@ export function PivotBuilder({
               zone="cols"
               count={colsDims.length}
               dragOver={dragOver === "cols"}
+              preview={dropPreview("cols")}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("cols")}
               headerAction={
@@ -1564,6 +1699,7 @@ export function PivotBuilder({
               zone="rows"
               count={rowsDims.length}
               dragOver={dragOver === "rows"}
+              preview={dropPreview("rows")}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("rows")}
               headerAction={
@@ -1610,6 +1746,7 @@ export function PivotBuilder({
               zone="values"
               count={valueIds.length}
               dragOver={dragOver === "values"}
+              preview={dropPreview("values")}
               setDragOver={setDragOver}
               onDrop={() => handleDrop("values")}
               headerAction={
@@ -2099,7 +2236,10 @@ function Chip({
   onDragEnd,
   onDragOverChip,
   onDropOnChip,
+  hint,
 }: {
+  /** Dica no hover (ex.: quantos valores distintos a dimensão tem). */
+  hint?: string;
   label: string;
   tone?: PivotMeasure["tone"];
   closable?: boolean;
@@ -2154,6 +2294,7 @@ function Chip({
       tabIndex={0}
       role={onClick ? "button" : undefined}
       aria-label={onClick ? `Adicionar campo ${label}` : `Campo ${label}`}
+      title={hint}
       className={cn(
         "group inline-flex cursor-grab select-none items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-sm outline-none transition-all hover:-translate-y-px hover:shadow focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
         toneRing,
@@ -2586,6 +2727,7 @@ function DropZone({
   onDrop,
   children,
   headerAction,
+  preview,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -2597,6 +2739,8 @@ function DropZone({
   onDrop: () => void;
   children: React.ReactNode;
   headerAction?: React.ReactNode;
+  /** Arrastando sobre a zona: tamanho que a tabela teria ao soltar aqui. */
+  preview?: LayoutSizeEstimate | null;
 }) {
   const accentRing =
     accent === "primary"
@@ -2640,6 +2784,156 @@ function DropZone({
         </div>
       </div>
       <div className="flex min-w-0 flex-wrap gap-1">{children}</div>
+      {preview && <LayoutSizeLine estimate={preview} className="mt-1.5" />}
+    </div>
+  );
+}
+
+const SIZE_TONE_CLASS: Record<LayoutSizeEstimate["tone"], string> = {
+  ok: "border-border/50 bg-background/60 text-muted-foreground",
+  warn: "border-warning/40 bg-warning/10 text-warning",
+  danger: "border-destructive/40 bg-destructive/10 text-destructive",
+};
+
+/** "≈ 14 linhas × 51 colunas · 2,1 mil células" — pelas combinações que existem na base. */
+function LayoutSizeLine({ estimate, className }: { estimate: LayoutSizeEstimate; className?: string }) {
+  const verdict = estimate.tone === "danger"
+    ? "grande demais: o cálculo vai pausar"
+    : estimate.tone === "warn"
+      ? "pesada"
+      : null;
+  return (
+    <div
+      className={cn(
+        "inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
+        SIZE_TONE_CLASS[estimate.tone],
+        className,
+      )}
+      role="status"
+    >
+      <span>
+        ≈ {formatNum(estimate.rows, 0, true)} {estimate.rows === 1 ? "linha" : "linhas"} ×{" "}
+        {formatNum(estimate.colsShown, 0, true)} {estimate.colsShown === 1 ? "coluna" : "colunas"}
+      </span>
+      {estimate.colsLimited && <span className="opacity-80">(50 maiores + Outros)</span>}
+      <span>· {formatNum(estimate.cells, 0, true)} células</span>
+      {verdict && <span className="font-semibold">· {verdict}</span>}
+    </div>
+  );
+}
+
+function PivotPhraseBar({
+  inputRef,
+  currentSentence,
+  parse,
+  estimate,
+  labelOf,
+  onApply,
+}: {
+  inputRef: React.RefObject<HTMLInputElement>;
+  currentSentence: string;
+  parse: (text: string) => PivotPhraseResult;
+  estimate: (result: PivotPhraseResult) => LayoutSizeEstimate | null;
+  labelOf: (id: string) => string;
+  onApply: (result: PivotPhraseResult) => void;
+}) {
+  const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(text), 120);
+    return () => window.clearTimeout(id);
+  }, [text]);
+  const result = useMemo(() => (debounced.trim() ? parse(debounced) : null), [debounced, parse]);
+  const size = result?.understood ? estimate(result) : null;
+
+  const submit = () => {
+    const current = text.trim() ? parse(text) : null;
+    if (!current?.understood) return;
+    onApply(current);
+    setText("");
+    setDebounced("");
+  };
+
+  const list = (ids: string[], sep = ", ") => ids.map(labelOf).join(sep);
+  const chip = "inline-flex max-w-full items-center gap-1 truncate rounded-md border border-border/50 bg-secondary/50 px-1.5 py-0.5";
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        className={cn(
+          "surface-panel flex h-10 items-center gap-2 rounded-xl border px-3 transition-colors",
+          focused ? "border-primary/50 ring-2 ring-primary/15" : "border-border/40",
+        )}
+      >
+        <Wand2 className={cn("h-4 w-4 shrink-0", focused || text ? "text-primary" : "text-muted-foreground")} />
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setText("");
+              setDebounced("");
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder={
+            focused || !currentSentence
+              ? "Descreva a tabela: ROL e CM% por Marca × Mês, só Varejo"
+              : `${currentSentence} — descreva outra tabela`
+          }
+          aria-label="Descrever a tabela em uma frase"
+          className="h-full min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/70"
+        />
+        {text ? (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={submit}
+            disabled={!result?.understood}
+            className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground transition-opacity disabled:opacity-40"
+          >
+            Montar
+          </button>
+        ) : (
+          <kbd className="hidden shrink-0 rounded border border-border/60 bg-secondary/50 px-1.5 text-[10px] font-medium text-muted-foreground sm:inline">
+            /
+          </kbd>
+        )}
+      </div>
+      {result && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 text-[11px] text-muted-foreground" aria-live="polite">
+          {!result.understood ? (
+            <span>Não reconheci nenhum campo. Use nomes como ROL, CM%, Volume, Marca, Mês, Canal.</span>
+          ) : (
+            <>
+              {result.values.length > 0 && <span className={chip}>Valores: <strong className="font-semibold text-foreground">{list(result.values)}</strong></span>}
+              {result.rows.length > 0 && <span className={chip}>Linhas: <strong className="font-semibold text-foreground">{list(result.rows, " › ")}</strong></span>}
+              {result.cols.length > 0 && <span className={chip}>Colunas: <strong className="font-semibold text-foreground">{list(result.cols, " › ")}</strong></span>}
+              {result.filters.map((f) => (
+                <span key={f.dim} className={chip}>
+                  {labelOf(f.dim)}:{" "}
+                  <strong className="font-semibold text-foreground">
+                    {f.values.length > 3 ? `${f.values.slice(0, 3).join(", ")} +${f.values.length - 3}` : f.values.join(", ")}
+                  </strong>
+                </span>
+              ))}
+              {size && <LayoutSizeLine estimate={size} />}
+              {result.unknown.length > 0 && (
+                <span className="text-warning">Não entendi: {result.unknown.map((w) => `"${w}"`).join(", ")}</span>
+              )}
+              <span className="text-muted-foreground/70">Enter monta · Esc limpa</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
