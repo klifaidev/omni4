@@ -80,6 +80,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { exportTableCsv } from "@/lib/exportCsv";
 import {
   computeFieldStatsInIdle,
@@ -94,6 +102,7 @@ import {
   parsePivotPhrase,
   type PivotPhraseResult,
 } from "@/lib/pivotPhrase";
+import { evaluateFormula, formatFormula, parseFormula } from "@/lib/pivotFormula";
 import {
   currentHeapMB,
   getPendingPivotCrash,
@@ -104,6 +113,7 @@ import {
 import { toast } from "sonner";
 import {
   usePivotLayoutStore,
+  type PivotCalcField,
   type PivotDensity,
   type PivotLayout,
   type PivotSortState,
@@ -342,6 +352,44 @@ function measuresFor(mode: PivotMode): PivotMeasure[] {
   return mode === "real" ? real : mode === "compare" ? compare : budget;
 }
 
+/**
+ * Campos calculados do modo como medidas do pivot. A fórmula só pode citar
+ * medidas nativas do modo (sem campo calculado dentro de campo calculado —
+ * evita ciclos); um campo cuja fórmula deixou de valer some do catálogo.
+ */
+function calcMeasuresFor(mode: PivotMode, calcFields: PivotCalcField[]): PivotMeasure[] {
+  const native = new Set(measuresFor(mode).map((m) => m.id));
+  const out: PivotMeasure[] = [];
+  for (const field of calcFields) {
+    if (field.mode !== mode) continue;
+    const parsed = parseFormula(field.formula, (name) => (native.has(name) ? name : null));
+    if (!parsed.ok) continue;
+    const ast = parsed.ast;
+    out.push({
+      id: field.id,
+      label: field.name,
+      field: field.id,
+      agg: "sum",
+      format: field.format,
+      tone: "neutral",
+      dependsOn: parsed.deps,
+      formula: parsed.canonical,
+      derive: (acc) => evaluateFormula(ast, acc),
+    });
+  }
+  return out;
+}
+
+/** Fórmula canônica ("[rol_real] / [vol_real]") com os rótulos ("[ROL] / [Volume]"). */
+function formulaForDisplay(canonical: string, labelOf: (id: string) => string): string {
+  const parsed = parseFormula(canonical, (name) => name);
+  return parsed.ok ? formatFormula(parsed.ast, labelOf) : canonical;
+}
+
+function catalogFor(mode: PivotMode, calcFields: PivotCalcField[]): PivotMeasure[] {
+  return [...measuresFor(mode), ...calcMeasuresFor(mode, calcFields)];
+}
+
 function defaultConfig(mode: PivotMode) {
   return {
     rows: ["marca"],
@@ -374,7 +422,7 @@ function defaultLayout(mode: PivotMode): PivotLayout {
 function sanitizeLayout(layout: PivotLayout | undefined, mode: PivotMode): PivotLayout | null {
   if (!layout) return null;
   const dimIds = new Set(dimensionsForMode(mode).map((d) => d.id as string));
-  const measureIds = new Set(measuresFor(mode).map((m) => m.id));
+  const measureIds = new Set(catalogFor(mode, usePivotLayoutStore.getState().calcFields).map((m) => m.id));
   const filterDims = (layout.filterDims ?? []).filter((d) => dimIds.has(d));
   const values = (layout.values ?? []).filter((v) => measureIds.has(v));
   const filterVals = Object.fromEntries(
@@ -776,7 +824,10 @@ export function PivotBuilder({
     };
   }, []);
 
-  const measureCatalog = useMemo(() => measuresFor(mode), [mode]);
+  const calcFields = usePivotLayoutStore((s) => s.calcFields);
+  const measureCatalog = useMemo(() => catalogFor(mode, calcFields), [mode, calcFields]);
+  const nativeMeasures = useMemo(() => measuresFor(mode), [mode]);
+  const [calcDialog, setCalcDialog] = useState<{ field: PivotCalcField | null } | null>(null);
   const measureMap = useMemo(
     () => new Map(measureCatalog.map((m) => [m.id, m])),
     [measureCatalog],
@@ -1044,6 +1095,8 @@ export function PivotBuilder({
 
   // Modo foco: esconde paleta, frase e zonas e dá a altura toda pra tabela.
   const [focusMode, setFocusMode] = useState(false);
+  // Destaques automáticos: valores fora do padrão da própria linha.
+  const [showHighlights, setShowHighlights] = useState(true);
   const density = usePivotLayoutStore((s) => s.density);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1495,6 +1548,22 @@ export function PivotBuilder({
             {focusMode ? "Sair do foco" : "Foco"}
           </button>
 
+          {pivotShape.colDims.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHighlights((v) => !v)}
+              aria-pressed={showHighlights}
+              title="Marca, em cada linha, os valores a mais de 2 desvios-padrão da média da linha (verde acima, vermelho abaixo)"
+              className={cn(
+                "inline-flex h-8 items-center gap-1 rounded-lg border border-border/50 px-2.5 text-[11px] font-medium transition-colors",
+                showHighlights ? "bg-primary/10 text-primary" : "bg-secondary/40 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Destaques
+            </button>
+          )}
+
           {trendAvailable && (
             <button
               type="button"
@@ -1684,7 +1753,7 @@ export function PivotBuilder({
                   Medidas
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {measureCatalog.filter((m) => matchesQuery(m.label)).map((m) => (
+                  {measureCatalog.filter((m) => !m.formula && matchesQuery(m.label)).map((m) => (
                     <Chip
                       key={m.id}
                       label={m.label}
@@ -1696,6 +1765,48 @@ export function PivotBuilder({
                       onDragEnd={() => setDragging(null)}
                     />
                   ))}
+                </div>
+              </div>
+
+              {/* Campos calculados (fórmulas da pessoa sobre as medidas). */}
+              <div className="space-y-1.5 border-t border-border/30 pt-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Calculados</div>
+                  <button
+                    type="button"
+                    onClick={() => setCalcDialog({ field: null })}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-primary outline-none hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary/60"
+                  >
+                    <Plus className="h-3 w-3" /> Novo
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {measureCatalog.filter((m) => !!m.formula && matchesQuery(m.label)).map((m) => (
+                    <span key={m.id} className="group/calc inline-flex items-center">
+                      <Chip
+                        label={m.label}
+                        hint={`${m.label} = ${formulaForDisplay(m.formula!, (id) => measureMap.get(id)?.label ?? id)}`}
+                        faded={usedItems.has(m.id)}
+                        draggable
+                        onClick={() => quickAdd(m.id)}
+                        onDragStart={() => setDragging({ id: m.id, from: "palette" })}
+                        onDragEnd={() => setDragging(null)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCalcDialog({ field: calcFields.find((f) => f.id === m.id) ?? null })}
+                        aria-label={`Editar o campo ${m.label}`}
+                        className="ml-0.5 rounded p-0.5 text-muted-foreground opacity-0 outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary/60 group-hover/calc:opacity-100"
+                      >
+                        <MoreHorizontal className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {!measureCatalog.some((m) => m.formula) && (
+                    <span className="text-[10px] leading-relaxed text-muted-foreground/60">
+                      Crie medidas com fórmulas, como [ROL] / [Volume].
+                    </span>
+                  )}
                 </div>
               </div>
             </>
@@ -1997,6 +2108,7 @@ export function PivotBuilder({
           <div className={cn("flex min-w-0 items-start gap-3", crashNotice && "hidden")}>
           <div ref={tableRef} className="min-w-0 max-w-full flex-1">
             <PivotTable
+              highlights={showHighlights}
               focusMode={focusMode}
               density={density}
               stale={showStale}
@@ -2026,6 +2138,26 @@ export function PivotBuilder({
             }}
           />
           </div>
+          <CalcFieldDialog
+            open={!!calcDialog}
+            field={calcDialog?.field ?? null}
+            nativeMeasures={nativeMeasures}
+            onSave={(input) => {
+              const saved = usePivotLayoutStore.getState().saveCalcField({ ...input, mode });
+              if (!input.id) setValueIds((prev) => (prev.includes(saved.id) ? prev : [...prev, saved.id]));
+              setCalcDialog(null);
+              toast.success(input.id ? `Campo "${saved.name}" atualizado` : `Campo "${saved.name}" criado`, {
+                description: input.id ? undefined : "Já entrou em Valores.",
+              });
+            }}
+            onDelete={(id) => {
+              usePivotLayoutStore.getState().removeCalcField(id);
+              setValueIds((prev) => prev.filter((x) => x !== id));
+              setCalcDialog(null);
+              toast.success("Campo calculado excluído");
+            }}
+            onClose={() => setCalcDialog(null)}
+          />
         </div>
       </div>
     </div>
@@ -2035,6 +2167,164 @@ export function PivotBuilder({
 // ============================================================
 //                       SUB-COMPONENTS
 // ============================================================
+const CALC_FORMATS: Array<{ id: PivotCalcField["format"]; label: string }> = [
+  { id: "currency", label: "Moeda" },
+  { id: "number", label: "Número" },
+  { id: "percent", label: "Percentual" },
+];
+
+function CalcFieldDialog({
+  open,
+  field,
+  nativeMeasures,
+  onSave,
+  onDelete,
+  onClose,
+}: {
+  open: boolean;
+  field: PivotCalcField | null;
+  nativeMeasures: PivotMeasure[];
+  onSave: (field: { id?: string; name: string; formula: string; format: PivotCalcField["format"] }) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const labelOf = useCallback((id: string) => nativeMeasures.find((m) => m.id === id)?.label ?? id, [nativeMeasures]);
+  const [name, setName] = useState("");
+  const [expr, setExpr] = useState("");
+  const [format, setFormat] = useState<PivotCalcField["format"]>("number");
+  const exprRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(field?.name ?? "");
+    setExpr(field ? formulaForDisplay(field.formula, labelOf) : "");
+    setFormat(field?.format ?? "number");
+  }, [open, field, labelOf]);
+
+  const resolve = useCallback((raw: string) => {
+    const wanted = raw.trim().replace(/\s+/g, " ").toLowerCase();
+    const hit = nativeMeasures.find((m) => m.id === raw.trim() || m.label.toLowerCase() === wanted);
+    return hit ? hit.id : null;
+  }, [nativeMeasures]);
+  const parsed = useMemo(() => (expr.trim() ? parseFormula(expr, resolve) : null), [expr, resolve]);
+  const canSave = !!name.trim() && !!parsed?.ok;
+
+  const insert = (text: string) => {
+    const el = exprRef.current;
+    const start = el?.selectionStart ?? expr.length;
+    const end = el?.selectionEnd ?? expr.length;
+    const next = `${expr.slice(0, start)}${text}${expr.slice(end)}`;
+    setExpr(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const caret = start + text.length;
+      el?.setSelectionRange(caret, caret);
+    });
+  };
+
+  const save = () => {
+    if (!canSave || !parsed?.ok) return;
+    onSave({ id: field?.id, name: name.trim(), formula: parsed.canonical, format });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{field ? "Editar campo calculado" : "Novo campo calculado"}</DialogTitle>
+          <DialogDescription>
+            Uma medida nova a partir das que já existem. É calculada depois de somar, em cada célula — então
+            [CM] / [ROL] dá a margem certa de cada linha, não a média das margens.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="calc-name" className="text-xs font-medium">Nome</label>
+            <Input id="calc-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Margem após frete" className="h-9 text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="calc-expr" className="text-xs font-medium">Fórmula</label>
+            <textarea
+              id="calc-expr"
+              ref={exprRef}
+              value={expr}
+              onChange={(e) => setExpr(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  save();
+                }
+              }}
+              rows={2}
+              placeholder="([CM] - [Frete s/ Vendas]) / [ROL]"
+              spellCheck={false}
+              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            />
+            <div className="flex flex-wrap gap-1">
+              {nativeMeasures.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => insert(`[${m.label}]`)}
+                  className="rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 text-[11px] font-medium hover:bg-secondary"
+                >
+                  {m.label}
+                </button>
+              ))}
+              {["+", "−", "×", "÷", "(", ")"].map((op) => (
+                <button
+                  key={op}
+                  type="button"
+                  onClick={() => insert(op === "(" || op === ")" ? op : ` ${op === "−" ? "-" : op} `)}
+                  className="w-7 rounded-md border border-border/60 bg-background py-0.5 text-[11px] font-semibold hover:bg-secondary"
+                  aria-label={`Inserir ${op}`}
+                >
+                  {op}
+                </button>
+              ))}
+            </div>
+            <p className={cn("min-h-[1.25rem] text-[11px]", parsed && !parsed.ok ? "text-destructive" : "text-muted-foreground")} role="status">
+              {!parsed
+                ? "Clique nas medidas e operadores ou digite, com as medidas entre colchetes."
+                : "error" in parsed
+                  ? parsed.error
+                  : `Fórmula válida — usa ${parsed.deps.map(labelOf).join(", ")}.`}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium">Formato</span>
+            <div className="inline-flex rounded-lg border border-border/50 bg-secondary/40 p-0.5" role="radiogroup" aria-label="Formato">
+              {CALC_FORMATS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={format === f.id}
+                  onClick={() => setFormat(f.id)}
+                  className={cn("rounded-md px-2.5 py-1 text-[11px] font-medium", format === f.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:justify-between">
+          {field ? (
+            <Button type="button" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onDelete(field.id)}>
+              Excluir campo
+            </Button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="button" onClick={save} disabled={!canSave}>{field ? "Salvar" : "Criar e adicionar"}</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PivotColLimitNotice({
   estimate,
   showAll,
@@ -3657,7 +3947,10 @@ const PivotBodyRow = memo(function PivotBodyRow({
   trendLeft,
   rowHeight,
   compact,
+  outlierCols,
 }: {
+  /** Destaques ligados: colunas usadas pra média/desvio da linha (null = desligado). */
+  outlierCols: PivotColHeader[] | null;
   rowHeight: number;
   compact: boolean;
   trendMeasure: PivotMeasure | null;
@@ -3692,6 +3985,35 @@ const PivotBodyRow = memo(function PivotBodyRow({
   const isGroup = !row.isLeaf;
   const isGroupedLeaf = hasRowGroups && row.isLeaf && !!row.parentKey;
   const clip = colWindow.fixed && "overflow-hidden text-ellipsis";
+  // Destaques automáticos: na linha, valores a 2+ desvios-padrão da média da
+  // própria linha (ex.: o mês que destoou). Calculado sobre todas as colunas,
+  // não só as desenhadas; só em folhas e com 6+ valores (abaixo disso nenhum
+  // ponto consegue ficar a 2 desvios).
+  const outliers = useMemo(() => {
+    if (!outlierCols || !row.isLeaf || outlierCols.length < 6) return null;
+    const found = new Map<string, number>();
+    for (const m of measures) {
+      const showAs = showAsByMeasure[m.id] ?? "normal";
+      const values: Array<[string, number]> = [];
+      for (const col of outlierCols) {
+        const v = applyShowAs(cells.get(col.key)?.[m.id] ?? null, showAs, {
+          rowTotal: rowTotal[m.id],
+          colTotal: colTotals.get(col.key)?.[m.id],
+          grandTotal: grandTotal[m.id],
+        });
+        if (v != null && isFinite(v)) values.push([col.key, v]);
+      }
+      if (values.length < 6) continue;
+      const mean = values.reduce((sum, [, v]) => sum + v, 0) / values.length;
+      const sd = Math.sqrt(values.reduce((sum, [, v]) => sum + (v - mean) ** 2, 0) / values.length);
+      if (!(sd > 0)) continue;
+      for (const [key, v] of values) {
+        const z = (v - mean) / sd;
+        if (Math.abs(z) >= 2) found.set(`${key}\u001f${m.id}`, z);
+      }
+    }
+    return found.size ? found : null;
+  }, [outlierCols, row.isLeaf, measures, showAsByMeasure, cells, rowTotal, colTotals, grandTotal]);
   // Seleção por sombras internas: um tom por cima da cor do heatmap (estilo
   // inline) e uma borda contornando o retângulo, como numa planilha.
   const selectClass = (c: number) =>
@@ -3833,6 +4155,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
         const canDrill = cell !== undefined;
         return measures.map((m, mi) => {
           const c = groupBase + mi;
+          const z = outliers?.get(`${col.key}\u001f${m.id}`);
           const rawValue = cell?.[m.id] ?? null;
           const showAs = showAsByMeasure[m.id] ?? "normal";
           const displayValue = applyShowAs(rawValue, showAs, {
@@ -3850,7 +4173,14 @@ const PivotBodyRow = memo(function PivotBodyRow({
               role="gridcell"
               aria-selected={c >= selC0 && c <= selC1}
               tabIndex={c === focusC ? 0 : -1}
-              title={canDrill ? "Duplo clique (ou Enter) para ver as linhas que compõem este valor" : undefined}
+              title={
+                [
+                  z !== undefined
+                    ? `Fora do padrão da linha: ${Math.abs(z).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} desvios ${z > 0 ? "acima" : "abaixo"} da média`
+                    : null,
+                  canDrill ? "Duplo clique (ou Enter) para ver as linhas que compõem este valor" : null,
+                ].filter(Boolean).join(" · ") || undefined
+              }
               style={withShadow(cellBg(viz, m, displayValue, range), selectShadow(c))}
               className={cn(
                 "cursor-cell whitespace-nowrap border-l border-border/10 text-right tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
@@ -3859,9 +4189,19 @@ const PivotBodyRow = memo(function PivotBodyRow({
                 isGroup && "bg-secondary/25 font-semibold",
                 toneClass(m.tone, displayValue),
                 canDrill && "hover:ring-1 hover:ring-primary/40",
+                z !== undefined && "relative",
                 selectClass(c),
               )}
             >
+              {z !== undefined && (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute left-1 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full",
+                    z > 0 ? "bg-emerald-500" : "bg-rose-500",
+                  )}
+                />
+              )}
               {fmtPivotDisplay(m, displayValue, showAs)}
             </td>
           );
@@ -3891,7 +4231,10 @@ const PivotTable = memo(function PivotTable({
   focusMode,
   density,
   stale,
+  highlights,
 }: {
+  /** Destaques automáticos (valores fora do padrão da linha). */
+  highlights: boolean;
   /** Modo foco: a tabela ganha a altura da tela. */
   focusMode: boolean;
   density: PivotDensity;
@@ -3985,6 +4328,10 @@ const PivotTable = memo(function PivotTable({
     [trendMeasure, hasCols, pivot.colHeaders],
   );
   const trend = trendCols.length >= 3 ? trendMeasure : null;
+  const outlierCols = useMemo(
+    () => (highlights && hasCols ? pivot.colHeaders.filter((c) => c.key !== PIVOT_OTHERS_COL_KEY) : null),
+    [highlights, hasCols, pivot.colHeaders],
+  );
   const trendWidth = fixedLayout && trend ? TREND_COL_WIDTH : 0;
   const rowDimsWidth = rowDimWidths.reduce((sum, w) => sum + w, 0);
   const rowDimStickyLefts = useMemo(() => {
@@ -4554,6 +4901,7 @@ const PivotTable = memo(function PivotTable({
                 trendLeft={trendLeft}
                 rowHeight={rowHeight}
                 compact={compact}
+                outlierCols={outlierCols}
               />
               );
             })}

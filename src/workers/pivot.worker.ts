@@ -1,4 +1,5 @@
 import { computePivotGuarded, type PivotConfig, type PivotLimits, type PivotMeasure } from "@/lib/pivot";
+import { compileFormula } from "@/lib/pivotFormula";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -86,7 +87,10 @@ function deriveFor(id: string): PivotMeasure["derive"] {
 function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
   const hydrateMeasure = (measure: SerializablePivotMeasure): PivotMeasure => {
     const { deriveId, ...base } = measure;
-    return deriveId ? { ...base, derive: deriveFor(deriveId) } : base;
+    if (deriveId) return { ...base, derive: deriveFor(deriveId) };
+    // Campo calculado pela pessoa: recompila a fórmula canônica.
+    if (base.formula) return { ...base, derive: compileFormula(base.formula) ?? (() => null) };
+    return base;
   };
   return {
     rows: config.rows,

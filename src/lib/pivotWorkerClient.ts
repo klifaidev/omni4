@@ -82,7 +82,8 @@ function rowsPayload(rowsKey: string, rows: Record<string, unknown>[]): Record<s
 function toWorkerConfig(config: PivotConfig): PivotWorkerConfig {
   const serializeMeasure = (measure: PivotMeasure): SerializablePivotMeasure => {
     const { derive: _derive, ...serializable } = measure;
-    return measure.derive ? { ...serializable, deriveId: measure.id } : serializable;
+    // Campo calculado: a fórmula já é serializável; o worker recompila.
+    return measure.derive && !measure.formula ? { ...serializable, deriveId: measure.id } : serializable;
   };
   return {
     rows: config.rows,
@@ -95,7 +96,8 @@ function toWorkerConfig(config: PivotConfig): PivotWorkerConfig {
 }
 
 function canUseWorker(config: PivotConfig): boolean {
-  return config.values.every((measure) => !measure.derive || SUPPORTED_DERIVE_IDS.has(measure.id));
+  const supported = (measure: PivotMeasure) => !measure.derive || !!measure.formula || SUPPORTED_DERIVE_IDS.has(measure.id);
+  return config.values.every(supported) && (config.measureCatalog ?? []).every(supported);
 }
 
 function getWorker(): Worker | null {

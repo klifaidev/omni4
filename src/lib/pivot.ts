@@ -29,6 +29,11 @@ export interface PivotMeasure {
   /** cálculo derivado a partir de outras medidas após agregação */
   derive?: (acc: Record<string, number | null>) => number | null;
   dependsOn?: string[];
+  /**
+   * Campo calculado pela pessoa: fórmula canônica ("[rol_real] / [vol_real]").
+   * Serializável — o worker recompila `derive` a partir dela.
+   */
+  formula?: string;
 }
 
 export interface PivotConfig {

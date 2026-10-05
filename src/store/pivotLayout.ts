@@ -29,11 +29,25 @@ const MAX_SAVED_VIEWS = 30;
 
 export type PivotDensity = "comfortable" | "compact";
 
+/** Campo calculado pela pessoa (ex.: "Margem líquida" = ([CM] - [Frete]) / [ROL]). */
+export interface PivotCalcField {
+  id: string;
+  name: string;
+  /** Fórmula canônica, com ids das medidas: "([cm_real] - [frete_real]) / [rol_real]". */
+  formula: string;
+  format: "currency" | "number" | "percent";
+  /** As medidas mudam de modo pra modo — o campo vale só no modo em que foi criado. */
+  mode: PivotMode;
+}
+
 interface PivotLayoutState {
   mode: PivotMode;
   /** Altura das linhas da tabela — preferência da pessoa, vale pra todos os modos. */
   density: PivotDensity;
   setDensity: (density: PivotDensity) => void;
+  calcFields: PivotCalcField[];
+  saveCalcField: (field: Omit<PivotCalcField, "id"> & { id?: string }) => PivotCalcField;
+  removeCalcField: (id: string) => void;
   /** Última montagem de cada modo — restaurada ao voltar pra aba ou trocar de modo. */
   layouts: Partial<Record<PivotMode, PivotLayout>>;
   savedViews: SavedPivotView[];
@@ -62,6 +76,17 @@ export const usePivotLayoutStore = create<PivotLayoutState>()(
       mode: "real",
       density: "comfortable",
       setDensity: (density) => set({ density }),
+      calcFields: [],
+      saveCalcField: (field) => {
+        const saved: PivotCalcField = { ...field, id: field.id ?? `calc_${newViewId()}`, name: field.name.trim() };
+        set((state) => ({
+          calcFields: state.calcFields.some((f) => f.id === saved.id)
+            ? state.calcFields.map((f) => (f.id === saved.id ? saved : f))
+            : [...state.calcFields, saved],
+        }));
+        return saved;
+      },
+      removeCalcField: (id) => set((state) => ({ calcFields: state.calcFields.filter((f) => f.id !== id) })),
       layouts: {},
       savedViews: [],
       setMode: (mode) => set({ mode }),
