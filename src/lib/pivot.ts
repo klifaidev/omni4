@@ -200,6 +200,10 @@ function mesLabelKey(v: string): number {
 const PT_BR_COLLATOR = new Intl.Collator("pt-BR", { numeric: true });
 
 function compareDimValues(dim: string, av: string, bv: string): number {
+  // "—" (valor vazio na base) vai sempre por último: pelo agrupamento de
+  // texto ele vinha antes de qualquer letra e abria toda tabela com uma
+  // linha sem nome.
+  if (av === EMPTY || bv === EMPTY) return av === bv ? 0 : av === EMPTY ? 1 : -1;
   if (dim === "mesLabel") return mesLabelKey(av) - mesLabelKey(bv);
   return PT_BR_COLLATOR.compare(av, bv);
 }

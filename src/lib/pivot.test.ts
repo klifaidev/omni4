@@ -423,3 +423,32 @@ describe("hierarquia de linhas com N níveis", () => {
     expect(getDrillRowsForCell(rows, config, "Cob", "Fev")).toEqual([4]);
   });
 });
+
+describe("valor vazio (—) vai por último", () => {
+  const rows = [
+    { marca: "", mesLabel: "Fev/26", v: 1 },
+    { marca: "Zeta", mesLabel: "—", v: 2 },
+    { marca: "Alfa", mesLabel: "Jan/26", v: 3 },
+    { marca: "Alfa", mesLabel: "Fev/26", v: 4 },
+  ];
+  const base: PivotConfig = {
+    rows: ["marca"], cols: ["mesLabel"], filters: {},
+    values: [{ id: "v", label: "V", field: "v", agg: "sum", format: "number" }],
+  };
+
+  it("nas linhas e nas colunas", () => {
+    const pivot = computePivot(rows, base);
+    expect(pivot.leafRowHeaders.map((h) => h.key)).toEqual(["Alfa", "Zeta", "—"]);
+    expect(pivot.colHeaders.map((h) => h.key)).toEqual(["Jan/26", "Fev/26", "—"]);
+  });
+
+  it("dentro da hierarquia, o grupo vazio fecha a lista e os filhos vazios fecham o grupo", () => {
+    const pivot = computePivot(
+      [{ cat: "", sku: "9", v: 1 }, { cat: "B", sku: "—", v: 1 }, { cat: "B", sku: "1", v: 1 }, { cat: "A", sku: "2", v: 1 }],
+      { rows: ["cat", "sku"], cols: [], filters: {}, values: base.values },
+    );
+    expect(pivot.rowHeaders.map((h) => h.key)).toEqual([
+      "A", "A\u001f2", "B", "B\u001f1", "B\u001f—", "—", "—\u001f9",
+    ]);
+  });
+});

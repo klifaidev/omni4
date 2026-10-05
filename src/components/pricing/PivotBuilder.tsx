@@ -19,7 +19,6 @@ import {
   Eye,
   EyeOff,
   FileImage,
-  FileSpreadsheet,
   Filter as FilterIcon,
   Flame,
   GripVertical,
@@ -888,7 +887,8 @@ export function PivotBuilder({
       if (id === "mesLabel" || id === "periodo") {
         arr.sort(sortMesLabel);
       } else {
-        arr.sort((a, b) => a.localeCompare(b, "pt-BR"));
+        // "—" (vazio) por último, como na tabela.
+        arr.sort((a, b) => (a === "—" ? 1 : b === "—" ? -1 : a.localeCompare(b, "pt-BR")));
       }
       map[id] = arr;
     }
@@ -1444,21 +1444,25 @@ export function PivotBuilder({
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-primary/15 blur-3xl" />
         <div className="pointer-events-none absolute -left-20 -bottom-20 h-52 w-52 rounded-full bg-accent/10 blur-3xl" />
 
-        <div className="relative flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
+        {/* Faixa 1 — identidade, modo e ações da tabela. O título não encolhe
+            (antes, com tudo na mesma faixa, os botões empurravam "Pivot Studio"
+            e as visões salvas quebravam de linha ao acaso). */}
+        <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className={cn("inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary", modeMeta[mode].glow)}>
               <Sigma className="h-4 w-4" />
             </span>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-tight">Pivot Studio</h2>
+                <h2 className="whitespace-nowrap text-sm font-semibold tracking-tight">Pivot Studio</h2>
                 <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", modeMeta[mode].chip)}>
                   {MODE_LABEL[mode]}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                {pivot.leafRowHeaders.length.toLocaleString("pt-BR")} linhas · {selectedMeasures.length} medidas
-                {activeFiltersCount > 0 && ` · ${activeFiltersCount} filtros`}
+              <p className="whitespace-nowrap text-[11px] text-muted-foreground">
+                {pivot.leafRowHeaders.length.toLocaleString("pt-BR")} {pivot.leafRowHeaders.length === 1 ? "linha" : "linhas"} ·{" "}
+                {selectedMeasures.length} {selectedMeasures.length === 1 ? "medida" : "medidas"}
+                {activeFiltersCount > 0 && ` · ${activeFiltersCount} ${activeFiltersCount === 1 ? "filtro" : "filtros"}`}
               </p>
             </div>
             {pivotLoading && (
@@ -1499,126 +1503,7 @@ export function PivotBuilder({
             })}
           </div>
 
-          {/* Viz mode (Heatmap | Valor) */}
-          <div className="inline-flex rounded-xl border border-border/50 bg-secondary/40 p-1">
-            {([
-              { id: "heatmap" as const, icon: Flame, label: "Heatmap" },
-              { id: "bars" as const, icon: BarChart3, label: "Barras" },
-              { id: "plain" as const, icon: Hash, label: "Valor" },
-            ]).map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setViz(v.id)}
-                title={v.label}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all",
-                  viz === v.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <v.icon className="h-3.5 w-3.5" />
-                {v.label}
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => usePivotLayoutStore.getState().setDensity(density === "compact" ? "comfortable" : "compact")}
-            aria-pressed={density === "compact"}
-            title={density === "compact" ? "Linhas confortáveis" : "Linhas compactas (mais linhas na tela)"}
-            className={cn(
-              "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/50 text-muted-foreground hover:text-foreground",
-              density === "compact" ? "bg-primary/10 text-primary" : "bg-secondary/40",
-            )}
-          >
-            <Rows3 className="h-3.5 w-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFocusMode((on) => !on)}
-            aria-pressed={focusMode}
-            title={focusMode ? "Sair do modo foco (F)" : "Modo foco: só a tabela (F)"}
-            className={cn(
-              "inline-flex h-8 items-center gap-1 rounded-lg border border-border/50 px-2.5 text-[11px] font-medium transition-colors",
-              focusMode ? "bg-primary/10 text-primary" : "bg-secondary/40 text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {focusMode ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            {focusMode ? "Sair do foco" : "Foco"}
-          </button>
-
-          {pivotShape.colDims.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHighlights((v) => !v)}
-              aria-pressed={showHighlights}
-              title="Marca, em cada linha, os valores a mais de 2 desvios-padrão da média da linha (verde acima, vermelho abaixo)"
-              className={cn(
-                "inline-flex h-8 items-center gap-1 rounded-lg border border-border/50 px-2.5 text-[11px] font-medium transition-colors",
-                showHighlights ? "bg-primary/10 text-primary" : "bg-secondary/40 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Destaques
-            </button>
-          )}
-
-          {trendAvailable && (
-            <button
-              type="button"
-              onClick={() => setShowTrend((v) => !v)}
-              aria-pressed={showTrend}
-              title={showTrend ? "Esconder o minigráfico de tendência" : "Mostrar o minigráfico de tendência por linha"}
-              className={cn(
-                "inline-flex h-8 items-center gap-1 rounded-lg border border-border/50 px-2.5 text-[11px] font-medium transition-colors",
-                showTrend ? "bg-primary/10 text-primary" : "bg-secondary/40 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <TrendingUp className="h-3.5 w-3.5" />
-              Tendência
-            </button>
-          )}
-
-          {/* Hide empty */}
-          <button
-            onClick={() => setHideEmpty((h) => !h)}
-            title={hideEmpty ? "Mostrar linhas vazias" : "Ocultar linhas vazias"}
-            className={cn(
-              "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/50 text-muted-foreground hover:text-foreground",
-              hideEmpty ? "bg-primary/10 text-primary" : "bg-secondary/40",
-            )}
-          >
-            {hideEmpty ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
-
-          {/* Export */}
-          <ExportMenu
-            pivot={pivot}
-            measures={pivotShape.measures}
-            rowDims={pivotShape.rowDims}
-            colDims={pivotShape.colDims}
-            dimMap={dimMap}
-            tableRef={tableRef}
-            modeLabel={MODE_LABEL[mode]}
-            sortedRows={sortedRows}
-            onExportReady={onExportReady}
-          />
-
-          {canSendToSlide && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={sendToSlide}
-              disabled={valueIds.length === 0}
-              title="Inserir esta montagem como tabela num slide"
-              className="h-8 gap-1.5 border-border/50 bg-secondary/40 text-[11px]"
-            >
-              <Send className="h-3.5 w-3.5" />
-              Enviar para Slide
-            </Button>
-          )}
+          <span aria-hidden className="hidden h-6 w-px bg-border/60 sm:block" />
 
           <div className="inline-flex items-center rounded-lg border border-border/50 bg-secondary/40">
             <button
@@ -1647,10 +1532,109 @@ export function PivotBuilder({
             size="sm"
             variant="ghost"
             onClick={resetAll}
+            title="Voltar à montagem padrão do modo"
             className="h-8 gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
             <RotateCcw className="h-3 w-3" /> Reset
           </Button>
+
+          {/* Export (imagem; o Excel é o botão da barra da página) */}
+          <ExportMenu
+            pivot={pivot}
+            measures={pivotShape.measures}
+            rowDims={pivotShape.rowDims}
+            colDims={pivotShape.colDims}
+            dimMap={dimMap}
+            tableRef={tableRef}
+            modeLabel={MODE_LABEL[mode]}
+            sortedRows={sortedRows}
+            onExportReady={onExportReady}
+          />
+
+          {canSendToSlide && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={sendToSlide}
+              disabled={valueIds.length === 0}
+              title="Inserir esta montagem como tabela num slide"
+              className="h-8 gap-1.5 border-border/50 bg-secondary/40 text-[11px]"
+            >
+              <Send className="h-3.5 w-3.5" />
+              Enviar para Slide
+            </Button>
+          )}
+        </div>
+
+        {/* Faixa 2 — como a tabela é mostrada. */}
+        <div className="relative mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/30 pt-3">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Exibição</span>
+
+          <div className="inline-flex rounded-xl border border-border/50 bg-secondary/40 p-0.5" role="group" aria-label="Coloração dos valores">
+            {([
+              { id: "heatmap" as const, icon: Flame, label: "Heatmap" },
+              { id: "bars" as const, icon: BarChart3, label: "Barras" },
+              { id: "plain" as const, icon: Hash, label: "Valor" },
+            ]).map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setViz(v.id)}
+                aria-pressed={viz === v.id}
+                title={v.label}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/60",
+                  viz === v.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <v.icon className="h-3.5 w-3.5" />
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          <span aria-hidden className="mx-0.5 h-5 w-px bg-border/60" />
+
+          {pivotShape.colDims.length > 0 && (
+            <ToolToggle
+              icon={Sparkles}
+              label="Destaques"
+              pressed={showHighlights}
+              onClick={() => setShowHighlights((v) => !v)}
+              title="Marca, em cada linha, os valores a mais de 2 desvios-padrão da média da linha (verde acima, vermelho abaixo)"
+            />
+          )}
+          {trendAvailable && (
+            <ToolToggle
+              icon={TrendingUp}
+              label="Tendência"
+              pressed={showTrend}
+              onClick={() => setShowTrend((v) => !v)}
+              title={showTrend ? "Esconder o minigráfico de tendência" : "Mostrar o minigráfico de tendência por linha"}
+            />
+          )}
+          <ToolToggle
+            icon={hideEmpty ? EyeOff : Eye}
+            label="Ocultar vazias"
+            pressed={hideEmpty}
+            onClick={() => setHideEmpty((h) => !h)}
+            title={hideEmpty ? "Mostrar linhas vazias" : "Ocultar linhas vazias"}
+          />
+          <ToolToggle
+            icon={Rows3}
+            label="Compacto"
+            pressed={density === "compact"}
+            onClick={() => usePivotLayoutStore.getState().setDensity(density === "compact" ? "comfortable" : "compact")}
+            title={density === "compact" ? "Linhas confortáveis" : "Linhas compactas (mais linhas na tela)"}
+          />
+          <ToolToggle
+            icon={focusMode ? Minimize2 : Maximize2}
+            label={focusMode ? "Sair do foco" : "Foco"}
+            pressed={focusMode}
+            onClick={() => setFocusMode((on) => !on)}
+            title={focusMode ? "Sair do modo foco (F)" : "Modo foco: só a tabela (F)"}
+          />
         </div>
 
         {/* Presets row */}
@@ -2322,6 +2306,39 @@ function CalcFieldDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Botão liga/desliga da faixa "Exibição": ícone + rótulo, mesmo desenho pra todos. */
+function ToolToggle({
+  icon: Icon,
+  label,
+  pressed,
+  onClick,
+  title,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  pressed: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      title={title}
+      className={cn(
+        "inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
+        pressed
+          ? "border-primary/30 bg-primary/10 text-primary"
+          : "border-border/50 bg-secondary/40 text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 
@@ -3045,11 +3062,17 @@ function SavedViewsBar({
 
   return (
     <>
-      <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
-      {views.length > 0 && (
-        <div className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          <Bookmark className="h-3 w-3" /> Minhas visões
-        </div>
+      {/* Com visões salvas, elas ganham a própria linha (quebra forçada) — antes
+          dividiam a linha dos presets e quebravam no meio da lista. */}
+      {views.length > 0 ? (
+        <>
+          <div aria-hidden className="basis-full" />
+          <div className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <Bookmark className="h-3 w-3" /> Minhas visões
+          </div>
+        </>
+      ) : (
+        <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
       )}
       {views.map((view) => (
         <span
@@ -4806,7 +4829,10 @@ const PivotTable = memo(function PivotTable({
         ref={scrollRef}
         className={cn(
           "relative min-w-0 max-w-full overflow-auto transition-opacity duration-200",
-          focusMode ? "max-h-[calc(100vh-14rem)]" : "max-h-[68vh]",
+          // Altura pela tela, não por 68% dela: com a tabela à vista, ela vai
+          // até o rodapé da janela — a página rola só pra chegar nela, em vez
+          // de uma rolagem vertical presa dentro da outra.
+          focusMode ? "max-h-[calc(100vh-14rem)]" : "max-h-[max(22rem,calc(100vh-9rem))]",
           stale && "opacity-60",
         )}
         onScroll={handleScroll}
@@ -5101,7 +5127,10 @@ function ExportMenu({
   sortedRows: PivotRowHeader[];
   onExportReady?: (fn: () => void) => void;
 }) {
-  const [exporting, setExporting] = useState(false);
+  // O Excel é exportado pelo botão "Exportar Excel" da barra da página (um só
+  // caminho — antes havia também um item "Excel" neste menu, repetido); aqui
+  // fica só a imagem. Sem selo no botão, o progresso vai num aviso.
+  const exportingRef = useRef(false);
 
   function xlsxFmt(format: PivotMeasure["format"]): string {
     switch (format) {
@@ -5114,7 +5143,9 @@ function ExportMenu({
   }
 
   const exportXlsx = async () => {
-    setExporting(true);
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    const toastId = toast.loading("Exportando para Excel…");
     // Achado 02 da análise de UX/UI: antes disso, o corpo inteiro da função
     // rodava síncrono sem nenhum await no meio — nem o spinner chegava a
     // pintar antes do main thread travar num pivot grande. Este primeiro
@@ -5226,11 +5257,11 @@ function ExportMenu({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Pivot");
       XLSX.writeFile(wb, `pivot_${modeLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      toast.success("Arquivo exportado com sucesso.");
+      toast.success("Arquivo exportado com sucesso.", { id: toastId });
     } catch (err) {
-      toast.error("Erro ao exportar: " + (err as Error).message);
+      toast.error("Erro ao exportar: " + (err as Error).message, { id: toastId });
     } finally {
-      setExporting(false);
+      exportingRef.current = false;
     }
   };
 
@@ -5271,34 +5302,15 @@ function ExportMenu({
   };
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          title="Exportar"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/50 bg-secondary/40 text-muted-foreground hover:text-foreground"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-44 p-1" align="end">
-        <button
-          onClick={exportXlsx}
-          disabled={exporting}
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-secondary/60 disabled:opacity-50"
-        >
-          {exporting
-            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <FileSpreadsheet className="h-3.5 w-3.5" />
-          }
-          {exporting ? "Exportando…" : "Excel (.xlsx)"}
-        </button>
-        <button
-          onClick={exportPng}
-          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-secondary/60"
-        >
-          <FileImage className="h-3.5 w-3.5" /> Imagem (.png)
-        </button>
-      </PopoverContent>
-    </Popover>
+    <button
+      type="button"
+      onClick={exportPng}
+      title="Exportar a tabela como imagem (.png)"
+      aria-label="Exportar a tabela como imagem"
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/50 bg-secondary/40 px-2.5 text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/60"
+    >
+      <FileImage className="h-3.5 w-3.5" />
+      Imagem
+    </button>
   );
 }
