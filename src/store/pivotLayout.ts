@@ -27,8 +27,13 @@ export interface SavedPivotView {
 
 const MAX_SAVED_VIEWS = 30;
 
+export type PivotDensity = "comfortable" | "compact";
+
 interface PivotLayoutState {
   mode: PivotMode;
+  /** Altura das linhas da tabela — preferência da pessoa, vale pra todos os modos. */
+  density: PivotDensity;
+  setDensity: (density: PivotDensity) => void;
   /** Última montagem de cada modo — restaurada ao voltar pra aba ou trocar de modo. */
   layouts: Partial<Record<PivotMode, PivotLayout>>;
   savedViews: SavedPivotView[];
@@ -55,6 +60,8 @@ export const usePivotLayoutStore = create<PivotLayoutState>()(
   persist(
     (set) => ({
       mode: "real",
+      density: "comfortable",
+      setDensity: (density) => set({ density }),
       layouts: {},
       savedViews: [],
       setMode: (mode) => set({ mode }),
