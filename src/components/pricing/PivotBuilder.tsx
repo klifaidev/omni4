@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDown,
@@ -2988,6 +2988,8 @@ type ColGroup = { col: PivotColHeader; isTotal: boolean };
 type ColWindow = {
   /** Grupos desenhados agora (todos, quando as colunas não estão virtualizadas). */
   groups: ColGroup[];
+  /** Índice (entre todos os grupos) do 1º grupo desenhado. */
+  start: number;
   virtual: boolean;
   /** Largura dos espaçadores à esquerda/direita da janela, em px. */
   leftPx: number;
@@ -3031,6 +3033,86 @@ function rowDimColumnWidth(idx: number, label: string, rows: PivotRowHeader[], h
   if (idx === 0 && hasRowGroups) px += 24 + 9 * PIVOT_CHAR_PX; // botão de expandir + " subtotal"
   if (idx === 1 && hasRowGroups) px += 14; // recuo das linhas dentro do grupo
   return Math.round(Math.min(360, Math.max(88, px)));
+}
+
+// ----- Seleção estilo planilha -----
+type CellPos = { r: number; c: number };
+type CellSelection = { anchor: CellPos; focus: CellPos };
+/** Acima disso, Ctrl+C avisa em vez de montar um texto gigante na memória. */
+const PIVOT_COPY_MAX_CELLS = 200_000;
+
+/** Valor exibido numa célula (com "mostrar como" aplicado), igual ao da tela. */
+function displayValueAt(
+  pivot: PivotResult,
+  row: PivotRowHeader,
+  group: ColGroup,
+  m: PivotMeasure,
+  showAs: ShowAsMode,
+): number | null {
+  const rowTotal = pivot.rowTotals.get(row.key) ?? EMPTY_TOTAL;
+  if (group.isTotal) {
+    return applyShowAs(rowTotal[m.id] ?? null, showAs, {
+      rowTotal: rowTotal[m.id],
+      colTotal: pivot.grandTotal[m.id],
+      grandTotal: pivot.grandTotal[m.id],
+    });
+  }
+  const raw = pivot.cells.get(row.key)?.get(group.col.key)?.[m.id] ?? null;
+  return applyShowAs(raw, showAs, {
+    rowTotal: rowTotal[m.id],
+    colTotal: pivot.colTotals.get(group.col.key)?.[m.id],
+    grandTotal: pivot.grandTotal[m.id],
+  });
+}
+
+/**
+ * Número pra colar no Excel em português: vírgula decimal, sem separador de
+ * milhar (o Excel pt-BR reconhece como número), percentual com "%".
+ */
+function clipboardNumber(v: number | null, m: PivotMeasure, showAs: ShowAsMode): string {
+  if (v == null || !isFinite(v)) return "";
+  const opts = { maximumFractionDigits: 4, useGrouping: false } as const;
+  if (showAs !== "normal" || m.format === "percent") return `${(v * 100).toLocaleString("pt-BR", opts)}%`;
+  return (m.format === "tons" ? v / 1000 : v).toLocaleString("pt-BR", opts);
+}
+
+function withShadow(style: React.CSSProperties | undefined, boxShadow: string | undefined): React.CSSProperties | undefined {
+  if (!boxShadow) return style;
+  return style ? { ...style, boxShadow } : { boxShadow };
+}
+
+/** Rola o mínimo pra célula sair de baixo do cabeçalho/rodapé/colunas fixas. */
+function ensureCellVisible(scroller: HTMLElement, td: HTMLElement): void {
+  const box = scroller.getBoundingClientRect();
+  const cell = td.getBoundingClientRect();
+  const headBottom = scroller.querySelector("thead")?.getBoundingClientRect().bottom ?? box.top;
+  const footTop = scroller.querySelector("tfoot")?.getBoundingClientRect().top ?? box.bottom;
+  let stickyRight = box.left;
+  for (const el of Array.from(td.parentElement?.children ?? [])) {
+    if ((el as HTMLElement).dataset.ci !== undefined) break;
+    if (getComputedStyle(el).position === "sticky") stickyRight = Math.max(stickyRight, el.getBoundingClientRect().right);
+  }
+  if (cell.top < headBottom) scroller.scrollTop -= headBottom - cell.top;
+  else if (cell.bottom > footTop) scroller.scrollTop += cell.bottom - footTop;
+  if (cell.left < stickyRight) scroller.scrollLeft -= stickyRight - cell.left;
+  else if (cell.right > box.right) scroller.scrollLeft += cell.right - box.right;
+}
+
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  }
 }
 
 const PivotHeader = memo(function PivotHeader({
@@ -3229,8 +3311,19 @@ const PivotBodyRow = memo(function PivotBodyRow({
   rangeByMeasure,
   onToggleRowGroup,
   rowDimStickyLefts,
+  selC0,
+  selC1,
+  selEdges,
+  focusC,
 }: {
   rowDimStickyLefts: number[] | null;
+  /** Esta linha é a 1ª (1) e/ou a última (2) da seleção — pra desenhar a borda do retângulo. */
+  selEdges: number;
+  /** Colunas selecionadas nesta linha (índices de coluna de valor), -1 = nenhuma. */
+  selC0: number;
+  selC1: number;
+  /** Coluna com o foco do teclado nesta linha (-1 = nenhuma) — recebe tabIndex 0. */
+  focusC: number;
   row: PivotRowHeader;
   index: number;
   virtualized: boolean;
@@ -3252,9 +3345,24 @@ const PivotBodyRow = memo(function PivotBodyRow({
   const isGroup = !row.isLeaf;
   const isGroupedLeaf = hasRowGroups && row.isLeaf && !!row.parentKey;
   const clip = colWindow.virtual && "overflow-hidden text-ellipsis";
+  // Seleção por sombras internas: um tom por cima da cor do heatmap (estilo
+  // inline) e uma borda contornando o retângulo, como numa planilha.
+  const selectClass = (c: number) =>
+    c === focusC && selC0 >= 0 ? "outline outline-2 -outline-offset-2 outline-primary" : undefined;
+  const selectShadow = (c: number): string | undefined => {
+    if (selC0 < 0 || c < selC0 || c > selC1) return undefined;
+    const edge = "hsl(var(--primary))";
+    const shadows = ["inset 0 0 0 9999px hsl(var(--primary) / 0.24)"];
+    if (c === selC0) shadows.push(`inset 2px 0 0 ${edge}`);
+    if (c === selC1) shadows.push(`inset -2px 0 0 ${edge}`);
+    if (selEdges & 1) shadows.push(`inset 0 2px 0 ${edge}`);
+    if (selEdges & 2) shadows.push(`inset 0 -2px 0 ${edge}`);
+    return shadows.reverse().join(", ");
+  };
   return (
     <tr
       data-rk={row.key}
+      data-ri={index}
       style={virtualized ? { height: PIVOT_VIRTUAL_ROW_HEIGHT } : undefined}
       className={cn(
         "group border-b border-border/15 transition-colors hover:bg-primary/[0.06]",
@@ -3318,10 +3426,12 @@ const PivotBodyRow = memo(function PivotBodyRow({
         <td className={cn("sticky left-0 z-[1] bg-card font-semibold text-muted-foreground", cellPad)}>—</td>
       )}
       {colWindow.virtual && <td aria-hidden className="p-0" />}
-      {colWindow.groups.map(({ col, isTotal }) => {
+      {colWindow.groups.map(({ col, isTotal }, gi) => {
+        const groupBase = (colWindow.start + gi) * measures.length;
         if (isTotal) {
           return measures.map((m, idx) => {
             const showAs = showAsByMeasure[m.id] ?? "normal";
+            const c = groupBase + idx;
             // Na coluna Total, o "total da coluna" é o total geral.
             const displayValue = applyShowAs(rowTotal[m.id] ?? null, showAs, {
               rowTotal: rowTotal[m.id],
@@ -3331,17 +3441,21 @@ const PivotBodyRow = memo(function PivotBodyRow({
             return (
               <td
                 key={`t-${m.id}`}
+                data-ci={c}
                 data-ck={TOTAL_COL_KEY}
                 data-m={m.id}
-                role="button"
-                tabIndex={0}
-                title="Clique para ver as linhas que compõem o total da linha"
+                role="gridcell"
+                aria-selected={c >= selC0 && c <= selC1}
+                tabIndex={c === focusC ? 0 : -1}
+                style={selectShadow(c) ? { boxShadow: selectShadow(c) } : undefined}
+                title="Duplo clique (ou Enter) para ver as linhas que compõem o total da linha"
                 className={cn(
-                  "cursor-zoom-in whitespace-nowrap bg-secondary/20 text-right font-semibold tabular-nums outline-none transition-colors hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
+                  "cursor-cell whitespace-nowrap bg-secondary/20 text-right font-semibold tabular-nums outline-none transition-colors hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
                   cellPad,
                   clip,
                   idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
                   toneClass(m.tone, displayValue),
+                  selectClass(c),
                 )}
               >
                 {fmtPivotDisplay(m, displayValue, showAs)}
@@ -3351,7 +3465,8 @@ const PivotBodyRow = memo(function PivotBodyRow({
         }
         const cell = cells.get(col.key);
         const canDrill = cell !== undefined;
-        return measures.map((m) => {
+        return measures.map((m, mi) => {
+          const c = groupBase + mi;
           const rawValue = cell?.[m.id] ?? null;
           const showAs = showAsByMeasure[m.id] ?? "normal";
           const displayValue = applyShowAs(rawValue, showAs, {
@@ -3363,19 +3478,22 @@ const PivotBodyRow = memo(function PivotBodyRow({
           return (
             <td
               key={`v-${col.key}-${m.id}`}
+              data-ci={c}
               data-ck={canDrill ? col.key : undefined}
               data-m={canDrill ? m.id : undefined}
-              role={canDrill ? "button" : undefined}
-              tabIndex={canDrill ? 0 : undefined}
-              title={canDrill ? "Clique para ver as linhas que compõem este valor" : undefined}
-              style={isGroup ? undefined : cellBg(viz, m, displayValue, range)}
+              role="gridcell"
+              aria-selected={c >= selC0 && c <= selC1}
+              tabIndex={c === focusC ? 0 : -1}
+              title={canDrill ? "Duplo clique (ou Enter) para ver as linhas que compõem este valor" : undefined}
+              style={withShadow(isGroup ? undefined : cellBg(viz, m, displayValue, range), selectShadow(c))}
               className={cn(
-                "whitespace-nowrap border-l border-border/10 text-right tabular-nums transition-colors",
+                "cursor-cell whitespace-nowrap border-l border-border/10 text-right tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
                 cellPad,
                 clip,
                 isGroup && "bg-secondary/25 font-semibold",
                 toneClass(m.tone, displayValue),
-                canDrill && "cursor-zoom-in outline-none hover:ring-1 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/60",
+                canDrill && "hover:ring-1 hover:ring-primary/40",
+                selectClass(c),
               )}
             >
               {fmtPivotDisplay(m, displayValue, showAs)}
@@ -3453,12 +3571,13 @@ const PivotTable = memo(function PivotTable({
   }, [colVirtual, rowDims, dimMap, pivot.rowHeaders, hasRowGroups]);
 
   const colWindow = useMemo<ColWindow>(() => {
-    if (!colVirtual) return { groups: allGroups, virtual: false, leftPx: 0, rightPx: 0 };
+    if (!colVirtual) return { groups: allGroups, start: 0, virtual: false, leftPx: 0, rightPx: 0 };
     const visibleCount = Math.ceil(Math.max(viewport.width, groupWidth) / groupWidth);
     const start = Math.min(colStart, Math.max(0, allGroups.length - 1));
     const end = Math.min(allGroups.length, start + visibleCount + PIVOT_COL_OVERSCAN * 2);
     return {
       groups: allGroups.slice(start, end),
+      start,
       virtual: true,
       leftPx: start * groupWidth,
       rightPx: (allGroups.length - end) * groupWidth,
@@ -3518,13 +3637,236 @@ const PivotTable = memo(function PivotTable({
     handleOpenCell(row, col, measure);
     return true;
   }, [rowByKey, colByKey, measureById, handleOpenCell]);
-  const handleBodyClick = useCallback((event: React.MouseEvent) => {
+  // ----- Seleção estilo planilha -----
+  // Clique seleciona, arrastar/Shift+clique estende, duplo clique (ou Enter)
+  // abre o detalhe — a convenção do Excel. Antes o clique simples abria o
+  // detalhe e não havia como selecionar nem somar células.
+  const [selection, setSelection] = useState<CellSelection | null>(null);
+  const selectingRef = useRef(false);
+  const pendingFocusRef = useRef<{ pos: CellPos; tries: number } | null>(null);
+  const flatColCount = allGroups.length * measures.length;
+  // Reordenar, recalcular ou trocar medidas muda o que está em cada posição.
+  useEffect(() => {
+    setSelection(null);
+  }, [pivot, sortedRows, measures]);
+
+  const selRange = selection
+    ? {
+        r0: Math.min(selection.anchor.r, selection.focus.r),
+        r1: Math.max(selection.anchor.r, selection.focus.r),
+        c0: Math.min(selection.anchor.c, selection.focus.c),
+        c1: Math.max(selection.anchor.c, selection.focus.c),
+      }
+    : null;
+
+  const cellAt = useCallback((pos: CellPos) => {
+    const row = sortedRows[pos.r];
+    const group = allGroups[Math.floor(pos.c / Math.max(1, measures.length))];
+    const measure = measures[pos.c % Math.max(1, measures.length)];
+    return row && group && measure ? { row, group, measure } : null;
+  }, [sortedRows, allGroups, measures]);
+
+  const posFromTarget = (target: EventTarget | null): CellPos | null => {
+    const td = (target as HTMLElement | null)?.closest?.("td[data-ci]") as HTMLElement | null;
+    const tr = td?.parentElement as HTMLElement | null;
+    if (!td || tr?.dataset.ri === undefined) return null;
+    return { r: Number(tr.dataset.ri), c: Number(td.dataset.ci) };
+  };
+
+  const handleBodyMouseDown = useCallback((event: React.MouseEvent) => {
+    if (event.button !== 0) return;
+    const pos = posFromTarget(event.target);
+    if (!pos) return;
+    event.preventDefault(); // arrastar seleciona células, não texto
+    ((event.target as HTMLElement).closest("td") as HTMLElement | null)?.focus({ preventScroll: true });
+    selectingRef.current = true;
+    setSelection((prev) => (event.shiftKey && prev ? { anchor: prev.anchor, focus: pos } : { anchor: pos, focus: pos }));
+  }, []);
+  const handleBodyMouseOver = useCallback((event: React.MouseEvent) => {
+    if (!selectingRef.current) return;
+    const pos = posFromTarget(event.target);
+    if (!pos) return;
+    setSelection((prev) => (
+      !prev || (prev.focus.r === pos.r && prev.focus.c === pos.c) ? prev : { anchor: prev.anchor, focus: pos }
+    ));
+  }, []);
+  useEffect(() => {
+    const stop = () => {
+      selectingRef.current = false;
+    };
+    window.addEventListener("mouseup", stop);
+    return () => window.removeEventListener("mouseup", stop);
+  }, []);
+  const handleBodyDoubleClick = useCallback((event: React.MouseEvent) => {
     openCellFrom(event.target);
   }, [openCellFrom]);
+
+  const moveFocus = useCallback((next: CellPos, extend: boolean) => {
+    const r = Math.min(Math.max(0, next.r), Math.max(0, sortedRows.length - 1));
+    const c = Math.min(Math.max(0, next.c), Math.max(0, flatColCount - 1));
+    pendingFocusRef.current = { pos: { r, c }, tries: 0 };
+    setSelection((prev) => (extend && prev ? { anchor: prev.anchor, focus: { r, c } } : { anchor: { r, c }, focus: { r, c } }));
+  }, [sortedRows.length, flatColCount]);
+
+  // Foco do teclado: foca a célula de destino; se ela está fora da janela
+  // virtualizada, rola até lá e foca no render seguinte.
+  useLayoutEffect(() => {
+    const pending = pendingFocusRef.current;
+    const scroller = scrollRef.current;
+    if (!pending || !scroller) return;
+    const td = scroller.querySelector<HTMLElement>(`tbody tr[data-ri="${pending.pos.r}"] td[data-ci="${pending.pos.c}"]`);
+    if (td) {
+      pendingFocusRef.current = null;
+      td.focus({ preventScroll: true });
+      ensureCellVisible(scroller, td);
+      return;
+    }
+    if (pending.tries++ >= 3) {
+      pendingFocusRef.current = null;
+      return;
+    }
+    if (shouldVirtualize) {
+      scroller.scrollTop = Math.max(0, pending.pos.r * PIVOT_VIRTUAL_ROW_HEIGHT - scroller.clientHeight / 2);
+    }
+    if (colVirtual) {
+      scroller.scrollLeft = Math.max(
+        0,
+        Math.floor(pending.pos.c / Math.max(1, measures.length)) * groupWidth - (scroller.clientWidth - rowDimsWidth) / 2,
+      );
+    }
+  });
+
+  const copySelection = useCallback(async (withHeaders: boolean) => {
+    const range = selRange;
+    if (!range) return;
+    const total = (range.r1 - range.r0 + 1) * (range.c1 - range.c0 + 1);
+    if (total > PIVOT_COPY_MAX_CELLS) {
+      toast.warning("Seleção grande demais para copiar", { description: "Use Exportar Excel para levar a tabela inteira." });
+      return;
+    }
+    const clean = (s: string) => s.replace(/[\t\r\n]+/g, " ");
+    const lines: string[] = [];
+    if (withHeaders) {
+      const head = rowDims.length ? rowDims.map((d) => dimMap.get(d)?.label ?? d) : [""];
+      for (let c = range.c0; c <= range.c1; c++) {
+        const at = cellAt({ r: range.r0, c });
+        if (!at) continue;
+        const colLabel = at.group.isTotal ? "Total" : at.group.col.values.join(" · ");
+        head.push(clean(hasCols ? `${colLabel} | ${at.measure.label}` : at.measure.label));
+      }
+      lines.push(head.join("\t"));
+    }
+    for (let r = range.r0; r <= range.r1; r++) {
+      const row = sortedRows[r];
+      if (!row) continue;
+      const out: string[] = [];
+      if (withHeaders) {
+        if (rowDims.length === 0) out.push("");
+        rowDims.forEach((_, i) => {
+          out.push(clean(!row.isLeaf ? (i === 0 ? `${row.values[0] ?? ""} subtotal` : "") : (row.values[i] ?? "")));
+        });
+      }
+      for (let c = range.c0; c <= range.c1; c++) {
+        const at = cellAt({ r, c });
+        if (!at) continue;
+        const showAs = showAsByMeasure[at.measure.id] ?? "normal";
+        out.push(clipboardNumber(displayValueAt(pivot, at.row, at.group, at.measure, showAs), at.measure, showAs));
+      }
+      lines.push(out.join("\t"));
+    }
+    const ok = await writeClipboard(lines.join("\n"));
+    if (ok) {
+      toast.success(`${total.toLocaleString("pt-BR")} ${total === 1 ? "célula copiada" : "células copiadas"}`, {
+        description: withHeaders ? "Com cabeçalhos — cole no Excel ou num e-mail." : "Cole no Excel ou numa planilha.",
+      });
+    } else {
+      toast.error("Não foi possível copiar para a área de transferência.");
+    }
+  }, [selRange, rowDims, dimMap, cellAt, hasCols, sortedRows, showAsByMeasure, pivot]);
+
   const handleBodyKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    if (openCellFrom(event.target)) event.preventDefault();
-  }, [openCellFrom]);
+    const key = event.key;
+    const mod = event.ctrlKey || event.metaKey;
+    if ((key === "Enter" || key === " ") && !mod) {
+      if (openCellFrom(event.target)) event.preventDefault();
+      return;
+    }
+    if (mod && key.toLowerCase() === "c") {
+      event.preventDefault();
+      void copySelection(event.shiftKey);
+      return;
+    }
+    if (mod && key.toLowerCase() === "a") {
+      event.preventDefault();
+      if (sortedRows.length && flatColCount) {
+        setSelection({ anchor: { r: 0, c: 0 }, focus: { r: sortedRows.length - 1, c: flatColCount - 1 } });
+      }
+      return;
+    }
+    if (key === "Escape") {
+      if (selection) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelection(null);
+      }
+      return;
+    }
+    // Como no Excel: Shift+seta move o canto que está sendo estendido; a seta
+    // sozinha anda a partir da célula ativa (onde a seleção começou).
+    const pos = (event.shiftKey ? selection?.focus : selection?.anchor) ?? posFromTarget(event.target);
+    if (!pos) return;
+    const page = Math.max(1, Math.floor((viewport.height || 400) / PIVOT_VIRTUAL_ROW_HEIGHT) - 2);
+    const lastR = sortedRows.length - 1;
+    const lastC = flatColCount - 1;
+    let next: CellPos | null = null;
+    // Ctrl+seta vai até a borda, como numa planilha.
+    if (key === "ArrowUp") next = { r: mod ? 0 : pos.r - 1, c: pos.c };
+    else if (key === "ArrowDown") next = { r: mod ? lastR : pos.r + 1, c: pos.c };
+    else if (key === "ArrowLeft") next = { r: pos.r, c: mod ? 0 : pos.c - 1 };
+    else if (key === "ArrowRight") next = { r: pos.r, c: mod ? lastC : pos.c + 1 };
+    else if (key === "PageDown") next = { r: pos.r + page, c: pos.c };
+    else if (key === "PageUp") next = { r: pos.r - page, c: pos.c };
+    else if (key === "Home") next = { r: mod ? 0 : pos.r, c: 0 };
+    else if (key === "End") next = { r: mod ? lastR : pos.r, c: lastC };
+    if (!next) return;
+    event.preventDefault();
+    moveFocus(next, event.shiftKey);
+  }, [openCellFrom, copySelection, sortedRows.length, flatColCount, selection, viewport.height, moveFocus]);
+
+  const selectionStats = useMemo(() => {
+    if (!selection) return null;
+    const r0 = Math.min(selection.anchor.r, selection.focus.r);
+    const r1 = Math.max(selection.anchor.r, selection.focus.r);
+    const c0 = Math.min(selection.anchor.c, selection.focus.c);
+    const c1 = Math.max(selection.anchor.c, selection.focus.c);
+    let cells = 0;
+    let numeric = 0;
+    let sum = 0;
+    let min = Infinity;
+    let max = -Infinity;
+    const measureIds = new Set<string>();
+    for (let r = r0; r <= r1; r++) {
+      const row = sortedRows[r];
+      if (!row) continue;
+      for (let c = c0; c <= c1; c++) {
+        const at = cellAt({ r, c });
+        if (!at) continue;
+        cells++;
+        measureIds.add(at.measure.id);
+        const v = displayValueAt(pivot, at.row, at.group, at.measure, showAsByMeasure[at.measure.id] ?? "normal");
+        if (v == null || !isFinite(v)) continue;
+        numeric++;
+        sum += v;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+    const single = measureIds.size === 1 ? measures.find((m) => measureIds.has(m.id)) ?? null : null;
+    const showAs: ShowAsMode = single ? showAsByMeasure[single.id] ?? "normal" : "normal";
+    // Percentuais não se somam (CM% de dois canais não é a soma dos dois).
+    const additive = !!single && showAs === "normal" && single.format !== "percent" && single.agg === "sum" && !single.derive;
+    return { cells, numeric, sum, min, max, avg: numeric ? sum / numeric : null, single, showAs, additive };
+  }, [selection, sortedRows, cellAt, pivot, showAsByMeasure, measures]);
 
   const handleToggleSort = useCallback((colKey: string, measureId: string) => {
     if (sort && sort.col === colKey && sort.measure === measureId) {
@@ -3640,6 +3982,8 @@ const PivotTable = memo(function PivotTable({
         onScroll={handleScroll}
       >
         <table
+          role="grid"
+          aria-multiselectable="true"
           className={cn("border-collapse text-xs", !colWindow.virtual && "min-w-full")}
           style={colWindow.virtual ? { tableLayout: "fixed", width: tableWidth } : undefined}
         >
@@ -3666,7 +4010,12 @@ const PivotTable = memo(function PivotTable({
             groupLabelStickyLeft={colWindow.virtual ? rowDimsWidth : null}
             rowDimStickyLefts={rowDimStickyLefts}
           />
-          <tbody onClick={handleBodyClick} onKeyDown={handleBodyKeyDown}>
+          <tbody
+            onMouseDown={handleBodyMouseDown}
+            onMouseOver={handleBodyMouseOver}
+            onDoubleClick={handleBodyDoubleClick}
+            onKeyDown={handleBodyKeyDown}
+          >
             {sortedRows.length === 0 && (
               <tr>
                 <td
@@ -3682,11 +4031,20 @@ const PivotTable = memo(function PivotTable({
                 <td colSpan={renderedColumnCount} style={{ height: virtualRange.topSpacer, padding: 0, border: 0 }} />
               </tr>
             )}
-            {virtualRange.rows.map((rh, virtualIndex) => (
+            {virtualRange.rows.map((rh, virtualIndex) => {
+              const rowIndex = virtualRange.start + virtualIndex;
+              const inSelection = !!selRange && rowIndex >= selRange.r0 && rowIndex <= selRange.r1;
+              return (
               <PivotBodyRow
                 key={rh.key}
                 row={rh}
-                index={virtualRange.start + virtualIndex}
+                index={rowIndex}
+                selC0={inSelection ? selRange!.c0 : -1}
+                selC1={inSelection ? selRange!.c1 : -1}
+                selEdges={inSelection ? (rowIndex === selRange!.r0 ? 1 : 0) | (rowIndex === selRange!.r1 ? 2 : 0) : 0}
+                // Foco itinerante: uma só célula é tabulável (a do foco, ou a
+                // 1ª da tabela) — Tab entra/sai da grade, setas andam dentro.
+                focusC={selection ? (selection.focus.r === rowIndex ? selection.focus.c : -1) : rowIndex === 0 ? 0 : -1}
                 virtualized={shouldVirtualize}
                 rowDims={rowDims}
                 hasRowGroups={hasRowGroups}
@@ -3703,7 +4061,8 @@ const PivotTable = memo(function PivotTable({
                 onToggleRowGroup={onToggleRowGroup}
                 rowDimStickyLefts={rowDimStickyLefts}
               />
-            ))}
+              );
+            })}
             {shouldVirtualize && virtualRange.bottomSpacer > 0 && (
               <tr aria-hidden="true">
                 <td colSpan={renderedColumnCount} style={{ height: virtualRange.bottomSpacer, padding: 0, border: 0 }} />
@@ -3770,6 +4129,51 @@ const PivotTable = memo(function PivotTable({
           </tfoot>
         </table>
       </div>
+      {selectionStats && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/40 bg-card px-3 py-1.5 text-[11px] tabular-nums text-muted-foreground animate-fade-in"
+        >
+          <span>
+            <strong className="font-semibold text-foreground">{selectionStats.cells.toLocaleString("pt-BR")}</strong>{" "}
+            {selectionStats.cells === 1 ? "célula" : "células"}
+          </span>
+          {selectionStats.single && selectionStats.numeric > 0 ? (
+            <>
+              {selectionStats.additive && (
+                <span>
+                  Soma <strong className="font-semibold text-foreground">{fmtPivotDisplay(selectionStats.single, selectionStats.sum, selectionStats.showAs)}</strong>
+                </span>
+              )}
+              {selectionStats.numeric > 1 && (
+                <>
+                  <span>
+                    Média <strong className="font-semibold text-foreground">{fmtPivotDisplay(selectionStats.single, selectionStats.avg, selectionStats.showAs)}</strong>
+                  </span>
+                  <span>
+                    Mín <strong className="font-semibold text-foreground">{fmtPivotDisplay(selectionStats.single, selectionStats.min, selectionStats.showAs)}</strong>
+                  </span>
+                  <span>
+                    Máx <strong className="font-semibold text-foreground">{fmtPivotDisplay(selectionStats.single, selectionStats.max, selectionStats.showAs)}</strong>
+                  </span>
+                </>
+              )}
+            </>
+          ) : !selectionStats.single ? (
+            <span>Medidas diferentes — selecione uma medida só para ver soma e média</span>
+          ) : null}
+          <span className="ml-auto hidden text-muted-foreground/70 md:inline">
+            Ctrl+C copia · Ctrl+Shift+C com cabeçalhos · duplo clique abre o detalhe · Esc limpa
+          </span>
+          <button
+            type="button"
+            onClick={() => void copySelection(false)}
+            className="rounded-md px-1.5 py-0.5 font-medium text-primary outline-none hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary/60"
+          >
+            Copiar
+          </button>
+        </div>
+      )}
       {/* Um único menu "mostrar como" pra tabela inteira (antes: um
           ContextMenu + um DropdownMenu do Radix por coluna × medida). A
           âncora vai pro <body> porque o GlassCard tem backdrop-filter, que
