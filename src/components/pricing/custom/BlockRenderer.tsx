@@ -40,7 +40,7 @@ import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { monthLabel, formatBRL, parsePeriod } from "@/lib/format";
 import {
-  computeKpiBlock, computeTopRanking, formatValue, inferFormat,
+  computeKpiBlock, computeKpiComparison, formatKpiDelta, computeTopRanking, formatValue, inferFormat,
 } from "@/lib/customKpi";
 import { calcFarol } from "@/lib/farol";
 import { KPI_MEASURES, resolveEffectiveBlock } from "@/lib/customSlide";
@@ -658,6 +658,20 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   );
 
   const value = useMemo(() => computeKpiBlock(rows, effectiveBlock), [rows, effectiveBlock]);
+  const budgetAsRows = useMemo(
+    () => (b.compare === "budget" && budget.length ? budgetRowsAsPricingFiltered(budget, "budget") : undefined),
+    [b.compare, budget],
+  );
+  // Com filtro de período vindo de outro bloco, o card mostra um agregado
+  // alheio — comparar "com o mês anterior" daquilo não faz sentido.
+  const comparison = useMemo(
+    () => (periodFilterValues.length > 0 ? null : computeKpiComparison(rows, effectiveBlock, budgetAsRows)),
+    [rows, effectiveBlock, budgetAsRows, periodFilterValues.length],
+  );
+  const comparisonColor = comparison?.good == null ? SLIDE_HEX.slate500 : comparison.good ? SLIDE_HEX.success : SLIDE_HEX.danger;
+  const comparisonText = comparison
+    ? `${comparison.direction === "up" ? "▲" : comparison.direction === "down" ? "▼" : "●"} ${formatKpiDelta(comparison)} ${t.kpi.vsReference(comparison.mode === "budget" ? t.kpi.budgetRef : comparison.referenceLabel)}`
+    : null;
   const measureLabel = b.source === "dynamic"
     ? KPI_MEASURES.find((m) => m.id === b.measure)?.label
     : null;
@@ -722,7 +736,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         <rect x={0.5} y={0.5} width={Math.max(1, b.w - 1)} height={Math.max(1, b.h - 1)} rx={isTransparent ? 0 : 12} fill={fill} stroke={stroke} />
         <text
           x={12}
-          y={Math.max(20, b.h * 0.28)}
+          y={comparisonText ? Math.max(18, b.h * 0.2) : Math.max(20, b.h * 0.28)}
           dominantBaseline="middle"
           alignmentBaseline="middle"
           textAnchor="start"
@@ -733,9 +747,24 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         >
           {labelText.toUpperCase()}
         </text>
+        {comparisonText && (
+          <text
+            x={12}
+            y={b.h * 0.45 + valueSize * 0.5 + 12}
+            dominantBaseline="middle"
+            alignmentBaseline="middle"
+            textAnchor="start"
+            fontFamily="Calibri, Arial, sans-serif"
+            fontSize={12}
+            fontWeight={600}
+            fill={comparisonColor}
+          >
+            {comparisonText}
+          </text>
+        )}
         <text
           x={12}
-          y={b.h / 2 + 6}
+          y={comparisonText ? b.h * 0.45 : b.h / 2 + 6}
           dominantBaseline="middle"
           alignmentBaseline="middle"
           textAnchor="start"
@@ -787,8 +816,13 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       }}>
         {value}
       </div>
+      {comparisonText && (
+        <div data-kpi-comparison style={{ fontSize: 12, fontWeight: 600, color: comparisonColor, marginTop: 4, whiteSpace: "nowrap" }}>
+          {comparisonText}
+        </div>
+      )}
       {b.source === "dynamic" && (
-        <div style={{ fontSize: 11, color: SLIDE_HEX.slate400, marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: SLIDE_HEX.slate400, marginTop: comparisonText ? 2 : 6 }}>
           {measureLabel}
           {periodDescriptor ? ` · ${periodDescriptor}` : ""}
         </div>

@@ -172,6 +172,12 @@ export interface KpiBlock extends BaseBlock {
    *  1000 antes de qualquer cálculo — corrige junto Volume, Ticket Médio
    *  (Kg/cliente) e Preço Médio (R$/Kg), que dependem do mesmo campo. */
   volumeUnit?: "kg" | "ton";
+  /** Linha de comparação abaixo do valor (seta + variação + cor). Só vale com
+   *  período Mês ou Ano fiscal. Default "none" (cards antigos não mudam). */
+  compare?: "none" | "prevMonth" | "prevYear" | "budget";
+  /** Quando subir é bom ("up") ou ruim ("down", ex.: custos). Sem valor,
+   *  custos (CV, Frete, Comissão) contam como "down" e o resto como "up". */
+  compareGoodWhen?: "up" | "down";
 }
 
 export interface ImageBlock extends BaseBlock {
@@ -817,6 +823,9 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         format: "auto",
         manualValue: "",
         dataSource: "ke30",
+        // Um número sozinho não diz se é bom ou ruim: o card novo já nasce
+        // comparando com o mês anterior.
+        compare: "prevMonth",
       };
     case "image":
       return { id, kind, z, x: 80, y: 220, w: 360, h: 220, src: "", fit: "contain" };

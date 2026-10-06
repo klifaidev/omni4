@@ -129,6 +129,114 @@ export function computeKpiBlock(rows: PricingRow[], block: KpiBlock): string {
 }
 
 // ---------------------------------------------------------------------------
+// Comparação do KPI (vs mês anterior / ano anterior / Budget)
+// ---------------------------------------------------------------------------
+
+export type KpiCompareMode = "none" | "prevMonth" | "prevYear" | "budget";
+
+export interface KpiComparison {
+  mode: Exclude<KpiCompareMode, "none">;
+  /** Variação relativa (0.052 = +5,2%) ou, em medidas de %, pontos percentuais. */
+  delta: number;
+  pp: boolean;
+  direction: "up" | "down" | "flat";
+  /** true = melhorou, false = piorou, null = estável. */
+  good: boolean | null;
+  /** O período (ou "Budget") contra o qual se comparou. */
+  referenceLabel: string;
+}
+
+/** Medidas de custo: cair é bom. */
+const LOWER_IS_BETTER: readonly KpiMeasureId[] = ["cv", "frete", "comissao"];
+/** O que a base Budget não tem (custos detalhados, clientes). */
+const NOT_IN_BUDGET: readonly KpiMeasureId[] = ["mb", "mbPct", "frete", "comissao", "positivacao", "ticketMedio"];
+
+function referencePeriod(
+  rows: readonly PricingRow[],
+  periodMode: "month" | "fy",
+  current: string,
+  mode: "prevMonth" | "prevYear",
+): { value: string; label: string } | null {
+  if (periodMode === "fy") {
+    if (mode !== "prevYear") return null;
+    const m = current.match(/(\d{2})\/(\d{2})/);
+    if (!m) return null;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const value = current.replace(m[0], `${pad(Number(m[1]) - 1)}/${pad(Number(m[2]) - 1)}`);
+    return rows.some((r) => r.fy === value) ? { value, label: value } : null;
+  }
+  const cur = rows.find((r) => r.periodo === current);
+  if (!cur) return null;
+  let mes = cur.mes;
+  let ano = cur.ano;
+  if (mode === "prevMonth") {
+    mes -= 1;
+    if (mes === 0) { mes = 12; ano -= 1; }
+  } else {
+    ano -= 1;
+  }
+  const ref = rows.find((r) => r.mes === mes && r.ano === ano);
+  return ref ? { value: ref.periodo, label: monthLabel(mes, ano) } : null;
+}
+
+/** Null quando a comparação não se aplica (sem período, sem dado de
+ *  referência, medida que o Budget não tem…) — o card simplesmente não
+ *  mostra a linha de comparação. */
+export function computeKpiComparison(
+  rows: PricingRow[],
+  block: KpiBlock,
+  budgetRows?: PricingRow[],
+): KpiComparison | null {
+  const mode = block.compare ?? "none";
+  if (block.source !== "dynamic" || mode === "none") return null;
+  const periodMode = block.periodMode ?? "all";
+  if (periodMode === "all") return null;
+  const measure = block.measure ?? "rol";
+  const current = resolvePeriodValue(rows, periodMode, block.periodValue, block.periodSelectionMode, block.relativePeriod);
+  if (!current) return null;
+
+  const filtered = applyFilters(rows, block.filters ?? {}, null);
+  let refRows: PricingRow[];
+  let referenceLabel: string;
+  if (mode === "budget") {
+    if (!budgetRows?.length || NOT_IN_BUDGET.includes(measure)) return null;
+    refRows = periodFilter(applyFilters(budgetRows, block.filters ?? {}, null), periodMode, current);
+    referenceLabel = "Budget";
+  } else {
+    const ref = referencePeriod(rows, periodMode, current, mode);
+    if (!ref) return null;
+    refRows = periodFilter(filtered, periodMode, ref.value);
+    referenceLabel = ref.label;
+  }
+  if (refRows.length === 0) return null;
+
+  const mult = block.volumeUnit === "ton" ? 1000 : 1;
+  const now = pickMeasure(aggregateKpi(periodFilter(filtered, periodMode, current), mult), measure);
+  const before = pickMeasure(aggregateKpi(refRows, mult), measure);
+  const pp = measure === "cmPct" || measure === "mbPct";
+  const delta = pp ? now - before : before !== 0 ? (now - before) / Math.abs(before) : NaN;
+  if (!Number.isFinite(delta)) return null;
+  const direction = Math.abs(delta) < 0.0005 ? "flat" : delta > 0 ? "up" : "down";
+  const lowerIsBetter = (block.compareGoodWhen ?? (LOWER_IS_BETTER.includes(measure) ? "down" : "up")) === "down";
+  return {
+    mode,
+    delta,
+    pp,
+    direction,
+    good: direction === "flat" ? null : (direction === "up") !== lowerIsBetter,
+    referenceLabel,
+  };
+}
+
+/** "+5,2%" ou "−1,3 p.p." */
+export function formatKpiDelta(c: Pick<KpiComparison, "delta" | "pp">): string {
+  const sign = c.delta > 0 ? "+" : c.delta < 0 ? "−" : "";
+  const abs = Math.abs(c.delta) * 100;
+  const n = abs.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return c.pp ? `${sign}${n} p.p.` : `${sign}${n}%`;
+}
+
+// ---------------------------------------------------------------------------
 // Séries para Chart/TopSku
 // ---------------------------------------------------------------------------
 export function computeChartSeries(

@@ -734,6 +734,55 @@ export function BgField({ label, value, onChange }: {
 // ---------------------------------------------------------------------------
 // KPI inspector — Manual ou Dinâmico
 // ---------------------------------------------------------------------------
+/** "Comparar com": a linha de seta + variação abaixo do valor do KPI. As
+ *  opções dependem do período (mês compara com o mês anterior ou o mesmo
+ *  mês do ano passado; ano fiscal, com o ano anterior) e do Budget existir. */
+function KpiCompareField({ block, onChange }: {
+  block: KpiBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+}) {
+  const hasBudget = useBudget((s) => s.rows.length > 0);
+  const periodMode = block.periodMode ?? "all";
+  if (periodMode === "all") {
+    return <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.compareNeedsPeriod}</p>;
+  }
+  const canBudget = hasBudget && !isFromBudgetBase(block.dataSource)
+    && !BUDGET_UNAVAILABLE_MEASURES.includes(block.measure ?? "rol");
+  const options = [
+    { value: "none", label: t.kpi.compareOptions.none },
+    ...(periodMode === "month" ? [
+      { value: "prevMonth", label: t.kpi.compareOptions.prevMonth },
+      { value: "prevYear", label: t.kpi.compareOptions.prevYearMonth },
+    ] : [
+      { value: "prevYear", label: t.kpi.compareOptions.prevYear },
+    ]),
+    ...(canBudget ? [{ value: "budget", label: t.kpi.compareOptions.budget }] : []),
+  ];
+  const current = block.compare ?? "none";
+  const value = options.some((o) => o.value === current) ? current : "none";
+  const isCost = ["cv", "frete", "comissao"].includes(block.measure ?? "rol");
+  return (
+    <>
+      <Row label={t.kpi.compareWith}>
+        <SelectField value={value} options={options}
+          onChange={(v) => onChange({ compare: v as KpiBlock["compare"] } as never)} />
+      </Row>
+      {value !== "none" && (
+        <MoreOptions customized={block.compareGoodWhen !== undefined}>
+          <Row label={t.kpi.whenUp}>
+            <Segmented value={block.compareGoodWhen ?? (isCost ? "down" : "up")}
+              onChange={(v) => onChange({ compareGoodWhen: v } as never)}
+              options={[
+                { value: "up", label: t.kpi.whenUpOptions.good },
+                { value: "down", label: t.kpi.whenUpOptions.bad },
+              ]} />
+          </Row>
+        </MoreOptions>
+      )}
+    </>
+  );
+}
+
 function KpiInspector({ block, onChange }: {
   block: KpiBlock;
   onChange: (p: Partial<CustomBlock>) => void;
@@ -785,6 +834,7 @@ function KpiInspector({ block, onChange }: {
               relativePeriod={block.relativePeriod}
               periodValue={block.periodValue ?? null}
               onChange={(patch) => onChange(patch as never)} />
+            <KpiCompareField block={block} onChange={onChange} />
             <Row label={t.kpi.format}>
               <SelectField value={block.format ?? "auto"}
                 onChange={(v) => onChange({ format: v as never } as never)}
