@@ -3,7 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider as UiSlider } from "@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +68,7 @@ import type { Filters, PricingRow } from "@/lib/types";
 import {
   BLOCK_LABELS, KPI_MEASURES, CHART_TYPE_LABELS, CANVAS_H,
   BUDGET_UNAVAILABLE_MEASURES, BUDGET_UNAVAILABLE_HINT,
-  isFromBudgetBase,
+  isFromBudgetBase, isTableMeasureUnavailable,
   type BlockDataSource, type CustomBlock, type CustomBlockKind, type KpiBlock, type ChartBlock, type TopSkuBlock, type ShapeBlock, type TableBlock,
   type TitleBlock, type TextBlock, type DreBlock, type CustomChartType, type ConditionalFormatMode, type ConditionalFormatRule,
   type TableGapColumn, type TableGapComparisonMode, type OmniEvolucaoMensalBlock, type OmniHeatmapSazonalidadeBlock,
@@ -153,32 +155,108 @@ function relativeOptionsForMode(mode: "month" | "fy") {
   return mode === "fy" ? RELATIVE_FY_PRESETS : RELATIVE_MONTH_PRESETS;
 }
 
-function PeriodModeBadge({ mode }: { mode: PeriodSelectionMode }) {
+type PeriodPick = {
+  value?: string | null;
+  selectionMode?: PeriodSelectionMode;
+  relativePeriod?: RelativePeriodPreset;
+};
+
+/** O seletor de período do editor. Antes eram cinco jeitos diferentes
+ *  (botões Relativo/Fixo + selo + uma lista que trocava de conteúdo); agora
+ *  é uma lista só: em cima os períodos que acompanham o mês de referência do
+ *  deck, embaixo os meses/anos fixos. */
+function PeriodSelect({
+  mode, selectionMode, relativeValue, fixedValue, options, defaultPreset, onChange,
+}: {
+  mode: "month" | "fy";
+  selectionMode: PeriodSelectionMode;
+  relativeValue?: RelativePeriodPreset;
+  fixedValue: string | null;
+  options: { value: string; label: string }[];
+  defaultPreset?: RelativePeriodPreset;
+  onChange: (pick: PeriodPick) => void;
+}) {
+  const relative = relativeOptionsForMode(mode);
+  const preset = relativeValue ?? defaultPreset ?? defaultRelativePresetForMode(mode);
+  const value = selectionMode === "relative" ? `rel:${preset}` : fixedValue ? `fix:${fixedValue}` : "";
   return (
-    <Badge variant={mode === "relative" ? "default" : "secondary"} className="h-4 px-1.5 text-[9px]">
-      {mode === "relative" ? tc.relative : tc.fixed}
-    </Badge>
+    <Select value={value}
+      onValueChange={(v) => v.startsWith("rel:")
+        ? onChange({ selectionMode: "relative", relativePeriod: v.slice(4) as RelativePeriodPreset, value: null })
+        : onChange({ selectionMode: "fixed", value: v.slice(4), relativePeriod: relativeValue })}>
+      <SelectTrigger className="h-8 w-full min-w-0 px-2 text-[13px] [&>span]:truncate">
+        <SelectValue placeholder={tc.choosePeriod} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectLabel className="text-[10px] font-medium text-muted-foreground">{tc.followsReference}</SelectLabel>
+          {relative.map((o) => (
+            <SelectItem key={o.value} value={`rel:${o.value}`} className="text-[13px]">{o.label}</SelectItem>
+          ))}
+        </SelectGroup>
+        {options.length > 0 && (
+          <>
+            <SelectSeparator />
+            <SelectGroup>
+              <SelectLabel className="text-[10px] font-medium text-muted-foreground">{tc.fixedPeriod}</SelectLabel>
+              {options.map((o) => (
+                <SelectItem key={o.value} value={`fix:${o.value}`} className="text-[13px]">{o.label}</SelectItem>
+              ))}
+            </SelectGroup>
+          </>
+        )}
+      </SelectContent>
+    </Select>
   );
 }
 
-function RelativePresetSelect({
-  mode,
-  value,
-  onChange,
-}: {
-  mode: "month" | "fy";
-  value: RelativePeriodPreset | undefined;
-  onChange: (value: RelativePeriodPreset) => void;
+/** Período de um valor só (KPI, Top Ranking): "Todo o histórico / Mês /
+ *  Ano fiscal" e, quando não é tudo, o PeriodSelect. */
+function SinglePeriodField({ periodMode, selectionMode, relativePeriod, periodValue, onChange }: {
+  periodMode: "all" | "month" | "fy";
+  selectionMode: PeriodSelectionMode;
+  relativePeriod?: RelativePeriodPreset;
+  periodValue: string | null;
+  onChange: (patch: {
+    periodMode?: "all" | "month" | "fy";
+    periodValue?: string | null;
+    periodSelectionMode?: PeriodSelectionMode;
+    relativePeriod?: RelativePeriodPreset;
+  }) => void;
 }) {
-  const options = relativeOptionsForMode(mode);
-  const safeValue = value ?? defaultRelativePresetForMode(mode);
+  const months = useMonthsInfo();
+  const fyList = useFyList();
+  const options = periodMode === "fy"
+    ? fyList.map((f) => ({ value: f, label: f }))
+    : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
-    <Select value={safeValue} onValueChange={(v) => onChange(v as RelativePeriodPreset)}>
-      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-      </SelectContent>
-    </Select>
+    <>
+      <Row label={tc.period}>
+        <Segmented value={periodMode}
+          onChange={(v) => onChange({
+            periodMode: v,
+            periodValue: null,
+            periodSelectionMode: v === "all" ? "fixed" : "relative",
+            relativePeriod: v === "all" ? undefined : defaultRelativePresetForMode(v),
+          })}
+          options={[
+            { value: "all", label: tc.allShort, title: tc.all },
+            { value: "month", label: tc.month },
+            { value: "fy", label: tc.yearShort, title: tc.fiscalYear },
+          ]} />
+      </Row>
+      {periodMode !== "all" && (
+        <Row label={tc.which}>
+          <PeriodSelect mode={periodMode} selectionMode={selectionMode}
+            relativeValue={relativePeriod} fixedValue={periodValue} options={options}
+            onChange={(p) => onChange({
+              periodSelectionMode: p.selectionMode,
+              periodValue: p.value ?? null,
+              relativePeriod: p.relativePeriod,
+            })} />
+        </Row>
+      )}
+    </>
   );
 }
 
@@ -220,20 +298,10 @@ export function BlockAppearanceControls({ block, onChange }: {
   block: CustomBlock;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
-  const id = useId();
   return (
-    <div className="rounded-md border border-border/40 bg-secondary/20 p-2">
-      <Label id={id} className="mb-1 block text-[10px] uppercase text-muted-foreground">{t.blockAppearance.opacity}</Label>
-      <div role="group" aria-labelledby={id}>
-        <SliderWithInput
-          value={block.opacity ?? 100}
-          min={0}
-          max={100}
-          unit="%"
-          onChange={(v) => onChange({ opacity: v })}
-        />
-      </div>
-    </div>
+    <Row label={t.blockAppearance.opacity}>
+      <Slider value={block.opacity ?? 100} onChange={(v) => onChange({ opacity: v })} />
+    </Row>
   );
 }
 
@@ -278,28 +346,27 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
     case "image":
       return (
         <div className="space-y-3">
-          <div className="space-y-2">
-            <Label className="text-[10px] uppercase text-muted-foreground">{t.image.upload}</Label>
-            <input type="file" accept="image/*"
-              className="text-[11px]"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                const reader = new FileReader();
-                reader.onload = () => onChange({ src: String(reader.result) } as never);
-                reader.readAsDataURL(f);
-              }}
-            />
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">{t.image.fit}</Label>
-              <Select value={block.fit} onValueChange={(v) => onChange({ fit: v as "contain"|"cover" } as never)}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contain">{t.image.fitOptions.contain}</SelectItem>
-                  <SelectItem value="cover">{t.image.fitOptions.cover}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-3">
+            <Row label={t.image.upload}>
+              <input type="file" accept="image/*" aria-label={t.image.upload}
+                className="w-full min-w-0 text-[11px] file:mr-2 file:rounded-md file:border file:border-input file:bg-surface-base file:px-2 file:py-1 file:text-[11px]"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const reader = new FileReader();
+                  reader.onload = () => onChange({ src: String(reader.result) } as never);
+                  reader.readAsDataURL(f);
+                }}
+              />
+            </Row>
+            <Row label={t.image.fit}>
+              <Segmented value={block.fit}
+                onChange={(v) => onChange({ fit: v } as never)}
+                options={[
+                  { value: "contain", label: t.image.fitOptions.contain },
+                  { value: "cover", label: t.image.fitOptions.cover },
+                ]} />
+            </Row>
           </div>
 
           <Section title={ts.sections.outline}>
@@ -440,6 +507,37 @@ export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
 // Wrapper com abas Design / Filtros ? dá aos blocos de dados a UX
 // próxima do PowerPoint (painel de formatação à direita).
 // Inclui o seletor de Fonte de Dados PINADO no topo (não-colapsável).
+/** "Usar filtro global" — o mesmo cartão em todo bloco que filtra dados
+ *  (antes os Omni não tinham, então o Filtro Global não chegava neles). */
+function GlobalFilterToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const globalFilters = useSlidesFlow((s) => s.globalFilters);
+  const count = Object.values(globalFilters).reduce((acc, v) => acc + (v?.length ?? 0), 0);
+  return (
+    <div className="space-y-2">
+      <div className={cn(
+        "flex items-center justify-between gap-2 rounded-md border p-2.5",
+        value ? "border-primary/40 bg-primary/5" : "border-border/50 bg-card/30",
+      )}>
+        <div className="flex min-w-0 items-center gap-2">
+          <Globe2 className={cn("h-3.5 w-3.5 shrink-0", value ? "text-primary" : "text-muted-foreground")} />
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium text-foreground">{t.globalFilter.toggleLabel}</div>
+            <div className="truncate text-[10px] text-muted-foreground">
+              {value ? t.globalFilter.individualPreserved : t.globalFilter.toggleHint}
+            </div>
+          </div>
+        </div>
+        <Switch checked={value} onCheckedChange={onChange} aria-label={t.globalFilter.toggleLabel} />
+      </div>
+      {value && (
+        <div className="rounded-md border border-dashed border-border/50 bg-card/20 p-3 text-[11px] text-muted-foreground">
+          {count > 0 ? t.globalFilter.activeCount(count) : t.globalFilter.noneActive}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FilteredInspector({
   block, design, filters, onFiltersChange, onChange, styleFocusRequest,
 }: {
@@ -454,8 +552,6 @@ function FilteredInspector({
   const [activeTab, setActiveTab] = useState("design");
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
   const hasBudget = useBudget((s) => s.rows.length > 0);
-  const globalFilters = useSlidesFlow((s) => s.globalFilters);
-  const globalFilterCount = Object.values(globalFilters).reduce((acc, v) => acc + (v?.length ?? 0), 0);
   const useGlobalFilter = !!(block as { useGlobalFilter?: boolean }).useGlobalFilter;
 
   // Bridge não tem fonte selecionável (sempre KE30 ? usa cálculo PVM).
@@ -520,11 +616,11 @@ function FilteredInspector({
     }
     if (block.kind === "table" && unavailable.length > 0) {
       const tb = block as Extract<CustomBlock, { kind: "table" }>;
-      const filtered = tb.measures.filter((m) => !unavailable.includes(m));
+      const filtered = tb.measures.filter((m) => !isTableMeasureUnavailable(m, pendingSource));
       if (filtered.length !== tb.measures.length) {
         const fallback = filtered.length ? filtered : ["vol_real"];
         (patch as Partial<typeof tb>).measures = fallback;
-        if (tb.sortMeasure && unavailable.includes(tb.sortMeasure)) {
+        if (tb.sortMeasure && isTableMeasureUnavailable(tb.sortMeasure, pendingSource)) {
           (patch as Partial<typeof tb>).sortMeasure = filtered[0] ?? undefined;
         }
         const nextMeasures = new Set(fallback);
@@ -546,54 +642,43 @@ function FilteredInspector({
     toast.success(t.dataSourcePicker.sourceChanged(dataSourceLabel(pendingSource)));
   };
 
-  const dsBadgeLabel = dataSourceLabel(ds);
-  const dsBadgeCls = dataSourceBadgeClass(ds);
   const sourceOptions: BlockDataSource[] = [
     "ke30",
     ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
     ...(block.kind === "chart" ? (["personalizado"] as BlockDataSource[]) : []),
   ];
-  const dsDesc = ds === "personalizado"
-    ? dataSourceDescription(ds)
-    : ds === "ke30"
+  const describe = (opt: BlockDataSource) => opt === "personalizado"
+    ? dataSourceDescription(opt)
+    : opt === "ke30"
     ? t.dataSourcePicker.descriptions.ke30
-    : ds === "budget"
+    : opt === "budget"
       ? t.dataSourcePicker.descriptions.budget
       : t.dataSourcePicker.descriptions.budgetReal;
 
   return (
     <div className="space-y-2">
+      {/* Fonte de dados numa linha só. Antes: título + selo repetindo a
+          fonte ativa + botões + parágrafo de descrição (~130 px); a
+          descrição de cada base agora fica no tooltip do botão. */}
       {showPicker && (
-        <div className="relative rounded-md border border-border/60 bg-secondary/30 p-2">
-          <div className="mb-1.5 flex items-center justify-between">
-            <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
-              {tc.dataSource}
-            </Label>
-            <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
-              {dsBadgeLabel}
-            </Badge>
-          </div>
+        <div className="flex items-center gap-3" data-data-source-picker>
+          <span className="shrink-0 slides-type-helper">{tc.source}</span>
           {sourceOptions.length > 1 ? (
-            <div className={cn("grid gap-1", sourceOptions.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
+            <div className="flex h-8 min-w-0 flex-1 overflow-hidden rounded-md border border-input bg-surface-base" role="group" aria-label={tc.dataSource}>
               {sourceOptions.map((opt) => (
                 <button key={opt} type="button" onClick={() => applySwitch(opt)}
-                  className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                    ds === opt ? dataSourceActiveClass(opt) : "bg-card hover:bg-secondary text-muted-foreground",
+                  title={describe(opt)} aria-pressed={ds === opt}
+                  className={cn("flex-1 px-2 text-[12px] font-medium transition-colors",
+                    ds === opt ? dataSourceActiveClass(opt) : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}>{dataSourceLabel(opt)}</button>
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-1">
-              <button type="button" onClick={() => applySwitch("ke30")}
-                className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                  "bg-blue-500/20 text-blue-700 dark:text-blue-200",
-                )}>KE30</button>
-              <p className="mt-1 text-[9px] text-muted-foreground italic">
-                {t.dataSourcePicker.onlyKe30Hint}
-              </p>
-            </div>
+            <span className={cn("rounded-md px-2 py-1 text-[12px] font-medium", dataSourceActiveClass("ke30"))}
+              title={`${describe("ke30")} ${t.dataSourcePicker.onlyKe30Hint}`}>
+              {dataSourceLabel("ke30")}
+            </span>
           )}
-          <p className="mt-1 text-[9px] leading-snug text-muted-foreground">{dsDesc}</p>
         </div>
       )}
 
@@ -606,31 +691,9 @@ function FilteredInspector({
           <div data-style-panel-target="true">{design}</div>
         </TabsContent>
         <TabsContent value="filters" className="mt-2 space-y-3">
-          <div className={cn(
-            "flex items-center justify-between gap-2 rounded-md border p-2.5",
-            useGlobalFilter ? "border-primary/40 bg-primary/5" : "border-border/50 bg-card/30",
-          )}>
-            <div className="flex min-w-0 items-center gap-2">
-              <Globe2 className={cn("h-3.5 w-3.5 shrink-0", useGlobalFilter ? "text-primary" : "text-muted-foreground")} />
-              <div className="min-w-0">
-                <div className="text-[11px] font-medium text-foreground">{t.globalFilter.toggleLabel}</div>
-                <div className="truncate text-[10px] text-muted-foreground">
-                  {useGlobalFilter ? t.globalFilter.individualPreserved : t.globalFilter.toggleHint}
-                </div>
-              </div>
-            </div>
-            <Switch
-              checked={useGlobalFilter}
-              onCheckedChange={(v) => onChange({ useGlobalFilter: v } as never)}
-            />
-          </div>
-          {useGlobalFilter ? (
-            <div className="rounded-md border border-dashed border-border/50 bg-card/20 p-3 text-[11px] text-muted-foreground">
-              {globalFilterCount > 0
-                ? t.globalFilter.activeCount(globalFilterCount)
-                : t.globalFilter.noneActive}
-            </div>
-          ) : (
+          <GlobalFilterToggle value={useGlobalFilter}
+            onChange={(v) => onChange({ useGlobalFilter: v } as never)} />
+          {!useGlobalFilter && (
             <BlockFilters filters={filters} onChange={onFiltersChange} dataSource={ds} />
           )}
         </TabsContent>
@@ -654,83 +717,18 @@ function FilteredInspector({
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  normalize,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  normalize?: (v: string) => string;
-}) {
-  return (
-    <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <DraftInput
-        className="h-7 text-xs"
-        value={value}
-        normalize={normalize}
-        onCommit={onChange}
-      />
-    </div>
-  );
-}
-function NumField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <DraftNumberInput
-        className="h-7 text-xs"
-        value={value}
-        fallback={0}
-        onCommit={(next) => onChange(next ?? 0)}
-      />
-    </div>
-  );
-}
-
-const CHECKER_BG: React.CSSProperties = {
-  backgroundImage:
-    "linear-gradient(45deg, rgba(0,0,0,0.08) 25%, transparent 25%)," +
-    "linear-gradient(-45deg, rgba(0,0,0,0.08) 25%, transparent 25%)," +
-    "linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.08) 75%)," +
-    "linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.08) 75%)",
-  backgroundSize: "8px 8px",
-  backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0",
-  backgroundColor: SLIDE_HEX.white,
-};
-
-/** Background color picker with "Sem fundo" toggle. value: hex sem '#' OR "transparent". */
+/** Fundo com opção "Sem fundo". value: hex sem '#' OU "transparent".
+ *  Usa o mesmo seletor de cor do resto do painel (antes: <input type=color>
+ *  nativo + campo hex, um quarto jeito de escolher cor). */
 export function BgField({ label, value, onChange }: {
   label: string; value: string; onChange: (v: string) => void;
 }) {
-  const isT = value === "transparent";
-  const v = isT ? "" : (value || "").replace("#", "");
-  return (
-    <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <label className="mt-1 mb-1 flex cursor-pointer items-center justify-between text-[10px] text-muted-foreground">
-        <span>{t.bgField.noFill}</span>
-        <Switch checked={isT} className="scale-75"
-          onCheckedChange={(c) => onChange(c ? "transparent" : "FFFFFF")} />
-      </label>
-      <div className="flex items-center gap-1">
-        <input type="color" disabled={isT} value={`#${v || "FFFFFF"}`}
-          onChange={(e) => onChange(e.target.value.replace("#", ""))}
-          className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent disabled:cursor-not-allowed"
-          style={isT ? CHECKER_BG : undefined} />
-        <DraftInput
-          className="h-7 text-xs font-mono"
-          value={v}
-          disabled={isT}
-          normalize={(next) => next.replace("#", "").toUpperCase()}
-          onCommit={onChange}
-        />
-      </div>
-    </div>
+  const picker = (
+    <ColorField allowTransparent
+      value={value === "transparent" ? "transparent" : `#${(value || "FFFFFF").replace("#", "")}`}
+      onChange={(c) => onChange(c === "transparent" ? "transparent" : c.replace("#", "").toUpperCase())} />
   );
+  return label ? <Row label={label}>{picker}</Row> : picker;
 }
 
 // ---------------------------------------------------------------------------
@@ -740,195 +738,105 @@ function KpiInspector({ block, onChange }: {
   block: KpiBlock;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
-  const months = useMonthsInfo();
-  const fyList = useFyList();
-  const periodMode = block.periodMode ?? "all";
-  const periodSelectionMode = block.periodSelectionMode ?? "fixed";
-  const periodOpts = periodMode === "fy"
-    ? fyList.map((f) => ({ value: f, label: f }))
-    : periodMode === "month"
-      ? months.map((m) => ({ value: m.periodo, label: m.label }))
-      : [];
-
+  const unavailable = unavailableMeasuresForSource(block.dataSource);
+  // Mesma gramática do resto do painel (rótulo à esquerda, controle à
+  // direita). Antes o KPI era o último com rótulos em caixa alta
+  // empilhados, cor digitada em hex e um seletor de período próprio.
   return (
     <div className="space-y-2">
-      {/* Fase 1 do "Roteiro do Slides": KPI passa a usar Section (accordion)
-       * igual ao resto do editor — antes era só campos soltos com
-       * <Separator/>, a última gramática de navegação inconsistente que
-       * sobrou depois de termos achatado o Chart (item 7). Os campos em si
-       * não mudaram, só ganharam agrupamento com título. */}
       <Section title={t.kpi.sourceSection} defaultOpen>
-      <Field label={t.kpi.label} value={block.label}
-        onChange={(v) => onChange({ label: v } as never)} />
-
-      <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.valueSource}</Label>
-        <Select value={block.source}
-          onValueChange={(v) => onChange({ source: v as "manual"|"dynamic" } as never)}>
-          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="dynamic">{t.kpi.dynamic}</SelectItem>
-            <SelectItem value="manual">{t.kpi.manual}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {block.source === "manual" ? (
-        <Field label={t.kpi.value} value={block.manualValue ?? ""}
-          onChange={(v) => onChange({ manualValue: v } as never)} />
-      ) : (
-        <>
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.measure}</Label>
-            <Select value={block.measure ?? "rol"}
-              onValueChange={(v) => onChange({ measure: v as never } as never)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {KPI_MEASURES.map((m) => {
-                  const unavailable = unavailableMeasuresForSource(block.dataSource);
-                  const hint = unavailableHintForSource(block.dataSource);
-                  const disabled = unavailable.includes(m.id);
-                  return (
-                    <SelectItem key={m.id} value={m.id} disabled={disabled}
-                      title={disabled ? hint : undefined}>
-                      {m.label}{disabled ? ` ${t.table.unavailableSuffix}` : ""}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            {unavailableMeasuresForSource(block.dataSource).includes(block.measure ?? "rol") && (
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+        <Row label={t.kpi.label}>
+          <DraftInput className="h-8 text-[13px]" value={block.label}
+            onCommit={(v) => onChange({ label: v } as never)} />
+        </Row>
+        <Row label={t.kpi.valueSource}>
+          <Segmented value={block.source}
+            onChange={(v) => onChange({ source: v } as never)}
+            options={[
+              { value: "dynamic", label: t.kpi.dynamicShort, title: t.kpi.dynamic },
+              { value: "manual", label: t.kpi.manualShort, title: t.kpi.manual },
+            ]} />
+        </Row>
+        {block.source === "manual" ? (
+          <Row label={t.kpi.value}>
+            <DraftInput className="h-8 text-[13px]" value={block.manualValue ?? ""}
+              onCommit={(v) => onChange({ manualValue: v } as never)} />
+          </Row>
+        ) : (
+          <>
+            <Row label={t.kpi.measure}>
+              <SelectField value={block.measure ?? "rol"}
+                onChange={(v) => onChange({ measure: v as never } as never)}
+                options={KPI_MEASURES.map((m) => ({
+                  value: m.id,
+                  label: m.label,
+                  disabled: unavailable.includes(m.id),
+                  title: unavailable.includes(m.id) ? unavailableHintForSource(block.dataSource) : undefined,
+                }))} />
+            </Row>
+            {unavailable.includes(block.measure ?? "rol") && (
+              <p className="text-[10px] leading-snug text-muted-foreground">
                 {unavailableHintForSource(block.dataSource)}
               </p>
             )}
-          </div>
-          {/* Correção da base (volume em toneladas): rara, e só depende da
-              base — fica guardada, abrindo sozinha se estiver em uso. */}
-          {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
-            <MoreOptions customized={block.volumeUnit === "ton"}>
-              <div>
-                <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.volumeUnit}</Label>
-                <Segmented
-                  value={block.volumeUnit ?? "kg"}
-                  onChange={(v) => onChange({ volumeUnit: v as never } as never)}
-                  options={[
-                    { value: "kg", label: t.kpi.volumeUnitOptions.kg },
-                    { value: "ton", label: t.kpi.volumeUnitOptions.ton },
-                  ]}
-                />
-                <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
-              </div>
-            </MoreOptions>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">{tc.period}</Label>
-              <Select value={periodMode}
-                onValueChange={(v) => {
-                  const nextMode = v as "all" | "month" | "fy";
-                  onChange({
-                    periodMode: nextMode as never,
-                    periodValue: null,
-                    periodSelectionMode: nextMode === "all" ? "fixed" : (block.periodSelectionMode ?? "relative"),
-                    relativePeriod: nextMode === "all" ? undefined : defaultRelativePresetForMode(nextMode),
-                  } as never);
-                }}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{tc.all}</SelectItem>
-                  <SelectItem value="month">{tc.month}</SelectItem>
-                  <SelectItem value="fy">{tc.fiscalYear}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {periodMode !== "all" && (
-              <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <Label className="text-[10px] uppercase text-muted-foreground">{tc.value}</Label>
-                  <PeriodModeBadge mode={periodSelectionMode} />
-                </div>
-                {periodSelectionMode === "relative" ? (
-                  <RelativePresetSelect
-                    mode={periodMode}
-                    value={block.relativePeriod}
-                    onChange={(v) => onChange({ relativePeriod: v, periodValue: null } as never)}
+            <SinglePeriodField
+              periodMode={block.periodMode ?? "all"}
+              selectionMode={block.periodSelectionMode ?? "fixed"}
+              relativePeriod={block.relativePeriod}
+              periodValue={block.periodValue ?? null}
+              onChange={(patch) => onChange(patch as never)} />
+            <Row label={t.kpi.format}>
+              <SelectField value={block.format ?? "auto"}
+                onChange={(v) => onChange({ format: v as never } as never)}
+                options={[
+                  { value: "auto", label: t.kpi.formatOptions.auto },
+                  { value: "currency", label: t.kpi.formatOptions.currency },
+                  { value: "percent", label: t.kpi.formatOptions.percent },
+                  { value: "tons", label: t.kpi.formatOptions.tons },
+                  { value: "number", label: t.kpi.formatOptions.number },
+                ]} />
+            </Row>
+            {/* Correção da base (volume em toneladas): rara, e só depende da
+                base — fica guardada, abrindo sozinha se estiver em uso. */}
+            {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
+              <MoreOptions customized={block.volumeUnit === "ton"}>
+                <Row label={t.kpi.volumeUnit}>
+                  <Segmented
+                    value={block.volumeUnit ?? "kg"}
+                    onChange={(v) => onChange({ volumeUnit: v as never } as never)}
+                    options={[
+                      { value: "kg", label: t.kpi.volumeUnitOptions.kg },
+                      { value: "ton", label: t.kpi.volumeUnitOptions.ton },
+                    ]}
                   />
-                ) : (
-                  <Select value={block.periodValue ?? ""}
-                    onValueChange={(v) => onChange({ periodValue: v } as never)}>
-                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-                    <SelectContent>
-                      {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
+                </Row>
+                <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
+              </MoreOptions>
             )}
-          </div>
-          {periodMode !== "all" && (
-            <div className="grid grid-cols-2 gap-1">
-              {(["relative", "fixed"] as const).map((mode) => (
-                <Button
-                  key={mode}
-                  type="button"
-                  size="sm"
-                  variant={periodSelectionMode === mode ? "default" : "outline"}
-                  className="h-7 text-[11px]"
-                  onClick={() => onChange({
-                    periodSelectionMode: mode,
-                    periodValue: mode === "relative" ? null : block.periodValue,
-                    relativePeriod: mode === "relative"
-                      ? block.relativePeriod ?? defaultRelativePresetForMode(periodMode)
-                      : block.relativePeriod,
-                  } as never)}
-                >
-                  {mode === "relative" ? tc.relative : tc.fixed}
-                </Button>
-              ))}
-            </div>
-          )}
-          <div>
-            <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.format}</Label>
-            <Select value={block.format ?? "auto"}
-              onValueChange={(v) => onChange({ format: v as never } as never)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">{t.kpi.formatOptions.auto}</SelectItem>
-                <SelectItem value="currency">{t.kpi.formatOptions.currency}</SelectItem>
-                <SelectItem value="percent">{t.kpi.formatOptions.percent}</SelectItem>
-                <SelectItem value="tons">{t.kpi.formatOptions.tons}</SelectItem>
-                <SelectItem value="number">{t.kpi.formatOptions.number}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </>
-      )}
+          </>
+        )}
       </Section>
 
       <Section title={t.kpi.appearanceSection}>
-      <div className="grid grid-cols-2 gap-2">
-        <NumField label={t.kpi.valueSize} value={block.valueSize}
-          onChange={(v) => onChange({ valueSize: v } as never)} />
-        <Field label={t.kpi.colorHex} value={block.color}
-          normalize={(v) => v.replace("#", "").toUpperCase()}
-          onChange={(v) => onChange({ color: v } as never)} />
-      </div>
-      <BgField label={t.kpi.cardBg}
-        value={block.cardBg ?? "F8FAFC"}
-        onChange={(v) => onChange({ cardBg: v } as never)} />
+        <Row label={t.kpi.valueSize}>
+          <NumberStepper value={block.valueSize} min={10} max={120}
+            onChange={(v) => onChange({ valueSize: v } as never)} suffix="px" />
+        </Row>
+        <Row label={t.kpi.valueColor}>
+          <ColorField value={`#${(block.color || "000000").replace("#", "")}`}
+            onChange={(c) => onChange({ color: c.replace("#", "").toUpperCase() } as never)} />
+        </Row>
+        <Row label={t.kpi.cardBg}>
+          <ColorField allowTransparent
+            value={(block.cardBg ?? "F8FAFC") === "transparent" ? "transparent" : `#${(block.cardBg ?? "F8FAFC").replace("#", "")}`}
+            onChange={(c) => onChange({ cardBg: c === "transparent" ? "transparent" : c.replace("#", "").toUpperCase() } as never)} />
+        </Row>
       </Section>
 
       <Section title={t.kpi.interactivitySection}>
-      <div className="flex items-center justify-between">
-        <Label className="text-[10px] uppercase text-muted-foreground">
-          {t.kpi.reactToFilters}
-        </Label>
-        <Switch
-          checked={block.participatesInCrossFilter !== false}
-          onCheckedChange={(v) => onChange({ participatesInCrossFilter: v } as never)}
-        />
-      </div>
+        <ToggleField label={t.kpi.reactToFilters}
+          value={block.participatesInCrossFilter !== false}
+          onChange={(v) => onChange({ participatesInCrossFilter: v } as never)} />
       </Section>
     </div>
   );
@@ -956,49 +864,16 @@ export function ComparePeriodField({
     relativePeriod?: RelativePeriodPreset;
   }) => void;
 }) {
-  const activeMode = selectionMode ?? "fixed";
+  // O rótulo fica no Row de quem chama; `label` só decide o padrão (a Base
+  // começa um mês antes da Comparação).
   const defaultPreset = label === tc.base && mode === "month"
     ? DEFAULT_BASE_RELATIVE_MONTH_PRESET
     : defaultRelativePresetForMode(mode);
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-        <PeriodModeBadge mode={activeMode} />
-      </div>
-      <div className="grid grid-cols-2 gap-1">
-        {(["relative", "fixed"] as const).map((m) => (
-          <Button
-            key={m}
-            type="button"
-            size="sm"
-            variant={activeMode === m ? "default" : "outline"}
-            className="h-7 text-[11px]"
-            onClick={() => onChange({
-              selectionMode: m,
-              value: m === "relative" ? null : fixedValue,
-              relativePeriod: m === "relative" ? relativeValue ?? defaultPreset : relativeValue,
-            })}
-          >
-            {m === "relative" ? tc.relative : tc.fixed}
-          </Button>
-        ))}
-      </div>
-      {activeMode === "relative" ? (
-        <RelativePresetSelect
-          mode={mode}
-          value={relativeValue ?? defaultPreset}
-          onChange={(v) => onChange({ relativePeriod: v, value: null })}
-        />
-      ) : (
-        <Select value={fixedValue ?? ""} onValueChange={(v) => onChange({ value: v })}>
-          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-          <SelectContent>
-            {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      )}
-    </div>
+    <PeriodSelect mode={mode} selectionMode={selectionMode ?? "fixed"}
+      relativeValue={relativeValue} fixedValue={fixedValue} options={options}
+      defaultPreset={defaultPreset}
+      onChange={(p) => onChange({ value: p.value, selectionMode: p.selectionMode, relativePeriod: p.relativePeriod })} />
   );
 }
 
@@ -1013,30 +888,24 @@ function BridgeBlockEditor({ block, onChange }: {
     ? fyList.map((f) => ({ value: f, label: f }))
     : months.map((m) => ({ value: m.periodo, label: m.label }));
   return (
-    <div className="space-y-2">
-      <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">{tc.mode}</Label>
-        <Select value={block.mode}
-          onValueChange={(v) => {
-            const nextMode = v as "fy" | "month";
-            onChange({
-              mode: nextMode,
-              base: null,
-              comp: null,
-              baseSelectionMode: block.baseSelectionMode ?? "relative",
-              baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2",
-              compSelectionMode: block.compSelectionMode ?? "relative",
-              compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
-            } as never);
-          }}>
-          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="month">{t.bridge.modeOptions.month}</SelectItem>
-            <SelectItem value="fy">{t.bridge.modeOptions.fy}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-3">
+      <Row label={tc.mode}>
+        <Segmented value={block.mode}
+          onChange={(nextMode) => onChange({
+            mode: nextMode,
+            base: null,
+            comp: null,
+            baseSelectionMode: block.baseSelectionMode ?? "relative",
+            baseRelativePeriod: nextMode === "fy" ? "latest_fy_minus_2" : "latest_month_minus_2",
+            compSelectionMode: block.compSelectionMode ?? "relative",
+            compRelativePeriod: nextMode === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+          } as never)}
+          options={[
+            { value: "month", label: t.bridge.modeOptions.month },
+            { value: "fy", label: t.bridge.modeOptions.fy },
+          ]} />
+      </Row>
+      <Row label={tc.base}>
         <ComparePeriodField
           label={tc.base}
           mode={block.mode}
@@ -1050,6 +919,8 @@ function BridgeBlockEditor({ block, onChange }: {
             baseRelativePeriod: p.relativePeriod,
           } as never)}
         />
+      </Row>
+      <Row label={tc.comparison}>
         <ComparePeriodField
           label={tc.comparison}
           mode={block.mode}
@@ -1063,7 +934,7 @@ function BridgeBlockEditor({ block, onChange }: {
             compRelativePeriod: p.relativePeriod,
           } as never)}
         />
-      </div>
+      </Row>
     </div>
   );
 }
@@ -1131,7 +1002,7 @@ function TableBlockEditor({ block, onChange }: {
     if (!measures.length) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
     // Mesmo cálculo (e cache) do bloco na tela: selecionar a tabela não refaz
     // a tabela dinâmica inteira só para contar linhas.
-    const { result } = computeCustomTablePivot(sourceRows, block, measures);
+    const { result } = computeCustomTablePivot(sourceRows, block, measures, CUSTOM_TABLE_MEASURES);
     return {
       totalRows: result.leafRowHeaders.length,
       rowHeaders: result.leafRowHeaders.map((row) => ({
@@ -1440,9 +1311,8 @@ function TableBlockEditor({ block, onChange }: {
         <Label className="text-[10px] uppercase text-muted-foreground">{t.table.measures}</Label>
         <div className="space-y-1">
           {CUSTOM_TABLE_MEASURES.map((m) => {
-            const unavailable = unavailableMeasuresForSource(block.dataSource);
             const hint = unavailableHintForSource(block.dataSource);
-            const disabled = unavailable.includes(m.id);
+            const disabled = isTableMeasureUnavailable(m.id, block.dataSource);
             return (
               <button key={m.id}
                 onClick={() => { if (!disabled) toggleMeasure(m.id); }}
@@ -1460,7 +1330,7 @@ function TableBlockEditor({ block, onChange }: {
             );
           })}
         </div>
-        {block.measures.some((m) => unavailableMeasuresForSource(block.dataSource).includes(m)) && (
+        {block.measures.some((m) => isTableMeasureUnavailable(m, block.dataSource)) && (
           <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
             {unavailableHintForSource(block.dataSource)}
           </p>
@@ -1629,19 +1499,20 @@ function TableBlockEditor({ block, onChange }: {
                 </div>
                 {rule.mode === "heatmap" && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMin}</span>
-                      <input type="color" value={`#${rule.colorMin ?? "F8696B"}`}
-                        onChange={(e) => setRule({ colorMin: e.target.value.slice(1) })}
-                        className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
-                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMid}</span>
-                      <input type="color" value={`#${rule.colorMid ?? "FFEB84"}`}
-                        onChange={(e) => setRule({ colorMid: e.target.value.slice(1) })}
-                        className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
-                      <span className="w-8 text-[10px] text-muted-foreground">{t.table.heatmapMax}</span>
-                      <input type="color" value={`#${rule.colorMax ?? "63BE7B"}`}
-                        onChange={(e) => setRule({ colorMax: e.target.value.slice(1) })}
-                        className="h-5 w-8 cursor-pointer rounded border-0 p-0" />
+                    {/* Mesmo seletor de cor do resto do painel (antes, o
+                        <input type=color> nativo do sistema). */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      {([
+                        { key: "colorMin", label: t.table.heatmapMin, fallback: "F8696B" },
+                        { key: "colorMid", label: t.table.heatmapMid, fallback: "FFEB84" },
+                        { key: "colorMax", label: t.table.heatmapMax, fallback: "63BE7B" },
+                      ] as const).map(({ key, label, fallback }) => (
+                        <div key={key} className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-muted-foreground">{label}</span>
+                          <ColorField value={`#${rule[key] ?? fallback}`}
+                            onChange={(c) => setRule({ [key]: c.replace("#", "").toUpperCase() })} />
+                        </div>
+                      ))}
                     </div>
                     <Select value={rule.scope ?? "table"}
                       onValueChange={(v) => setRule({ scope: v as "table" | "column" | "row" })}>
@@ -1678,11 +1549,10 @@ function TableBlockEditor({ block, onChange }: {
             ]}
           />
         </Row>
-        <NumField
-          label={block.autoFit === false ? t.table.rowsVisible : t.table.rowsVisibleFixed}
-          value={block.maxRows ?? fit.shown}
-          onChange={(v) => onChange({ autoFit: false, maxRows: Math.max(1, v) } as never)}
-        />
+        <Row label={block.autoFit === false ? t.table.rowsVisible : t.table.rowsVisibleFixed}>
+          <NumberStepper value={block.maxRows ?? fit.shown} min={1} max={200}
+            onChange={(v) => onChange({ autoFit: false, maxRows: v } as never)} />
+        </Row>
         <p className="text-[10px] leading-snug text-muted-foreground">
           {t.table.manualHint}
         </p>
@@ -1734,125 +1604,46 @@ function TopSkuBlockEditor({ block, onChange }: {
   block: TopSkuBlock;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
-  const months = useMonthsInfo();
-  const fyList = useFyList();
-  const periodSelectionMode = block.periodSelectionMode ?? "fixed";
-  const periodOpts = block.periodMode === "fy"
-    ? fyList.map((f) => ({ value: f, label: f }))
-    : block.periodMode === "month"
-      ? months.map((m) => ({ value: m.periodo, label: m.label }))
-      : [];
+  const unavailable = unavailableMeasuresForSource(block.dataSource);
   return (
-    <div className="space-y-2">
-      <Field label={t.topSku.title} value={block.title ?? ""}
-        onChange={(v) => onChange({ title: v } as never)} />
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">{t.topSku.rankBy}</Label>
-          <Select value={block.dim}
-            onValueChange={(v) => onChange({ dim: v as never } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="skuDesc">{t.topSku.rankByOptions.skuDesc}</SelectItem>
-              <SelectItem value="sku">{t.topSku.rankByOptions.sku}</SelectItem>
-              <SelectItem value="cliente">{t.topSku.rankByOptions.cliente}</SelectItem>
-              <SelectItem value="marca">{t.topSku.rankByOptions.marca}</SelectItem>
-              <SelectItem value="categoria">{t.topSku.rankByOptions.categoria}</SelectItem>
-              <SelectItem value="canalAjustado">{t.topSku.rankByOptions.canalAjustado}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-[10px] uppercase text-muted-foreground">{tc.metric}</Label>
-          <Select value={block.measure}
-            onValueChange={(v) => onChange({ measure: v as never } as never)}>
-            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {KPI_MEASURES.map((m) => {
-                const unavailable = unavailableMeasuresForSource(block.dataSource);
-                const hint = unavailableHintForSource(block.dataSource);
-                const disabled = unavailable.includes(m.id);
-                return (
-                  <SelectItem key={m.id} value={m.id} disabled={disabled}
-                    title={disabled ? hint : undefined}>
-                    {m.label}{disabled ? t.table.unavailableSuffix : ""}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          {unavailableMeasuresForSource(block.dataSource).includes(block.measure) && (
-            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-              {unavailableHintForSource(block.dataSource)}
-            </p>
-          )}
-        </div>
-      </div>
-      <div>
-        <Label className="text-[10px] uppercase text-muted-foreground">{tc.period}</Label>
-        <Select value={block.periodMode}
-          onValueChange={(v) => {
-            const nextMode = v as "all" | "month" | "fy";
-            onChange({
-              periodMode: nextMode as never,
-              periodValue: null,
-              periodSelectionMode: nextMode === "all" ? "fixed" : (block.periodSelectionMode ?? "relative"),
-              relativePeriod: nextMode === "all" ? undefined : defaultRelativePresetForMode(nextMode),
-            } as never);
-          }}>
-          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t.topSku.periodOptions.all}</SelectItem>
-            <SelectItem value="month">{t.topSku.periodOptions.month}</SelectItem>
-            <SelectItem value="fy">{t.topSku.periodOptions.fy}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {block.periodMode !== "all" && (
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <Label className="text-[10px] uppercase text-muted-foreground">{t.topSku.periodValue}</Label>
-            <PeriodModeBadge mode={periodSelectionMode} />
-          </div>
-          {periodSelectionMode === "relative" ? (
-            <RelativePresetSelect
-              mode={block.periodMode}
-              value={block.relativePeriod}
-              onChange={(v) => onChange({ relativePeriod: v, periodValue: null } as never)}
-            />
-          ) : (
-            <Select value={block.periodValue ?? ""}
-              onValueChange={(v) => onChange({ periodValue: v } as never)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="..." /></SelectTrigger>
-              <SelectContent>
-                {periodOpts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+    <div className="space-y-3">
+      <Row label={t.topSku.title}>
+        <DraftInput className="h-8 text-[13px]" value={block.title ?? ""}
+          onCommit={(v) => onChange({ title: v } as never)} />
+      </Row>
+      <Row label={t.topSku.rankBy}>
+        <SelectField value={block.dim}
+          onChange={(v) => onChange({ dim: v as never } as never)}
+          options={[
+            { value: "skuDesc", label: t.topSku.rankByOptions.skuDesc },
+            { value: "sku", label: t.topSku.rankByOptions.sku },
+            { value: "cliente", label: t.topSku.rankByOptions.cliente },
+            { value: "marca", label: t.topSku.rankByOptions.marca },
+            { value: "categoria", label: t.topSku.rankByOptions.categoria },
+            { value: "canalAjustado", label: t.topSku.rankByOptions.canalAjustado },
+          ]} />
+      </Row>
+      <Row label={tc.metric}>
+        <SelectField value={block.measure}
+          onChange={(v) => onChange({ measure: v as never } as never)}
+          options={KPI_MEASURES.map((m) => ({
+            value: m.id,
+            label: m.label,
+            disabled: unavailable.includes(m.id),
+            title: unavailable.includes(m.id) ? unavailableHintForSource(block.dataSource) : undefined,
+          }))} />
+      </Row>
+      {unavailable.includes(block.measure) && (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          {unavailableHintForSource(block.dataSource)}
+        </p>
       )}
-      {block.periodMode !== "all" && (
-        <div className="grid grid-cols-2 gap-1">
-          {(["relative", "fixed"] as const).map((mode) => (
-            <Button
-              key={mode}
-              type="button"
-              size="sm"
-              variant={periodSelectionMode === mode ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() => onChange({
-                periodSelectionMode: mode,
-                periodValue: mode === "relative" ? null : block.periodValue,
-                relativePeriod: mode === "relative"
-                  ? block.relativePeriod ?? defaultRelativePresetForMode(block.periodMode)
-                  : block.relativePeriod,
-              } as never)}
-            >
-              {mode === "relative" ? tc.relative : tc.fixed}
-            </Button>
-          ))}
-        </div>
-      )}
+      <SinglePeriodField
+        periodMode={block.periodMode}
+        selectionMode={block.periodSelectionMode ?? "fixed"}
+        relativePeriod={block.relativePeriod}
+        periodValue={block.periodValue ?? null}
+        onChange={(patch) => onChange(patch as never)} />
       <Row label={t.topSku.itemsShown}>
         <Segmented
           value={block.autoFit === false ? "manual" : "auto"}
@@ -1863,8 +1654,10 @@ function TopSkuBlockEditor({ block, onChange }: {
           ]}
         />
       </Row>
-      <NumField label={tc.topN} value={block.topN}
-        onChange={(v) => onChange({ autoFit: false, topN: Math.max(1, Math.min(50, v)) } as never)} />
+      <Row label={tc.topN}>
+        <NumberStepper value={block.topN} min={1} max={50}
+          onChange={(v) => onChange({ autoFit: false, topN: v } as never)} />
+      </Row>
       {block.autoFit !== false && (
         <p className="text-[10px] leading-snug text-muted-foreground">
           {t.topSku.autoHint(block.topN)}
@@ -2359,36 +2152,47 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
   );
 }
 
+/** Valor da opção "Todos" nos filtros Omni. Era "" — o Radix Select não
+ *  aceita item com valor vazio e abrir a seção Filtros derrubava o app. */
+const OMNI_ALL = "__all__";
+
 function OmniFiltersSection({ block, onChange }: {
   block: OmniBaseBlock;
   onChange: (patch: Partial<OmniBaseBlock>) => void;
 }) {
   const rows = useDeckPricingRows();
+  const months = useMonthsInfo();
   const unique = (field: keyof PricingRow) =>
     Array.from(new Set(rows.map((r) => r[field] as string | undefined).filter(Boolean))).sort() as string[];
   const dimOpt = (field: keyof PricingRow, placeholder: string) => [
-    { value: "", label: placeholder },
+    { value: OMNI_ALL, label: placeholder },
     ...unique(field).map((v) => ({ value: v, label: v })),
   ];
   const f = t.omni.filterFields;
+  const useGlobal = !!block.useGlobalFilter;
 
   return (
     <Section title={t.omni.filters}>
+      {/* Meses com nome ("Set/26"), em ordem — antes a lista mostrava o
+          código cru da base ("009.2026") em ordem alfabética. */}
       <Row label={f.periods}>
         <MultiSelectFilter
           selected={block.periodos ?? []}
-          options={unique("periodo").map((v) => ({ value: v, label: v }))}
+          options={months.map((m) => ({ value: m.periodo, label: m.label }))}
           onChange={(v) => onChange({ periodos: v.length ? v : null })}
           placeholder={f.periodsAll}
         />
       </Row>
-      <Row label={f.canal}><SelectField value={block.canalAjustado ?? ""} options={dimOpt("canalAjustado", f.canalAll)} onChange={(v) => onChange({ canalAjustado: v || null })} /></Row>
-      <Row label={f.categoria}><SelectField value={block.categoria ?? ""} options={dimOpt("categoria", f.categoriaAll)} onChange={(v) => onChange({ categoria: v || null })} /></Row>
-      <Row label={f.subcategoria}><SelectField value={block.subcategoria ?? ""} options={dimOpt("subcategoria", f.subcategoriaAll)} onChange={(v) => onChange({ subcategoria: v || null })} /></Row>
-      <Row label={f.marca}><SelectField value={block.marca ?? ""} options={dimOpt("marca", f.marcaAll)} onChange={(v) => onChange({ marca: v || null })} /></Row>
-      <Row label={f.formato}><SelectField value={block.formato ?? ""} options={dimOpt("formato", f.formatoAll)} onChange={(v) => onChange({ formato: v || null })} /></Row>
-      <Row label={f.regional}><SelectField value={block.regional ?? ""} options={dimOpt("regional", f.regionalAll)} onChange={(v) => onChange({ regional: v || null })} /></Row>
-      <Row label={f.uf}><SelectField value={block.uf ?? ""} options={dimOpt("uf", f.ufAll)} onChange={(v) => onChange({ uf: v || null })} /></Row>
+      <GlobalFilterToggle value={useGlobal} onChange={(v) => onChange({ useGlobalFilter: v })} />
+      {!useGlobal && (<>
+      <Row label={f.canal}><SelectField value={block.canalAjustado ?? OMNI_ALL} options={dimOpt("canalAjustado", f.canalAll)} onChange={(v) => onChange({ canalAjustado: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.categoria}><SelectField value={block.categoria ?? OMNI_ALL} options={dimOpt("categoria", f.categoriaAll)} onChange={(v) => onChange({ categoria: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.subcategoria}><SelectField value={block.subcategoria ?? OMNI_ALL} options={dimOpt("subcategoria", f.subcategoriaAll)} onChange={(v) => onChange({ subcategoria: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.marca}><SelectField value={block.marca ?? OMNI_ALL} options={dimOpt("marca", f.marcaAll)} onChange={(v) => onChange({ marca: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.formato}><SelectField value={block.formato ?? OMNI_ALL} options={dimOpt("formato", f.formatoAll)} onChange={(v) => onChange({ formato: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.regional}><SelectField value={block.regional ?? OMNI_ALL} options={dimOpt("regional", f.regionalAll)} onChange={(v) => onChange({ regional: v === OMNI_ALL ? null : v })} /></Row>
+      <Row label={f.uf}><SelectField value={block.uf ?? OMNI_ALL} options={dimOpt("uf", f.ufAll)} onChange={(v) => onChange({ uf: v === OMNI_ALL ? null : v })} /></Row>
+      </>)}
     </Section>
   );
 }
@@ -2780,12 +2584,7 @@ function OmniDimMetricInspector({ block, onChange, label }: {
 }
 
 function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <Switch checked={value} onCheckedChange={onChange} />
-    </div>
-  );
+  return <ToggleField label={label} value={value} onChange={onChange} />;
 }
 
 // (FitControls compartilhado removido ? apenas tabela usa estes toggles agora,

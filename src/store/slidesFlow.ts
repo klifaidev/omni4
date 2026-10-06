@@ -480,7 +480,9 @@ export const useSlidesFlow = create<SlidesFlowState>()(
             if (item.kind !== "custom" || !item.config?.blocks) return item;
             const blocks = item.config.blocks.map((block) => {
               const fb = block as unknown as FilterableBlock;
-              if (!("filters" in fb)) return block;
+              // Omni guarda filtros em campos próprios (sem `filters`), mas
+              // também aceita o Filtro Global.
+              if (!("filters" in fb) && !block.kind.startsWith("omni_")) return block;
               if (fb.useGlobalFilter) return block;
               affected += 1;
               return { ...block, useGlobalFilter: true };

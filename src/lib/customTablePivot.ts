@@ -36,6 +36,9 @@ export function computeCustomTablePivot(
   sourceRows: PricingRow[],
   block: Pick<TableBlock, "rowDims" | "colDim" | "filters" | "monthFilter">,
   measures: PivotMeasure[],
+  /** Catálogo completo: medidas derivadas (CM %, R$/Kg) somam as que dependem
+   *  dele mesmo quando elas não estão visíveis na tabela. */
+  catalog: PivotMeasure[] = measures,
 ): CustomTablePivot {
   const key = JSON.stringify([
     block.rowDims, block.colDim ?? null, measures.map((m) => m.id), block.filters ?? {}, block.monthFilter ?? null,
@@ -58,6 +61,7 @@ export function computeCustomTablePivot(
     rows: block.rowDims,
     cols: block.colDim ? [block.colDim] : [],
     values: measures,
+    measureCatalog: catalog,
     filters: {},
   });
 

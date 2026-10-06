@@ -607,6 +607,11 @@ export interface OmniBaseBlock extends BaseBlock {
   formato: string | null;
   regional: string | null;
   uf: string | null;
+  /** Usa o Filtro Global da apresentação no lugar dos filtros de dimensão
+   *  acima (que ficam guardados). Os meses (`periodos`) continuam do bloco. */
+  useGlobalFilter?: boolean;
+  /** Preenchido só em tempo de desenho por resolveEffectiveBlock. */
+  filters?: Filters;
 }
 
 export interface OmniEvolucaoMensalBlock extends OmniBaseBlock {
@@ -1155,6 +1160,20 @@ export const KPI_MEASURES: { id: KpiMeasureId; label: string; format: Exclude<Kp
 export const BUDGET_UNAVAILABLE_MEASURES: readonly string[] = [
   "mb", "mbPct", "frete", "comissao", "positivacao", "ticketMedio",
 ];
+
+/** Id da medida da Tabela → id equivalente do catálogo KPI/Gráfico. A
+ *  Tabela usa ids próprios ("mb_real"), então sem isso a checagem de
+ *  "indisponível no Budget" nunca batia e MB/Frete/Comissão saíam zerados. */
+export const TABLE_MEASURE_KPI_ID: Readonly<Record<string, KpiMeasureId>> = {
+  rol_real: "rol", vol_real: "volume", cm_real: "cm", cv_real: "cv",
+  frete_real: "frete", com_real: "comissao", mb_real: "mb",
+  cm_pct_real: "cmPct", mb_pct_real: "mbPct", preco_real: "precoMedio",
+};
+
+export function isTableMeasureUnavailable(measureId: string, ds: BlockDataSource | undefined): boolean {
+  if (!isFromBudgetBase(ds)) return false;
+  return BUDGET_UNAVAILABLE_MEASURES.includes(TABLE_MEASURE_KPI_ID[measureId] ?? measureId);
+}
 
 export const BUDGET_UNAVAILABLE_HINT =
   "Indisponível na fonte Budget — a base Budget não contém custos detalhados (Margem Bruta, Frete, Comissão).";

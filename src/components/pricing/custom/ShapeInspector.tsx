@@ -1,40 +1,51 @@
-// Grouped inspector for ShapeBlock — picker + Preenchimento, Contorno,
-// Geometria, Linha, Sombra. Uses minimal local primitives.
+// Inspector da Forma — escolha da forma + Preenchimento, Contorno/Linha,
+// Geometria, Sombra. Usa as MESMAS primitivas do resto do painel
+// (chart/Inspector): antes tinha gramática própria (grade de 2 colunas,
+// rótulos empilhados, cor no seletor nativo do sistema + campo hex).
 
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import {
-  type ShapeBlock, type ShapeType, type ShapeStrokeStyle, type ShapeLineDirection,
+  type ShapeBlock, type ShapeStrokeStyle, type ShapeLineDirection,
   SHAPE_GROUPS, SHAPE_LABELS, ensureShapeBlock, isLineFamily, deriveLineEndpoints,
 } from "@/lib/customSlide";
 import { ShapeMiniPreview } from "./ShapeRenderer";
+import {
+  Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, MoreOptions,
+} from "./chart/Inspector";
 import { strings } from "@/lib/i18n";
 
 const t = strings.slides.editor.inspectors.shape;
 
 type Patch = Partial<ShapeBlock>;
 
+/** Forma guarda cor como hex sem '#' (ou "transparent"); o seletor usa '#'. */
+const toPicker = (hex: string) => hex === "transparent" ? "transparent" : `#${(hex || "FFFFFF").replace("#", "")}`;
+const fromPicker = (c: string) => c.replace("#", "").toUpperCase();
+
 export function ShapeInspector({ block, onChange }: {
   block: ShapeBlock; onChange: (p: Patch) => void;
 }) {
   const b = ensureShapeBlock(block);
   const isLine = isLineFamily(b.shape);
+  const strokeOptions: { value: ShapeStrokeStyle; label: string }[] = [
+    { value: "solid", label: t.strokeStyle.solid },
+    { value: "dashed", label: t.strokeStyle.dashed },
+    { value: "dotted", label: t.strokeStyle.dotted },
+  ];
+  const hasRadius = b.shape === "rect" || b.shape === "roundRect"
+    || b.shape === "callout-rect" || b.shape === "callout-rounded";
 
   return (
-    <div className="space-y-3">
-      {/* Picker */}
-      <Section title={t.sections.shape}>
+    <div className="space-y-2">
+      <Section title={t.sections.shape} defaultOpen>
         <div className="space-y-2">
           {SHAPE_GROUPS.map((g) => (
             <div key={g.label}>
-              <div className="mb-1 slides-type-label">{g.label}</div>
+              <div className="mb-1 slides-type-helper">{g.label}</div>
               <div className="grid grid-cols-6 gap-1">
                 {g.shapes.map((s) => (
-                  <button key={s} type="button" title={SHAPE_LABELS[s]}
+                  <button key={s} type="button" title={SHAPE_LABELS[s]} aria-label={SHAPE_LABELS[s]}
+                    aria-pressed={b.shape === s}
                     onClick={() => onChange({ shape: s })}
                     className={cn(
                       "flex h-9 items-center justify-center rounded border bg-surface-base transition-colors",
@@ -49,229 +60,111 @@ export function ShapeInspector({ block, onChange }: {
         </div>
       </Section>
 
-      {/* Preenchimento — hidden for line family */}
       {!isLine && (
-        <Section title={t.sections.fill}>
-          <Row>
-            <ColorField label={t.color} value={b.fill} allowTransparent
-              onTransparentChange={(transparent) => onChange(transparent
+        <Section title={t.sections.fill} defaultOpen>
+          <Row label={t.color}>
+            <ColorField allowTransparent value={toPicker(b.fill)}
+              onChange={(c) => onChange(c === "transparent"
                 ? { fill: "transparent", fillOpacity: 0 }
-                : { fill: "EEF2F6", fillOpacity: 100 })}
-              onChange={(v) => onChange({ fill: v })} />
-            <SliderField label={t.opacityPct(b.fillOpacity)} min={0} max={100} step={1}
-              value={b.fillOpacity} disabled={b.fill === "transparent"}
-              onChange={(v) => onChange({ fillOpacity: v })} />
+                : b.fill === "transparent"
+                  ? { fill: fromPicker(c), fillOpacity: 100 }
+                  : { fill: fromPicker(c) })} />
           </Row>
+          {b.fill !== "transparent" && (
+            <Row label={t.opacity}>
+              <Slider value={b.fillOpacity} onChange={(v) => onChange({ fillOpacity: v })} />
+            </Row>
+          )}
         </Section>
       )}
 
-      {/* Contorno OR Linha */}
       {isLine ? (
-        <Section title={t.sections.line}>
-          <Row>
-            <ColorField label={t.color} value={b.fill} onChange={(v) => onChange({ fill: v })} />
-            <NumStepper label={t.thickness} value={b.lineThickness} min={1} max={20}
+        <Section title={t.sections.line} defaultOpen>
+          <Row label={t.color}>
+            <ColorField value={toPicker(b.fill)} onChange={(c) => onChange({ fill: fromPicker(c) })} />
+          </Row>
+          <Row label={t.thickness}>
+            <NumberStepper value={b.lineThickness} min={1} max={20} suffix="px"
               onChange={(v) => onChange({ lineThickness: v })} />
           </Row>
-          <Row>
-            <SegField<ShapeStrokeStyle> label={t.style} value={b.strokeStyle}
+          <Row label={t.style}>
+            <Segmented value={b.strokeStyle} onChange={(v) => onChange({ strokeStyle: v })} options={strokeOptions} />
+          </Row>
+          <Row label={t.direction}>
+            <Segmented<ShapeLineDirection> value={b.lineDirection}
+              onChange={(v) => onChange({ lineDirection: v, ...deriveLineEndpoints(v, b.x, b.y, b.w, b.h) })}
               options={[
-                { v: "solid", l: t.strokeStyle.solid },
-                { v: "dashed", l: t.strokeStyle.dashed },
-                { v: "dotted", l: t.strokeStyle.dotted },
-              ]}
-              onChange={(v) => onChange({ strokeStyle: v })} />
+                { value: "horizontal", label: "→" },
+                { value: "vertical", label: "↓" },
+                { value: "diagonal-down", label: "↘" },
+                { value: "diagonal-up", label: "↗" },
+              ]} />
           </Row>
-          <Row>
-            <SegField<ShapeLineDirection> label={t.direction} value={b.lineDirection}
-              options={[
-                { v: "horizontal", l: "→" },
-                { v: "vertical", l: "↓" },
-                { v: "diagonal-down", l: "↘" },
-                { v: "diagonal-up", l: "↗" },
-              ]}
-              onChange={(v) => onChange({
-                lineDirection: v,
-                ...deriveLineEndpoints(v, b.x, b.y, b.w, b.h),
-              })} />
-          </Row>
-          <Row>
-            <ToggleField label={t.arrowStart} value={b.arrowStart} onChange={(v) => onChange({ arrowStart: v })} />
-            <ToggleField label={t.arrowEnd} value={b.arrowEnd} onChange={(v) => onChange({ arrowEnd: v })} />
-          </Row>
+          <ToggleField label={t.arrowStart} value={b.arrowStart} onChange={(v) => onChange({ arrowStart: v })} />
+          <ToggleField label={t.arrowEnd} value={b.arrowEnd} onChange={(v) => onChange({ arrowEnd: v })} />
         </Section>
       ) : (
         <Section title={t.sections.outline}>
-          <Row>
-            <ColorField label={t.borderColor} value={b.strokeColor} onChange={(v) => onChange({ strokeColor: v })} />
-            <NumStepper label={t.thickness} value={b.strokeWidth} min={0} max={20}
+          <Row label={t.thickness}>
+            <NumberStepper value={b.strokeWidth} min={0} max={20} suffix="px"
               onChange={(v) => onChange({ strokeWidth: v })} />
           </Row>
-          <Row>
-            <SegField<ShapeStrokeStyle> label={t.style} value={b.strokeStyle}
-              options={[
-                { v: "solid", l: t.strokeStyle.solid },
-                { v: "dashed", l: t.strokeStyle.dashed },
-                { v: "dotted", l: t.strokeStyle.dotted },
-              ]}
-              onChange={(v) => onChange({ strokeStyle: v })} />
-          </Row>
+          {b.strokeWidth > 0 && (
+            <>
+              <Row label={t.color}>
+                <ColorField value={toPicker(b.strokeColor)} onChange={(c) => onChange({ strokeColor: fromPicker(c) })} />
+              </Row>
+              <Row label={t.style}>
+                <Segmented value={b.strokeStyle} onChange={(v) => onChange({ strokeStyle: v })} options={strokeOptions} />
+              </Row>
+            </>
+          )}
         </Section>
       )}
 
-      {/* Geometria — hide for line family */}
       {!isLine && (
         <Section title={t.sections.geometry}>
-          <Row>
-            {(b.shape === "rect" || b.shape === "roundRect" || b.shape === "callout-rect" || b.shape === "callout-rounded") && (
-              <NumStepper label={t.radius} value={b.radius} min={0} max={200}
+          {hasRadius && (
+            <Row label={t.radius}>
+              <NumberStepper value={b.radius} min={0} max={200} suffix="px"
                 onChange={(v) => onChange({ radius: v })} />
-            )}
-            <NumStepper label={t.rotationDeg} value={b.rotation} min={0} max={359}
+            </Row>
+          )}
+          <Row label={t.rotationDeg}>
+            <NumberStepper value={b.rotation} min={0} max={359} suffix="°"
               onChange={(v) => onChange({ rotation: v })} />
           </Row>
         </Section>
       )}
 
-      {/* Sombra */}
       <Section title={t.sections.shadow}>
         <ToggleField label={t.showShadow} value={b.shadowEnabled}
           onChange={(v) => onChange({ shadowEnabled: v })} />
         {b.shadowEnabled && (
           <>
-            <Row>
-              <ColorField label={t.color} value={b.shadowColor} onChange={(v) => onChange({ shadowColor: v })} />
-              <SliderField label={t.opacityPct(b.shadowOpacity)} min={0} max={100} step={1}
-                value={b.shadowOpacity} onChange={(v) => onChange({ shadowOpacity: v })} />
+            <Row label={t.color}>
+              <ColorField value={toPicker(b.shadowColor)} onChange={(c) => onChange({ shadowColor: fromPicker(c) })} />
             </Row>
-            <Row>
-              <NumStepper label={t.blur} value={b.shadowBlur} min={0} max={40}
-                onChange={(v) => onChange({ shadowBlur: v })} />
+            <Row label={t.opacity}>
+              <Slider value={b.shadowOpacity} onChange={(v) => onChange({ shadowOpacity: v })} />
             </Row>
-            <Row>
-              <NumStepper label={t.axisX} value={b.shadowX} min={-40} max={40}
-                onChange={(v) => onChange({ shadowX: v })} />
-              <NumStepper label={t.axisY} value={b.shadowY} min={-40} max={40}
-                onChange={(v) => onChange({ shadowY: v })} />
-            </Row>
+            <MoreOptions customized={b.shadowBlur !== 8 || b.shadowX !== 2 || b.shadowY !== 2}>
+              <Row label={t.blur}>
+                <NumberStepper value={b.shadowBlur} min={0} max={40} suffix="px"
+                  onChange={(v) => onChange({ shadowBlur: v })} />
+              </Row>
+              <Row label={t.shiftX}>
+                <NumberStepper value={b.shadowX} min={-40} max={40} suffix="px"
+                  onChange={(v) => onChange({ shadowX: v })} />
+              </Row>
+              <Row label={t.shiftY}>
+                <NumberStepper value={b.shadowY} min={-40} max={40} suffix="px"
+                  onChange={(v) => onChange({ shadowY: v })} />
+              </Row>
+            </MoreOptions>
           </>
         )}
       </Section>
-    </div>
-  );
-}
-
-// ---------- primitives ----------
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="surface-raised rounded-md border border-border p-2">
-      <div className="mb-2 slides-type-label">{title}</div>
-      <div className="space-y-2">{children}</div>
-    </div>
-  );
-}
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-2">{children}</div>;
-}
-function ColorField({ label, value, onChange, allowTransparent = false, onTransparentChange }: {
-  label: string; value: string; onChange: (v: string) => void;
-  allowTransparent?: boolean; onTransparentChange?: (t: boolean) => void;
-}) {
-  const isTransparent = value === "transparent";
-  const v = isTransparent ? "" : (value || "").replace("#", "");
-  return (
-    <div>
-      <Label className="slides-type-label">{label}</Label>
-      {allowTransparent && (
-        <label className="mb-1 mt-0.5 flex cursor-pointer items-center justify-between text-[10px] text-muted-foreground">
-          <span>{t.noFill}</span>
-          <Switch checked={isTransparent} className="scale-75"
-            onCheckedChange={(c) => onTransparentChange?.(c)} />
-        </label>
-      )}
-      <div className="flex items-center gap-1">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button type="button" disabled={isTransparent}
-              className={cn("h-7 w-7 shrink-0 rounded border border-border",
-                isTransparent && "cursor-not-allowed opacity-90")}
-              style={isTransparent ? CHECKER_BG_STYLE : { background: `#${v || "FFFFFF"}` }} />
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-2">
-            <input type="color" value={`#${v || "FFFFFF"}`}
-              onChange={(e) => onChange(e.target.value.replace("#", ""))}
-              className="h-32 w-32 cursor-pointer border-0 bg-transparent" />
-          </PopoverContent>
-        </Popover>
-        <Input className="h-7 text-xs font-mono" value={v} disabled={isTransparent}
-          onChange={(e) => onChange(e.target.value.replace("#", ""))} />
-      </div>
-    </div>
-  );
-}
-
-const CHECKER_BG_STYLE: React.CSSProperties = {
-  backgroundImage:
-    "linear-gradient(45deg, rgba(0,0,0,0.08) 25%, transparent 25%)," +
-    "linear-gradient(-45deg, rgba(0,0,0,0.08) 25%, transparent 25%)," +
-    "linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.08) 75%)," +
-    "linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.08) 75%)",
-  backgroundSize: "8px 8px",
-  backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0",
-  backgroundColor: "#FFFFFF",
-};
-function NumStepper({ label, value, min, max, onChange }: {
-  label: string; value: number; min: number; max: number; onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <Label className="slides-type-label">{label}</Label>
-      <Input type="number" className="h-7 text-xs" value={value} min={min} max={max}
-        onChange={(e) => {
-          const n = parseInt(e.target.value, 10);
-          if (Number.isNaN(n)) return;
-          onChange(Math.max(min, Math.min(max, n)));
-        }} />
-    </div>
-  );
-}
-function SliderField({ label, value, min, max, step, onChange, disabled = false }: {
-  label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; disabled?: boolean;
-}) {
-  return (
-    <div className={disabled ? "opacity-50 pointer-events-none" : ""}>
-      <Label className="slides-type-label">{label}</Label>
-      <Slider value={[value]} min={min} max={max} step={step}
-        onValueChange={(v) => onChange(v[0])} className="mt-2" />
-    </div>
-  );
-}
-function SegField<T extends string>({ label, value, options, onChange }: {
-  label: string; value: T; options: { v: T; l: string }[]; onChange: (v: T) => void;
-}) {
-  return (
-    <div className="col-span-2">
-      <Label className="slides-type-label">{label}</Label>
-      <div className="flex gap-1 mt-1">
-        {options.map((o) => (
-          <button key={o.v} type="button" onClick={() => onChange(o.v)}
-            className={cn(
-              "flex-1 h-7 rounded border text-xs",
-              value === o.v ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted",
-            )}>
-            {o.l}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-function ToggleField({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Label className="slides-type-helper text-foreground">{label}</Label>
-      <Switch checked={value} onCheckedChange={onChange} />
     </div>
   );
 }

@@ -258,16 +258,13 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
 }) {
   return (
     <div className="space-y-3">
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <Badge variant="secondary" className="slides-type-badge">{BLOCK_LABELS[block.kind]}</Badge>
-          {block.locked && (
-            <Badge variant="outline" className="slides-type-badge gap-1">
-              <Lock className="h-3 w-3" /> {t.inspector.lockedBadge}
-            </Badge>
-          )}
-        </div>
-      </div>
+      {/* O tipo do bloco já está no cabeçalho do painel — o chip com o
+          mesmo nome repetia. Fica só o aviso de bloqueado. */}
+      {block.locked && (
+        <Badge variant="outline" className="slides-type-badge gap-1">
+          <Lock className="h-3 w-3" /> {t.inspector.lockedBadge}
+        </Badge>
+      )}
 
       {/* key por bloco: sem ela, trocar de bloco selecionado reaproveita
         * as MESMAS instâncias de input (React reconcilia por tipo +

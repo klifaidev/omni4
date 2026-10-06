@@ -103,6 +103,13 @@ function areBlocksEqual(prev: CustomBlock, next: CustomBlock): boolean {
 }
 
 function applyOmniFilters(rows: PricingRow[], blk: OmniBaseBlock): PricingRow[] {
+  // Filtro Global: troca os filtros de dimensão do bloco pelos da
+  // apresentação (resolveEffectiveBlock já pôs o global em `filters`); os
+  // meses escolhidos no próprio bloco continuam valendo, como nos demais.
+  if (blk.useGlobalFilter) {
+    const byPeriod = blk.periodos?.length ? rows.filter((r) => blk.periodos!.includes(r.periodo)) : rows;
+    return applyFilters(byPeriod, blk.filters ?? {}, null);
+  }
   return rows.filter((r) => {
     if (blk.periodos?.length && !blk.periodos.includes(r.periodo)) return false;
     if (blk.canal && r.canal !== blk.canal) return false;
@@ -168,6 +175,18 @@ export const CUSTOM_TABLE_MEASURES: PivotMeasure[] = [
   { id: "frete_real",label: t.measures.frete,          field: "frete_real",       agg: "sum", format: "currency", tone: "real" },
   { id: "com_real",  label: t.measures.comissao,       field: "comissao_real",    agg: "sum", format: "currency", tone: "real" },
   { id: "mb_real",   label: t.measures.margemBruta,    field: "mb_real",          agg: "sum", format: "currency", tone: "real" },
+  // Razões: KPI e Gráfico já tinham, a Tabela não (3 catálogos de medida
+  // diferentes). Calculadas depois de somar numerador e denominador — nunca
+  // média de médias (ver lib/pivot.ts).
+  { id: "cm_pct_real", label: t.measures.cmPct, field: "cm_real", agg: "sum", format: "percent", tone: "real",
+    dependsOn: ["rol_real", "cm_real"],
+    derive: (a) => (a.rol_real == null || a.cm_real == null ? null : a.rol_real > 0 ? a.cm_real / a.rol_real : 0) },
+  { id: "mb_pct_real", label: t.measures.mbPct, field: "mb_real", agg: "sum", format: "percent", tone: "real",
+    dependsOn: ["rol_real", "mb_real"],
+    derive: (a) => (a.rol_real == null || a.mb_real == null ? null : a.rol_real > 0 ? a.mb_real / a.rol_real : 0) },
+  { id: "preco_real", label: t.measures.precoMedio, field: "rol_real", agg: "sum", format: "currency", tone: "real",
+    dependsOn: ["vol_real", "rol_real"],
+    derive: (a) => (a.vol_real == null || a.rol_real == null ? null : a.vol_real > 0 ? a.rol_real / a.vol_real : 0) },
 ];
 
 export const CUSTOM_TABLE_DIMS = ALL_DIMENSIONS;
@@ -992,9 +1011,34 @@ function tablePeriods(rows: Record<string, unknown>[]) {
     .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
 }
 
+/** Rótulo de um valor de dimensão na tela: período vira "Jul/26" (a base
+ *  guarda "007.2026", que aparecia cru nos cabeçalhos da tabela). */
+function displayDimValue(dim: string | undefined, value: string): string {
+  if (dim !== "periodo") return value;
+  const p = parsePeriod(value);
+  return p ? monthLabel(p.mes, p.ano) : value;
+}
+
+function displayHeader(dims: string[], values: string[]): string {
+  return values.map((v, i) => displayDimValue(dims[i], v)).join(" / ");
+}
+
 function measureValue(row: Record<string, unknown>, measure: PivotMeasure) {
   const value = Number(row[measure.field]);
   return Number.isFinite(value) ? value : 0;
+}
+
+/** Valor de uma medida sobre um conjunto de linhas. Razões (CM %, R$/Kg)
+ *  somam numerador e denominador e só então dividem — somar o campo cru
+ *  daria a soma do CM, não o CM %. */
+function measureOver(rows: Record<string, unknown>[], measure: PivotMeasure): number | null {
+  if (!measure.derive) return rows.reduce((sum, row) => sum + measureValue(row, measure), 0);
+  const acc: Record<string, number | null> = {};
+  for (const depId of measure.dependsOn ?? []) {
+    const dep = CUSTOM_TABLE_MEASURES.find((m) => m.id === depId);
+    acc[depId] = dep ? rows.reduce((sum, row) => sum + measureValue(row, dep), 0) : null;
+  }
+  return measure.derive(acc);
 }
 
 function resolveTableGapReferencePeriod(
@@ -1024,9 +1068,7 @@ function resolveTableGapReferencePeriod(
   const candidates = periods.slice(-25, -1);
   let best: { periodo: string; value: number } | null = null;
   for (const period of candidates) {
-    const value = rows
-      .filter((row) => row.periodo === period.periodo)
-      .reduce((sum, row) => sum + measureValue(row, benchMeasure), 0);
+    const value = measureOver(rows.filter((row) => row.periodo === period.periodo), benchMeasure) ?? Number.NEGATIVE_INFINITY;
     if (!best || value > best.value) best = { periodo: period.periodo, value };
   }
   return best?.periodo ?? null;
@@ -1058,18 +1100,21 @@ function buildTableGapValues(
     const measure = measureById.get(gap.measureId);
     const reference = resolveTableGapReferencePeriod(gap, filtered, measures);
     if (!measure || !reference || reference === latest) continue;
-    const latestByRow = new Map<string, number>();
-    const referenceByRow = new Map<string, number>();
+    const latestByRow = new Map<string, Record<string, unknown>[]>();
+    const referenceByRow = new Map<string, Record<string, unknown>[]>();
     for (const row of filtered) {
       if (row.periodo !== latest && row.periodo !== reference) continue;
       const key = tableRowKey(row, rowDims);
       const target = row.periodo === latest ? latestByRow : referenceByRow;
-      target.set(key, (target.get(key) ?? 0) + measureValue(row, measure));
+      const list = target.get(key);
+      if (list) list.push(row); else target.set(key, [row]);
     }
     const keys = new Set([...latestByRow.keys(), ...referenceByRow.keys()]);
     for (const key of keys) {
       const record = result.get(key) ?? {};
-      record[gap.id] = (latestByRow.get(key) ?? 0) - (referenceByRow.get(key) ?? 0);
+      const now = measureOver(latestByRow.get(key) ?? [], measure);
+      const before = measureOver(referenceByRow.get(key) ?? [], measure);
+      record[gap.id] = now == null || before == null ? null : now - before;
       result.set(key, record);
     }
   }
@@ -1134,7 +1179,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
     // Cálculo compartilhado com o painel de propriedades (lib/customTablePivot).
-    const { unified, result } = computeCustomTablePivot(sourceRows, b, measures);
+    const { unified, result } = computeCustomTablePivot(sourceRows, b, measures, CUSTOM_TABLE_MEASURES);
     const filters = {};
     const gapColumns = (b.gapColumns ?? []).filter((gap) => measures.some((measure) => measure.id === gap.measureId));
     const gapValues = buildTableGapValues(
@@ -1197,7 +1242,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   const firstColumnLabelTexts = useMemo(() => {
     if (!data) return [];
     const headerLabel = b.rowDims.map((d) => labelOfDim(d)).join(" / ") || t.table.totalFallback;
-    return [headerLabel, ...data.sortedHeaders.map((rh) => rh.values.join(" / ") || t.table.totalFallback)];
+    return [headerLabel, ...data.sortedHeaders.map((rh) => displayHeader(b.rowDims, rh.values) || t.table.totalFallback)];
   }, [data, b.rowDims]);
   const tableColumnMinWidths = useMemo(
     () => computeTableColumnMinWidths({
@@ -1574,7 +1619,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
                 height={rowH}
                 padX={8}
               >
-                {tableHeaderLabel(c.values.join(" / "), m.label)}
+                {tableHeaderLabel(displayHeader(b.colDim ? [b.colDim] : [], c.values), m.label)}
               </ExportPositionedCell>
             ))),
             ...(showLastColumnVariation
@@ -1610,7 +1655,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
 
     const bodyCells = visibleHeaders.flatMap((rh, ri) => [
       <ExportPositionedCell key={`${rh.key}-label`} style={renderCellLabel} left={firstCol.left} top={(ri + 1) * rowH} width={firstCol.width} height={rowH} padX={8}>
-        {rh.values.join(" / ") || t.table.totalFallback}
+        {displayHeader(b.rowDims, rh.values) || t.table.totalFallback}
       </ExportPositionedCell>,
       ...(showCols
         ? [
