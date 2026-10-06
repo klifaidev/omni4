@@ -37,6 +37,9 @@ import {
   Group as GroupIcon,
   Ungroup as UngroupIcon,
   X,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField } from "../chart/Inspector";
@@ -106,12 +109,14 @@ import {
   DEFAULT_BASE_RELATIVE_MONTH_PRESET,
   DEFAULT_RELATIVE_MONTH_PRESET,
   DEFAULT_RELATIVE_MONTH_RANGE_PRESET,
+  RELATIVE_FY_COUNTS,
   RELATIVE_FY_PRESETS,
   RELATIVE_MONTH_RANGE_PRESETS,
   RELATIVE_MONTH_PRESETS,
   resolveMonthRangeSelection,
   type MonthRangeSelection,
   type PeriodSelectionMode,
+  type RelativeFyCount,
   type RelativeMonthRangePreset,
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
@@ -448,7 +453,6 @@ function FilteredInspector({
   const ds = (block as { dataSource?: BlockDataSource }).dataSource ?? "ke30";
   const [activeTab, setActiveTab] = useState("design");
   const [pendingSource, setPendingSource] = useState<BlockDataSource | null>(null);
-  const [recalculating, setRecalculating] = useState(false);
   const hasBudget = useBudget((s) => s.rows.length > 0);
   const globalFilters = useSlidesFlow((s) => s.globalFilters);
   const globalFilterCount = Object.values(globalFilters).reduce((acc, v) => acc + (v?.length ?? 0), 0);
@@ -474,6 +478,8 @@ function FilteredInspector({
       dataSource: pendingSource,
       filters: {},
     } as never;
+    // DRE: meses/anos fixos de uma base podem não existir na outra.
+    if (block.kind === "dre") (patch as Partial<DreBlock>).periodos = null;
     if (block.kind === "kpi" && unavailable.length > 0) {
       const m = (block as KpiBlock).measure;
       if (unavailable.includes(m)) {
@@ -532,14 +538,12 @@ function FilteredInspector({
         }
       }
     }
-    setRecalculating(true);
-    const nextLabel = dataSourceLabel(pendingSource);
-    window.setTimeout(() => {
-      onChange(patch);
-      setPendingSource(null);
-      setRecalculating(false);
-      toast.success(t.dataSourcePicker.sourceChanged(nextLabel));
-    }, 180);
+    // Aplica na hora. Antes havia 180 ms de "Recalculando…" com setTimeout —
+    // espera artificial: o aviso sumia exatamente quando o recálculo de
+    // verdade (no desenho do bloco) começava.
+    onChange(patch);
+    setPendingSource(null);
+    toast.success(t.dataSourcePicker.sourceChanged(dataSourceLabel(pendingSource)));
   };
 
   const dsBadgeLabel = dataSourceLabel(ds);
@@ -561,14 +565,6 @@ function FilteredInspector({
     <div className="space-y-2">
       {showPicker && (
         <div className="relative rounded-md border border-border/60 bg-secondary/30 p-2">
-          {recalculating && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/70 backdrop-blur-sm">
-              <div className="flex items-center gap-2 text-xs font-medium text-primary">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {t.dataSourcePicker.recalculating}
-              </div>
-            </div>
-          )}
           <div className="mb-1.5 flex items-center justify-between">
             <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
               {tc.dataSource}
@@ -1577,16 +1573,25 @@ function TableBlockEditor({ block, onChange }: {
 
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground">{t.table.valueAlign}</Label>
-        <div className="mt-1 flex gap-1">
-          {(["left", "center", "right"] as const).map((a) => (
+        {/* Os ícones tinham virado "?" numa conversão de caracteres — agora
+            são ícones de verdade, com nome pra leitor de tela. */}
+        <div className="mt-1 flex gap-1" role="group" aria-label={t.table.valueAlign}>
+          {([
+            { value: "left", Icon: AlignLeft, label: t.textTitle.alignOptions.left },
+            { value: "center", Icon: AlignCenter, label: t.textTitle.alignOptions.center },
+            { value: "right", Icon: AlignRight, label: t.textTitle.alignOptions.right },
+          ] as const).map(({ value, Icon, label }) => (
             <Button
-              key={a}
+              key={value}
               size="sm"
-              variant={(block.valueAlign ?? "right") === a ? "default" : "outline"}
-              className="h-6 flex-1 text-[10px]"
-              onClick={() => onChange({ valueAlign: a } as never)}
+              variant={(block.valueAlign ?? "right") === value ? "default" : "outline"}
+              className="h-7 flex-1"
+              aria-label={label}
+              aria-pressed={(block.valueAlign ?? "right") === value}
+              title={label}
+              onClick={() => onChange({ valueAlign: value } as never)}
             >
-              {a === "left" ? "?" : a === "center" ? "?" : "?"}
+              <Icon className="h-3.5 w-3.5" />
             </Button>
           ))}
         </div>
@@ -2073,68 +2078,41 @@ function TextTitleInspector({ block, onChange }: {
   );
 }
 
-// ---------------------------------------------------------------------------
-function DreSourcePicker({ block, onChange }: {
-  block: DreBlock;
-  onChange: (patch: Partial<DreBlock>) => void;
-}) {
-  const hasBudget = useBudget((s) => s.rows.length > 0);
-  const ds = block.dataSource ?? "ke30";
-  const dsBadgeLabel = dataSourceLabel(ds);
-  const dsBadgeCls = dataSourceBadgeClass(ds);
-  const sourceOptions: BlockDataSource[] = [
-    "ke30",
-    ...(hasBudget ? (["budget"] as BlockDataSource[]) : []),
-  ];
-  if (sourceOptions.length <= 1) return null;
-  return (
-    <div className="rounded-md border border-border/60 bg-secondary/30 p-2">
-      <div className="mb-1.5 flex items-center justify-between">
-        <Label className="text-[10px] font-semibold uppercase tracking-wider text-foreground">
-          {tc.dataSource}
-        </Label>
-        <Badge variant="secondary" className={cn("text-[9px]", dsBadgeCls)}>
-          {dsBadgeLabel}
-        </Badge>
-      </div>
-      <div className={cn("grid gap-1", sourceOptions.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
-        {sourceOptions.map((opt) => {
-          const label = dataSourceLabel(opt);
-          const activeCls = dataSourceActiveClass(opt);
-          return (
-            <button key={opt} type="button"
-              onClick={() => { if (opt !== ds) onChange({ dataSource: opt, periodos: null }); }}
-              className={cn("rounded px-2 py-1 text-[11px] font-medium transition-colors",
-                ds === opt ? activeCls : "bg-card hover:bg-secondary text-muted-foreground",
-              )}>{label}</button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function DreBlockInspector({ block, onChange }: {
   block: DreBlock;
   onChange: (patch: Partial<DreBlock>) => void;
 }) {
   const months = useMonthsInfo();
+  const fyList = useFyList();
   const periodosSelectionMode = block.periodosSelectionMode ?? "fixed";
+  const byYear = block.periodMode === "fy";
   const allMonths = [...months].sort((a, b) =>
     a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
   );
+  // Relativo com intervalo (últimos N meses / anos). Decks antigos guardavam
+  // um único período relativo — nenhum botão aparece marcado até escolher.
+  const rangeValue = byYear
+    ? (block.periodosRelativeFyCount ? String(block.periodosRelativeFyCount) : "")
+    : (block.periodosRelativeRange ?? "");
+  const rangeOptions = byYear
+    ? RELATIVE_FY_COUNTS.map((o) => ({ value: String(o.value), label: o.label }))
+    : RELATIVE_MONTH_RANGE_PRESETS.map((o) => ({ value: o.value, label: t.table.monthsSuffix(o.months) }));
 
   return (
     <div className="space-y-2">
-      <DreSourcePicker block={block} onChange={onChange} />
+      {/* A fonte de dados fica só no topo do painel (FilteredInspector) —
+          antes este bloco tinha um segundo seletor idêntico logo abaixo. */}
       <Section title={t.dre.periodsSection} defaultOpen>
-        <Row label={tc.mode}>
+        <Row label={t.dre.columnsLabel}>
           <Segmented
             value={block.periodMode}
             onChange={(v) => onChange({
               periodMode: v as "month" | "fy",
               periodos: null,
-              periodosRelativePeriod: v === "fy" ? "latest_fy_minus_1" : "latest_month_minus_1",
+              periodosSelectionMode: "relative",
+              periodosRelativePeriod: undefined,
+              periodosRelativeRange: v === "fy" ? undefined : "last_6_months",
+              periodosRelativeFyCount: v === "fy" ? 2 : undefined,
             })}
             options={[
               { value: "month", label: t.dre.periodModeOptions.month },
@@ -2143,40 +2121,55 @@ function DreBlockInspector({ block, onChange }: {
           />
         </Row>
         <Row label={t.dre.typeLabel}>
-          <div className="flex items-center gap-1">
-            <Segmented
-              value={periodosSelectionMode}
-              onChange={(v) => onChange({
-                periodosSelectionMode: v as PeriodSelectionMode,
-                periodos: v === "relative" ? null : block.periodos,
-                periodosRelativePeriod: v === "relative"
-                  ? block.periodosRelativePeriod ?? defaultRelativePresetForMode(block.periodMode)
-                  : block.periodosRelativePeriod,
-              })}
-              options={[
-                { value: "relative", label: t.dre.typeOptions.relative },
-                { value: "fixed", label: t.dre.typeOptions.fixed },
-              ]}
-            />
-            <PeriodModeBadge mode={periodosSelectionMode} />
+          <Segmented
+            value={periodosSelectionMode}
+            onChange={(v) => onChange(v === "relative"
+              ? {
+                  periodosSelectionMode: "relative",
+                  periodos: null,
+                  periodosRelativeRange: byYear ? undefined : (block.periodosRelativeRange ?? "last_6_months"),
+                  periodosRelativeFyCount: byYear ? (block.periodosRelativeFyCount ?? 2) : undefined,
+                }
+              : { periodosSelectionMode: "fixed" as PeriodSelectionMode })}
+            options={[
+              { value: "relative", label: t.dre.typeOptions.relative, title: t.dre.relativeTitle },
+              { value: "fixed", label: t.dre.typeOptions.fixed, title: t.dre.fixedTitle },
+            ]}
+          />
+        </Row>
+        {periodosSelectionMode === "relative" ? (
+          <div className={cn("grid gap-1", rangeOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+            {rangeOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => onChange(byYear
+                  ? { periodosRelativeFyCount: Number(o.value) as RelativeFyCount, periodosRelativePeriod: undefined, periodos: null }
+                  : { periodosRelativeRange: o.value as RelativeMonthRangePreset, periodosRelativePeriod: undefined, periodos: null })}
+                className={cn(
+                  "rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                  rangeValue === o.value
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border/50 bg-background/50 text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
-        </Row>
-        <Row label={tc.periods}>
-          {periodosSelectionMode === "relative" ? (
-            <RelativePresetSelect
-              mode={block.periodMode}
-              value={block.periodosRelativePeriod}
-              onChange={(v) => onChange({ periodosRelativePeriod: v, periodos: null })}
-            />
-          ) : (
-            <MultiSelectFilter
-              options={allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
-              selected={block.periodos ?? []}
-              onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
-              placeholder={t.dre.periodsPlaceholder}
-            />
-          )}
-        </Row>
+        ) : (
+          <MultiSelectFilter
+            options={byYear
+              ? fyList.map((fy) => ({ value: fy, label: fy }))
+              : allMonths.map((m) => ({ value: m.periodo, label: m.label }))}
+            selected={block.periodos ?? []}
+            onChange={(v) => onChange({ periodos: v.length === 0 ? null : v })}
+            placeholder={byYear ? t.dre.yearsPlaceholder : t.dre.periodsPlaceholder}
+          />
+        )}
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          {periodosSelectionMode === "relative" ? t.dre.relativeHint : t.dre.fixedHint}
+        </p>
       </Section>
 
       <Section title={t.dre.linesSection} defaultOpen>

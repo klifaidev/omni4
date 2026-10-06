@@ -4,7 +4,13 @@
 
 import type { Filters } from "./types";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
-import type { MonthRangeSelection, PeriodSelectionMode, RelativePeriodPreset } from "./relativePeriods";
+import type {
+  MonthRangeSelection,
+  PeriodSelectionMode,
+  RelativeFyCount,
+  RelativeMonthRangePreset,
+  RelativePeriodPreset,
+} from "./relativePeriods";
 import type { SlideSourceFooterConfig } from "./customSlideSourceFooter";
 
 export const CANVAS_W = 1333;
@@ -520,11 +526,16 @@ export interface TopSkuBlock extends BaseBlock {
 
 export interface DreBlock extends BaseBlock {
   kind: "dre";
-  /** Períodos a exibir. null = últimos 6 meses disponíveis. */
+  /** Períodos a exibir (modo Fixo): meses no modo "month", anos fiscais no "fy". null = padrão. */
   periodos: string[] | null;
   periodosSelectionMode?: PeriodSelectionMode;
+  /** Formato antigo do Relativo (um único mês/ano). Mantido pra decks salvos. */
   periodosRelativePeriod?: RelativePeriodPreset;
-  /** Modo de período. Default "month". */
+  /** Relativo, modo "month": últimos N meses. */
+  periodosRelativeRange?: RelativeMonthRangePreset;
+  /** Relativo, modo "fy": últimos N anos fiscais. */
+  periodosRelativeFyCount?: RelativeFyCount;
+  /** Colunas por mês ou por ano fiscal. Default "month". */
   periodMode: "month" | "fy";
   /** Linhas a exibir (IDs de DreLine). null = todas. */
   linhas: string[] | null;
@@ -824,7 +835,10 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         source: "ke30", dataSource: "ke30",
         title: "", titleSize: 18, titleColor: "1C2430",
         measures: ["rol_real", "cm_real"],
+        // Últimos 3 meses (relativo): sem limite, a tabela nascia com todos os
+        // meses da base × 2 medidas — ~24 colunas espremidas e ilegíveis.
         rowDims: ["marca"], colDim: "periodo", filters: {},
+        monthFilter: { mode: "relative", relativeRange: "last_3_months" },
         autoFit: true, showOthers: false, exportNote: false, showLastColumnVariation: false,
         wrapRowText: false, wrapColumnText: false,
         sortMode: "kpi", sortDirection: "desc", manualRowOrder: [] };
@@ -853,7 +867,7 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         x: 60, y: 180, w: 1200, h: 400,
         periodos: null,
         periodosSelectionMode: "relative",
-        periodosRelativePeriod: "latest_month_minus_1",
+        periodosRelativeRange: "last_6_months",
         periodMode: "month",
         linhas: null,
         showBudget: false,

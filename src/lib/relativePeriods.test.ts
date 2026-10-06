@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PricingRow } from "./types";
-import { resolveMonthRangeSelection, resolvePeriodValue, resolveRelativeMonthRange, resolveRelativePeriod } from "./relativePeriods";
+import { resolveMonthRangeSelection, resolvePeriodColumns, resolvePeriodValue, resolveRelativeMonthRange, resolveRelativePeriod } from "./relativePeriods";
 
 const rows = [
   { periodo: "001.2026", mes: 1, ano: 2026, fy: "FY 2026", fyNum: 2026 },
@@ -71,5 +71,38 @@ describe("relativePeriods", () => {
       mode: "fixed",
       periods: ["001.2026", "003.2026"],
     })).toEqual(["001.2026", "003.2026"]);
+  });
+});
+
+describe("resolvePeriodColumns (colunas do DRE)", () => {
+  const many = Array.from({ length: 30 }, (_, i) => {
+    const ano = 2024 + Math.floor(i / 12);
+    const mes = (i % 12) + 1;
+    return { periodo: `${String(mes).padStart(3, "0")}.${ano}`, mes, ano, fy: `FY ${ano}`, fyNum: ano };
+  }) as PricingRow[];
+
+  it("relativo em meses devolve o intervalo, não um mês só", () => {
+    expect(resolvePeriodColumns(many, { mode: "month", selectionMode: "relative", relativeRange: "last_3_months" }))
+      .toEqual(["004.2026", "005.2026", "006.2026"]);
+  });
+
+  it("modo ano devolve anos fiscais (antes caía em silêncio nos últimos 6 meses)", () => {
+    expect(resolvePeriodColumns(many, { mode: "fy", selectionMode: "relative", relativeFyCount: 2 }))
+      .toEqual(["FY 2025", "FY 2026"]);
+    expect(resolvePeriodColumns(many, { mode: "fy", selectionMode: "fixed", fixed: ["FY 2024"] }))
+      .toEqual(["FY 2024"]);
+  });
+
+  it("decks antigos com um único período relativo continuam iguais", () => {
+    expect(resolvePeriodColumns(many, { mode: "month", selectionMode: "relative", legacyPreset: "latest_month_minus_1" }))
+      .toEqual(["005.2026"]);
+    expect(resolvePeriodColumns(many, { mode: "fy", selectionMode: "relative", legacyPreset: "latest_fy_minus_1" }))
+      .toEqual(["FY 2025"]);
+  });
+
+  it("fixo vazio ou com valores que não existem cai no padrão", () => {
+    expect(resolvePeriodColumns(many, { mode: "month", selectionMode: "fixed", fixed: null })).toHaveLength(6);
+    expect(resolvePeriodColumns(many, { mode: "fy", selectionMode: "fixed", fixed: ["003.2026"] }))
+      .toEqual(["FY 2025", "FY 2026"]);
   });
 });

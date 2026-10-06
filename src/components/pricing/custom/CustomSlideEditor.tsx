@@ -310,6 +310,11 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
   );
 });
 
+/** Roda depois que o navegador pintar o quadro atual (aviso de carregamento visível). */
+function afterNextPaint(fn: () => void) {
+  requestAnimationFrame(() => requestAnimationFrame(fn));
+}
+
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
 let crossSlideClipboard: CustomBlock | null = null;
@@ -3044,21 +3049,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         onApply={(cfg) => {
           if (!canEdit()) return;
           setTemplateApplying(true);
-          window.setTimeout(() => {
+          // Espera só o aviso "aplicando" pintar (antes: 180 ms fixos).
+          afterNextPaint(() => {
             onChange(cfg);
             setTemplateApplying(false);
             toast.success(t.toasts.templateApplied);
-          }, 180);
+          });
         }}
         onApplyDeck={(configs, mode, name) => {
           if (!canEdit()) return;
           setTemplateApplying(true);
-          window.setTimeout(() => {
+          afterNextPaint(() => {
             const replacement = applyTemplateDeckToSlidesFlow({ currentSlideId: slideId, configs, mode, name });
             if (replacement) onChange(replacement);
             setTemplateApplying(false);
             toast.success(t.toasts.deckApplied(configs.length));
-          }, 180);
+          });
         }}
       />
 

@@ -36,9 +36,17 @@ export const RELATIVE_FY_PRESETS: { value: RelativePeriodPreset; label: string }
 ];
 
 export const RELATIVE_MONTH_RANGE_PRESETS: { value: RelativeMonthRangePreset; label: string; months: number }[] = [
-  { value: "last_3_months", label: "Ultimos 3 meses", months: 3 },
-  { value: "last_6_months", label: "Ultimos 6 meses", months: 6 },
-  { value: "last_12_months", label: "Ultimos 12 meses", months: 12 },
+  { value: "last_3_months", label: "Últimos 3 meses", months: 3 },
+  { value: "last_6_months", label: "Últimos 6 meses", months: 6 },
+  { value: "last_12_months", label: "Últimos 12 meses", months: 12 },
+];
+
+/** Quantos anos fiscais mais recentes mostrar lado a lado (colunas de um DRE). */
+export type RelativeFyCount = 1 | 2 | 3;
+export const RELATIVE_FY_COUNTS: { value: RelativeFyCount; label: string }[] = [
+  { value: 1, label: "Último ano" },
+  { value: 2, label: "Últimos 2 anos" },
+  { value: 3, label: "Últimos 3 anos" },
 ];
 
 export const DEFAULT_RELATIVE_MONTH_PRESET: RelativePeriodPreset = "latest_month_minus_1";
@@ -149,6 +157,52 @@ export function resolveRelativeMonthRange(
   if (months.length === 0) return [];
   const count = monthRangeCount(preset ?? DEFAULT_RELATIVE_MONTH_RANGE_PRESET);
   return months.slice(Math.max(0, months.length - count)).map((month) => month.value);
+}
+
+export interface PeriodColumnsSelection {
+  mode: "month" | "fy";
+  selectionMode?: PeriodSelectionMode;
+  /** Fixo: meses ("005.2026") no modo mês, anos fiscais ("FY25/26") no modo ano. */
+  fixed?: string[] | null;
+  /** Relativo no modo mês: intervalo dos N meses mais recentes. */
+  relativeRange?: RelativeMonthRangePreset;
+  /** Relativo no modo ano: N anos fiscais mais recentes. */
+  relativeFyCount?: RelativeFyCount;
+  /** Formato antigo: um único mês/ano relativo (antes do intervalo existir). */
+  legacyPreset?: RelativePeriodPreset;
+}
+
+/**
+ * Colunas de período de uma tabela por período (DRE): chaves de mês
+ * (`periodo`) ou de ano fiscal (`fy`), em ordem cronológica. Antes o modo
+ * "Ano" devolvia um FY mas o desenho só sabia filtrar meses — caía em silêncio
+ * nos últimos 6 meses; e o "Relativo" só permitia UM mês.
+ */
+export function resolvePeriodColumns(rows: readonly PricingRow[], sel: PeriodColumnsSelection): string[] {
+  const months = getSortedMonthPeriods(rows).map((m) => m.value);
+  const years = getSortedFiscalYears(rows);
+  const all = sel.mode === "fy" ? years : months;
+  if (all.length === 0) return [];
+  const fallback = sel.mode === "fy" ? all.slice(-2) : all.slice(-6);
+  if (sel.selectionMode === "relative") {
+    if (sel.mode === "fy") {
+      if (sel.relativeFyCount) return all.slice(-sel.relativeFyCount);
+      if (sel.legacyPreset?.startsWith("latest_fy")) {
+        const one = resolveRelativePeriod(rows, sel.legacyPreset);
+        return one ? [one] : fallback;
+      }
+      return fallback;
+    }
+    if (sel.relativeRange) return resolveRelativeMonthRange(rows, sel.relativeRange);
+    if (sel.legacyPreset && !sel.legacyPreset.startsWith("latest_fy")) {
+      const one = resolveRelativePeriod(rows, sel.legacyPreset);
+      return one ? [one] : fallback;
+    }
+    return fallback;
+  }
+  const valid = new Set(all);
+  const picked = (sel.fixed ?? []).filter((key) => valid.has(key));
+  return picked.length ? all.filter((key) => picked.includes(key)) : fallback;
 }
 
 export function resolveMonthRangeSelection(

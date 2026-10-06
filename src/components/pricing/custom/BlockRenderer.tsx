@@ -56,7 +56,7 @@ import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
 import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
-import { resolveMonthRangeSelection, resolvePeriodValue, resolvePeriodValues, relativePeriodLabel } from "@/lib/relativePeriods";
+import { resolveMonthRangeSelection, resolvePeriodColumns, resolvePeriodValue, relativePeriodLabel } from "@/lib/relativePeriods";
 import { buildPositivacaoSeries } from "@/lib/positivacao";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
 import { getUfFromRegiao } from "@/lib/deparaComercial";
@@ -2041,41 +2041,49 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
     [sourceRows, blk.filters],
   );
 
+  const MESES = t.dre.months;
+  // Colunas por mês ou por ano fiscal. Antes o modo "Ano" resolvia um FY mas
+  // as colunas só sabiam ser meses — o DRE caía em silêncio nos últimos 6
+  // meses; e o Relativo mostrava um único mês.
+  const byYear = (blk.periodMode ?? "month") === "fy";
   const cols = useMemo(() => {
-    const allMonths = [...months].sort((a, b) =>
-      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-    );
-    const selected = resolvePeriodValues(
-      sourceRows,
-      blk.periodos,
-      blk.periodosSelectionMode,
-      blk.periodosRelativePeriod,
-    );
-    if (!selected || selected.length === 0) return allMonths.slice(-6);
-    return allMonths.filter((m) => selected.includes(m.periodo));
-  }, [months, sourceRows, blk.periodos, blk.periodosSelectionMode, blk.periodosRelativePeriod]);
+    const keys = resolvePeriodColumns(sourceRows, {
+      mode: byYear ? "fy" : "month",
+      selectionMode: blk.periodosSelectionMode,
+      fixed: blk.periodos,
+      relativeRange: blk.periodosRelativeRange,
+      relativeFyCount: blk.periodosRelativeFyCount,
+      legacyPreset: blk.periodosRelativePeriod,
+    });
+    return keys.map((key) => {
+      if (byYear) return { key, label: key };
+      const m = months.find((x) => x.periodo === key);
+      return { key, label: m ? `${MESES[m.mes - 1]}/${String(m.ano).slice(2)}` : key };
+    });
+  }, [months, sourceRows, byYear, MESES, blk.periodos, blk.periodosSelectionMode, blk.periodosRelativePeriod, blk.periodosRelativeRange, blk.periodosRelativeFyCount]);
+  const colMatches = (row: { periodo: string; fy?: string }, key: string) => (byYear ? row.fy === key : row.periodo === key);
 
   const aggsByCol = useMemo(() => {
     const map = new Map<string, ReturnType<typeof aggregate>>();
     for (const col of cols) {
-      const rs = filteredRows.filter((r) => r.periodo === col.periodo);
-      map.set(col.periodo, aggregate(rs));
+      const rs = filteredRows.filter((r) => colMatches(r, col.key));
+      map.set(col.key, aggregate(rs));
     }
     return map;
-  }, [filteredRows, cols]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRows, cols, byYear]);
 
   const budgetAggByCol = useMemo(() => {
     const map = new Map<string, BudgetTotals>();
     if (!blk.showBudget) return map;
     const filteredBudget = applyBudgetFilters(budgetRows, blk.filters ?? {}, null);
     for (const col of cols) {
-      const rs = filteredBudget.filter((r) => r.periodo === col.periodo);
-      map.set(col.periodo, aggregateBudget(rs));
+      const rs = filteredBudget.filter((r) => colMatches(r, col.key));
+      map.set(col.key, aggregateBudget(rs));
     }
     return map;
-  }, [blk.showBudget, budgetRows, blk.filters, cols]);
-
-  const MESES = t.dre.months;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blk.showBudget, budgetRows, blk.filters, cols, byYear]);
 
   const visibleLines = useMemo(() => {
     if (!blk.linhas) return LINES;
@@ -2085,8 +2093,8 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const showVar = (blk.showVariacao ?? false) && cols.length >= 2;
   const ultimoCol = showVar ? cols[cols.length - 1] : null;
   const penultimoCol = showVar ? cols[cols.length - 2] : null;
-  const aggUltimo = showVar && ultimoCol ? aggsByCol.get(ultimoCol.periodo) ?? null : null;
-  const aggPenultimo = showVar && penultimoCol ? aggsByCol.get(penultimoCol.periodo) ?? null : null;
+  const aggUltimo = showVar && ultimoCol ? aggsByCol.get(ultimoCol.key) ?? null : null;
+  const aggPenultimo = showVar && penultimoCol ? aggsByCol.get(penultimoCol.key) ?? null : null;
 
   const conditionalMeta = useMemo(() => {
     const cf = blk.conditionalFormat;
@@ -2096,7 +2104,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
     let tableMin = Infinity, tableMax = -Infinity;
     for (const line of activeLines) {
       const vals = cols.map((col) => {
-        const agg = aggsByCol.get(col.periodo);
+        const agg = aggsByCol.get(col.key);
         return agg ? line.get(agg) : null;
       }).filter((v): v is number => v !== null);
       if (vals.length === 0) continue;
@@ -2137,7 +2145,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
   const rowCount = 1 + visibleLines.length;
   const rowH = 100 / rowCount;
   const varHeaderLabel = showVar && ultimoCol && penultimoCol
-    ? `${MESES[ultimoCol.mes - 1]}/${String(ultimoCol.ano).slice(2)} vs ${MESES[penultimoCol.mes - 1]}/${String(penultimoCol.ano).slice(2)}`
+    ? `${ultimoCol.label} vs ${penultimoCol.label}`
     : null;
   const showBudgetCols = !!blk.showBudget && budgetAggByCol.size > 0;
   const { firstColW, varColW, periodColW } = computeDreColumnWidths({
@@ -2165,7 +2173,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
       </ExportPositionedCell>,
       ...cols.flatMap((col, ci) => [
         <ExportPositionedCell
-          key={col.periodo}
+          key={col.key}
           style={{ ...headerBase, padding: padVal, textAlign: "center" }}
           left={leftForPeriod(ci)}
           top={0}
@@ -2173,12 +2181,12 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
           height={rowH}
           padX={Math.round(fs * 0.36)}
         >
-          {MESES[col.mes - 1]}/{String(col.ano).slice(2)}
+          {col.label}
         </ExportPositionedCell>,
         ...(showBudgetCols
           ? [
               <ExportPositionedCell
-                key={`${col.periodo}-budget`}
+                key={`${col.key}-budget`}
                 style={{
                   ...headerBase,
                   padding: padVal,
@@ -2207,9 +2215,9 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
               textAlign: "center",
               borderLeft: "1px solid rgba(255,255,255,0.3)",
             }} left={firstColW + cols.length * periodGroupW} top={0} width={varColW} height={rowH} padX={Math.round(fs * 0.36)}>
-              {MESES[ultimoCol.mes - 1]}/{String(ultimoCol.ano).slice(2)}
+              {ultimoCol.label}
               {" vs "}
-              {MESES[penultimoCol.mes - 1]}/{String(penultimoCol.ano).slice(2)}
+              {penultimoCol.label}
             </ExportPositionedCell>,
           ]
         : []),
@@ -2239,7 +2247,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
 
       for (let ci = 0; ci < cols.length; ci++) {
         const col = cols[ci];
-        const agg = aggsByCol.get(col.periodo);
+        const agg = aggsByCol.get(col.key);
         const val = agg ? line.get(agg) : null;
         const isNeg = val !== null && val < 0;
         const cf = conditionalMeta?.cf;
@@ -2255,7 +2263,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
           else cfColor = cc;
         }
         lineCells.push(
-          <ExportPositionedCell key={`${line.id}-${col.periodo}`} style={{
+          <ExportPositionedCell key={`${line.id}-${col.key}`} style={{
             padding: padVal,
             textAlign: "center",
             fontWeight: line.bold ? 600 : 400,
@@ -2271,11 +2279,11 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
         );
 
         if (showBudgetCols) {
-          const budgetAgg = budgetAggByCol.get(col.periodo);
+          const budgetAgg = budgetAggByCol.get(col.key);
           const budgetVal = budgetAgg ? getBudgetLineValue(line.id, budgetAgg) : null;
           const budgetIsNeg = budgetVal !== null && budgetVal < 0;
           lineCells.push(
-            <ExportPositionedCell key={`${line.id}-${col.periodo}-budget`} style={{
+            <ExportPositionedCell key={`${line.id}-${col.key}-budget`} style={{
               padding: padVal,
               textAlign: "center",
               fontStyle: "italic",

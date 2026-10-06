@@ -7,7 +7,7 @@ import {
   LineChart, AreaChart, BarChart3, BarChartHorizontal,
   PieChart, Donut, ScatterChart, Circle, Filter,
   Hexagon, Radar, BarChart, BarChart2, Layers, ChevronsRight,
-  ChartNoAxesColumn, AlignJustify, BoxSelect, LayoutList, ChevronDown, Map,
+  AlignJustify, BoxSelect, LayoutList, ChevronDown, Map,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,7 +28,9 @@ const MAIN_TYPES: Item[] = [
 
 const ADVANCED_TYPES: Item[] = [
   { value: "stackedArea",   label: "Área empilhada",   icon: <Layers className="h-4 w-4" /> },
-  { value: "column",        label: "Coluna agrupada",  icon: <ChartNoAxesColumn className="h-4 w-4" /> },
+  // "Coluna agrupada" (column) saiu: desenhava exatamente o mesmo gráfico que
+  // "Coluna" (mesmo ramo no ChartCanvas). Gráficos antigos com esse tipo
+  // continuam funcionando e aparecem marcados em "Coluna".
   { value: "stackedColumn", label: "Coluna empilhada", icon: <LayoutList className="h-4 w-4" /> },
   { value: "stackedBar",    label: "Barra empilhada",  icon: <AlignJustify className="h-4 w-4" /> },
   { value: "bubble",        label: "Bolha",            icon: <Circle className="h-4 w-4" /> },
@@ -78,7 +80,7 @@ export function ChartTypePicker({
         {/* Main types — always visible */}
         <div className="flex flex-wrap items-center gap-1">
           {MAIN_TYPES.map((it) => (
-            <TypeButton key={it.value} item={it} selected={value === it.value} onChange={onChange} />
+            <TypeButton key={it.value} item={it} selected={value === it.value || (it.value === "bar" && value === "column")} onChange={onChange} />
           ))}
         </div>
 

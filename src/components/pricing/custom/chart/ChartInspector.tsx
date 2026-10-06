@@ -118,28 +118,12 @@ function positionOptions(ct: ChartBlock["chartType"]) {
   ];
 }
 
-const ALL_TYPES: { value: ChartBlock["chartType"]; label: string }[] = [
-  { value: "line", label: "Linha" },
-  { value: "area", label: "Área" },
-  { value: "stackedArea", label: "Área empilhada" },
-  { value: "bar", label: "Coluna" },
-  { value: "column", label: "Coluna agrupada" },
-  { value: "stackedColumn", label: "Coluna empilhada" },
-  { value: "hbar", label: "Barra horizontal" },
-  { value: "stackedBar", label: "Barra empilhada" },
-  { value: "combo", label: "Combo (linha + barra)" },
-  { value: "pie", label: "Pizza" },
-  { value: "donut", label: "Rosca" },
-  { value: "bubble", label: "Bolha" },
-  { value: "scatter", label: "Dispersão" },
-  { value: "waterfall", label: "Waterfall" },
-  { value: "funnel", label: "Funil" },
-  { value: "treemap", label: "Mapa de árvore" },
-  { value: "mapaBrasil", label: "Mapa do Brasil" },
-  { value: "radar", label: "Radar" },
-  { value: "histogram", label: "Histograma" },
-  { value: "boxplot", label: "Caixa (Box)" },
-];
+/** Empilhamento efetivo das barras: tipo empilhado força empilhar; o modo diz se é 100%. */
+function barStacking(ct: ChartBlock["chartType"], mode: ChartStyle["bar"]["mode"]): "grouped" | "stacked" | "stacked100" {
+  if (mode === "stacked100") return "stacked100";
+  if (ct === "stackedColumn" || ct === "stackedBar" || mode === "stacked") return "stacked";
+  return "grouped";
+}
 
 // Determines what sections should appear
 function sectionsFor(ct: ChartBlock["chartType"]) {
@@ -379,7 +363,22 @@ export function ChartInspector({
     <div className="space-y-3">
       {/* Chart type picker — always visible at top */}
       <div className="rounded-lg border border-border/50 bg-card/40 px-2 py-2">
-        <ChartTypePicker value={ct} onChange={(v) => onChange(withAutoTitle({ chartType: v }))} />
+        <ChartTypePicker value={ct} onChange={(v) => {
+          // O tipo manda no empilhamento: escolher "Coluna" depois de
+          // "Coluna empilhada" não pode continuar empilhado por um modo antigo.
+          const stackedType = v === "stackedColumn" || v === "stackedBar";
+          const barMode = ["bar", "column", "hbar"].includes(v)
+            ? "grouped"
+            : stackedType && style.bar.mode === "grouped" ? "stacked" : style.bar.mode;
+          const areaStacked = v === "stackedArea" ? true : v === "area" ? false : style.area.stacked;
+          const styleChanged = barMode !== style.bar.mode || areaStacked !== style.area.stacked;
+          onChange({
+            ...withAutoTitle({ chartType: v }),
+            ...(styleChanged
+              ? { style: { ...block.style, bar: { ...style.bar, mode: barMode }, area: { ...style.area, stacked: areaStacked } } }
+              : {}),
+          } as Patch);
+        }} />
       </div>
 
       {/* Roteiro do Slides, item 1.4: busca dentro do inspector. O Chart é o
@@ -860,9 +859,21 @@ export function ChartInspector({
       {/* ===== Type-specific: Bar ===== */}
       {S.showBar && (
         <Section title={t.bar.title} defaultOpen onReset={() => resetPath("bar")}>
-          <Row label={tc.type}>
-            <SelectField value={style.bar.mode}
-              onChange={(v) => updPath("bar", { mode: v as never })}
+          {/* Empilhamento mostra o que está DESENHADO e troca o tipo junto.
+              Antes "Coluna empilhada" convivia com "Tipo: Agrupado" — o
+              desenho forçava empilhar e mudar o Tipo não fazia nada. */}
+          <Row label={t.bar.stacking}>
+            <Segmented value={barStacking(ct, style.bar.mode)}
+              onChange={(v) => {
+                const horizontal = ct === "hbar" || ct === "stackedBar";
+                const nextType: ChartBlock["chartType"] = v === "grouped"
+                  ? (horizontal ? "hbar" : "bar")
+                  : (horizontal ? "stackedBar" : "stackedColumn");
+                onChange({
+                  ...withAutoTitle({ chartType: nextType }),
+                  style: { ...block.style, bar: { ...style.bar, mode: v as never } },
+                } as Patch);
+              }}
               options={[
                 { value: "grouped", label: t.bar.modeOptions.grouped },
                 { value: "stacked", label: t.bar.modeOptions.stacked },
@@ -984,8 +995,12 @@ export function ChartInspector({
       {/* ===== Type-specific: Area ===== */}
       {S.showArea && (
         <Section title={t.area.title} defaultOpen onReset={() => resetPath("area")}>
-          <ToggleField label={t.area.stacked} value={style.area.stacked}
-            onChange={(v) => updPath("area", { stacked: v })} />
+          {/* Mesmo princípio das barras: reflete o desenho e troca o tipo. */}
+          <ToggleField label={t.area.stacked} value={ct === "stackedArea" || style.area.stacked}
+            onChange={(v) => onChange({
+              ...withAutoTitle({ chartType: v ? "stackedArea" : "area" }),
+              style: { ...block.style, area: { ...style.area, stacked: v } },
+            } as Patch)} />
           <ToggleField label={t.area.lineOnTop} value={style.area.lineOnTop}
             onChange={(v) => updPath("area", { lineOnTop: v })} />
         </Section>
@@ -1499,26 +1514,6 @@ export function ChartInspector({
               onReset={() => resetPath("yAxis2")} />
           )}
         </>
-      )}
-      {S.isRadar && (
-        <Section title={t.radar.gridTitle} onReset={() => resetPath("radar")}>
-          <Row label={t.radar.gridShape}>
-            <Segmented value={style.radar.gridShape}
-              onChange={(v) => updPath("radar", { gridShape: v as never })}
-              options={[
-                { value: "polygon", label: t.radar.gridShapeOptions.polygon },
-                { value: "circle", label: t.radar.gridShapeOptions.circle },
-              ]} />
-          </Row>
-          <Row label={t.radar.gridColor}>
-            <ColorField value={style.radar.gridColor}
-              onChange={(c) => updPath("radar", { gridColor: c })} />
-          </Row>
-          <Row label={t.radar.axisLabelSize}>
-            <NumberStepper value={style.radar.axisLabelSize} min={6} max={24}
-              onChange={(v) => updPath("radar", { axisLabelSize: v })} suffix="pt" />
-          </Row>
-        </Section>
       )}
 
       {/* ============================ ANÁLISES ============================ */}
