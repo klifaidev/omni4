@@ -997,6 +997,10 @@ const elementStyleListeners = new Set<() => void>();
 function emitElementStyleCopy() { elementStyleListeners.forEach((fn) => fn()); }
 
 function cloneValue<T>(value: T): T {
+  // JSON.stringify(undefined) devolve undefined e JSON.parse(undefined)
+  // lança — um gráfico sem `budgetGap` derrubava o editor inteiro assim que
+  // algum estilo era copiado (o menu de colar roda a cada render).
+  if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
