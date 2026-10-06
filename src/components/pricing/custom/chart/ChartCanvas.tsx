@@ -934,8 +934,15 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       });
     }
     // B.5 â€” apply user-defined sort
-    return applySort(raw.periodos, visible, block.sortConfig);
-  }, [raw, block]);
+    // Com categorias no eixo X (Marca, Canal…) a ordem "natural" é a de
+    // aparição nas linhas da base — arbitrária. Sem escolha explícita (ou
+    // com uma ordem de período, que não se aplica), maior valor primeiro.
+    const xIsTime = !xDim || xDim === "period";
+    const sort = !xIsTime && (!block.sortConfig || block.sortConfig.field === "period")
+      ? { field: "value" as const, dir: "desc" as const }
+      : block.sortConfig;
+    return applySort(raw.periodos, visible, sort, xIsTime);
+  }, [raw, block, xDim]);
 
   // Tooltip lookup tables â€” previous period delta + YoY (best-effort heuristic on label match)
   const tooltipMaps = useMemo(() => {

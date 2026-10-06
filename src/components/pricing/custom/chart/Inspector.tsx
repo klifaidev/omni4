@@ -48,6 +48,56 @@ export function Section({
   );
 }
 
+/** Bloco com título dentro de uma Section — agrupa assuntos vizinhos
+ *  (ex.: Eixo X, Eixo Y e Grade numa seção só) sem criar mais um
+ *  cabeçalho sanfonado no painel. */
+export function SubGroup({ title, onReset, children }: {
+  title: string;
+  onReset?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-3 border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+        {onReset && (
+          <button type="button" onClick={onReset} title={tc.resetDefault} aria-label={`${tc.resetDefault}: ${title}`}
+            className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground">
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Ajustes finos de uma seção, guardados atrás de "Mais opções". Abre
+ *  sozinho quando algum desses ajustes já foi mexido (`customized`): nada
+ *  personalizado fica escondido. O conteúdo fica montado (só oculto) pra
+ *  busca do painel achar os rótulos de dentro. */
+export function MoreOptions({ customized = false, children }: {
+  customized?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(customized);
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        data-inspector-more-toggle="true"
+        aria-expanded={open}
+        className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
+        {open ? tc.lessOptions : tc.moreOptions}
+        {customized && !open && (
+          <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-primary" title={tc.customizedHint} />
+        )}
+      </button>
+      <div hidden={!open} className="mt-3 space-y-3">{children}</div>
+    </div>
+  );
+}
+
 export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   // O controle dentro de `children` varia (NumberStepper, SelectField,
   // Segmented, ColorField, Slider, campos custom...) e nenhum deles aceita

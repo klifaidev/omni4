@@ -37,33 +37,48 @@ export function evalCondColor(
 }
 
 // ---- Sort applied to {periodos, series} ---------------------------------
+/** `xIsTime`: o eixo X são períodos. Aí valor/nome ordenam as SÉRIES (o
+ *  tempo não se reordena por valor). Com categorias no X (Marca, Canal…),
+ *  valor/nome ordenam as próprias barras — é o que a pessoa espera de
+ *  "Maior valor primeiro". */
 export function applySort(
   periodos: { label: string }[],
   series: { name: string; values: number[] }[],
   sort: ChartBlock["sortConfig"],
+  xIsTime = true,
 ): { periodos: { label: string }[]; series: { name: string; values: number[] }[] } {
   if (!sort) return { periodos, series };
-  if (sort.field === "name") {
-    const sorted = [...series].sort((a, b) =>
-      sort.dir === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
-    return { periodos, series: sorted };
-  }
-  if (sort.field === "value") {
-    const sumOf = (s: { values: number[] }) => s.values.reduce((x, y) => x + (y || 0), 0);
-    const sorted = [...series].sort((a, b) =>
-      sort.dir === "asc" ? sumOf(a) - sumOf(b) : sumOf(b) - sumOf(a));
-    return { periodos, series: sorted };
-  }
-  // period (reorder all rows)
-  const idx = periodos.map((_, i) => i);
-  idx.sort((a, b) =>
-    sort.dir === "asc"
-      ? periodos[a].label.localeCompare(periodos[b].label)
-      : periodos[b].label.localeCompare(periodos[a].label));
-  return {
+  const reorderCategories = (idx: number[]) => ({
     periodos: idx.map((i) => periodos[i]),
     series: series.map((s) => ({ name: s.name, values: idx.map((i) => s.values[i] ?? 0) })),
-  };
+  });
+  const indexes = periodos.map((_, i) => i);
+  if (sort.field === "period") {
+    // Os períodos já chegam em ordem cronológica. Antes isto comparava os
+    // rótulos como texto ("Abr/26" < "Ago/26" < "Dez/25"), embaralhando
+    // os meses mesmo em ordem crescente.
+    return sort.dir === "asc" ? { periodos, series } : reorderCategories(indexes.reverse());
+  }
+  if (!xIsTime) {
+    if (sort.field === "name") {
+      indexes.sort((a, b) => sort.dir === "asc"
+        ? periodos[a].label.localeCompare(periodos[b].label, "pt-BR")
+        : periodos[b].label.localeCompare(periodos[a].label, "pt-BR"));
+    } else {
+      const totalAt = (i: number) => series.reduce((s, ser) => s + (ser.values[i] || 0), 0);
+      indexes.sort((a, b) => sort.dir === "asc" ? totalAt(a) - totalAt(b) : totalAt(b) - totalAt(a));
+    }
+    return reorderCategories(indexes);
+  }
+  if (sort.field === "name") {
+    const sorted = [...series].sort((a, b) =>
+      sort.dir === "asc" ? a.name.localeCompare(b.name, "pt-BR") : b.name.localeCompare(a.name, "pt-BR"));
+    return { periodos, series: sorted };
+  }
+  const sumOf = (s: { values: number[] }) => s.values.reduce((x, y) => x + (y || 0), 0);
+  const sorted = [...series].sort((a, b) =>
+    sort.dir === "asc" ? sumOf(a) - sumOf(b) : sumOf(b) - sumOf(a));
+  return { periodos, series: sorted };
 }
 
 // ---- Trendline / forecast -----------------------------------------------

@@ -14,7 +14,7 @@ import {
 } from "./types";
 import {
   Section, Row, ToggleField, NumberStepper, ColorField, SelectField,
-  Segmented, Slider,
+  Segmented, Slider, MoreOptions, SubGroup,
 } from "./Inspector";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -125,6 +125,33 @@ function barStacking(ct: ChartBlock["chartType"], mode: ChartStyle["bar"]["mode"
   return "grouped";
 }
 
+/** Tipos sem eixo de tempo: ordenar é por item, nunca por período. */
+const NO_PERIOD_ORDER_TYPES: ChartBlock["chartType"][] = [
+  "pie", "donut", "funnel", "treemap", "scatter", "bubble", "histogram", "boxplot", "radar",
+];
+const SLICE_TYPES: ChartBlock["chartType"][] = ["pie", "donut", "funnel", "treemap"];
+/** Onde o eixo X é de valores (nos outros é de categorias/períodos e
+ *  mínimo, máximo e formato não fazem nada — ver ChartCanvas). */
+const NUMERIC_X_TYPES: ChartBlock["chartType"][] = ["hbar", "stackedBar", "scatter", "bubble"];
+/** Barras horizontais: o Y é que lista as categorias. */
+const CATEGORY_Y_TYPES: ChartBlock["chartType"][] = ["hbar", "stackedBar"];
+
+/** Uma frase dizendo o que o gráfico mostra, lida antes dos controles
+ *  ("ROL por período, uma cor por marca"). Null quando a frase não ajudaria. */
+function chartDataSummary({ ct, measure, xDim, seriesDim, dimLabel }: {
+  ct: ChartBlock["chartType"];
+  measure: string;
+  xDim: string | null;
+  seriesDim: string | null;
+  dimLabel: (d: string) => string;
+}): string | null {
+  const lower = (d: string) => dimLabel(d).toLowerCase();
+  if (SLICE_TYPES.includes(ct)) return t.dataSection.summary.slices(measure, lower(seriesDim ?? "marca"));
+  if (NO_PERIOD_ORDER_TYPES.includes(ct) || ct === "waterfall" || ct === "mapaBrasil" || ct === "combo") return null;
+  const x = xDim && xDim !== "period" ? lower(xDim) : t.dataSection.summary.period;
+  return t.dataSection.summary.series(measure, x, seriesDim ? lower(seriesDim) : null);
+}
+
 // Determines what sections should appear
 function sectionsFor(ct: ChartBlock["chartType"]) {
   const isPie = ct === "pie" || ct === "donut";
@@ -164,11 +191,17 @@ function SectionSearchBar({ containerRef }: { containerRef: React.RefObject<HTML
       return;
     }
     wrappers.forEach((w) => {
-      const matches = (w.innerText ?? "").toLowerCase().includes(q);
+      // textContent (não innerText) pra achar também o que está guardado
+      // em "Mais opções" — o conteúdo está montado, só oculto.
+      const matches = (w.textContent ?? "").toLowerCase().includes(q);
       w.style.display = matches ? "" : "none";
       if (matches) {
         const toggle = w.querySelector<HTMLButtonElement>('[data-inspector-section-toggle="true"]');
         if (toggle && toggle.getAttribute("aria-expanded") === "false") toggle.click();
+        w.querySelectorAll<HTMLButtonElement>('[data-inspector-more-toggle="true"][aria-expanded="false"]').forEach((more) => {
+          const panel = more.nextElementSibling;
+          if ((panel?.textContent ?? "").toLowerCase().includes(q)) more.click();
+        });
       }
     });
   }, [query, containerRef]);
@@ -208,6 +241,11 @@ export function ChartInspector({
     const d = defaultChartStyle();
     updStyle({ [key]: d[key] } as Partial<ChartStyle>);
   };
+  // "Mais opções" abre sozinho quando algum desses campos saiu do padrão.
+  const defaults = useMemo(() => defaultChartStyle(), []);
+  const changed = <K extends keyof ChartStyle>(key: K, fields: (keyof ChartStyle[K])[]) =>
+    fields.some((f) => JSON.stringify((style[key] as ChartStyle[K])?.[f])
+      !== JSON.stringify((defaults[key] as ChartStyle[K])?.[f]));
 
   const ct = block.chartType;
   const S = sectionsFor(ct);
@@ -359,6 +397,51 @@ export function ChartInspector({
     } as Patch;
   };
 
+  const dimOptions: { value: string; label: string }[] = block.measure === "positivacao"
+    ? POSITIVACAO_BREAKDOWN_OPTIONS
+    : [
+        { value: "marca", label: t.dataSection.dims.marca },
+        { value: "canalAjustado", label: t.dataSection.dims.canalAjustado },
+        { value: "gestorResp", label: t.dataSection.dims.gestorResp },
+        { value: "categoria", label: t.dataSection.dims.categoria },
+        { value: "mercado", label: t.dataSection.dims.mercado },
+        { value: "inovacao", label: t.dataSection.dims.inovacao },
+      ];
+  // O que o canvas usa pra separar séries (colorDim antigo tem prioridade).
+  const seriesDim = block.fieldWells?.colorDim ?? block.breakdown ?? null;
+  // Tipos sem eixo de tempo: a ordem é de itens, não de períodos.
+  const isRankingType = NO_PERIOD_ORDER_TYPES.includes(ct);
+  const xIsTime = !block.fieldWells?.xDim || block.fieldWells.xDim === "period";
+  // Ordem de período só existe com o tempo no eixo X.
+  const periodOrder = xIsTime && !isRankingType;
+  const sortKey = (() => {
+    const sc = block.sortConfig;
+    if (!sc || (!periodOrder && sc.field === "period")) return periodOrder ? "period:asc" : "value:desc";
+    return `${sc.field}:${sc.dir}`;
+  })();
+  // Com o tempo no eixo X e uma série só, ordenar por valor/nome não muda
+  // nada no desenho (só reordena séries) — então nem oferece.
+  const canOrderItems = !periodOrder || !!seriesDim || ct === "combo";
+  const sortOptions = [
+    ...(!periodOrder ? [] : [
+      { value: "period:asc", label: t.dataSection.orderOptions.periodAsc },
+      { value: "period:desc", label: t.dataSection.orderOptions.periodDesc },
+    ]),
+    ...(canOrderItems ? [
+      { value: "value:desc", label: t.dataSection.orderOptions.valueDesc },
+      { value: "value:asc", label: t.dataSection.orderOptions.valueAsc },
+      { value: "name:asc", label: t.dataSection.orderOptions.nameAsc },
+      { value: "name:desc", label: t.dataSection.orderOptions.nameDesc },
+    ] : []),
+  ];
+  const dataSummary = isCustomSource ? null : chartDataSummary({
+    ct,
+    measure: KPI_MEASURES.find((m) => m.id === block.measure)?.label ?? block.measure,
+    xDim: block.fieldWells?.xDim ?? null,
+    seriesDim,
+    dimLabel: (d) => dimOptions.find((o) => o.value === d)?.label ?? d,
+  });
+
   return (
     <div className="space-y-3">
       {/* Chart type picker — always visible at top */}
@@ -403,6 +486,11 @@ export function ChartInspector({
       {/* ============================ DADOS ============================ */}
       {/* ===== Data ===== */}
       <Section title={t.dataSection.title} defaultOpen>
+        {dataSummary && (
+          <p className="rounded-md bg-primary/5 px-2.5 py-1.5 text-[12px] leading-snug text-foreground/80" data-chart-data-summary>
+            {dataSummary}
+          </p>
+        )}
         {isCustomSource && (
           <div className="mb-3 space-y-2 rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5">
             <div>
@@ -642,25 +730,22 @@ export function ChartInspector({
             {unavailableHintForSource(block.dataSource)}
           </p>
         )}
+        {/* "Quebrar por" e "Cor / Legenda" eram o mesmo controle duas vezes:
+            o desenho usa `colorDim ?? breakdown`, então com os dois
+            preenchidos um anulava o outro em silêncio. Ficou um só. */}
         {ct !== "mapaBrasil" && (ct !== "waterfall" || (style.waterfall.mode ?? "pvm") === "manual") && (
-          <Row label={t.dataSection.breakdown}>
-            <SelectField value={block.breakdown ?? "__none__"}
+          <Row label={isRankingType ? t.dataSection.breakdown : t.dataSection.splitBy}>
+            <SelectField value={seriesDim ?? "__none__"}
               onChange={(v) => {
                 clearFilter(block.id);
-                onChange({ breakdown: v === "__none__" ? null : v });
+                onChange({
+                  breakdown: v === "__none__" ? null : v,
+                  ...(block.fieldWells?.colorDim ? { fieldWells: { ...block.fieldWells, colorDim: null } } : {}),
+                });
               }}
               options={[
                 { value: "__none__", label: t.dataSection.breakdownSingleSeries },
-                ...(block.measure === "positivacao"
-                  ? POSITIVACAO_BREAKDOWN_OPTIONS
-                  : [
-                      { value: "marca", label: t.dataSection.dims.marca },
-                      { value: "canalAjustado", label: t.dataSection.dims.canalAjustado },
-                      { value: "gestorResp", label: t.dataSection.dims.gestorResp },
-                      { value: "categoria", label: t.dataSection.dims.categoria },
-                      { value: "mercado", label: t.dataSection.dims.mercado },
-                      { value: "inovacao", label: t.dataSection.dims.inovacao },
-                    ]),
+                ...dimOptions,
               ]} />
           </Row>
         )}
@@ -712,34 +797,32 @@ export function ChartInspector({
           </Row>
         )}
 
-        {/* B.1 — Field wells: Cor / Tooltip / Rótulo */}
+        {(ct === "scatter" || ct === "bubble") && (
+          <Row label={t.dataSection.pointLabel}>
+            <SelectField value={block.fieldWells?.labelDim ?? "__none__"}
+              onChange={(v) => onChange({
+                fieldWells: { ...(block.fieldWells ?? {}), labelDim: v === "__none__" ? null : v },
+              })}
+              options={[{ value: "__none__", label: tc.noneOption }, ...dimOptions]} />
+          </Row>
+        )}
+
+        {/* Ordem: era "Ordenar por" + "Direção: Asc/Desc" (jargão, 2
+            controles). Agora uma escolha só, dita como a pessoa pensa. */}
+        <Row label={t.dataSection.order}>
+          <SelectField value={sortKey}
+            onChange={(v) => {
+              const [field, dir] = v.split(":") as [string, "asc" | "desc"];
+              onChange({ sortConfig: { field: field as never, dir } });
+            }}
+            options={sortOptions} />
+        </Row>
+
+        {/* Dica extra só aparece ao passar o mouse na apresentação — ajuste
+            fino, não algo que define o gráfico. */}
         {["line", "area", "stackedArea", "bar", "column", "hbar",
           "stackedColumn", "stackedBar", "combo", "scatter", "bubble"].includes(ct) && (
-          <>
-            {(!(ct === "scatter" || ct === "bubble") || (!style.measureX && !style.measureY)) && (
-              <Row label={t.dataSection.colorLegend}>
-                <SelectField value={block.fieldWells?.colorDim ?? "__none__"}
-                  onChange={(v) => {
-                    clearFilter(block.id);
-                    onChange({
-                      fieldWells: { ...(block.fieldWells ?? {}), colorDim: v === "__none__" ? null : v },
-                    });
-                  }}
-                  options={[
-                    { value: "__none__", label: tc.noneOption },
-                    ...(block.measure === "positivacao"
-                      ? POSITIVACAO_BREAKDOWN_OPTIONS
-                      : [
-                          { value: "marca", label: t.dataSection.dims.marca },
-                          { value: "canalAjustado", label: t.dataSection.dims.canalAjustado },
-                          { value: "gestorResp", label: t.dataSection.dims.gestorResp },
-                          { value: "categoria", label: t.dataSection.dims.categoria },
-                          { value: "mercado", label: t.dataSection.dims.mercado },
-                          { value: "inovacao", label: t.dataSection.dims.inovacao },
-                        ]),
-                  ]} />
-              </Row>
-            )}
+          <MoreOptions customized={!!block.fieldWells?.tooltipMeasure}>
             <Row label={t.dataSection.tooltipExtra}>
               <SelectField value={(block.fieldWells?.tooltipMeasure ?? "__none__") as string}
                 onChange={(v) => onChange({
@@ -747,57 +830,15 @@ export function ChartInspector({
                     tooltipMeasure: v === "__none__" ? null : v as KpiMeasureId },
                 })}
                 options={[
-                  { value: "__none__", label: "— Nenhuma —" },
-                  ...KPI_MEASURES.map((m) => ({ value: m.id, label: m.label })),
+                  { value: "__none__", label: tc.noneOption },
+                  ...KPI_MEASURES.map((m) => ({
+                    value: m.id, label: m.label,
+                    disabled: unavailableMeasuresForSource(block.dataSource).includes(m.id),
+                  })),
                 ]} />
             </Row>
-            {(ct === "scatter" || ct === "bubble") && (
-              <Row label={t.dataSection.pointLabel}>
-                <SelectField value={block.fieldWells?.labelDim ?? "__none__"}
-                  onChange={(v) => onChange({
-                    fieldWells: { ...(block.fieldWells ?? {}), labelDim: v === "__none__" ? null : v },
-                  })}
-                  options={[
-                    { value: "__none__", label: tc.noneOption },
-                    ...(block.measure === "positivacao"
-                      ? POSITIVACAO_BREAKDOWN_OPTIONS
-                      : [
-                          { value: "marca", label: t.dataSection.dims.marca },
-                          { value: "canalAjustado", label: t.dataSection.dims.canalAjustado },
-                          { value: "gestorResp", label: t.dataSection.dims.gestorResp },
-                          { value: "categoria", label: t.dataSection.dims.categoria },
-                          { value: "mercado", label: t.dataSection.dims.mercado },
-                          { value: "inovacao", label: t.dataSection.dims.inovacao },
-                        ]),
-                  ]} />
-              </Row>
-            )}
-          </>
+          </MoreOptions>
         )}
-
-        {/* B.5 — Sort */}
-        <Row label={t.dataSection.sortBy}>
-          <SelectField value={block.sortConfig?.field ?? "period"}
-            onChange={(v) => onChange({
-              sortConfig: { field: v as never, dir: block.sortConfig?.dir ?? "asc" },
-            })}
-            options={[
-              ...(["pie", "donut", "funnel", "treemap", "scatter", "bubble", "histogram", "boxplot", "radar"].includes(ct)
-                ? [] : [{ value: "period", label: t.dataSection.period }]),
-              { value: "value", label: t.dataSection.sortValue },
-              { value: "name", label: t.dataSection.sortName },
-            ]} />
-        </Row>
-        <Row label={t.dataSection.sortDirection}>
-          <Segmented value={block.sortConfig?.dir ?? "asc"}
-            onChange={(v) => onChange({
-              sortConfig: { field: block.sortConfig?.field ?? "period", dir: v as never },
-            })}
-            options={[
-              { value: "asc", label: t.dataSection.sortAsc },
-              { value: "desc", label: t.dataSection.sortDesc },
-            ]} />
-        </Row>
 
         {/* B.4 — Bridge column builder (apenas no modo manual) */}
         {ct === "waterfall" && (style.waterfall.mode ?? "pvm") === "manual" && (
@@ -829,16 +870,6 @@ export function ChartInspector({
               setValue={(cols) => updPath("waterfall", { columns: cols })} />
           </>
         )}
-      </Section>
-
-      {/* ===== Interatividade — moved out of "Geral" ===== */}
-      <Section title={t.interactivity.title}>
-        <ToggleField label={t.interactivity.emitFilter}
-          value={block.emitsCrossFilter !== false}
-          onChange={(v) => onChange({ emitsCrossFilter: v })} />
-        <ToggleField label={t.interactivity.receiveFilter}
-          value={block.participatesInCrossFilter !== false}
-          onChange={(v) => onChange({ participatesInCrossFilter: v })} />
       </Section>
 
       {/* ============================ VISUAL ============================ */}
@@ -880,21 +911,24 @@ export function ChartInspector({
                 { value: "stacked100", label: t.bar.modeOptions.stacked100 },
               ]} />
           </Row>
-          <Row label={tc.spacing}>
-            <NumberStepper value={style.bar.gapPct} min={0} max={80}
-              onChange={(v) => updPath("bar", { gapPct: v })} suffix="%" />
-          </Row>
-          <Row label={t.bar.corners}>
-            <NumberStepper value={style.bar.cornerRadius} min={0} max={20}
-              onChange={(v) => updPath("bar", { cornerRadius: v })} suffix="px" />
-          </Row>
-          <Row label={tc.border}><ColorField value={style.bar.borderColor}
-            onChange={(c) => updPath("bar", { borderColor: c })} /></Row>
-          <Row label={tc.borderWidth}>
-            <NumberStepper value={style.bar.borderWidth} min={0} max={5}
-              onChange={(v) => updPath("bar", { borderWidth: v })} suffix="px" />
-          </Row>
-          <p className="text-[11px] leading-snug text-muted-foreground">{t.bar.colorHint}</p>
+          <MoreOptions customized={changed("bar", ["gapPct", "cornerRadius", "borderColor", "borderWidth"])}>
+            <Row label={tc.spacing}>
+              <NumberStepper value={style.bar.gapPct} min={0} max={80}
+                onChange={(v) => updPath("bar", { gapPct: v })} suffix="%" />
+            </Row>
+            <Row label={t.bar.corners}>
+              <NumberStepper value={style.bar.cornerRadius} min={0} max={20}
+                onChange={(v) => updPath("bar", { cornerRadius: v })} suffix="px" />
+            </Row>
+            <Row label={tc.borderWidth}>
+              <NumberStepper value={style.bar.borderWidth} min={0} max={5}
+                onChange={(v) => updPath("bar", { borderWidth: v })} suffix="px" />
+            </Row>
+            {style.bar.borderWidth > 0 && (
+              <Row label={tc.borderColor}><ColorField value={style.bar.borderColor}
+                onChange={(c) => updPath("bar", { borderColor: c })} /></Row>
+            )}
+          </MoreOptions>
         </Section>
       )}
 
@@ -907,10 +941,6 @@ export function ChartInspector({
                 onChange={(v) => updPath("pie", { donutHolePct: v })} suffix="%" />
             </Row>
           )}
-          <Row label={t.pie.startAngle}>
-            <NumberStepper value={style.pie.startAngle} min={0} max={360}
-              onChange={(v) => updPath("pie", { startAngle: v })} suffix="°" />
-          </Row>
           <Row label={t.pie.labels}>
             <SelectField value={style.pie.labelMode}
               onChange={(v) => updPath("pie", { labelMode: v as never })}
@@ -922,35 +952,51 @@ export function ChartInspector({
                 { value: "value", label: t.pie.labelModes.value },
               ]} />
           </Row>
-          <Row label={t.pie.explosion}>
-            <Slider value={style.pie.explodePct} max={30}
-              onChange={(v) => updPath("pie", { explodePct: v })} />
-          </Row>
           {detectedRanking.length > 0 && (
             <div className="space-y-1.5">
               <div className="text-[12px] font-medium text-muted-foreground">{t.pie.slices}</div>
               {detectedRanking.map((name, i) => {
                 const sl = style.pie.slices[name] ?? {};
                 return (
-                  <div key={name} className="space-y-1.5 rounded border border-border/30 p-2.5">
-                    <div className="text-[12px] font-medium truncate">{name}</div>
-                    <Row label={tc.color}>
+                  <Row key={name} label={name}>
+                    <div className="flex justify-end">
                       <ColorField value={sl.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
                         onChange={(c) => updPath("pie", {
                           slices: { ...style.pie.slices, [name]: { ...sl, color: c } },
                         })} />
-                    </Row>
-                    <Row label={t.pie.sliceExplosion}>
+                    </div>
+                  </Row>
+                );
+              })}
+            </div>
+          )}
+          <MoreOptions customized={changed("pie", ["startAngle", "explodePct"])
+            || Object.values(style.pie.slices).some((s) => (s.explode ?? 0) > 0)}>
+            <Row label={t.pie.startAngle}>
+              <NumberStepper value={style.pie.startAngle} min={0} max={360}
+                onChange={(v) => updPath("pie", { startAngle: v })} suffix="°" />
+            </Row>
+            <Row label={t.pie.explosion}>
+              <Slider value={style.pie.explodePct} max={30}
+                onChange={(v) => updPath("pie", { explodePct: v })} />
+            </Row>
+            {detectedRanking.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[12px] font-medium text-muted-foreground">{t.pie.sliceExplosion}</div>
+                {detectedRanking.map((name) => {
+                  const sl = style.pie.slices[name] ?? {};
+                  return (
+                    <Row key={name} label={name}>
                       <Slider value={sl.explode ?? 0} max={30}
                         onChange={(v) => updPath("pie", {
                           slices: { ...style.pie.slices, [name]: { ...sl, explode: v } },
                         })} />
                     </Row>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </MoreOptions>
         </Section>
       )}
 
@@ -978,17 +1024,21 @@ export function ChartInspector({
             <Slider value={Math.round(style.bubble.fillOpacity * 100)}
               onChange={(v) => updPath("bubble", { fillOpacity: v / 100 })} />
           </Row>
-          <Row label={tc.border}><ColorField value={style.bubble.borderColor}
-            onChange={(c) => updPath("bubble", { borderColor: c })} /></Row>
-          <Row label={tc.borderWidth}>
-            <NumberStepper value={style.bubble.borderWidth} min={0} max={5}
-              onChange={(v) => updPath("bubble", { borderWidth: v })} suffix="px" />
-          </Row>
           {ct === "bubble" && (
             <ToggleField label={t.bubble.showSizeLabel}
               value={style.bubble.showSizeLabel}
               onChange={(v) => updPath("bubble", { showSizeLabel: v })} />
           )}
+          <MoreOptions customized={changed("bubble", ["borderColor", "borderWidth"])}>
+            <Row label={tc.borderWidth}>
+              <NumberStepper value={style.bubble.borderWidth} min={0} max={5}
+                onChange={(v) => updPath("bubble", { borderWidth: v })} suffix="px" />
+            </Row>
+            {style.bubble.borderWidth > 0 && (
+              <Row label={tc.borderColor}><ColorField value={style.bubble.borderColor}
+                onChange={(c) => updPath("bubble", { borderColor: c })} /></Row>
+            )}
+          </MoreOptions>
         </Section>
       )}
 
@@ -1016,31 +1066,37 @@ export function ChartInspector({
             onChange={(c) => updPath("waterfall", { negativeColor: c })} /></Row>
           <Row label={t.waterfall.totalColor}><ColorField value={style.waterfall.totalColor}
             onChange={(c) => updPath("waterfall", { totalColor: c })} /></Row>
-          <ToggleField label={t.waterfall.connectors} value={style.waterfall.connectors}
-            onChange={(v) => updPath("waterfall", { connectors: v })} />
-          <Row label={t.waterfall.connectorColor}>
-            <ColorField value={style.waterfall.connectorColor}
-              onChange={(c) => updPath("waterfall", { connectorColor: c })} />
-          </Row>
-          <Row label={t.waterfall.connectorStyle}>
-            <Segmented value={style.waterfall.connectorStyle}
-              onChange={(v) => updPath("waterfall", { connectorStyle: v as never })}
-              options={[
-                { value: "solid", label: tc.lineStyles.solid },
-                { value: "dashed", label: tc.lineStyles.dashed },
-              ]} />
-          </Row>
           <ToggleField label={t.waterfall.runningTotal} value={style.waterfall.showRunningTotal}
             onChange={(v) => updPath("waterfall", { showRunningTotal: v })} />
-          <ToggleField label={t.waterfall.wrapLabels} value={style.waterfall.wrapLabels ?? false}
-            onChange={(v) => updPath("waterfall", { wrapLabels: v })} />
-          {style.waterfall.wrapLabels && (
-            <div className="text-[11px] text-muted-foreground leading-snug -mt-1">{t.waterfall.wrapLabelsHint}</div>
-          )}
-          <Row label={tc.spacing}>
-            <NumberStepper value={style.waterfall.gapPct} min={0} max={80}
-              onChange={(v) => updPath("waterfall", { gapPct: v })} suffix="%" />
-          </Row>
+          <ToggleField label={t.waterfall.connectors} value={style.waterfall.connectors}
+            onChange={(v) => updPath("waterfall", { connectors: v })} />
+          <MoreOptions customized={changed("waterfall", ["connectorColor", "connectorStyle", "wrapLabels", "gapPct"])}>
+            {style.waterfall.connectors && (
+              <>
+                <Row label={t.waterfall.connectorColor}>
+                  <ColorField value={style.waterfall.connectorColor}
+                    onChange={(c) => updPath("waterfall", { connectorColor: c })} />
+                </Row>
+                <Row label={t.waterfall.connectorStyle}>
+                  <Segmented value={style.waterfall.connectorStyle}
+                    onChange={(v) => updPath("waterfall", { connectorStyle: v as never })}
+                    options={[
+                      { value: "solid", label: tc.lineStyles.solid },
+                      { value: "dashed", label: tc.lineStyles.dashed },
+                    ]} />
+                </Row>
+              </>
+            )}
+            <ToggleField label={t.waterfall.wrapLabels} value={style.waterfall.wrapLabels ?? false}
+              onChange={(v) => updPath("waterfall", { wrapLabels: v })} />
+            {style.waterfall.wrapLabels && (
+              <div className="text-[11px] text-muted-foreground leading-snug -mt-1">{t.waterfall.wrapLabelsHint}</div>
+            )}
+            <Row label={tc.spacing}>
+              <NumberStepper value={style.waterfall.gapPct} min={0} max={80}
+                onChange={(v) => updPath("waterfall", { gapPct: v })} suffix="%" />
+            </Row>
+          </MoreOptions>
           {(style.waterfall.mode ?? "pvm") === "manual" && detectedCategories.length > 0 && (
             <div className="space-y-1">
               <div className="text-[12px] font-medium text-muted-foreground">{t.waterfall.classification}</div>
@@ -1077,10 +1133,6 @@ export function ChartInspector({
                 { value: "btt", label: t.funnel.directionOptions.btt },
               ]} />
           </Row>
-          <Row label={tc.spacing}>
-            <Slider value={style.funnel.gapPct} max={20}
-              onChange={(v) => updPath("funnel", { gapPct: v })} />
-          </Row>
           <Row label={t.pie.labels}>
             <SelectField value={style.funnel.labelMode}
               onChange={(v) => updPath("funnel", { labelMode: v as never })}
@@ -1107,6 +1159,12 @@ export function ChartInspector({
               })}
             </div>
           )}
+          <MoreOptions customized={changed("funnel", ["gapPct"])}>
+            <Row label={tc.spacing}>
+              <Slider value={style.funnel.gapPct} max={20}
+                onChange={(v) => updPath("funnel", { gapPct: v })} />
+            </Row>
+          </MoreOptions>
         </Section>
       )}
 
@@ -1137,14 +1195,18 @@ export function ChartInspector({
             onChange={(v) => updPath("treemap", { showCategoryLabel: v })} />
           <ToggleField label={t.treemap.showValue} value={style.treemap.showValueLabel}
             onChange={(v) => updPath("treemap", { showValueLabel: v })} />
-          <Row label={tc.borderColor}>
-            <ColorField value={style.treemap.borderColor}
-              onChange={(c) => updPath("treemap", { borderColor: c })} />
-          </Row>
-          <Row label={tc.borderWidth}>
-            <NumberStepper value={style.treemap.borderWidth} min={0} max={5}
-              onChange={(v) => updPath("treemap", { borderWidth: v })} suffix="px" />
-          </Row>
+          <MoreOptions customized={changed("treemap", ["borderColor", "borderWidth"])}>
+            <Row label={tc.borderWidth}>
+              <NumberStepper value={style.treemap.borderWidth} min={0} max={5}
+                onChange={(v) => updPath("treemap", { borderWidth: v })} suffix="px" />
+            </Row>
+            {style.treemap.borderWidth > 0 && (
+              <Row label={tc.borderColor}>
+                <ColorField value={style.treemap.borderColor}
+                  onChange={(c) => updPath("treemap", { borderColor: c })} />
+              </Row>
+            )}
+          </MoreOptions>
         </Section>
       )}
 
@@ -1178,10 +1240,12 @@ export function ChartInspector({
         <Section title={t.radar.title} defaultOpen onReset={() => resetPath("radar")}>
           <ToggleField label={t.radar.fillArea} value={style.radar.fillArea}
             onChange={(v) => updPath("radar", { fillArea: v })} />
-          <Row label={t.radar.fillOpacity}>
-            <Slider value={Math.round(style.radar.fillOpacity * 100)}
-              onChange={(v) => updPath("radar", { fillOpacity: v / 100 })} />
-          </Row>
+          {style.radar.fillArea && (
+            <Row label={t.radar.fillOpacity}>
+              <Slider value={Math.round(style.radar.fillOpacity * 100)}
+                onChange={(v) => updPath("radar", { fillOpacity: v / 100 })} />
+            </Row>
+          )}
           <Row label={t.radar.gridShape}>
             <Segmented value={style.radar.gridShape}
               onChange={(v) => updPath("radar", { gridShape: v as never })}
@@ -1190,18 +1254,20 @@ export function ChartInspector({
                 { value: "circle", label: t.radar.gridShapeOptions.circle },
               ]} />
           </Row>
-          <Row label={t.radar.gridColor}>
-            <ColorField value={style.radar.gridColor}
-              onChange={(c) => updPath("radar", { gridColor: c })} />
-          </Row>
-          <Row label={t.radar.axisLabelSize}>
-            <NumberStepper value={style.radar.axisLabelSize} min={6} max={24}
-              onChange={(v) => updPath("radar", { axisLabelSize: v })} suffix="pt" />
-          </Row>
-          <Row label={t.radar.axisLabelColor}>
-            <ColorField value={style.radar.axisLabelColor}
-              onChange={(c) => updPath("radar", { axisLabelColor: c })} />
-          </Row>
+          <MoreOptions customized={changed("radar", ["gridColor", "axisLabelSize", "axisLabelColor"])}>
+            <Row label={t.radar.gridColor}>
+              <ColorField value={style.radar.gridColor}
+                onChange={(c) => updPath("radar", { gridColor: c })} />
+            </Row>
+            <Row label={t.radar.axisLabelSize}>
+              <NumberStepper value={style.radar.axisLabelSize} min={6} max={24}
+                onChange={(v) => updPath("radar", { axisLabelSize: v })} suffix="pt" />
+            </Row>
+            <Row label={t.radar.axisLabelColor}>
+              <ColorField value={style.radar.axisLabelColor}
+                onChange={(c) => updPath("radar", { axisLabelColor: c })} />
+            </Row>
+          </MoreOptions>
         </Section>
       )}
 
@@ -1212,26 +1278,30 @@ export function ChartInspector({
             <NumberStepper value={style.histogram.bins} min={2} max={100}
               onChange={(v) => updPath("histogram", { bins: v })} />
           </Row>
-          <Row label={t.histogram.binWidth}>
-            <DraftNumberInput className="h-8 text-[13px]"
-              value={style.histogram.binWidth ?? null} placeholder="auto"
-              fallback={null}
-              onCommit={(value) => updPath("histogram", { binWidth: value })} />
-          </Row>
           <Row label={t.histogram.barColor}>
             <ColorField value={style.histogram.barColor}
               onChange={(c) => updPath("histogram", { barColor: c })} />
           </Row>
-          <Row label={tc.borderColor}>
-            <ColorField value={style.histogram.borderColor}
-              onChange={(c) => updPath("histogram", { borderColor: c })} />
-          </Row>
-          <Row label={tc.borderWidth}>
-            <NumberStepper value={style.histogram.borderWidth} min={0} max={5}
-              onChange={(v) => updPath("histogram", { borderWidth: v })} suffix="px" />
-          </Row>
           <ToggleField label={t.histogram.cumulative} value={style.histogram.cumulative}
             onChange={(v) => updPath("histogram", { cumulative: v })} />
+          <MoreOptions customized={changed("histogram", ["binWidth", "borderColor", "borderWidth"])}>
+            <Row label={t.histogram.binWidth}>
+              <DraftNumberInput className="h-8 text-[13px]"
+                value={style.histogram.binWidth ?? null} placeholder="auto"
+                fallback={null}
+                onCommit={(value) => updPath("histogram", { binWidth: value })} />
+            </Row>
+            <Row label={tc.borderWidth}>
+              <NumberStepper value={style.histogram.borderWidth} min={0} max={5}
+                onChange={(v) => updPath("histogram", { borderWidth: v })} suffix="px" />
+            </Row>
+            {style.histogram.borderWidth > 0 && (
+              <Row label={tc.borderColor}>
+                <ColorField value={style.histogram.borderColor}
+                  onChange={(c) => updPath("histogram", { borderColor: c })} />
+              </Row>
+            )}
+          </MoreOptions>
         </Section>
       )}
 
@@ -1246,169 +1316,51 @@ export function ChartInspector({
             <ColorField value={style.boxplot.whiskerColor}
               onChange={(c) => updPath("boxplot", { whiskerColor: c })} />
           </Row>
-          <Row label={t.boxplot.whiskerWidth}>
-            <NumberStepper value={style.boxplot.whiskerWidth} min={0.5} max={6} step={0.5}
-              onChange={(v) => updPath("boxplot", { whiskerWidth: v })} suffix="px" />
-          </Row>
-          <Row label={t.boxplot.medianColor}>
-            <ColorField value={style.boxplot.medianColor}
-              onChange={(c) => updPath("boxplot", { medianColor: c })} />
-          </Row>
-          <Row label={t.boxplot.medianWidth}>
-            <NumberStepper value={style.boxplot.medianWidth} min={0.5} max={6} step={0.5}
-              onChange={(v) => updPath("boxplot", { medianWidth: v })} suffix="px" />
-          </Row>
           <ToggleField label={t.boxplot.showMean} value={style.boxplot.showMean}
             onChange={(v) => updPath("boxplot", { showMean: v })} />
           <ToggleField label={t.boxplot.showOutliers} value={style.boxplot.showOutliers}
             onChange={(v) => updPath("boxplot", { showOutliers: v })} />
+          <MoreOptions customized={changed("boxplot", ["whiskerWidth", "medianColor", "medianWidth"])}>
+            <Row label={t.boxplot.whiskerWidth}>
+              <NumberStepper value={style.boxplot.whiskerWidth} min={0.5} max={6} step={0.5}
+                onChange={(v) => updPath("boxplot", { whiskerWidth: v })} suffix="px" />
+            </Row>
+            <Row label={t.boxplot.medianColor}>
+              <ColorField value={style.boxplot.medianColor}
+                onChange={(c) => updPath("boxplot", { medianColor: c })} />
+            </Row>
+            <Row label={t.boxplot.medianWidth}>
+              <NumberStepper value={style.boxplot.medianWidth} min={0.5} max={6} step={0.5}
+                onChange={(v) => updPath("boxplot", { medianWidth: v })} suffix="px" />
+            </Row>
+          </MoreOptions>
         </Section>
       )}
 
-      {/* ===== Data labels (moved up — frequently used) ===== */}
-      <Section title={t.dataLabels.title} onReset={() => resetPath("dataLabels")}>
-        <ToggleField label={t.dataLabels.show} value={style.dataLabels.show}
-          onChange={(v) => updPath("dataLabels", { show: v })} />
-        <Row label={t.dataLabels.size}>
-          <NumberStepper value={style.dataLabels.size} min={6} max={24}
-            onChange={(v) => updPath("dataLabels", { size: v })} suffix="pt" />
-        </Row>
-        <Row label={tc.color}><ColorField value={style.dataLabels.color}
-          onChange={(c) => updPath("dataLabels", { color: c })} /></Row>
-        <ToggleField label={tc.bold} value={style.dataLabels.bold}
-          onChange={(v) => updPath("dataLabels", { bold: v })} />
-        <ToggleField label={tc.italic} value={style.dataLabels.italic}
-          onChange={(v) => updPath("dataLabels", { italic: v })} />
-        {ct !== "histogram" && ct !== "boxplot" && (
-          <Row label={t.dataLabels.position}>
-            <SelectField value={ct === "funnel" ? (style.funnel.labelPos ?? "right") : style.dataLabels.position}
-              onChange={(v) => ct === "funnel"
-                ? updPath("funnel", { labelPos: v as never })
-                : updPath("dataLabels", { position: v as never })}
-              options={positionOptions(ct) as never} />
-          </Row>
-        )}
-        {ct !== "histogram" && (
-          <Row label={tc.format}>
-            <SelectField value={style.dataLabels.format}
-              onChange={(v) => updPath("dataLabels", { format: v as never })}
-              options={[
-                { value: "auto", label: tc.formatOptions.auto },
-                { value: "currency", label: tc.formatOptions.currency },
-                { value: "percent", label: tc.formatOptions.percent },
-                { value: "number", label: tc.formatOptions.number },
-                { value: "tons", label: tc.formatOptions.tons },
-              ]} />
-          </Row>
-        )}
-        {ct !== "histogram" && (
-          <Row label={tc.decimals}>
-            <NumberStepper value={style.dataLabels.decimals} min={0} max={4}
-              onChange={(v) => updPath("dataLabels", { decimals: v })} />
-          </Row>
-        )}
-        <ToggleField label={t.dataLabels.autoContrast} value={style.dataLabels.autoContrast}
-          onChange={(v) => updPath("dataLabels", { autoContrast: v })} />
-        {ct !== "pie" && ct !== "donut" && (
-          <ToggleField label={t.dataLabels.showSeriesName} value={style.dataLabels.showSeries}
-            onChange={(v) => updPath("dataLabels", { showSeries: v })} />
-        )}
-        <ToggleField label={t.dataLabels.showCategory} value={style.dataLabels.showCategory}
-          onChange={(v) => updPath("dataLabels", { showCategory: v })} />
-        <Row label={t.dataLabels.background}>
-          <ColorField value={style.dataLabels.bgColor}
-            onChange={(c) => updPath("dataLabels", { bgColor: c })} />
-        </Row>
-        <Row label={t.dataLabels.backgroundOpacity}>
-          <Slider value={Math.round(style.dataLabels.bgOpacity * 100)}
-            onChange={(v) => updPath("dataLabels", { bgOpacity: v / 100 })} />
-        </Row>
-        <Row label={tc.borderColor}>
-          <ColorField value={style.dataLabels.borderColor}
-            onChange={(c) => updPath("dataLabels", { borderColor: c })} />
-        </Row>
-        <Row label={tc.borderWidth}>
-          <NumberStepper value={style.dataLabels.borderWidth} min={0} max={5}
-            onChange={(v) => updPath("dataLabels", { borderWidth: v })} suffix="px" />
-        </Row>
-      </Section>
-
-      {/* ===== Series (moved up — frequently used) =====
-          defaultOpen: é aqui que a cor de preenchimento mora pra todo tipo
-          que passa por S.showSeries (barra/coluna/linha/área/combo/radar)
-          — a seção com o nome do tipo escolhido (ex. "Barras") só tem
-          geometria/borda, sem isso a cor fica achada só depois de abrir
-          uma seção sem relação óbvia com "mudar a cor do gráfico". */}
+      {/* ===== Séries — onde mora a cor de cada série =====
+          Uma linha por série (nome + cor). O que é ajuste fino de linha
+          (traço, espessura, suavizar, marcador) fica em "Mais opções" da
+          própria série — antes eram 7 controles × N séries sempre à vista. */}
       {S.showSeries && (
         <Section title={t.series.title} defaultOpen onReset={() => updStyle({ series: [] })}>
-          <p className="text-[12px] text-muted-foreground">
-            {t.series.hint} {detectedSeries.length === 0 && t.series.noneDetected}
-          </p>
+          {detectedSeries.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">{t.series.noneDetected}</p>
+          )}
           {(detectedSeries.length === 0 ? ["Total"] : detectedSeries).map((name, i) => {
             const cfg = getSeriesCfg(name);
+            const hasLineProps = S.showLineSeriesProps || S.showArea || ct === "line" || ct === "scatter" || ct === "combo";
+            const lineCustomized = cfg.lineStyle !== undefined || cfg.thickness !== undefined
+              || cfg.smooth !== undefined || cfg.areaOpacity !== undefined || cfg.marker !== undefined;
+            const colorRow = (
+              <Row label={name}>
+                <ColorField value={cfg.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
+                  onChange={(c) => updSeries(name, { color: c })} />
+              </Row>
+            );
+            if (!hasLineProps && !S.isCombo) return <div key={name}>{colorRow}</div>;
             return (
-              <div key={name} className="space-y-1.5 rounded border border-border/30 p-2.5">
-                <div className="text-[12px] font-medium truncate">{name}</div>
-                <Row label={tc.color}>
-                  <ColorField value={cfg.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
-                    onChange={(c) => updSeries(name, { color: c })} />
-                </Row>
-                {S.showLineSeriesProps && (
-                  <>
-                    <Row label={t.series.lineStyle}>
-                      <Segmented value={cfg.lineStyle ?? "solid"}
-                        onChange={(v) => updSeries(name, { lineStyle: v as never })}
-                        options={[
-                          { value: "solid", label: tc.lineStylesShort.solid },
-                          { value: "dashed", label: tc.lineStylesShort.dashed },
-                          { value: "dotted", label: tc.lineStylesShort.dotted },
-                        ]} />
-                    </Row>
-                    <Row label={tc.thickness}>
-                      <NumberStepper value={cfg.thickness ?? 2.5} min={0.5} max={8} step={0.5}
-                        onChange={(v) => updSeries(name, { thickness: v })} suffix="px" />
-                    </Row>
-                    <ToggleField label={t.series.smooth} value={cfg.smooth ?? false}
-                      onChange={(v) => updSeries(name, { smooth: v })} />
-                  </>
-                )}
-                {S.showArea && (
-                  <Row label={t.series.areaOpacity}>
-                    <Slider value={Math.round((cfg.areaOpacity ?? 0.35) * 100)}
-                      onChange={(v) => updSeries(name, { areaOpacity: v / 100 })} />
-                  </Row>
-                )}
-                {(ct === "line" || ct === "scatter" || ct === "combo") && (
-                  <>
-                    <Row label={t.series.marker}>
-                      <SelectField value={cfg.marker?.shape ?? "circle"}
-                        onChange={(v) => updSeries(name, {
-                          marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
-                            shape: v as never },
-                        })}
-                        options={[
-                          { value: "circle", label: t.series.markerShapes.circle },
-                          { value: "square", label: t.series.markerShapes.square },
-                          { value: "diamond", label: t.series.markerShapes.diamond },
-                          { value: "triangle", label: t.series.markerShapes.triangle },
-                        ]} />
-                    </Row>
-                    <Row label={t.series.markerSize}>
-                      <NumberStepper value={cfg.marker?.size ?? 3} min={0} max={12}
-                        onChange={(v) => updSeries(name, {
-                          marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
-                            size: v, show: v > 0 },
-                        })} suffix="px" />
-                    </Row>
-                    <Row label={t.series.markerColor}>
-                      <ColorField value={cfg.marker?.fill ?? cfg.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
-                        onChange={(c) => updSeries(name, {
-                          marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
-                            fill: c },
-                        })} />
-                    </Row>
-                  </>
-                )}
+              <div key={name} className="space-y-2 rounded border border-border/30 p-2.5">
+                {colorRow}
                 {S.isCombo && (
                   <>
                     <Row label={t.series.renderAs}>
@@ -1423,123 +1375,289 @@ export function ChartInspector({
                       onChange={(v) => updSeries(name, { secondaryAxis: v })} />
                   </>
                 )}
+                {hasLineProps && (
+                  <MoreOptions customized={lineCustomized}>
+                    {S.showLineSeriesProps && (
+                      <>
+                        <Row label={t.series.lineStyle}>
+                          <Segmented value={cfg.lineStyle ?? "solid"}
+                            onChange={(v) => updSeries(name, { lineStyle: v as never })}
+                            options={[
+                              { value: "solid", label: tc.lineStylesShort.solid },
+                              { value: "dashed", label: tc.lineStylesShort.dashed },
+                              { value: "dotted", label: tc.lineStylesShort.dotted },
+                            ]} />
+                        </Row>
+                        <Row label={tc.thickness}>
+                          <NumberStepper value={cfg.thickness ?? 2.5} min={0.5} max={8} step={0.5}
+                            onChange={(v) => updSeries(name, { thickness: v })} suffix="px" />
+                        </Row>
+                        <ToggleField label={t.series.smooth} value={cfg.smooth ?? false}
+                          onChange={(v) => updSeries(name, { smooth: v })} />
+                      </>
+                    )}
+                    {S.showArea && (
+                      <Row label={t.series.areaOpacity}>
+                        <Slider value={Math.round((cfg.areaOpacity ?? 0.35) * 100)}
+                          onChange={(v) => updSeries(name, { areaOpacity: v / 100 })} />
+                      </Row>
+                    )}
+                    {(ct === "line" || ct === "scatter" || ct === "combo") && (
+                      <>
+                        <Row label={t.series.marker}>
+                          <SelectField value={cfg.marker?.shape ?? "circle"}
+                            onChange={(v) => updSeries(name, {
+                              marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
+                                shape: v as never },
+                            })}
+                            options={[
+                              { value: "circle", label: t.series.markerShapes.circle },
+                              { value: "square", label: t.series.markerShapes.square },
+                              { value: "diamond", label: t.series.markerShapes.diamond },
+                              { value: "triangle", label: t.series.markerShapes.triangle },
+                            ]} />
+                        </Row>
+                        <Row label={t.series.markerSize}>
+                          <NumberStepper value={cfg.marker?.size ?? 3} min={0} max={12}
+                            onChange={(v) => updSeries(name, {
+                              marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
+                                size: v, show: v > 0 },
+                            })} suffix="px" />
+                        </Row>
+                        <Row label={t.series.markerColor}>
+                          <ColorField value={cfg.marker?.fill ?? cfg.color ?? DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
+                            onChange={(c) => updSeries(name, {
+                              marker: { ...(cfg.marker ?? { show: true, shape: "circle", size: 3 }),
+                                fill: c },
+                            })} />
+                        </Row>
+                      </>
+                    )}
+                  </MoreOptions>
+                )}
               </div>
             );
           })}
         </Section>
       )}
 
-      {/* ============================================================ */}
-      {/* Generic sections (Geral, Grade, Eixos) — moved to the bottom */}
-      {/* ============================================================ */}
-
-      {/* ===== General ===== */}
-      <Section title={t.general.title} onReset={() => resetPath("general")}>
-        <div>
-          <Label className="text-[12px] font-normal text-muted-foreground">{t.general.chartTitleLabel}</Label>
-          <DraftInput className="mt-1 h-8 text-[13px]" value={block.title ?? ""}
-            onCommit={(value) => onChange({ title: value })} />
-        </div>
-        <ToggleField label={t.general.showTitle} value={style.general.titleShow}
-          onChange={(v) => updPath("general", { titleShow: v })} />
-        <Row label={tc.titleSize}>
-          <NumberStepper value={style.general.titleSize} min={8} max={64}
-            onChange={(v) => updPath("general", { titleSize: v })} suffix="pt" />
-        </Row>
-        <Row label={tc.titleColor}>
-          <ColorField value={style.general.titleColor}
-            onChange={(c) => updPath("general", { titleColor: c })} />
-        </Row>
-        <ToggleField label={tc.bold} value={style.general.titleBold}
-          onChange={(v) => updPath("general", { titleBold: v })} />
-        <ToggleField label={tc.italic} value={style.general.titleItalic}
-          onChange={(v) => updPath("general", { titleItalic: v })} />
-        <Row label={t.general.background}>
-          <ColorField value={style.general.background} allowTransparent
-            onChange={(c) => updPath("general", { background: c })} />
-        </Row>
-        <Row label={tc.border}>
-          <ColorField value={style.general.borderColor}
-            onChange={(c) => updPath("general", { borderColor: c })} />
-        </Row>
-        <Row label={tc.borderWidth}>
-          <NumberStepper value={style.general.borderWidth} min={0} max={8}
-            onChange={(v) => updPath("general", { borderWidth: v })} suffix="px" />
-        </Row>
-        <Row label={t.general.padding}>
-          <NumberStepper value={style.general.padding} min={0} max={40}
-            onChange={(v) => updPath("general", { padding: v })} suffix="px" />
-        </Row>
-        <ToggleField label={t.general.showLegend} value={style.general.legendShow}
-          onChange={(v) => updPath("general", { legendShow: v })} />
-        <Row label={t.general.legendPosition}>
-          <SelectField value={style.general.legendPos}
-            onChange={(v) => updPath("general", { legendPos: v as never })}
-            options={[
-              { value: "top", label: t.general.legendPositions.top },
-              { value: "bottom", label: t.general.legendPositions.bottom },
-              { value: "left", label: t.general.legendPositions.left },
-              { value: "right", label: t.general.legendPositions.right },
-            ]} />
-        </Row>
+      {/* ===== Rótulos de dados =====
+          Desligados, só o interruptor aparece. Ligados: o essencial à vista
+          (tamanho, cor, posição, formato); acabamento em "Mais opções". */}
+      <Section title={t.dataLabels.title} onReset={() => resetPath("dataLabels")}>
+        <ToggleField label={t.dataLabels.show} value={style.dataLabels.show}
+          onChange={(v) => updPath("dataLabels", { show: v })} />
+        {style.dataLabels.show && (
+          <>
+            <Row label={t.dataLabels.size}>
+              <NumberStepper value={style.dataLabels.size} min={6} max={24}
+                onChange={(v) => updPath("dataLabels", { size: v })} suffix="pt" />
+            </Row>
+            <Row label={tc.color}><ColorField value={style.dataLabels.color}
+              onChange={(c) => updPath("dataLabels", { color: c })} /></Row>
+            {ct !== "histogram" && ct !== "boxplot" && (
+              <Row label={t.dataLabels.position}>
+                <SelectField value={ct === "funnel" ? (style.funnel.labelPos ?? "right") : style.dataLabels.position}
+                  onChange={(v) => ct === "funnel"
+                    ? updPath("funnel", { labelPos: v as never })
+                    : updPath("dataLabels", { position: v as never })}
+                  options={positionOptions(ct) as never} />
+              </Row>
+            )}
+            {ct !== "histogram" && (
+              <Row label={tc.format}>
+                <SelectField value={style.dataLabels.format}
+                  onChange={(v) => updPath("dataLabels", { format: v as never })}
+                  options={[
+                    { value: "auto", label: tc.formatOptions.auto },
+                    { value: "currency", label: tc.formatOptions.currency },
+                    { value: "percent", label: tc.formatOptions.percent },
+                    { value: "number", label: tc.formatOptions.number },
+                    { value: "tons", label: tc.formatOptions.tons },
+                  ]} />
+              </Row>
+            )}
+            <MoreOptions customized={changed("dataLabels", [
+              "bold", "italic", "decimals", "autoContrast", "showSeries", "showCategory",
+              "bgOpacity", "borderWidth",
+            ])}>
+              {ct !== "histogram" && (
+                <Row label={tc.decimals}>
+                  <NumberStepper value={style.dataLabels.decimals} min={0} max={4}
+                    onChange={(v) => updPath("dataLabels", { decimals: v })} />
+                </Row>
+              )}
+              <ToggleField label={tc.bold} value={style.dataLabels.bold}
+                onChange={(v) => updPath("dataLabels", { bold: v })} />
+              <ToggleField label={tc.italic} value={style.dataLabels.italic}
+                onChange={(v) => updPath("dataLabels", { italic: v })} />
+              <ToggleField label={t.dataLabels.autoContrast} value={style.dataLabels.autoContrast}
+                onChange={(v) => updPath("dataLabels", { autoContrast: v })} />
+              {ct !== "pie" && ct !== "donut" && (
+                <ToggleField label={t.dataLabels.showSeriesName} value={style.dataLabels.showSeries}
+                  onChange={(v) => updPath("dataLabels", { showSeries: v })} />
+              )}
+              <ToggleField label={t.dataLabels.showCategory} value={style.dataLabels.showCategory}
+                onChange={(v) => updPath("dataLabels", { showCategory: v })} />
+              <Row label={t.dataLabels.backgroundOpacity}>
+                <Slider value={Math.round(style.dataLabels.bgOpacity * 100)}
+                  onChange={(v) => updPath("dataLabels", { bgOpacity: v / 100 })} />
+              </Row>
+              {style.dataLabels.bgOpacity > 0 && (
+                <Row label={t.dataLabels.background}>
+                  <ColorField value={style.dataLabels.bgColor}
+                    onChange={(c) => updPath("dataLabels", { bgColor: c })} />
+                </Row>
+              )}
+              <Row label={tc.borderWidth}>
+                <NumberStepper value={style.dataLabels.borderWidth} min={0} max={5}
+                  onChange={(v) => updPath("dataLabels", { borderWidth: v })} suffix="px" />
+              </Row>
+              {style.dataLabels.borderWidth > 0 && (
+                <Row label={tc.borderColor}>
+                  <ColorField value={style.dataLabels.borderColor}
+                    onChange={(c) => updPath("dataLabels", { borderColor: c })} />
+                </Row>
+              )}
+            </MoreOptions>
+          </>
+        )}
       </Section>
 
-      {/* ===== Grid ===== */}
-      {S.showGrid && (
-        <Section title={t.grid.title} onReset={() => resetPath("grid")}>
-          <ToggleField label={t.grid.show} value={style.grid.show}
-            onChange={(v) => updPath("grid", { show: v })} />
-          <Row label={tc.color}><ColorField value={style.grid.color}
-            onChange={(c) => updPath("grid", { color: c })} /></Row>
-          <Row label={tc.style}>
-            <SelectField value={style.grid.style}
-              onChange={(v) => updPath("grid", { style: v as never })}
-              options={[{ value: "solid", label: tc.lineStyles.solid }, { value: "dashed", label: tc.lineStyles.dashed }]} />
+      {/* ===== Título e legenda (era "Geral") =====
+          À vista: o texto do título e a legenda. Tipografia do título,
+          fundo, borda e respiro ficam em "Mais opções". */}
+      <Section title={t.general.titleAndLegend} onReset={() => resetPath("general")}>
+        <ToggleField label={t.general.showTitle} value={style.general.titleShow}
+          onChange={(v) => updPath("general", { titleShow: v })} />
+        {style.general.titleShow && (
+          <DraftInput className="h-8 text-[13px]" value={block.title ?? ""}
+            aria-label={t.general.chartTitleLabel}
+            placeholder={t.general.chartTitleLabel}
+            onCommit={(value) => onChange({ title: value })} />
+        )}
+        <ToggleField label={t.general.showLegend} value={style.general.legendShow}
+          onChange={(v) => updPath("general", { legendShow: v })} />
+        {style.general.legendShow && (
+          <Row label={t.general.legendPosition}>
+            <SelectField value={style.general.legendPos}
+              onChange={(v) => updPath("general", { legendPos: v as never })}
+              options={[
+                { value: "top", label: t.general.legendPositions.top },
+                { value: "bottom", label: t.general.legendPositions.bottom },
+                { value: "left", label: t.general.legendPositions.left },
+                { value: "right", label: t.general.legendPositions.right },
+              ]} />
           </Row>
-        </Section>
-      )}
+        )}
+        <MoreOptions customized={changed("general", [
+          "titleSize", "titleColor", "titleBold", "titleItalic", "background", "borderWidth", "padding",
+        ])}>
+          {style.general.titleShow && (
+            <>
+              <Row label={tc.titleSize}>
+                <NumberStepper value={style.general.titleSize} min={8} max={64}
+                  onChange={(v) => updPath("general", { titleSize: v })} suffix="pt" />
+              </Row>
+              <Row label={tc.titleColor}>
+                <ColorField value={style.general.titleColor}
+                  onChange={(c) => updPath("general", { titleColor: c })} />
+              </Row>
+              <ToggleField label={tc.bold} value={style.general.titleBold}
+                onChange={(v) => updPath("general", { titleBold: v })} />
+              <ToggleField label={tc.italic} value={style.general.titleItalic}
+                onChange={(v) => updPath("general", { titleItalic: v })} />
+            </>
+          )}
+          <Row label={t.general.background}>
+            <ColorField value={style.general.background} allowTransparent
+              onChange={(c) => updPath("general", { background: c })} />
+          </Row>
+          <Row label={tc.borderWidth}>
+            <NumberStepper value={style.general.borderWidth} min={0} max={8}
+              onChange={(v) => updPath("general", { borderWidth: v })} suffix="px" />
+          </Row>
+          {style.general.borderWidth > 0 && (
+            <Row label={tc.borderColor}>
+              <ColorField value={style.general.borderColor}
+                onChange={(c) => updPath("general", { borderColor: c })} />
+            </Row>
+          )}
+          <Row label={t.general.padding}>
+            <NumberStepper value={style.general.padding} min={0} max={40}
+              onChange={(v) => updPath("general", { padding: v })} suffix="px" />
+          </Row>
+        </MoreOptions>
+      </Section>
 
-      {/* ===== Axes ===== */}
+      {/* ===== Eixos e grade — eram 3-4 seções sanfonadas separadas ===== */}
       {S.showAxes && (
-        <>
-          <AxisSection title={t.axis.titleX} axis={style.xAxis}
+        <Section title={S.showGrid ? t.axis.axesAndGrid : t.axis.axes}>
+          <AxisGroup title={t.axis.titleX} axis={style.xAxis} defaults={defaults.xAxis}
+            valueAxis={NUMERIC_X_TYPES.includes(ct)}
             onChange={(p) => updPath("xAxis", p)}
             onReset={() => resetPath("xAxis")} />
-          <AxisSection title={t.axis.titleY} axis={style.yAxis}
+          <AxisGroup title={t.axis.titleY} axis={style.yAxis} defaults={defaults.yAxis}
+            valueAxis={!CATEGORY_Y_TYPES.includes(ct)}
             onChange={(p) => updPath("yAxis", p)}
             onReset={() => resetPath("yAxis")} />
           {S.isCombo && (
-            <AxisSection title={t.axis.titleY2} axis={style.yAxis2!}
+            <AxisGroup title={t.axis.titleY2} axis={style.yAxis2!} defaults={defaults.yAxis2!}
+              valueAxis
               onChange={(p) => updPath("yAxis2", p)}
               onReset={() => resetPath("yAxis2")} />
           )}
-        </>
+          {S.showGrid && (
+            <SubGroup title={t.grid.title} onReset={() => resetPath("grid")}>
+              <ToggleField label={t.grid.show} value={style.grid.show}
+                onChange={(v) => updPath("grid", { show: v })} />
+              {style.grid.show && (
+                <>
+                  <Row label={tc.color}><ColorField value={style.grid.color}
+                    onChange={(c) => updPath("grid", { color: c })} /></Row>
+                  <Row label={tc.style}>
+                    <Segmented value={style.grid.style}
+                      onChange={(v) => updPath("grid", { style: v as never })}
+                      options={[{ value: "solid", label: tc.lineStylesShort.solid }, { value: "dashed", label: tc.lineStylesShort.dashed }]} />
+                  </Row>
+                </>
+              )}
+            </SubGroup>
+          )}
+        </Section>
       )}
 
-      {/* ============================ ANÁLISES ============================ */}
-      {/* B.2 — Conditional formatting. Pizza/Rosca entraram aqui porque já
-          tinham a infraestrutura de "cor por fatia" (style.pie.slices) —
-          faltava só ligar a regra condicional como alternativa/fallback à
-          cor manual, não construir do zero (ver ChartCanvas.tsx). */}
-      {["bar", "column", "hbar", "waterfall", "treemap", "pie", "donut"].includes(ct) && (
-        <ConditionalSection
-          rules={style.conditionalRules ?? []}
-          defaultColor={style.conditionalDefault ?? ""}
-          onRules={(rules) => updStyle({ conditionalRules: rules })}
-          onDefault={(c) => updStyle({ conditionalDefault: c })} />
-      )}
-
-      {/* B.1 — Analytics (refLines/trendline/forecast) */}
-      {["line", "area", "combo", "bar", "column", "hbar", "scatter", "bubble"].includes(ct) && (
-        <AnalyticsSection
-          analytics={style.analytics!}
-          onChange={(p) => updPath("analytics", p as never)} />
-      )}
-      {!["bar", "column", "hbar", "waterfall", "treemap", "line", "area", "combo", "scatter", "bubble", "pie", "donut"].includes(ct) && (
-        <div className="rounded-lg border border-dashed border-border/60 p-6 text-center text-[12px] text-muted-foreground">
-          {t.analytics.noneAvailable}
-        </div>
-      )}
+      {/* ===== Avançado =====
+          Formatação condicional, análises (referência/tendência/projeção) e
+          interatividade eram 3 seções sempre listadas; uso raro, então
+          moram juntas numa só. O cartão "Sem análises disponíveis" saiu:
+          avisar que algo não existe só ocupava espaço. */}
+      <Section title={t.advanced}>
+        {/* B.2 — Pizza/Rosca entraram aqui porque já tinham a
+            infraestrutura de "cor por fatia" (style.pie.slices) — faltava
+            só ligar a regra condicional como alternativa à cor manual. */}
+        {["bar", "column", "hbar", "waterfall", "treemap", "pie", "donut"].includes(ct) && (
+          <ConditionalSection
+            rules={style.conditionalRules ?? []}
+            defaultColor={style.conditionalDefault ?? ""}
+            onRules={(rules) => updStyle({ conditionalRules: rules })}
+            onDefault={(c) => updStyle({ conditionalDefault: c })} />
+        )}
+        {["line", "area", "combo", "bar", "column", "hbar", "scatter", "bubble"].includes(ct) && (
+          <AnalyticsSection
+            analytics={style.analytics!}
+            onChange={(p) => updPath("analytics", p as never)} />
+        )}
+        {/* Interatividade vale só na apresentação ao vivo. */}
+        <SubGroup title={t.interactivity.title}>
+          <ToggleField label={t.interactivity.emitFilter}
+            value={block.emitsCrossFilter !== false}
+            onChange={(v) => onChange({ emitsCrossFilter: v })} />
+          <ToggleField label={t.interactivity.receiveFilter}
+            value={block.participatesInCrossFilter !== false}
+            onChange={(v) => onChange({ participatesInCrossFilter: v })} />
+        </SubGroup>
+      </Section>
       </div>
     </div>
   );
@@ -1573,7 +1691,7 @@ function AnalyticsSection({ analytics, onChange }: {
   };
 
   return (
-    <Section title={t.analytics.title}>
+    <SubGroup title={t.analytics.title}>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label className="text-[12px] font-medium text-muted-foreground">{t.analytics.refLines.title}</Label>
@@ -1601,26 +1719,28 @@ function AnalyticsSection({ analytics, onChange }: {
                 onCommit={(value) => updRef(i, { label: value })} />
             </Row>
             <Row label={tc.color}><ColorField value={rl.color} onChange={(c) => updRef(i, { color: c })} /></Row>
-            <Row label={tc.style}>
-              <Segmented value={rl.style} onChange={(v) => updRef(i, { style: v as never })}
-                options={[
-                  { value: "solid", label: tc.lineStylesShort.solid },
-                  { value: "dashed", label: tc.lineStylesShort.dashed },
-                  { value: "dotted", label: tc.lineStylesShort.dotted },
-                ]} />
-            </Row>
-            <Row label={tc.thickness}>
-              <NumberStepper value={rl.thickness} min={0.5} max={6} step={0.5}
-                onChange={(v) => updRef(i, { thickness: v })} suffix="px" />
-            </Row>
+            <MoreOptions customized={rl.style !== "dashed" || rl.thickness !== 1.5}>
+              <Row label={tc.style}>
+                <Segmented value={rl.style} onChange={(v) => updRef(i, { style: v as never })}
+                  options={[
+                    { value: "solid", label: tc.lineStylesShort.solid },
+                    { value: "dashed", label: tc.lineStylesShort.dashed },
+                    { value: "dotted", label: tc.lineStylesShort.dotted },
+                  ]} />
+              </Row>
+              <Row label={tc.thickness}>
+                <NumberStepper value={rl.thickness} min={0.5} max={6} step={0.5}
+                  onChange={(v) => updRef(i, { thickness: v })} suffix="px" />
+              </Row>
+            </MoreOptions>
           </div>
         ))}
       </div>
 
       <div className="mt-2 space-y-1.5 rounded border border-border/30 p-2.5">
-        <div className="text-[12px] font-medium text-muted-foreground">{t.analytics.trend.title}</div>
-        <ToggleField label={tc.enable} value={trend.enabled}
+        <ToggleField label={t.analytics.trend.title} value={trend.enabled}
           onChange={(v) => onChange({ trendline: { ...trend, enabled: v } })} />
+        {trend.enabled && (<>
         <Row label={t.analytics.trend.type}>
           <SelectField value={trend.type}
             onChange={(v) => onChange({ trendline: { ...trend, type: v as never } })}
@@ -1638,35 +1758,41 @@ function AnalyticsSection({ analytics, onChange }: {
         )}
         <Row label={tc.color}><ColorField value={trend.color}
           onChange={(c) => onChange({ trendline: { ...trend, color: c } })} /></Row>
-        <Row label={tc.thickness}>
-          <NumberStepper value={trend.thickness} min={0.5} max={6} step={0.5}
-            onChange={(v) => onChange({ trendline: { ...trend, thickness: v } })} suffix="px" />
-        </Row>
-        <Row label={tc.style}>
-          <Segmented value={trend.style}
-            onChange={(v) => onChange({ trendline: { ...trend, style: v as never } })}
-            options={[
-              { value: "solid", label: tc.lineStylesShort.solid },
-              { value: "dashed", label: tc.lineStylesShort.dashed },
-              { value: "dotted", label: tc.lineStylesShort.dotted },
-            ]} />
-        </Row>
         <ToggleField label={t.analytics.trend.showR2} value={trend.showR2}
           onChange={(v) => onChange({ trendline: { ...trend, showR2: v } })} />
+        <MoreOptions customized={trend.thickness !== 2 || trend.style !== "dashed"}>
+          <Row label={tc.thickness}>
+            <NumberStepper value={trend.thickness} min={0.5} max={6} step={0.5}
+              onChange={(v) => onChange({ trendline: { ...trend, thickness: v } })} suffix="px" />
+          </Row>
+          <Row label={tc.style}>
+            <Segmented value={trend.style}
+              onChange={(v) => onChange({ trendline: { ...trend, style: v as never } })}
+              options={[
+                { value: "solid", label: tc.lineStylesShort.solid },
+                { value: "dashed", label: tc.lineStylesShort.dashed },
+                { value: "dotted", label: tc.lineStylesShort.dotted },
+              ]} />
+          </Row>
+        </MoreOptions>
+        </>)}
       </div>
 
       <div className="mt-2 space-y-1.5 rounded border border-border/30 p-2.5">
-        <div className="text-[12px] font-medium text-muted-foreground">{t.analytics.forecast.title}</div>
-        <ToggleField label={tc.enable} value={fc.enabled}
+        <ToggleField label={t.analytics.forecast.title} value={fc.enabled}
           onChange={(v) => onChange({ forecast: { ...fc, enabled: v } })} />
-        <Row label={t.analytics.forecast.periodsAhead}>
-          <NumberStepper value={fc.periods} min={1} max={6}
-            onChange={(v) => onChange({ forecast: { ...fc, periods: v } })} />
-        </Row>
-        <ToggleField label={t.analytics.forecast.confidenceBand} value={fc.band}
-          onChange={(v) => onChange({ forecast: { ...fc, band: v } })} />
+        {fc.enabled && (
+          <>
+            <Row label={t.analytics.forecast.periodsAhead}>
+              <NumberStepper value={fc.periods} min={1} max={6}
+                onChange={(v) => onChange({ forecast: { ...fc, periods: v } })} />
+            </Row>
+            <ToggleField label={t.analytics.forecast.confidenceBand} value={fc.band}
+              onChange={(v) => onChange({ forecast: { ...fc, band: v } })} />
+          </>
+        )}
       </div>
-    </Section>
+    </SubGroup>
   );
 }
 
@@ -1693,7 +1819,7 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
   };
 
   return (
-    <Section title={t.conditional.title}>
+    <SubGroup title={t.conditional.title}>
       <div className="flex items-center justify-between">
         <Label className="text-[12px] font-medium text-muted-foreground">{t.conditional.rules}</Label>
         <button type="button" onClick={add} disabled={rules.length >= 5}
@@ -1748,7 +1874,7 @@ function ConditionalSection({ rules, defaultColor, onRules, onDefault }: {
       <Row label={t.conditional.defaultColor}>
         <ColorField value={defaultColor || SLIDE_HEX.slate400} onChange={onDefault} />
       </Row>
-    </Section>
+    </SubGroup>
   );
 }
 
@@ -1913,71 +2039,100 @@ function BridgeColumnBuilder({ block, value, setValue, dsRows }: {
   );
 }
 
-function AxisSection({ title, axis, onChange, onReset }: {
+/** Eixo de valores mostra escala (mín/máx/formato); eixo de categorias não —
+ *  lá esses campos não tinham efeito nenhum no desenho. Desligado, só o
+ *  interruptor aparece. */
+function AxisGroup({ title, axis, defaults, valueAxis, onChange, onReset }: {
   title: string;
   axis: ChartStyle["xAxis"];
+  defaults: ChartStyle["xAxis"];
+  valueAxis: boolean;
   onChange: (p: Partial<ChartStyle["xAxis"]>) => void;
   onReset: () => void;
 }) {
+  const fine: (keyof ChartStyle["xAxis"])[] = [
+    "titleSize", "titleColor", "labelSize", "labelColor", "lineColor", "lineWidth", "ticks",
+    ...(valueAxis ? (["decimals"] as const) : []),
+  ];
+  const customized = fine.some((f) => axis[f] !== defaults[f]);
   return (
-    <Section title={title} onReset={onReset}>
+    <SubGroup title={title} onReset={onReset}>
       <ToggleField label={t.axis.show} value={axis.show}
         onChange={(v) => onChange({ show: v })} />
-      <div className="space-y-1">
-        <Label className="text-[12px] font-medium text-muted-foreground">{t.axis.axisTitle}</Label>
-        <DraftInput className="h-8 text-[13px]" value={axis.titleText}
-          onCommit={(value) => onChange({ titleText: value })} />
-      </div>
-      <Row label={tc.titleSize}>
-        <NumberStepper value={axis.titleSize} min={6} max={24}
-          onChange={(v) => onChange({ titleSize: v })} suffix="pt" />
-      </Row>
-      <Row label={tc.titleColor}>
-        <ColorField value={axis.titleColor}
-          onChange={(c) => onChange({ titleColor: c })} />
-      </Row>
-      <Row label={t.axis.labelSize}>
-        <NumberStepper value={axis.labelSize} min={6} max={24}
-          onChange={(v) => onChange({ labelSize: v })} suffix="pt" />
-      </Row>
-      <Row label={t.axis.labelColor}><ColorField value={axis.labelColor}
-        onChange={(c) => onChange({ labelColor: c })} /></Row>
-      <Row label={t.axis.lineColor}><ColorField value={axis.lineColor}
-        onChange={(c) => onChange({ lineColor: c })} /></Row>
-      <Row label={t.axis.lineWidth}>
-        <NumberStepper value={axis.lineWidth} min={0} max={5}
-          onChange={(v) => onChange({ lineWidth: v })} suffix="px" />
-      </Row>
-      <ToggleField label={t.axis.ticks} value={axis.ticks}
-        onChange={(v) => onChange({ ticks: v })} />
-      <Row label={t.axis.min}>
-        <DraftNumberInput className="h-8 text-[13px]"
-          value={axis.min ?? null} placeholder="auto"
-          fallback={null}
-          onCommit={(value) => onChange({ min: value })} />
-      </Row>
-      <Row label={t.axis.max}>
-        <DraftNumberInput className="h-8 text-[13px]"
-          value={axis.max ?? null} placeholder="auto"
-          fallback={null}
-          onCommit={(value) => onChange({ max: value })} />
-      </Row>
-      <Row label={tc.format}>
-        <SelectField value={axis.format}
-          onChange={(v) => onChange({ format: v as never })}
-          options={[
-            { value: "auto", label: tc.formatOptions.auto },
-            { value: "currency", label: tc.formatOptions.currency },
-            { value: "percent", label: tc.formatOptions.percent },
-            { value: "number", label: tc.formatOptions.number },
-            { value: "tons", label: tc.formatOptions.tons },
-          ]} />
-      </Row>
-      <Row label={tc.decimals}>
-        <NumberStepper value={axis.decimals} min={0} max={4}
-          onChange={(v) => onChange({ decimals: v })} />
-      </Row>
-    </Section>
+      {axis.show && (
+        <>
+          <Row label={t.axis.axisTitle}>
+            <DraftInput className="h-8 text-[13px]" value={axis.titleText}
+              placeholder={t.axis.noTitle}
+              onCommit={(value) => onChange({ titleText: value })} />
+          </Row>
+          {valueAxis && (
+            <>
+              <Row label={t.axis.range}>
+                <div className="flex items-center gap-1">
+                  <DraftNumberInput className="h-8 min-w-0 text-[13px]" aria-label={t.axis.min}
+                    value={axis.min ?? null} placeholder={t.axis.minPlaceholder}
+                    fallback={null}
+                    onCommit={(value) => onChange({ min: value })} />
+                  <span className="text-[11px] text-muted-foreground">–</span>
+                  <DraftNumberInput className="h-8 min-w-0 text-[13px]" aria-label={t.axis.max}
+                    value={axis.max ?? null} placeholder={t.axis.maxPlaceholder}
+                    fallback={null}
+                    onCommit={(value) => onChange({ max: value })} />
+                </div>
+              </Row>
+              <Row label={tc.format}>
+                <SelectField value={axis.format}
+                  onChange={(v) => onChange({ format: v as never })}
+                  options={[
+                    { value: "auto", label: tc.formatOptions.auto },
+                    { value: "currency", label: tc.formatOptions.currency },
+                    { value: "percent", label: tc.formatOptions.percent },
+                    { value: "number", label: tc.formatOptions.number },
+                    { value: "tons", label: tc.formatOptions.tons },
+                  ]} />
+              </Row>
+            </>
+          )}
+          <MoreOptions customized={customized}>
+            {axis.titleText && (
+              <>
+                <Row label={tc.titleSize}>
+                  <NumberStepper value={axis.titleSize} min={6} max={24}
+                    onChange={(v) => onChange({ titleSize: v })} suffix="pt" />
+                </Row>
+                <Row label={tc.titleColor}>
+                  <ColorField value={axis.titleColor}
+                    onChange={(c) => onChange({ titleColor: c })} />
+                </Row>
+              </>
+            )}
+            <Row label={t.axis.labelSize}>
+              <NumberStepper value={axis.labelSize} min={6} max={24}
+                onChange={(v) => onChange({ labelSize: v })} suffix="pt" />
+            </Row>
+            <Row label={t.axis.labelColor}><ColorField value={axis.labelColor}
+              onChange={(c) => onChange({ labelColor: c })} /></Row>
+            {valueAxis && (
+              <Row label={tc.decimals}>
+                <NumberStepper value={axis.decimals} min={0} max={4}
+                  onChange={(v) => onChange({ decimals: v })} />
+              </Row>
+            )}
+            <Row label={t.axis.lineWidth}>
+              <NumberStepper value={axis.lineWidth} min={0} max={5}
+                onChange={(v) => onChange({ lineWidth: v })} suffix="px" />
+            </Row>
+            {axis.lineWidth > 0 && (
+              <Row label={t.axis.lineColor}><ColorField value={axis.lineColor}
+                onChange={(c) => onChange({ lineColor: c })} /></Row>
+            )}
+            <ToggleField label={t.axis.ticks} value={axis.ticks}
+              onChange={(v) => onChange({ ticks: v })} />
+          </MoreOptions>
+        </>
+      )}
+    </SubGroup>
   );
 }
 

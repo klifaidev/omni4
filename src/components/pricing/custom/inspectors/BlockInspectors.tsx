@@ -42,7 +42,7 @@ import {
   AlignRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField } from "../chart/Inspector";
+import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField, MoreOptions } from "../chart/Inspector";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { BlockFilters } from "../BlockFilters";
 import { ShapeInspector } from "../ShapeInspector";
@@ -803,19 +803,23 @@ function KpiInspector({ block, onChange }: {
               </p>
             )}
           </div>
+          {/* Correção da base (volume em toneladas): rara, e só depende da
+              base — fica guardada, abrindo sozinha se estiver em uso. */}
           {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.volumeUnit}</Label>
-              <Segmented
-                value={block.volumeUnit ?? "kg"}
-                onChange={(v) => onChange({ volumeUnit: v as never } as never)}
-                options={[
-                  { value: "kg", label: t.kpi.volumeUnitOptions.kg },
-                  { value: "ton", label: t.kpi.volumeUnitOptions.ton },
-                ]}
-              />
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
-            </div>
+            <MoreOptions customized={block.volumeUnit === "ton"}>
+              <div>
+                <Label className="text-[10px] uppercase text-muted-foreground">{t.kpi.volumeUnit}</Label>
+                <Segmented
+                  value={block.volumeUnit ?? "kg"}
+                  onChange={(v) => onChange({ volumeUnit: v as never } as never)}
+                  options={[
+                    { value: "kg", label: t.kpi.volumeUnitOptions.kg },
+                    { value: "ton", label: t.kpi.volumeUnitOptions.ton },
+                  ]}
+                />
+                <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
+              </div>
+            </MoreOptions>
           )}
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -1945,6 +1949,9 @@ function SliderWithInput({
   );
 }
 
+/** Sombra suave, legível sobre foto ou cor — o que o interruptor liga. */
+const TEXT_SHADOW_PRESET = "0 2px 6px rgba(0,0,0,0.35)";
+
 function TextTitleInspector({ block, onChange }: {
   block: TitleBlock | TextBlock;
   onChange: (patch: Partial<TitleBlock | TextBlock>) => void;
@@ -2001,26 +2008,30 @@ function TextTitleInspector({ block, onChange }: {
           onChange={(v) => onChange({ bold: v })} />
         <ToggleField label={t.textTitle.italic} value={block.italic ?? false}
           onChange={(v) => onChange({ italic: v })} />
-        <Row label={t.textTitle.transform}>
-          <Segmented
-            value={block.textTransform ?? "none"}
-            onChange={(v) => onChange({ textTransform: v as TitleBlock["textTransform"] })}
-            options={[
-              { value: "none", label: t.textTitle.transformOptions.none },
-              { value: "uppercase", label: t.textTitle.transformOptions.uppercase },
-              { value: "lowercase", label: t.textTitle.transformOptions.lowercase },
-              { value: "capitalize", label: t.textTitle.transformOptions.capitalize },
-            ]}
-          />
-        </Row>
-        <Row label={t.textTitle.letterSpacing}>
-          <SliderWithInput value={block.letterSpacing ?? 0} min={-0.1} max={0.5} step={0.01} unit="em"
-            onChange={(v) => onChange({ letterSpacing: v })} />
-        </Row>
-        <Row label={t.textTitle.lineHeight}>
-          <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="x"
-            onChange={(v) => onChange({ lineHeight: v })} />
-        </Row>
+        {/* Caixa, espaçamento entre letras e entrelinha: acabamento fino. */}
+        <MoreOptions customized={(block.textTransform ?? "none") !== "none"
+          || (block.letterSpacing ?? 0) !== 0 || block.lineHeight !== undefined}>
+          <Row label={t.textTitle.transform}>
+            <Segmented
+              value={block.textTransform ?? "none"}
+              onChange={(v) => onChange({ textTransform: v as TitleBlock["textTransform"] })}
+              options={[
+                { value: "none", label: t.textTitle.transformOptions.none },
+                { value: "uppercase", label: t.textTitle.transformOptions.uppercase },
+                { value: "lowercase", label: t.textTitle.transformOptions.lowercase },
+                { value: "capitalize", label: t.textTitle.transformOptions.capitalize },
+              ]}
+            />
+          </Row>
+          <Row label={t.textTitle.letterSpacing}>
+            <SliderWithInput value={Math.round((block.letterSpacing ?? 0) * 100)} min={-10} max={50} unit="%"
+              onChange={(v) => onChange({ letterSpacing: v / 100 })} />
+          </Row>
+          <Row label={t.textTitle.lineHeight}>
+            <SliderWithInput value={block.lineHeight ?? (isTitle ? 1.1 : 1.3)} min={0.8} max={3} step={0.05} unit="x"
+              onChange={(v) => onChange({ lineHeight: v })} />
+          </Row>
+        </MoreOptions>
       </Section>
 
       <Section title={t.textTitle.rotationSection} defaultOpen={false}>
@@ -2037,20 +2048,21 @@ function TextTitleInspector({ block, onChange }: {
       </Section>
 
       <Section title={t.textTitle.appearance} defaultOpen={false}>
-        <Row label={t.textTitle.textShadow}>
-          <DraftInput className="h-7 text-xs" placeholder="2px 2px 4px #000000"
-            value={block.textShadow ?? ""}
-            onCommit={(value) => onChange({ textShadow: value })} />
+        {/* Antes: CSS cru ("2px 2px 4px #000000") e fundo digitado em hex.
+            Agora um interruptor e o seletor de cor de sempre. Uma sombra
+            personalizada antiga continua valendo (o interruptor fica ligado). */}
+        <ToggleField label={t.textTitle.textShadow} value={!!block.textShadow}
+          onChange={(v) => onChange({ textShadow: v ? TEXT_SHADOW_PRESET : "" })} />
+        <Row label={t.textTitle.background}>
+          <ColorField allowTransparent
+            value={block.backgroundColor ? `#${block.backgroundColor}` : "transparent"}
+            onChange={(c) => onChange({
+              backgroundColor: c === "transparent" ? undefined : c.replace("#", "").toUpperCase(),
+            })} />
         </Row>
         <Row label={t.textTitle.padding}>
           <SliderWithInput value={block.padding ?? 0} min={0} max={60} unit="px"
             onChange={(v) => onChange({ padding: v })} />
-        </Row>
-        <Row label={t.textTitle.backgroundHex}>
-          <DraftInput className="h-7 text-xs" placeholder="transparent"
-            value={block.backgroundColor ?? ""}
-            normalize={(value) => value.replace("#", "").toUpperCase()}
-            onCommit={(value) => onChange({ backgroundColor: value || undefined })} />
         </Row>
         <Row label={t.textTitle.borderRadius}>
           <SliderWithInput value={block.borderRadius ?? 0} min={0} max={40} unit="px"
