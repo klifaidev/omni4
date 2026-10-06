@@ -1268,6 +1268,7 @@ export const ptBR = {
           emptyStateLine3Suffix: "e clique para selecionar vários blocos. Arraste no fundo para selecionar com retângulo.",
           lockedBadge: "Bloqueado",
           blockHint: "Configure o bloco aqui. Ações rápidas como duplicar, camadas e excluir ficam na toolbar sobre o bloco.",
+          chartPartHint: "Dica: dê dois cliques no título, na legenda, num eixo ou numa barra do gráfico para ir direto ao ajuste daquela parte.",
         },
         saveTemplateDialog: {
           title: "Salvar modelo",

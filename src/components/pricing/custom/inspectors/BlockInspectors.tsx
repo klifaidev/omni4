@@ -50,6 +50,7 @@ import { BlockFilters } from "../BlockFilters";
 import { ShapeInspector } from "../ShapeInspector";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "../DraftInput";
 import { ChartInspector } from "../chart/ChartInspector";
+import { useChartPartFocusRequested } from "../chart/chartPartFocus";
 import { CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS } from "../BlockRenderer";
 import { useMonthsInfo, useFyList } from "@/store/selectors";
 import { useBudget } from "@/store/budget";
@@ -560,6 +561,8 @@ function FilteredInspector({
   useEffect(() => {
     if (styleFocusRequest) setActiveTab("design");
   }, [styleFocusRequest]);
+  // Duplo clique numa parte do gráfico: a seção mora na aba Design.
+  useChartPartFocusRequested(block.id, () => setActiveTab("design"));
 
   const applySwitch = (next: BlockDataSource) => {
     if (next === ds) return;

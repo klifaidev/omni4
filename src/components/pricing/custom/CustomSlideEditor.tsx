@@ -63,6 +63,7 @@ import { registerCustomCanvas } from "@/lib/customCanvasRegistry";
 import { saveUserTemplate } from "@/lib/customTemplates";
 import { TemplatePicker } from "./templates/TemplatePicker";
 import { ShapeInspector } from "./ShapeInspector";
+import { chartPartFromTarget, requestChartPartFocus } from "./chart/chartPartFocus";
 import {
   BgField,
   BlockAppearanceControls,
@@ -301,7 +302,7 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
         </CollapsibleContent>
       </Collapsible>
       <p className="slides-type-helper">
-        {t.inspector.blockHint}
+        {block.kind === "chart" ? t.inspector.chartPartHint : t.inspector.blockHint}
       </p>
     </div>
   );
@@ -609,6 +610,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     registerCustomCanvas(slideId, canvasRef.current);
     return () => registerCustomCanvas(slideId, null);
   }, [slideId]);
+
+  // "Clicar no que quer mudar": duplo clique numa parte de um gráfico abre
+  // a seção do painel que formata aquela parte (título, legenda, eixos…).
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || readOnly) return;
+    const onDblClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const blockEl = target?.closest<HTMLElement>('[data-block-kind="chart"]');
+      const id = blockEl?.getAttribute("data-block-id");
+      if (!id) return;
+      requestChartPartFocus(id, chartPartFromTarget(target));
+    };
+    el.addEventListener("dblclick", onDblClick);
+    return () => el.removeEventListener("dblclick", onDblClick);
+  }, [readOnly]);
 
   scaleRef.current = scale;
   // Zoom mostrado como tamanho real (58% num notebook), não relativo ao

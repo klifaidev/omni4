@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ChartTypePicker } from "./ChartTypePicker";
+import { useChartPartFocus } from "./chartPartFocus";
 import { usePricing } from "@/store/pricing";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -396,6 +397,31 @@ export function ChartInspector({
       title: defaultChartTitle(next.chartType ?? block.chartType, next.measure ?? block.measure),
     } as Patch;
   };
+
+  // Duplo clique numa parte do gráfico no slide → abre a seção dela aqui.
+  useChartPartFocus(block.id, (part) => {
+    const typeSection = ({
+      pie: t.pie.title, donut: t.pie.title, funnel: t.funnel.title, treemap: t.treemap.title,
+      waterfall: t.waterfall.title, mapaBrasil: t.mapaBrasil.title, histogram: t.histogram.title,
+      boxplot: t.boxplot.title,
+    } as Partial<Record<ChartBlock["chartType"], string>>)[ct];
+    const title = part === "title" || part === "legend" ? t.general.titleAndLegend
+      : part === "axes" ? (S.showGrid ? t.axis.axesAndGrid : t.axis.axes)
+      : part === "dataLabels" ? t.dataLabels.title
+      : part === "series" ? (S.showSeries ? t.series.title : typeSection ?? t.dataSection.title)
+      : t.dataSection.title;
+    const root = sectionsRef.current;
+    const toggle = root && Array.from(root.querySelectorAll<HTMLButtonElement>('[data-inspector-section-toggle="true"]'))
+      .find((b) => b.innerText.trim() === title);
+    if (!toggle) return;
+    if (toggle.getAttribute("aria-expanded") === "false") toggle.click();
+    const section = toggle.closest<HTMLElement>(".surface-raised");
+    requestAnimationFrame(() => {
+      section?.scrollIntoView({ behavior: "smooth", block: "start" });
+      section?.classList.add("ring-2", "ring-primary/60");
+      window.setTimeout(() => section?.classList.remove("ring-2", "ring-primary/60"), 1200);
+    });
+  });
 
   const dimOptions: { value: string; label: string }[] = block.measure === "positivacao"
     ? POSITIVACAO_BREAKDOWN_OPTIONS

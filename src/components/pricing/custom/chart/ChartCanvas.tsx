@@ -2064,7 +2064,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         </div>
       )}
       {style.general.titleShow && block.title && (
-        <div style={{
+        <div data-chart-part="title" style={{
           fontSize: style.general.titleSize, color: style.general.titleColor,
           fontWeight: style.general.titleBold ? 700 : 500,
           fontStyle: style.general.titleItalic ? "italic" : "normal",
