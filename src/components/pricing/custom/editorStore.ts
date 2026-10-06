@@ -1232,7 +1232,31 @@ export function canPasteElementStyleAction(blockId: string): boolean {
 
 export function pasteElementStyleAction(blockId: string): boolean {
   if (!_copiedElementStyle || !canPasteElementStyleAction(blockId)) return false;
-  patchBlockAction(blockId, cloneValue(_copiedElementStyle.patch), "Colar estilo");
+  const patch = cloneValue(_copiedElementStyle.patch) as Partial<CustomBlock>;
+  const target = baseStore.getState().config?.blocks.find((b) => b.id === blockId);
+  // Gráfico: `style` também guarda escolhas de DADO (medida da linha do
+  // combo, medidas X/Y da dispersão, montagem da ponte). O pincel leva só o
+  // visual — esses campos ficam como estavam no gráfico de destino.
+  if (target?.kind === "chart" && "style" in patch && patch.style) {
+    const from = patch.style as Record<string, unknown>;
+    const own = ((target as Extract<CustomBlock, { kind: "chart" }>).style ?? {}) as Record<string, unknown>;
+    const ownWaterfall = (own.waterfall ?? {}) as Record<string, unknown>;
+    const fromWaterfall = (from.waterfall ?? {}) as Record<string, unknown>;
+    (patch as { style: unknown }).style = {
+      ...from,
+      measureLine: own.measureLine,
+      measureX: own.measureX,
+      measureY: own.measureY,
+      ...(from.waterfall || own.waterfall ? {
+        waterfall: {
+          ...fromWaterfall,
+          mode: ownWaterfall.mode, pvm: ownWaterfall.pvm,
+          columns: ownWaterfall.columns, classify: ownWaterfall.classify ?? {},
+        },
+      } : {}),
+    };
+  }
+  patchBlockAction(blockId, patch, "Colar estilo");
   return true;
 }
 

@@ -31,7 +31,7 @@ import {
   AlignStartVertical, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
-  Play, Paintbrush, Search, Star, StickyNote,
+  Play, Paintbrush, PaintRoller, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Loader2, Minus, MoreHorizontal,
   PanelRightClose, PanelRightOpen, Globe2 as Globe2Icon,
 } from "lucide-react";
@@ -610,6 +610,25 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     registerCustomCanvas(slideId, canvasRef.current);
     return () => registerCustomCanvas(slideId, null);
   }, [slideId]);
+
+  // Pincel de estilo: copia o estilo do bloco selecionado e aplica no
+  // próximo bloco clicado (antes só existia escondido no botão direito).
+  const [painterSourceId, setPainterSourceId] = useState<string | null>(null);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (el) el.dataset.stylePainter = painterSourceId ? "on" : "off";
+    if (!painterSourceId) return;
+    // Esc só desarma o pincel — não deve também tirar a seleção ou fechar o
+    // editor (que é o que o Esc faz nas outras camadas).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setPainterSourceId(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [painterSourceId]);
 
   // "Clicar no que quer mudar": duplo clique numa parte de um gráfico abre
   // a seção do painel que formata aquela parte (título, legenda, eixos…).
@@ -2493,6 +2512,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onGestureEnd={blockFrameHandlers.onGestureEnd}
                         onSelect={(additive) => {
                           const wasSelected = selectedIds.includes(blk.id);
+                          if (painterSourceId && blk.id !== painterSourceId && !additive) {
+                            if (canPasteElementStyleAction(blk.id)) {
+                              if (canEdit() && pasteElementStyleAction(blk.id)) toast.success(t.toasts.stylePasted);
+                            } else {
+                              toast(t.toasts.painterOtherKind, { duration: 2200 });
+                            }
+                            setPainterSourceId(null);
+                          }
                           selectBlock(blk.id, { additive: !!additive });
                           if (inlineEditId && inlineEditId !== blk.id) setInlineEditId(null);
                           if (blk.locked && wasSelected && !additive) {
@@ -2671,6 +2698,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 onToBack={() => sendToBack(selected.id)}
                 onToggleLock={() => toggleLock(selected.id)}
                 onStyle={focusSelectedBlockStyle}
+                painterActive={painterSourceId === selected.id}
+                onPaint={() => {
+                  if (painterSourceId === selected.id) { setPainterSourceId(null); return; }
+                  if (copyElementStyleAction(selected.id)) {
+                    setPainterSourceId(selected.id);
+                    toast(t.toasts.painterArmed, { duration: 2600 });
+                  }
+                }}
               />
               )}
 
@@ -3146,6 +3181,8 @@ function FloatingBlockToolbar({
   onToBack,
   onToggleLock,
   onStyle,
+  onPaint,
+  painterActive,
 }: {
   block: CustomBlock;
   onDuplicate: () => void;
@@ -3156,8 +3193,10 @@ function FloatingBlockToolbar({
   onToBack: () => void;
   onToggleLock: () => void;
   onStyle: () => void;
+  onPaint: () => void;
+  painterActive: boolean;
 }) {
-  const toolbarW = 334;
+  const toolbarW = 366;
   const x = Math.min(Math.max(block.x + block.w / 2 - toolbarW / 2, 8), CANVAS_W - toolbarW - 8);
   const y = block.y < 52 ? Math.min(block.y + block.h + 10, CANVAS_H - 44) : block.y - 46;
   const iconButton = (label: string, onClick: () => void, icon: ReactNode) => (
@@ -3181,6 +3220,16 @@ function FloatingBlockToolbar({
       aria-label={t.floatingToolbar.ariaLabel}
     >
       {iconButton(t.floatingToolbar.editStyle, onStyle, <Paintbrush className="h-3.5 w-3.5" />)}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button size="icon" variant={painterActive ? "default" : "ghost"} className="h-7 w-7"
+            onClick={onPaint} title={t.floatingToolbar.stylePainter} aria-label={t.floatingToolbar.stylePainter}
+            aria-pressed={painterActive}>
+            <PaintRoller className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t.floatingToolbar.stylePainter}</TooltipContent>
+      </Tooltip>
       <Separator orientation="vertical" className="h-5" />
       <span className="px-1 text-[10px] font-semibold uppercase text-muted-foreground">{t.floatingToolbar.layerLabel}</span>
       {iconButton(t.floatingToolbar.sendBack, onBack, <ArrowDown className="h-3.5 w-3.5" />)}

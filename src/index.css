@@ -466,3 +466,10 @@
   }
 
 }
+
+/* Pincel de estilo armado no editor de Slides: o cursor avisa que o
+   próximo clique num bloco aplica o estilo copiado. */
+[data-style-painter="on"],
+[data-style-painter="on"] * {
+  cursor: copy !important;
+}

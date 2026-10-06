@@ -44,6 +44,32 @@ export const ptBR = {
         },
         chart: {
           advanced: "Avançado",
+          looks: {
+            label: "Look",
+            options: { executive: "Executivo", analytical: "Analítico", minimal: "Minimalista", highlight: "Destaque" },
+            hints: {
+              executive: "Valores nas barras, sem grade nem eixo de valores — lê de longe",
+              analytical: "Grade e eixos completos, sem rótulos — para comparar com precisão",
+              minimal: "Só os dados e os rótulos, sem legenda nem linhas",
+              highlight: "Rótulos em negrito, título forte e cantos arredondados",
+            },
+            applied: (name: string) => `Look "${name}" aplicado — Ctrl+Z desfaz`,
+          },
+          recommend: {
+            label: "Sugestão",
+            apply: "Usar",
+            types: { line: "Linha", bar: "Coluna", hbar: "Barra horizontal", stackedBar: "Barra empilhada" } as Record<string, string>,
+            reasons: {
+              manyPeriods: "muitos meses: a linha mostra a tendência melhor",
+              fewPeriods: "poucos meses: colunas comparam melhor",
+              ratioStacked: "% e preço não se somam: empilhar distorce",
+              composition: "partes de um total ao longo do tempo",
+              manyCategories: "muitas categorias: nomes cabem na horizontal",
+              fewCategories: "poucas categorias: colunas lado a lado",
+              fewSlices: "poucas partes de um total",
+              manySlices: "partes demais para pizza: barras ordenadas leem melhor",
+            },
+          },
           // Vocabulário curto reusado em muitas seções do inspector de
           // gráfico — mesmo significado em todo lugar (ex.: "Cor" sempre é
           // a cor de algum elemento do gráfico), por isso compartilhado em
@@ -1106,7 +1132,9 @@ export const ptBR = {
           blockCopied: "Bloco copiado",
           blockLockedHint: "Bloco bloqueado. Clique com botão direito para desbloquear.",
           styleCopied: "Estilo copiado",
-          stylePasted: "Estilo colado",
+          stylePasted: "Estilo aplicado",
+          painterArmed: "Pincel pronto: clique no bloco que deve ficar igual (Esc cancela).",
+          painterOtherKind: "Esse estilo é de outro tipo de bloco — o pincel só aplica no mesmo tipo.",
           templateApplied: "Modelo aplicado",
           deckApplied: (n: number) => `Deck aplicado — ${n} slides criados`,
           quickLayoutNewSlide: "Este slide já estava cheio — o layout entrou num slide novo, logo depois dele.",
@@ -1278,6 +1306,7 @@ export const ptBR = {
         floatingToolbar: {
           ariaLabel: "Ações rápidas do bloco selecionado",
           editStyle: "Editar estilo do bloco",
+          stylePainter: "Pincel de estilo: aplicar este visual em outro bloco",
           layerLabel: "Camada",
           sendBack: "Enviar uma camada para trás",
           bringForward: "Trazer uma camada para frente",

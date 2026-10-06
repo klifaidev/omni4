@@ -20,6 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ChartTypePicker } from "./ChartTypePicker";
 import { useChartPartFocus } from "./chartPartFocus";
+import { CHART_LOOK_IDS, activeChartLook, chartLookPatch } from "./chartLooks";
+import { recommendChartType } from "./chartRecommend";
+import { toast } from "sonner";
 import { usePricing } from "@/store/pricing";
 import { useCustomTables } from "@/store/customTables";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
@@ -30,7 +33,7 @@ import { buildCustomTableChartData } from "@/lib/customTableChartData";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Search, X as ClearIcon } from "lucide-react";
-import { Trash2, Plus, ChevronUp, ChevronDown } from "lucide-react";
+import { Trash2, Plus, ChevronUp, ChevronDown, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSlideFilters } from "../SlideFilterContext";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
@@ -460,6 +463,30 @@ export function ChartInspector({
       { value: "name:desc", label: t.dataSection.orderOptions.nameDesc },
     ] : []),
   ];
+  // O tipo manda no empilhamento: escolher "Coluna" depois de "Coluna
+  // empilhada" não pode continuar empilhado por um modo antigo.
+  const applyChartType = (v: ChartBlock["chartType"]) => {
+    const stackedType = v === "stackedColumn" || v === "stackedBar";
+    const barMode = ["bar", "column", "hbar"].includes(v)
+      ? "grouped"
+      : stackedType && style.bar.mode === "grouped" ? "stacked" : style.bar.mode;
+    const areaStacked = v === "stackedArea" ? true : v === "area" ? false : style.area.stacked;
+    const styleChanged = barMode !== style.bar.mode || areaStacked !== style.area.stacked;
+    onChange({
+      ...withAutoTitle({ chartType: v }),
+      ...(styleChanged
+        ? { style: { ...block.style, bar: { ...style.bar, mode: barMode }, area: { ...style.area, stacked: areaStacked } } }
+        : {}),
+    } as Patch);
+  };
+  const recommendation = isCustomSource ? null : recommendChartType({
+    chartType: ct,
+    measure: block.measure,
+    xIsTime,
+    categoryCount: ct === "pie" || ct === "donut" ? detectedRanking.length : detectedCategories.length,
+  });
+  const activeLook = activeChartLook(style);
+
   const dataSummary = isCustomSource ? null : chartDataSummary({
     ct,
     measure: KPI_MEASURES.find((m) => m.id === block.measure)?.label ?? block.measure,
@@ -472,22 +499,46 @@ export function ChartInspector({
     <div className="space-y-3">
       {/* Chart type picker — always visible at top */}
       <div className="rounded-lg border border-border/50 bg-card/40 px-2 py-2">
-        <ChartTypePicker value={ct} onChange={(v) => {
-          // O tipo manda no empilhamento: escolher "Coluna" depois de
-          // "Coluna empilhada" não pode continuar empilhado por um modo antigo.
-          const stackedType = v === "stackedColumn" || v === "stackedBar";
-          const barMode = ["bar", "column", "hbar"].includes(v)
-            ? "grouped"
-            : stackedType && style.bar.mode === "grouped" ? "stacked" : style.bar.mode;
-          const areaStacked = v === "stackedArea" ? true : v === "area" ? false : style.area.stacked;
-          const styleChanged = barMode !== style.bar.mode || areaStacked !== style.area.stacked;
-          onChange({
-            ...withAutoTitle({ chartType: v }),
-            ...(styleChanged
-              ? { style: { ...block.style, bar: { ...style.bar, mode: barMode }, area: { ...style.area, stacked: areaStacked } } }
-              : {}),
-          } as Patch);
-        }} />
+        <ChartTypePicker value={ct} onChange={applyChartType} />
+      </div>
+
+      {recommendation && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1.5 text-[11px]" data-chart-recommendation>
+          <Lightbulb className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 leading-snug text-foreground/85">
+            <span className="font-semibold">
+              {t.recommend.label}: {t.recommend.types[recommendation.type] ?? CHART_TYPE_LABELS[recommendation.type]}
+            </span>
+            {" — "}{t.recommend.reasons[recommendation.reason]}
+          </span>
+          <Button type="button" size="sm" variant="secondary" className="h-6 shrink-0 px-2 text-[11px]"
+            onClick={() => applyChartType(recommendation.type)}>
+            {t.recommend.apply}
+          </Button>
+        </div>
+      )}
+
+      {/* Looks prontos: um clique muda o acabamento inteiro (não os dados
+          nem as cores das séries). */}
+      <div className="flex items-center gap-2" data-chart-looks>
+        <span className="shrink-0 slides-type-helper">{t.looks.label}</span>
+        <div className="grid min-w-0 flex-1 grid-cols-4 gap-1">
+          {CHART_LOOK_IDS.map((id) => (
+            <button key={id} type="button" title={t.looks.hints[id]} aria-pressed={activeLook === id}
+              onClick={() => {
+                updStyle(chartLookPatch(id, style));
+                toast.success(t.looks.applied(t.looks.options[id]), { duration: 1800 });
+              }}
+              className={cn(
+                "h-7 truncate rounded-md border px-1 text-[11px] transition-colors",
+                activeLook === id
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-input text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}>
+              {t.looks.options[id]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Roteiro do Slides, item 1.4: busca dentro do inspector. O Chart é o
