@@ -221,6 +221,7 @@ import {
 import { FindReplaceDialog } from "./FindReplaceDialog";
 import { SlideIdContext } from "./SlideIdentity";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import type { SlideItem } from "@/lib/slidesFlow";
 import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
 import { getTheme } from "@/lib/slideThemes";
@@ -691,6 +692,31 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     notifyReadOnly();
     return false;
   }, [notifyReadOnly, readOnly]);
+  // Fundo (cor/imagem), tema e faixa Harald deste slide em todos os slides
+  // personalizados do deck — como "aplicar estilo a todas as páginas".
+  const applySlideLookToAll = useCallback(() => {
+    if (!canEdit()) return;
+    flushPendingEditorEmit();
+    const flow = useSlidesFlow.getState();
+    const look = {
+      background: config.background,
+      backgroundImage: config.backgroundImage,
+      theme: config.theme,
+      showHaraldFooter: config.showHaraldFooter,
+    };
+    const before = flow.items.filter((it) => it.kind === "custom" && it.id !== slideId);
+    if (before.length === 0) return;
+    for (const it of before) {
+      flow.updateItem(it.id, (cur) => cur.kind === "custom" ? ({ ...cur, config: { ...cur.config, ...look } } as SlideItem) : cur);
+    }
+    toast.success(t.toasts.lookAppliedToAll(before.length), {
+      duration: 6000,
+      action: {
+        label: t.toasts.undo,
+        onClick: () => { for (const prev of before) useSlidesFlow.getState().updateItem(prev.id, () => prev); },
+      },
+    });
+  }, [canEdit, config.background, config.backgroundImage, config.theme, config.showHaraldFooter, slideId]);
   const focusSelectedBlockStyle = useCallback(() => {
     setStyleFocusRequest(Date.now());
   }, []);
@@ -2132,6 +2158,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   onCheckedChange={(v) => { if (canEdit()) setShowHaraldFooterAction(v); }}
                 />
               </div>
+              <div className="mt-2 px-2">
+                <Button type="button" size="sm" variant="outline" className="h-7 w-full text-[11px]"
+                  disabled={readOnly} title={t.paletteRail.applyLookToAllHint}
+                  onClick={applySlideLookToAll}>
+                  {t.paletteRail.applyLookToAll}
+                </Button>
+              </div>
             </>
           )}
           <p className="mt-2 px-2 text-[10px] leading-relaxed text-muted-foreground">
@@ -2544,12 +2577,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onGestureEnd={blockFrameHandlers.onGestureEnd}
                         onSelect={(additive) => {
                           const wasSelected = selectedIds.includes(blk.id);
-                          if (painterSourceId && blk.id !== painterSourceId && !additive) {
+                          if (painterSourceId && blk.id !== painterSourceId) {
                             if (canPasteElementStyleAction(blk.id)) {
                               if (canEdit() && pasteElementStyleAction(blk.id)) toast.success(t.toasts.stylePasted);
                             } else {
                               toast(t.toasts.painterOtherKind, { duration: 2200 });
                             }
+                            // Shift: continua com o pincel para aplicar em vários
+                            // blocos (sem mexer na seleção). Sem Shift, desarma.
+                            if (additive) return;
                             setPainterSourceId(null);
                           }
                           selectBlock(blk.id, { additive: !!additive });
