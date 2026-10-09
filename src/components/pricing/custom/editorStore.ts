@@ -59,7 +59,8 @@ export type EditorActionLabel =
   | "Mover ponto da linha"
   | "Editar vértice"
   | "Rotacionar"
-  | "Ajustar geometria";
+  | "Ajustar geometria"
+  | "Substituir texto";
 
 interface EditorState {
   config: CustomSlideConfig | null;

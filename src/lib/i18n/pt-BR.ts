@@ -1034,6 +1034,29 @@ export const ptBR = {
       // funções (mesmo nome) dentro de BlockInspectors.tsx, já migradas em
       // inspectors.blocks.omni. Ver nota em MEMORY sobre isso antes de
       // "consertar" — não foi removido aqui, fora de escopo desta migração.
+      findReplace: {
+        title: "Localizar e substituir",
+        description: "Em todos os slides: títulos, textos, rótulos de KPI, títulos de gráficos e capas.",
+        findLabel: "Localizar",
+        findPlaceholder: "Ex.: Set/26",
+        replaceLabel: "Substituir por",
+        replacePlaceholder: "Ex.: Out/26",
+        matchCase: "Diferenciar maiúsculas",
+        onlyCurrent: "Só neste slide",
+        typeToSearch: "Digite o que procurar",
+        noMatches: "Nada encontrado",
+        summary: (n: number, slides: number) =>
+          `${n} ${n === 1 ? "ocorrência" : "ocorrências"} em ${slides} ${slides === 1 ? "slide" : "slides"}`,
+        lockedCount: (n: number) => `${n} em blocos bloqueados`,
+        locked: "Bloco bloqueado",
+        slideN: (n: number) => `Slide ${n}`,
+        replaceAll: (n: number) => (n > 0 ? `Substituir ${n}` : "Substituir"),
+        replacedToast: (n: number, slides: number) =>
+          `${n} ${n === 1 ? "ocorrência substituída" : "ocorrências substituídas"} em ${slides} ${slides === 1 ? "slide" : "slides"}`,
+        skippedLocked: (n: number) => `${n} em blocos bloqueados ${n === 1 ? "ficou" : "ficaram"} como ${n === 1 ? "estava" : "estavam"}.`,
+        undo: "Desfazer",
+        close: "Fechar",
+      },
       customSlideEditor: {
         // Roteiro do Slides, item 2.3 — tour leve de 1ª vez, dispensável.
         onboarding: {
@@ -1115,6 +1138,7 @@ export const ptBR = {
           unlockBlocks: "Desbloquear blocos",
           showBlock: "Mostrar bloco",
           hideBlock: "Ocultar bloco",
+          replaceText: "Substituir texto",
         },
         applyingTemplate: {
           title: "Aplicando modelo",
@@ -1274,6 +1298,7 @@ export const ptBR = {
           minimize: "Minimizar Slides",
           minimizeAria: "Minimizar editor de Slides em standby",
           minimizeTooltip: "Minimizar Slides e manter este canvas em standby",
+          findReplace: "Localizar e substituir (Ctrl+F)",
           layersPanel: "Painel de camadas",
           showLayersAria: "Mostrar painel de camadas",
           hideLayersAria: "Ocultar painel de camadas",
@@ -1359,6 +1384,7 @@ export const ptBR = {
             deleteSelected: "Excluir bloco selecionado",
             selectAll: "Selecionar todos os blocos",
             boldItalic: "Negrito / itálico (no trecho selecionado ao editar o texto)",
+            findReplace: "Localizar e substituir em todos os slides",
             deselect: "Sair da edição do texto → desselecionar → fechar o editor",
             copy: "Copiar bloco",
             paste: "Colar bloco (mantém ao mudar de slide)",

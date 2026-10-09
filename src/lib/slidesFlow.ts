@@ -44,7 +44,7 @@ export interface BridgePvmSlideConfig {
   comp: string | null;
   /** Filtros específicos deste slide (não afetam outros slides) */
   filters: Filters;
-  /** Notas do apresentador (não exportadas para PPTX). */
+  /** Notas do apresentador (vão para as anotações do PPTX). */
   speakerNotes?: string;
   /** Quando true, rótulos das categorias quebram em várias linhas em vez de
    *  ficarem cortados quando não cabem na largura da coluna. Default false. */
@@ -56,7 +56,7 @@ export interface BudgetEvoSlideConfig {
   start: string | null;
   end: string | null;
   filters: Filters;
-  /** Notas do apresentador (não exportadas para PPTX). */
+  /** Notas do apresentador (vão para as anotações do PPTX). */
   speakerNotes?: string;
 }
 
@@ -64,7 +64,7 @@ export interface CoverSlideConfig {
   title: string;
   subtitle?: string;
   variant: "cover" | "divider";
-  /** Notas do apresentador (não exportadas para PPTX). */
+  /** Notas do apresentador (vão para as anotações do PPTX). */
   speakerNotes?: string;
 }
 
@@ -202,6 +202,13 @@ export interface BuildContext {
 }
 
 export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
+  // Notas do apresentador vão junto para o PowerPoint (painel de anotações).
+  const notes = item.config.speakerNotes?.trim();
+  const flow = itemToFlowBuilder(item, ctx);
+  return notes ? { ...flow, notes } : flow;
+}
+
+function itemToFlowBuilder(item: SlideItem, ctx: BuildContext): SlideFlowItem {
   switch (item.kind) {
     case "bridge_pvm": {
       const cfg = item.config;

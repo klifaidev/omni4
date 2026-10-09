@@ -1395,11 +1395,38 @@ export interface SlideFlowItem {
    *  gerado normalmente, mas exportSlideFlow reporta isso pra quem chamou
    *  em vez de deixar passar como sucesso silencioso. */
   build: (pptx: PptxGenJS) => Promise<void | boolean> | void | boolean;
+  /** Notas do apresentador — vão para o painel de anotações do PowerPoint
+   *  no primeiro slide que `build` criar. */
+  notes?: string;
 }
 
 export interface ExportSlideFlowResult {
   /** Nomes dos slides que foram inseridos em modo degradado (ver SlideFlowItem.build). */
   failedSlides: string[];
+}
+
+/** Monta os itens no `pptx` e pendura as notas de cada item no primeiro
+ *  slide que ele criou. Cada `build` cria seus slides via pptx.addSlide (às
+ *  vezes mais de um, como o Bridge), então registramos os criados.
+ *  Devolve os nomes dos slides montados em modo degradado. */
+export async function buildFlowItems(pptx: PptxGenJS, items: SlideFlowItem[]): Promise<string[]> {
+  const created: PptxGenJS.Slide[] = [];
+  const addSlide = pptx.addSlide.bind(pptx);
+  pptx.addSlide = ((...args: Parameters<typeof addSlide>) => {
+    const slide = addSlide(...args);
+    created.push(slide);
+    return slide;
+  }) as typeof pptx.addSlide;
+
+  const failedSlides: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const firstNew = created.length;
+    const result = await items[i].build(pptx);
+    if (result === false) failedSlides.push(items[i].label ?? `Slide ${i + 1}`);
+    const notes = items[i].notes?.trim();
+    if (notes && created[firstNew]) created[firstNew].addNotes(notes);
+  }
+  return failedSlides;
 }
 
 export async function exportSlideFlow(
@@ -1416,11 +1443,7 @@ export async function exportSlideFlow(
   pptx.title = "Apresentação Pricing Analytics";
   pptx.theme = { headFontFace: "Calibri", bodyFontFace: "Calibri" };
 
-  const failedSlides: string[] = [];
-  for (let i = 0; i < items.length; i++) {
-    const result = await items[i].build(pptx);
-    if (result === false) failedSlides.push(items[i].label ?? `Slide ${i + 1}`);
-  }
+  const failedSlides = await buildFlowItems(pptx, items);
 
   const rawBlob = (await pptx.write({ outputType: "blob" })) as Blob;
   const grouped = await groupBridgeElements(rawBlob, bridgeSlideIndex ?? 1);

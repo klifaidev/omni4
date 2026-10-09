@@ -769,7 +769,7 @@ export interface CustomSlideConfig {
   backgroundImage?: string;
   /** Block groups (B8.2). Optional for retro-compat. */
   groups?: BlockGroup[];
-  /** Notas do apresentador (não exportadas para PPTX). */
+  /** Notas do apresentador (vão para as anotações do PPTX). */
   speakerNotes?: string;
   sourceFooter?: SlideSourceFooterConfig;
 }

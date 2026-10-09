@@ -214,8 +214,11 @@ import {
   copyElementStyleAction, pasteElementStyleAction, canPasteElementStyleAction,
   insertBlockAction, insertBlocksAction,
   undo as undoAction, redo as redoAction,
+  flushPendingEditorEmit,
   type AlignKind,
 } from "./editorStore";
+import { FindReplaceDialog } from "./FindReplaceDialog";
+import { useSlidesFlow } from "@/store/slidesFlow";
 import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
 import { getTheme } from "@/lib/slideThemes";
@@ -312,6 +315,10 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
 function afterNextPaint(fn: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(fn));
 }
+
+/** Bloco a selecionar quando o editor abrir o slide indicado (vindo do
+ *  "ir até a ocorrência" do localizar e substituir, que troca de slide). */
+let pendingBlockFocus: { slideId: string; blockId: string } | null = null;
 
 // Cross-slide clipboard. Module-level so it survives editor remounts when
 // the user navigates between slides via the side strip.
@@ -528,6 +535,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const { prefs, scale, scaleKey } = useSlideEditorScale(wrapperRef, canvasShellRef);
   const [presentOpen, setPresentOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const openFind = useCallback(() => {
+    flushPendingEditorEmit();
+    setFindOpen(true);
+  }, []);
   const [showLayers, setShowLayers] = useState(false);
   const [zoomEditing, setZoomEditing] = useState(false);
   const [palettePanelOpen, setPalettePanelOpen] = useState(false);
@@ -1613,6 +1625,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       const target = e.target as HTMLElement | null;
       const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
+      // Ctrl/Cmd+F ou +H: localizar e substituir no deck (vale até dentro de um campo).
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "h")) {
+        e.preventDefault();
+        openFind();
+        return;
+      }
+
       if (!inField && (e.metaKey || e.ctrlKey)) {
         const k = e.key.toLowerCase();
         if (k === "z" && !e.shiftKey) { e.preventDefault(); if (canEdit()) handleUndo(); return; }
@@ -1710,7 +1729,16 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, handleUndo, handleRedo]);
+  }, [canEdit, selectedIds, groupEditMemberId, config.blocks, copySelectionToClipboard, pasteFromClipboard, centerSelectedH, centerSelectedV, prefs, removeBlock, removeBlocks, duplicateBlock, duplicateBlocks, bringForward, sendBack, handleUndo, handleRedo, openFind]);
+
+  // "Ir até a ocorrência" de outro slide: seleciona o bloco quando ele abrir.
+  useEffect(() => {
+    const pending = pendingBlockFocus;
+    if (!pending || pending.slideId !== slideId) return;
+    if (!config.blocks.some((b) => b.id === pending.blockId)) return;
+    pendingBlockFocus = null;
+    setSelection([pending.blockId]);
+  }, [slideId, config.blocks]);
 
   // Colar imagem do clipboard (Ctrl+V com imagem copiada / print de tela)
   useEffect(() => {
@@ -2959,6 +2987,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
           <Separator orientation="vertical" className="mx-1 h-5" />
+          <Button size="icon" variant={findOpen ? "default" : "ghost"} className="h-7 w-7"
+            onClick={openFind}
+            title={t.toolbar.findReplace}
+            aria-label={t.toolbar.findReplace}>
+            <Search className="h-3.5 w-3.5" />
+          </Button>
           <Button
             size="icon"
             variant={showLayers ? "default" : "ghost"}
@@ -2987,6 +3021,23 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         <SpeakerNotesBar
           value={config.speakerNotes ?? ""}
           onChange={(v) => { if (canEdit()) setSpeakerNotesAction(v); }}
+        />
+        <FindReplaceDialog
+          open={findOpen}
+          onOpenChange={setFindOpen}
+          currentItemId={slideId}
+          readOnly={readOnly}
+          flushPending={flushPendingEditorEmit}
+          onApplyCurrent={(patches) => { if (canEdit()) patchBlocksAction(patches, t.blockActionLabels.replaceText); }}
+          onUndoCurrent={handleUndo}
+          onGoTo={(m) => {
+            if (m.itemId === slideId) {
+              if (m.blockId) setSelection([m.blockId]);
+              return;
+            }
+            if (m.blockId) pendingBlockFocus = { slideId: m.itemId, blockId: m.blockId };
+            useSlidesFlow.getState().select(m.itemId);
+          }}
         />
       </div>
 
@@ -3466,6 +3517,7 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         ["Delete  /  Backspace", t.shortcuts.items.deleteSelected],
         [`${mod} + A`, t.shortcuts.items.selectAll],
         [`${mod} + B  /  ${mod} + I`, t.shortcuts.items.boldItalic],
+        [`${mod} + F  /  ${mod} + H`, t.shortcuts.items.findReplace],
         ["Esc", t.shortcuts.items.deselect],
       ],
     },
