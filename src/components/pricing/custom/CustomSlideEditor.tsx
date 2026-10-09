@@ -78,6 +78,7 @@ import {
   PaletteGroup,
   PalettePopover,
   PositionInputs,
+  AlignToSlideButtons,
   QuickLayoutButton,
   TextStyleButton,
 } from "./inspectors/BlockInspectors";
@@ -218,6 +219,7 @@ import {
   type AlignKind,
 } from "./editorStore";
 import { FindReplaceDialog } from "./FindReplaceDialog";
+import { SlideIdContext } from "./SlideIdentity";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
@@ -300,6 +302,7 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
           <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 pt-2">
+          <AlignToSlideButtons blockId={block.id} disabled={!!block.locked} />
           <PositionInputs key={`pos-${block.id}`} block={block} onChange={onChange} />
           <BlockAppearanceControls key={`appearance-${block.id}`} block={block} onChange={onChange} />
         </CollapsibleContent>
@@ -1805,6 +1808,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
   return (
     <SlideFilterProvider slideKey={slideId}>
+    <SlideIdContext.Provider value={slideId}>
     <div className={cn(
       "surface-base relative grid h-full min-h-0 gap-3",
       // Painel de propriedades: 340px abaixo de 2xl (em 1366px o slide ficava
@@ -3191,6 +3195,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         </DialogContent>
       </Dialog>
     </div>
+    </SlideIdContext.Provider>
     {presentOpen && (
       <PresentationMode
         currentSlideId={slideId}

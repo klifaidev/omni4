@@ -21,6 +21,7 @@ import type { SlideItem } from "@/lib/slidesFlow";
 import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock } from "@/lib/customSlide";
 import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
+import { SlideIdContext } from "./SlideIdentity";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
@@ -591,11 +592,20 @@ function SlideSourceFooterReadOnly({ config }: { config: CustomSlideConfig }) {
 }
 
 export function CustomCanvasReadOnly({
-  config, slideId, animateBlocks = false, animKey = 0,
-}: { config: CustomSlideConfig; slideId?: string; animateBlocks?: boolean; animKey?: number }) {
+  config, slideId, positionSlideId, animateBlocks = false, animKey = 0,
+}: {
+  config: CustomSlideConfig;
+  slideId?: string;
+  /** Só para {slide}/{total de slides}, sem afetar o cache de cálculo
+   *  (que usa `slideId`). Padrão: `slideId`. */
+  positionSlideId?: string;
+  animateBlocks?: boolean;
+  animKey?: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const sorted = [...config.blocks].sort((a, b) => a.z - b.z);
   return (
+    <SlideIdContext.Provider value={positionSlideId ?? slideId}>
     <div
       ref={ref}
       style={{
@@ -650,6 +660,7 @@ export function CustomCanvasReadOnly({
       )}
       <SlideSourceFooterReadOnly config={config} />
     </div>
+    </SlideIdContext.Provider>
   );
 }
 

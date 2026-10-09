@@ -15,7 +15,7 @@ import { parsePeriodo } from "./deckPeriod";
 export interface TextTokenDef {
   /** Como a pessoa digita, sem chaves. */
   label: string;
-  group: "date" | "number";
+  group: "date" | "number" | "deck";
   hint: string;
 }
 
@@ -30,7 +30,13 @@ export const TEXT_TOKENS: readonly TextTokenDef[] = [
   { label: "ROL vs budget %", group: "number", hint: "+3,1%" },
   { label: "ROL vs mês anterior %", group: "number", hint: "-1,8%" },
   { label: "ROL vs ano anterior %", group: "number", hint: "+7,4%" },
+  // Posição no deck (resolvidos por slide em RichTextContent, não aqui).
+  { label: "slide", group: "deck", hint: "3" },
+  { label: "total de slides", group: "deck", hint: "12" },
 ];
+
+/** Tokens que dependem do slide, não das bases. */
+export const SLIDE_POSITION_TOKENS = ["slide", "total de slides"] as const;
 
 const TOKEN_RE = /\{([^{}\n]{1,40})\}/g;
 

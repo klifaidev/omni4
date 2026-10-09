@@ -26,7 +26,8 @@ import type {
   CustomChartType,
   CustomSlideConfig,
 } from "@/lib/customSlide";
-import { newBlock, newChartBlock } from "@/lib/customSlide";
+import { newBlock, newChartBlock, CANVAS_W, CANVAS_H, FOOTER_H } from "@/lib/customSlide";
+import { alignGroupToTarget, alignRects, distributeRects, slideArea, tidyRects, type Pos } from "@/lib/blockArrange";
 import { computeGroupResizePatches } from "./blockTransform";
 
 export type EditorActionLabel =
@@ -60,7 +61,8 @@ export type EditorActionLabel =
   | "Editar vértice"
   | "Rotacionar"
   | "Ajustar geometria"
-  | "Substituir texto";
+  | "Substituir texto"
+  | "Organizar blocos";
 
 interface EditorState {
   config: CustomSlideConfig | null;
@@ -761,49 +763,46 @@ export type AlignKind =
   | "top"  | "centerV" | "bottom"
   | "distH" | "distV";
 
-export function alignBlocksAction(ids: string[], kind: AlignKind) {
+/** Alinha/espaça a seleção. `toSlide`: alinha às bordas do slide (vale com
+ *  um bloco só; o "embaixo" para acima da faixa Harald quando ela aparece).
+ *  Sem `toSlide`, alinha à caixa da própria seleção. Bloqueados não mexem. */
+export function alignBlocksAction(ids: string[], kind: AlignKind, opts: { toSlide?: boolean } = {}) {
   const cur = baseStore.getState().config;
-  if (!cur || ids.length < 2) return;
+  if (!cur) return;
   const blocks = ids
     .map((id) => cur.blocks.find((b) => b.id === id))
-    .filter((b): b is CustomBlock => !!b);
-  if (blocks.length < 2) return;
-  const patches: { id: string; patch: Partial<CustomBlock> }[] = [];
-
-  if (kind === "left") {
-    const m = Math.min(...blocks.map((b) => b.x));
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { x: m } }));
-  } else if (kind === "right") {
-    const m = Math.max(...blocks.map((b) => b.x + b.w));
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { x: m - b.w } }));
-  } else if (kind === "centerH") {
-    const mean = blocks.reduce((s, b) => s + (b.x + b.w / 2), 0) / blocks.length;
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { x: Math.round(mean - b.w / 2) } }));
-  } else if (kind === "top") {
-    const m = Math.min(...blocks.map((b) => b.y));
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { y: m } }));
-  } else if (kind === "bottom") {
-    const m = Math.max(...blocks.map((b) => b.y + b.h));
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { y: m - b.h } }));
-  } else if (kind === "centerV") {
-    const mean = blocks.reduce((s, b) => s + (b.y + b.h / 2), 0) / blocks.length;
-    blocks.forEach((b) => patches.push({ id: b.id, patch: { y: Math.round(mean - b.h / 2) } }));
-  } else if (kind === "distH") {
+    .filter((b): b is CustomBlock => !!b && !b.locked);
+  if (blocks.length === 0 || (!opts.toSlide && blocks.length < 2)) return;
+  let positions: Pos[];
+  if (kind === "distH" || kind === "distV") {
     if (blocks.length < 3) return;
-    const sorted = [...blocks].sort((a, b) => a.x - b.x);
-    const first = sorted[0].x;
-    const last = sorted[sorted.length - 1].x;
-    const step = (last - first) / (sorted.length - 1);
-    sorted.forEach((b, i) => patches.push({ id: b.id, patch: { x: Math.round(first + step * i) } }));
-  } else if (kind === "distV") {
-    if (blocks.length < 3) return;
-    const sorted = [...blocks].sort((a, b) => a.y - b.y);
-    const first = sorted[0].y;
-    const last = sorted[sorted.length - 1].y;
-    const step = (last - first) / (sorted.length - 1);
-    sorted.forEach((b, i) => patches.push({ id: b.id, patch: { y: Math.round(first + step * i) } }));
+    positions = distributeRects(blocks, kind === "distH" ? "h" : "v");
+  } else if (opts.toSlide) {
+    // A seleção vai junta, mantendo o arranjo (um a um empilharia tudo).
+    positions = alignGroupToTarget(blocks, kind, slideArea(CANVAS_W, CANVAS_H, cur.showHaraldFooter ? FOOTER_H : 0));
+  } else {
+    positions = alignRects(blocks, kind);
   }
-  patchBlocksAction(patches, "Alinhar blocos");
+  applyPositions(blocks, positions, "Alinhar blocos");
+}
+
+/** "Organizar": linhas e colunas com o mesmo respiro, na ordem de leitura. */
+export function tidyBlocksAction(ids: string[]) {
+  const cur = baseStore.getState().config;
+  if (!cur) return;
+  const blocks = ids
+    .map((id) => cur.blocks.find((b) => b.id === id))
+    .filter((b): b is CustomBlock => !!b && !b.locked);
+  if (blocks.length < 2) return;
+  applyPositions(blocks, tidyRects(blocks), "Organizar blocos");
+}
+
+function applyPositions(blocks: CustomBlock[], positions: Pos[], label: EditorActionLabel) {
+  const byId = new Map(blocks.map((b) => [b.id, b]));
+  const patches = positions
+    .filter((p) => { const b = byId.get(p.id)!; return b.x !== p.x || b.y !== p.y; })
+    .map((p) => ({ id: p.id, patch: { x: p.x, y: p.y } as Partial<CustomBlock> }));
+  if (patches.length) patchBlocksAction(patches, label);
 }
 
 // ----- Group / Ungroup ---------------------------------------------------

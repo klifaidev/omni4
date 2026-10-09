@@ -46,7 +46,7 @@ async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> 
                   transformOrigin: "top left",
                 },
               },
-              React.createElement(CustomCanvasReadOnly, { config: item.config }),
+              React.createElement(CustomCanvasReadOnly, { config: item.config, positionSlideId: item.id }),
             ),
           )
         : React.createElement(

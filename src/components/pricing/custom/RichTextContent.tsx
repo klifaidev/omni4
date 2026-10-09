@@ -4,16 +4,36 @@
 // re-renderiza quando os dados ou o mês de referência mudam.
 import { memo, useMemo } from "react";
 import { parseInlineMarkup } from "@/lib/richText";
-import { hasTextTokens, resolveTextTokens } from "@/lib/textTokens";
+import { hasTextTokens, normalizeTokenName, resolveTextTokens, SLIDE_POSITION_TOKENS } from "@/lib/textTokens";
 import { useDeckTokenValues } from "@/hooks/useDeckRows";
+import { useSlideNumber } from "./SlideIdentity";
 
 export const RichTextContent = memo(function RichTextContent({ text }: { text: string }) {
-  return hasTextTokens(text) ? <TokenText text={text} /> : <MarkupText text={text} />;
+  if (!hasTextTokens(text)) return <MarkupText text={text} />;
+  return usesSlidePosition(text) ? <SlidePositionText text={text} /> : <TokenText text={text} />;
 });
+
+function usesSlidePosition(text: string): boolean {
+  const lower = normalizeTokenName(text);
+  return SLIDE_POSITION_TOKENS.some((tk) => lower.includes(`{${tk}}`));
+}
 
 function TokenText({ text }: { text: string }) {
   const resolved = resolveTextTokens(text, useDeckTokenValues());
   return <MarkupText text={resolved} />;
+}
+
+/** {slide} e {total de slides} dependem da posição no deck, não das bases. */
+function SlidePositionText({ text }: { text: string }) {
+  const deckValues = useDeckTokenValues();
+  const { number, total } = useSlideNumber();
+  const values = useMemo(() => {
+    const merged = new Map(deckValues);
+    merged.set("slide", number);
+    merged.set("total de slides", total);
+    return merged;
+  }, [deckValues, number, total]);
+  return <MarkupText text={resolveTextTokens(text, values)} />;
 }
 
 function MarkupText({ text }: { text: string }) {

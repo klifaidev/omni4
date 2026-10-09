@@ -42,6 +42,7 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  LayoutGrid,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider, SelectField, MoreOptions } from "../chart/Inspector";
@@ -82,7 +83,7 @@ import {
 import { newId } from "@/lib/slidesFlow";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import {
-  patchBlockAction, patchBlocksAction, alignBlocksAction, groupBlocksAction, ungroupBlocksAction,
+  patchBlockAction, patchBlocksAction, alignBlocksAction, tidyBlocksAction, groupBlocksAction, ungroupBlocksAction,
   resizeGroupAction, type AlignKind,
 } from "../editorStore";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -258,6 +259,33 @@ function SinglePeriodField({ periodMode, selectionMode, relativePeriod, periodVa
         </Row>
       )}
     </>
+  );
+}
+
+/** Alinhar um bloco às bordas/centro do slide (o "embaixo" respeita a faixa
+ *  Harald). Ctrl+Shift+H/V continuam centralizando pelo teclado. */
+export function AlignToSlideButtons({ blockId, disabled }: { blockId: string; disabled?: boolean }) {
+  const items: { kind: AlignKind; label: string; Icon: ComponentType<{ className?: string }> }[] = [
+    { kind: "left", label: t.multiSelect.alignLeft, Icon: AlignStartVertical },
+    { kind: "centerH", label: t.multiSelect.alignCenterH, Icon: AlignHorizontalJustifyCenter },
+    { kind: "right", label: t.multiSelect.alignRight, Icon: AlignEndVertical },
+    { kind: "top", label: t.multiSelect.alignTop, Icon: AlignStartHorizontal },
+    { kind: "centerV", label: t.multiSelect.alignCenterV, Icon: AlignVerticalJustifyCenter },
+    { kind: "bottom", label: t.multiSelect.alignBottom, Icon: AlignEndHorizontal },
+  ];
+  return (
+    <div className="space-y-1">
+      <div className="slides-type-helper">{t.multiSelect.alignToSlideTitle}</div>
+      <div className="grid grid-cols-6 gap-1" role="group" aria-label={t.multiSelect.alignToSlideTitle}>
+        {items.map(({ kind, label, Icon }) => (
+          <Button key={kind} type="button" size="icon" variant="outline" className="h-8 w-full"
+            disabled={disabled} title={label} aria-label={`${t.multiSelect.alignToSlideTitle}: ${label}`}
+            onClick={() => alignBlocksAction([blockId], kind, { toSlide: true })}>
+            <Icon className="h-3.5 w-3.5" />
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2862,7 +2890,10 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
-  const align = (k: AlignKind) => { if (canEdit()) alignBlocksAction(selectedIds, k); };
+  const [alignTo, setAlignTo] = useState<"selection" | "slide">("selection");
+  const align = (k: AlignKind) => {
+    if (canEdit()) alignBlocksAction(selectedIds, k, { toSlide: alignTo === "slide" && k !== "distH" && k !== "distV" });
+  };
 
   // Roteiro do Slides, item 2.1: edição de estilo em lote. Escopo
   // deliberadamente restrito aos blocos Omni Analytics — compartilham os
@@ -2925,9 +2956,16 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
 
       <Separator />
 
-      <div>
+      <div className="space-y-2">
         <Label className="text-[10px] uppercase text-muted-foreground">{t.multiSelect.alignment}</Label>
-        <div className="mt-1 grid grid-cols-3 gap-1">
+        <Row label={t.multiSelect.alignRelativeTo}>
+          <Segmented value={alignTo} onChange={(v) => setAlignTo(v as "selection" | "slide")}
+            options={[
+              { value: "selection", label: t.multiSelect.alignToSelection },
+              { value: "slide", label: t.multiSelect.alignToSlide },
+            ]} />
+        </Row>
+        <div className="grid grid-cols-3 gap-1">
           <Button size="icon" variant="outline" className="h-8" title={t.multiSelect.alignLeft} aria-label={t.multiSelect.alignLeftAria} onClick={() => align("left")}>
             <AlignStartVertical className="h-3.5 w-3.5" />
           </Button>
@@ -2963,6 +3001,13 @@ export function MultiSelectInspector({ selectedIds, blocks, hasGroup, readOnly, 
             <AlignVerticalDistributeCenter className="h-3.5 w-3.5" /> {t.multiSelect.distributeV}
           </Button>
         </div>
+        {/* Organizar: põe a seleção em linhas/colunas com o mesmo respiro. */}
+        <Button size="sm" variant="outline" className="mt-1 h-8 w-full gap-1.5 text-[11px]"
+          disabled={readOnly}
+          title={t.multiSelect.tidyHint}
+          onClick={() => { if (canEdit()) tidyBlocksAction(selectedIds); }}>
+          <LayoutGrid className="h-3.5 w-3.5" /> {t.multiSelect.tidy}
+        </Button>
       </div>
 
       {showBulkStyle && (

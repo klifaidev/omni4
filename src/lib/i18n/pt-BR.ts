@@ -860,9 +860,15 @@ export const ptBR = {
             alignCenterVAria: "Centralizar verticalmente",
             alignBottom: "Base",
             alignBottomAria: "Alinhar à base",
-            distribute: "Distribuir",
+            distribute: "Espaçar igualmente",
             distributeH: "Horizontal",
             distributeV: "Vertical",
+            alignRelativeTo: "Em relação a",
+            alignToSelection: "Seleção",
+            alignToSlide: "Slide",
+            alignToSlideTitle: "Alinhar ao slide",
+            tidy: "Organizar",
+            tidyHint: "Põe os blocos em linhas e colunas com o mesmo espaço entre eles, na ordem de leitura",
             // Roteiro do Slides, item 2.1 — edição de estilo em lote.
             // Só aparece quando toda a seleção é de blocos Omni Analytics
             // (mesma convenção de campos color/fontSize nos 16 tipos).

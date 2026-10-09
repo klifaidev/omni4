@@ -160,7 +160,7 @@ async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvas
   });
 }
 
-async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
+async function renderSlideAsImage(config: CustomSlideConfig, slideId?: string): Promise<string> {
   const exportConfig = await prepareConfigForExport(config);
   const hostScale = fitCanvasScale(CANVAS_W, CANVAS_H);
   const host = document.createElement("div");
@@ -185,7 +185,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
           SlideFilterProvider,
           { slideKey: "export" },
           React.createElement("style", null, EXPORT_CAPTURE_CSS),
-          React.createElement(CustomCanvasReadOnly, { config: exportConfig }),
+          React.createElement(CustomCanvasReadOnly, { config: exportConfig, positionSlideId: slideId }),
         ),
       );
     });
@@ -195,7 +195,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
     let canvas = await captureHost(host, EXPORT_SCALE);
     if (exportConfig.blocks.length > 0 && canvasLooksBlank(canvas)) {
       console.warn("[customSlide export] captura principal vazia; usando fallback legado.");
-      canvas = await renderLegacyCanvas(exportConfig);
+      canvas = await renderLegacyCanvas(exportConfig, slideId);
     }
 
     return canvas.toDataURL("image/png");
@@ -211,7 +211,7 @@ async function renderSlideAsImage(config: CustomSlideConfig): Promise<string> {
   }
 }
 
-async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvasElement> {
+async function renderLegacyCanvas(config: CustomSlideConfig, slideId?: string): Promise<HTMLCanvasElement> {
   const captureW = CANVAS_W * LEGACY_SCALE;
   const captureH = CANVAS_H * LEGACY_SCALE;
   const legacyFitScale = fitCanvasScale(captureW, captureH);
@@ -248,7 +248,7 @@ async function renderLegacyCanvas(config: CustomSlideConfig): Promise<HTMLCanvas
                   transformOrigin: "top left",
                 },
               },
-              React.createElement(CustomCanvasReadOnly, { config }),
+              React.createElement(CustomCanvasReadOnly, { config, positionSlideId: slideId }),
             ),
           ),
         ),
@@ -284,7 +284,7 @@ export async function addCustomSlide(
   const slide = pptx.addSlide();
 
   try {
-    const dataUrl = await renderSlideAsImage(config);
+    const dataUrl = await renderSlideAsImage(config, opts?.slideId);
     slide.addImage({
       data: dataUrl,
       x: 0,
