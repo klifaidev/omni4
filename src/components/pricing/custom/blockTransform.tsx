@@ -219,8 +219,13 @@ export function resizeFrameFromPointerDelta({
   };
 }
 
-export function snapBlockFrame(blocks: CustomBlock[], activeIds: string[], frame: BlockFrame) {
-  return computeSnap(frame, boundsOf(blocks, new Set(activeIds)));
+export function snapBlockFrame(
+  blocks: CustomBlock[],
+  activeIds: string[],
+  frame: BlockFrame,
+  snapLines?: { v: number[]; h: number[] },
+) {
+  return computeSnap(frame, boundsOf(blocks, new Set(activeIds)), snapLines);
 }
 
 export function computeGroupResizePatches(
@@ -271,6 +276,8 @@ export type BlockTransformParams = {
   gridEnabled: boolean;
   gridSize: GridSize;
   actions: BlockTransformActions;
+  /** Guias de layout do slide (e margens visíveis) que atraem os blocos. */
+  snapLines?: { v: number[]; h: number[] };
 };
 
 export type BlockTransformHandlers = {
@@ -294,6 +301,7 @@ export function useBlockTransform({
   gridEnabled,
   gridSize,
   actions,
+  snapLines,
 }: BlockTransformParams) {
   const [guides, setGuides] = useState<GuideState>(EMPTY_GUIDES);
   const guidesRef = useRef(guides);
@@ -365,10 +373,10 @@ export function useBlockTransform({
   }, [actions, blocks, draggableSiblings]);
 
   const computeGuides = useCallback((activeIds: string[], x: number, y: number, w: number, h: number) => {
-    const snap = snapBlockFrame(blocks, activeIds, { x, y, w, h });
+    const snap = snapBlockFrame(blocks, activeIds, { x, y, w, h }, snapLines);
     scheduleGuides(snap.guides);
     return snap;
-  }, [blocks, scheduleGuides]);
+  }, [blocks, scheduleGuides, snapLines]);
 
   const getBlockFrameHandlers = useCallback((block: CustomBlock, shapeLockAspect = false): BlockTransformHandlers => ({
     lockAspectRatio: shapeLockAspect || aspectResizeIds.has(block.id),

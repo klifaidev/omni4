@@ -13,10 +13,17 @@ interface EditorPrefs {
   inspectorCollapsed: boolean;
   /** Faixa de miniaturas do editor em tela cheia recolhida. */
   stripCollapsed: boolean;
+  /** Réguas e guias de layout visíveis (e as guias atraem os blocos). */
+  showRulers: boolean;
+  /** Contorno das margens e da faixa de rodapé (área segura). */
+  showMargins: boolean;
 }
 
 const STORAGE_KEY = "harald.editorPrefs.v1";
-const DEFAULT: EditorPrefs = { gridEnabled: false, gridSize: 8, zoom: 1, inspectorCollapsed: false, stripCollapsed: false };
+const DEFAULT: EditorPrefs = {
+  gridEnabled: false, gridSize: 8, zoom: 1, inspectorCollapsed: false, stripCollapsed: false,
+  showRulers: false, showMargins: false,
+};
 
 function read(): EditorPrefs {
   try {
@@ -34,6 +41,8 @@ function read(): EditorPrefs {
       zoom,
       inspectorCollapsed: parsed.inspectorCollapsed === true,
       stripCollapsed: parsed.stripCollapsed === true,
+      showRulers: parsed.showRulers === true,
+      showMargins: parsed.showMargins === true,
     };
   } catch {
     return DEFAULT;
@@ -61,6 +70,8 @@ export function useEditorPrefs(): EditorPrefs & {
   setZoom: (z: number) => void;
   setInspectorCollapsed: (v: boolean) => void;
   setStripCollapsed: (v: boolean) => void;
+  setShowRulers: (v: boolean) => void;
+  setShowMargins: (v: boolean) => void;
 } {
   const [, force] = useState(0);
   useEffect(() => {
@@ -75,6 +86,8 @@ export function useEditorPrefs(): EditorPrefs & {
     setZoom: (z) => setEditorPrefs({ zoom: Math.min(1.5, Math.max(0.5, z)) }),
     setInspectorCollapsed: (v) => setEditorPrefs({ inspectorCollapsed: v }),
     setStripCollapsed: (v) => setEditorPrefs({ stripCollapsed: v }),
+    setShowRulers: (v) => setEditorPrefs({ showRulers: v }),
+    setShowMargins: (v) => setEditorPrefs({ showMargins: v }),
   };
 }
 

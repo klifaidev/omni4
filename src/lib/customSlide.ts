@@ -772,6 +772,18 @@ export interface CustomSlideConfig {
   /** Notas do apresentador (vão para as anotações do PPTX). */
   speakerNotes?: string;
   sourceFooter?: SlideSourceFooterConfig;
+  /** Guias de layout do editor (só aparecem ao editar; nunca na
+   *  apresentação nem na exportação). Coordenadas do slide em px. */
+  guides?: SlideGuides;
+}
+
+export interface SlideGuides {
+  /** Guias verticais (posições x). */
+  v: number[];
+  /** Guias horizontais (posições y). */
+  h: number[];
+  /** Travadas: não dá para arrastar nem apagar. */
+  locked?: boolean;
 }
 
 // ---------------------------------------------------------------------------

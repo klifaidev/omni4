@@ -62,7 +62,8 @@ export type EditorActionLabel =
   | "Rotacionar"
   | "Ajustar geometria"
   | "Substituir texto"
-  | "Organizar blocos";
+  | "Organizar blocos"
+  | "Alterar guias";
 
 interface EditorState {
   config: CustomSlideConfig | null;
@@ -253,6 +254,11 @@ export function setSpeakerNotesAction(notes: string) {
 
 export function setSourceFooterAction(sourceFooter: CustomSlideConfig["sourceFooter"]) {
   mutate("Alterar slide", (c) => ({ ...c, sourceFooter }));
+}
+
+/** Guias de layout do slide (desfazível como qualquer edição). */
+export function setGuidesAction(guides: CustomSlideConfig["guides"]) {
+  mutate("Alterar guias", (c) => ({ ...c, guides }));
 }
 
 export function addBlockAction(kind: CustomBlockKind): string | null {

@@ -30,7 +30,7 @@ import {
   AlignStartHorizontal, AlignEndHorizontal,
   AlignStartVertical, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
-  Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3,
+  Group as GroupIcon, Ungroup as UngroupIcon, Grid3x3, Ruler,
   Play, Paintbrush, PaintRoller, Search, Star, StickyNote,
   Eye, EyeOff, GripVertical, Loader2, Minus, MoreHorizontal,
   PanelRightClose, PanelRightOpen, Globe2 as Globe2Icon,
@@ -216,9 +216,12 @@ import {
   insertBlockAction, insertBlocksAction,
   undo as undoAction, redo as redoAction,
   flushPendingEditorEmit,
+  setGuidesAction,
   type AlignKind,
 } from "./editorStore";
 import { FindReplaceDialog } from "./FindReplaceDialog";
+import { GuidesLayer } from "./canvas/GuidesLayer";
+import { DEFAULT_MARGIN, mergeGuides, presetGuides, type GuidePreset } from "@/lib/slideGuides";
 import { SlideIdContext } from "./SlideIdentity";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import type { SlideItem } from "@/lib/slidesFlow";
@@ -817,6 +820,21 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     setSelection,
     updateBlock,
   }), [canEdit, maxBlockZ, updateBlock]);
+  // Guias de layout e margens visíveis também atraem os blocos.
+  const snapLines = useMemo(() => {
+    const v: number[] = [];
+    const h: number[] = [];
+    if (prefs.showRulers) {
+      v.push(...(config.guides?.v ?? []));
+      h.push(...(config.guides?.h ?? []));
+    }
+    if (prefs.showMargins) {
+      const contentH = CANVAS_H - (config.showHaraldFooter ? FOOTER_H : 0);
+      v.push(DEFAULT_MARGIN, CANVAS_W - DEFAULT_MARGIN);
+      h.push(DEFAULT_MARGIN, contentH - DEFAULT_MARGIN, contentH);
+    }
+    return v.length || h.length ? { v, h } : undefined;
+  }, [prefs.showRulers, prefs.showMargins, config.guides, config.showHaraldFooter]);
   const blockTransform = useBlockTransform({
     blocks: config.blocks,
     groups: config.groups,
@@ -825,6 +843,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     gridEnabled: prefs.gridEnabled,
     gridSize: prefs.gridSize,
     actions: blockTransformActions,
+    snapLines,
   });
   const { guides, clearGuides } = blockTransform;
 
@@ -1654,6 +1673,12 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       const target = e.target as HTMLElement | null;
       const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
+      // Shift+R: réguas e guias (como no Canva).
+      if (!inField && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        prefs.setShowRulers(!prefs.showRulers);
+        return;
+      }
       // Ctrl/Cmd+F ou +H: localizar e substituir no deck (vale até dentro de um campo).
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "h")) {
         e.preventDefault();
@@ -2837,6 +2862,18 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                 />
               )}
 
+              {/* Réguas, guias de layout e margens (só na edição). */}
+              <GuidesLayer
+                guides={config.guides}
+                showRulers={prefs.showRulers}
+                showMargins={prefs.showMargins}
+                showFooter={config.showHaraldFooter}
+                scale={scale}
+                canvasEl={canvasRef.current}
+                readOnly={readOnly}
+                onChange={(next) => { if (canEdit()) setGuidesAction(next); }}
+              />
+
               {/* Smart guides overlay (B8.3). */}
               <svg
                 data-export-hide="true"
@@ -2999,6 +3036,22 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               </SelectContent>
             </Select>
           )}
+          <GuidesMenu
+            showRulers={prefs.showRulers}
+            showMargins={prefs.showMargins}
+            guides={config.guides}
+            readOnly={readOnly}
+            onToggleRulers={() => prefs.setShowRulers(!prefs.showRulers)}
+            onToggleMargins={(v) => prefs.setShowMargins(v)}
+            onPreset={(preset) => {
+              if (!canEdit()) return;
+              const contentH = CANVAS_H - (config.showHaraldFooter ? FOOTER_H : 0);
+              setGuidesAction(mergeGuides(config.guides, presetGuides(preset, CANVAS_W, contentH)));
+              if (!prefs.showRulers) prefs.setShowRulers(true);
+            }}
+            onToggleLock={(v) => { if (canEdit()) setGuidesAction({ v: config.guides?.v ?? [], h: config.guides?.h ?? [], locked: v }); }}
+            onClear={() => { if (canEdit()) setGuidesAction(undefined); }}
+          />
           <Badge variant="secondary" className="ml-2 text-[9px] uppercase">16:9</Badge>
           <Separator orientation="vertical" className="mx-1 h-5" />
           <Button size="sm" variant="default" className="h-7 gap-1 px-2 text-[11px]"
@@ -3261,6 +3314,76 @@ function blockIcon(blk: CustomBlock) {
     case "bridge": return <GitBranch className={cls} />;
     default:       return <BarChart3 className={cls} />;
   }
+}
+
+/** Réguas e guias (Shift+R): liga/desliga, predefinições, margens/área
+ *  segura, travar e limpar. */
+function GuidesMenu({
+  showRulers, showMargins, guides, readOnly,
+  onToggleRulers, onToggleMargins, onPreset, onToggleLock, onClear,
+}: {
+  showRulers: boolean;
+  showMargins: boolean;
+  guides: CustomSlideConfig["guides"];
+  readOnly?: boolean;
+  onToggleRulers: () => void;
+  onToggleMargins: (v: boolean) => void;
+  onPreset: (p: GuidePreset) => void;
+  onToggleLock: (v: boolean) => void;
+  onClear: () => void;
+}) {
+  const tg = strings.slides.editor.guides;
+  const count = (guides?.v.length ?? 0) + (guides?.h.length ?? 0);
+  const presets: { id: GuidePreset; label: string }[] = [
+    { id: "center", label: tg.presets.center },
+    { id: "thirds", label: tg.presets.thirds },
+    { id: "columns12", label: tg.presets.columns12 },
+    { id: "margins", label: tg.presets.margins },
+  ];
+  return (
+    <div className="flex items-center">
+      <Button size="icon" variant={showRulers ? "default" : "ghost"} className="h-7 w-7 rounded-r-none"
+        onClick={onToggleRulers} aria-pressed={showRulers}
+        title={tg.toggleTitle} aria-label={tg.toggleTitle}>
+        <Ruler className="h-3.5 w-3.5" />
+      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button size="icon" variant={showRulers ? "default" : "ghost"} className="h-7 w-4 rounded-l-none px-0"
+            title={tg.menuTitle} aria-label={tg.menuTitle}>
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-60 space-y-3 p-3">
+          <div className="text-[12px] font-semibold">{tg.menuTitle}</div>
+          <div className="space-y-1">
+            <div className="text-[11px] text-muted-foreground">{tg.addGuides}</div>
+            <div className="grid grid-cols-2 gap-1">
+              {presets.map((p) => (
+                <Button key={p.id} size="sm" variant="outline" className="h-7 text-[11px]"
+                  disabled={readOnly} onClick={() => onPreset(p.id)}>
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <label className="flex items-center justify-between text-[12px]">
+            {tg.showMargins}
+            <Switch checked={showMargins} onCheckedChange={onToggleMargins} />
+          </label>
+          <label className="flex items-center justify-between text-[12px]">
+            {tg.lockGuides}
+            <Switch checked={!!guides?.locked} disabled={readOnly || count === 0} onCheckedChange={onToggleLock} />
+          </label>
+          <Button size="sm" variant="ghost" className="h-7 w-full text-[11px] text-destructive hover:text-destructive"
+            disabled={readOnly || count === 0} onClick={onClear}>
+            {tg.clear(count)}
+          </Button>
+          <p className="text-[10px] leading-snug text-muted-foreground">{tg.howTo}</p>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
 function FloatingBlockToolbar({
@@ -3559,6 +3682,7 @@ function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         [`${mod} + A`, t.shortcuts.items.selectAll],
         [`${mod} + B  /  ${mod} + I`, t.shortcuts.items.boldItalic],
         [`${mod} + F  /  ${mod} + H`, t.shortcuts.items.findReplace],
+        ["Shift + R", t.shortcuts.items.rulers],
         ["Esc", t.shortcuts.items.deselect],
       ],
     },

@@ -1040,6 +1040,22 @@ export const ptBR = {
       // funções (mesmo nome) dentro de BlockInspectors.tsx, já migradas em
       // inspectors.blocks.omni. Ver nota em MEMORY sobre isso antes de
       // "consertar" — não foi removido aqui, fora de escopo desta migração.
+      guides: {
+        toggleTitle: "Réguas e guias (Shift+R)",
+        menuTitle: "Guias e margens",
+        addGuides: "Adicionar guias",
+        presets: { center: "Centro", thirds: "Terços", columns12: "12 colunas", margins: "Margens" },
+        showMargins: "Mostrar margens e área segura",
+        lockGuides: "Travar guias",
+        clear: (n: number) => (n > 0 ? `Remover ${n} ${n === 1 ? "guia" : "guias"}` : "Nenhuma guia"),
+        howTo: "Arraste da régua para criar uma guia; arraste a guia de volta para a régua (ou dê dois cliques nela) para remover. As guias atraem os blocos e não aparecem na apresentação nem na exportação.",
+        rulerTopHint: "Arraste para baixo para criar uma guia horizontal",
+        rulerLeftHint: "Arraste para a direita para criar uma guia vertical",
+        guideHint: "Arraste para mover · solte na régua ou dê dois cliques para remover",
+        guideAt: (px: number) => `Guia em ${px} px`,
+        dropToRemove: "Solte para remover",
+        footerZone: "Faixa Harald",
+      },
       findReplace: {
         title: "Localizar e substituir",
         description: "Em todos os slides: títulos, textos, rótulos de KPI, títulos de gráficos e capas.",
@@ -1395,6 +1411,7 @@ export const ptBR = {
             selectAll: "Selecionar todos os blocos",
             boldItalic: "Negrito / itálico (no trecho selecionado ao editar o texto)",
             findReplace: "Localizar e substituir em todos os slides",
+            rulers: "Mostrar/ocultar réguas e guias",
             deselect: "Sair da edição do texto → desselecionar → fechar o editor",
             copy: "Copiar bloco",
             paste: "Colar bloco (mantém ao mudar de slide)",

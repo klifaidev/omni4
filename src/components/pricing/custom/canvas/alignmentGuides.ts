@@ -30,6 +30,8 @@ const SLIDE_MARGIN = 16;
 export function computeSnap(
   moving: { x: number; y: number; w: number; h: number },
   others: Bounds[],
+  /** Guias de layout do slide (e margens visíveis): também atraem. */
+  extraLines?: { v: number[]; h: number[] },
 ): SnapResult {
   const v = new Set<number>();
   const h = new Set<number>();
@@ -64,6 +66,9 @@ export function computeSnap(
   candY.push({ line: CANVAS_H, from: "edge" });
   candY.push({ line: CANVAS_H - SLIDE_MARGIN, from: "edge" });
   candY.push({ line: CANVAS_H / 2, from: "center" });
+
+  for (const x of extraLines?.v ?? []) candX.push({ line: x, from: "edge" });
+  for (const y of extraLines?.h ?? []) candY.push({ line: y, from: "edge" });
 
   // Targets on the moving block.
   const xTargets = [
