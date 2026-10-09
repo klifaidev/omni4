@@ -4,7 +4,9 @@ import {
   bindEditorStore,
   commitExternalEditorChange,
   flushPendingEditorEmit,
+  duplicateBlocksAction,
   insertBlocksAction,
+  insertChartInsightAction,
   redo,
   resizeGroupAction,
   syncFromParent,
@@ -265,5 +267,22 @@ describe("editorStore emit debounce", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("resumo automático do gráfico", () => {
+  const chart = { id: "chart-1", kind: "chart", x: 40, y: 120, w: 600, h: 300, z: 2 } as unknown as CustomBlock;
+  it("insere o texto ligado abaixo do gráfico e uma cópia conjunta religa na cópia", () => {
+    const onChange = vi.fn();
+    const current = () => { flushPendingEditorEmit(); return (onChange.mock.lastCall![0] as CustomSlideConfig).blocks; };
+    bindEditorStore({ ...config(), blocks: [...config().blocks, chart] }, onChange, "slide-insight");
+    const id = insertChartInsightAction("chart-1", "Em **ago/26**, o ROL foi de R$ 8,4 mi.");
+    const blocks = current();
+    const text = blocks.find((b) => b.id === id);
+    expect(text).toMatchObject({ kind: "text", x: 40, y: 432, w: 600, insight: { chartId: "chart-1" } });
+
+    const [chartCopy, textCopy] = duplicateBlocksAction(["chart-1", id!]);
+    const copy = current().find((b) => b.id === textCopy);
+    expect(copy).toMatchObject({ insight: { chartId: chartCopy } });
   });
 });

@@ -66,6 +66,15 @@ export function buildSlidesPreflight(items: SlideItem[]): SlidePreflightReport {
     blocks.forEach((block) => {
       checkBlockBounds(block, item.id, slideNumber, slideLabel, issues);
       checkBlockContent(block, item.id, slideNumber, slideLabel, issues);
+      if (block.kind === "text" && block.insight && !block.hidden
+        && !blocks.some((b) => b.id === block.insight!.chartId && b.kind === "chart")) {
+        issues.push(issue(
+          "warning", item.id, slideNumber, slideLabel,
+          "Resumo sem gráfico",
+          "O gráfico deste resumo automático saiu do slide — o texto parou de acompanhar os dados. Desvincule ou apague o resumo.",
+          block.id,
+        ));
+      }
     });
 
     const hiddenCount = blocks.filter((block) => block.hidden).length;

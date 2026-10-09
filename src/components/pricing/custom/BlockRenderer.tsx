@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  CustomBlock, KpiBlock,
+  CustomBlock, KpiBlock, TextBlock,
   BridgeBlock, TableBlock, ChartBlock, TopSkuBlock, DreBlock,
   BlockDataSource,
   TableGapColumn,
@@ -51,6 +51,8 @@ import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { ShapeRenderer } from "./ShapeRenderer";
 import { RichTextContent } from "./RichTextContent";
+import { useSlideBlock } from "./SlideIdentity";
+import { useChartInsight } from "./chart/useChartInsight";
 import { useSlideFilters } from "./SlideFilterContext";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
@@ -478,7 +480,9 @@ function BlockRendererInner({ block: rawBlock, readOnly, isEditing, cacheSlideId
   let content: React.ReactNode;
   switch (block.kind) {
     case "title":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;
-    case "text":   content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;
+    case "text":   content = block.insight
+      ? <InsightTextRender block={block} cacheSlideId={cacheSlideId} isEditing={isEditing} readOnly={readOnly} />
+      : <SimpleLayoutRender node={buildSimpleBlockLayout(block)} isEditing={isEditing} readOnly={readOnly} />; break;
     case "kpi":    content = <KpiRender block={block} readOnly={readOnly} />; break;
     case "image":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} />; break;
     case "shape":  content = <SimpleLayoutRender node={buildSimpleBlockLayout(block)} />; break;
@@ -511,6 +515,23 @@ function BlockRendererInner({ block: rawBlock, readOnly, isEditing, cacheSlideId
       {content}
     </div>
   );
+}
+
+/** Texto ligado a um gráfico do slide: escrito a partir dos dados dele e
+ *  atualizado com o mês de referência. Enquanto calcula — ou se o gráfico
+ *  saiu do slide — mostra a última versão guardada em `text`. */
+function InsightTextRender({ block, cacheSlideId, isEditing, readOnly }: {
+  block: TextBlock;
+  cacheSlideId?: string;
+  isEditing?: boolean;
+  readOnly?: boolean;
+}) {
+  const linked = useSlideBlock(block.insight?.chartId);
+  const chart = linked?.kind === "chart" ? linked : null;
+  const insight = useChartInsight(chart, cacheSlideId);
+  const text = chart && insight.status === "ready" ? insight.text : block.text;
+  const node = useMemo(() => buildSimpleBlockLayout({ ...block, text }), [block, text]);
+  return <SimpleLayoutRender node={node} isEditing={isEditing} readOnly={readOnly} />;
 }
 
 function SimpleLayoutRender({

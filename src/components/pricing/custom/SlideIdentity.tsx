@@ -4,8 +4,19 @@
 
 import { createContext, useContext } from "react";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import type { CustomBlock } from "@/lib/customSlide";
 
 export const SlideIdContext = createContext<string | undefined>(undefined);
+
+/** Blocos do slide sendo desenhado — para um bloco ler outro (o resumo
+ *  automático lê o gráfico ao qual está ligado). */
+export const SlideBlocksContext = createContext<readonly CustomBlock[] | null>(null);
+
+export function useSlideBlock(id: string | undefined): CustomBlock | null {
+  const blocks = useContext(SlideBlocksContext);
+  if (!id || !blocks) return null;
+  return blocks.find((b) => b.id === id) ?? null;
+}
 
 /** Número do slide e total, contando só os slides visíveis (ocultos não
  *  entram na apresentação nem na exportação). "—" fora de um deck ou em

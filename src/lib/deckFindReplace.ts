@@ -26,6 +26,8 @@ export interface DeckMatch {
 
 /** Campos de texto editáveis de cada tipo de bloco. */
 function blockFields(b: CustomBlock): string[] {
+  // Resumo automático é escrito pelo gráfico: trocar `text` não mudaria nada.
+  if (b.kind === "text" && b.insight) return [];
   if (b.kind === "title" || b.kind === "text") return ["text"];
   if (b.kind === "kpi") return ["label"];
   const title = (b as { title?: unknown }).title;

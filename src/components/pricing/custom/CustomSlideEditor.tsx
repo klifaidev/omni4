@@ -222,7 +222,7 @@ import {
 import { FindReplaceDialog } from "./FindReplaceDialog";
 import { GuidesLayer } from "./canvas/GuidesLayer";
 import { DEFAULT_MARGIN, mergeGuides, presetGuides, type GuidePreset } from "@/lib/slideGuides";
-import { SlideIdContext } from "./SlideIdentity";
+import { SlideBlocksContext, SlideIdContext } from "./SlideIdentity";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { GridSize } from "./editorPrefs";
@@ -597,7 +597,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   useEffect(() => {
     if (!inlineEditId) return;
     const blk = config.blocks.find((b) => b.id === inlineEditId);
-    if (!blk || blk.locked || (blk.kind !== "title" && blk.kind !== "text")) {
+    if (!blk || blk.locked || (blk.kind !== "title" && blk.kind !== "text") || (blk.kind === "text" && blk.insight)) {
       setInlineEditId(null);
     }
   }, [inlineEditId, config.blocks]);
@@ -1860,6 +1860,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   return (
     <SlideFilterProvider slideKey={slideId}>
     <SlideIdContext.Provider value={slideId}>
+    <SlideBlocksContext.Provider value={config.blocks}>
     <div className={cn(
       "surface-base relative grid h-full min-h-0 gap-3",
       // Painel de propriedades: 340px abaixo de 2xl (em 1366px o slide ficava
@@ -2538,8 +2539,11 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
               {[...config.blocks].sort((a, b) => a.z - b.z).map((blk) => {
                 const isSelected = selectedIds.includes(blk.id);
+                // Resumo automático: o texto vem do gráfico — editar à mão só
+                // depois de desvincular (painel do bloco).
+                const isInsight = blk.kind === "text" && !!blk.insight;
                 const isInlineEditable =
-                  (blk.kind === "title" || blk.kind === "text") && !blk.locked && !readOnly;
+                  (blk.kind === "title" || blk.kind === "text") && !blk.locked && !readOnly && !isInsight;
                 const isEditing = inlineEditId === blk.id && isInlineEditable;
                 const isRotatable = blk.kind === "title" || blk.kind === "text" || blk.kind === "image";
                 const rotation = isRotatable ? ((blk as TitleBlock | TextBlock | ImageBlock).rotation ?? 0) : 0;
@@ -2622,7 +2626,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                         onDoubleClick={isInlineEditable ? () => {
                           setInlineEditId(blk.id);
                           selectBlock(blk.id);
-                        } : blk.groupId ? () => enterGroupEdit(blk.id) : undefined}
+                        } : blk.groupId ? () => enterGroupEdit(blk.id) : isInsight ? () => {
+                          toast(strings.slides.editor.insight.editHint, { duration: 2600 });
+                        } : undefined}
                         style={{ zIndex: blockFrameHandlers.zIndex(isEditing) }}
                         className={cn(
                           blockFrameHandlers.isAltDragFlashing && "shadow-[0_0_0_4px_hsl(var(--warning)/0.35)]",
@@ -3284,6 +3290,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         </DialogContent>
       </Dialog>
     </div>
+    </SlideBlocksContext.Provider>
     </SlideIdContext.Provider>
     {presentOpen && (
       <PresentationMode

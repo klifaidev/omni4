@@ -125,6 +125,7 @@ import {
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
 import { strings } from "@/lib/i18n";
+import { InsightLinkCard } from "../chart/ChartInsightCard";
 import { TEXT_TOKENS, tokenText } from "@/lib/textTokens";
 
 const t = strings.slides.editor.inspectors.blocks;
@@ -1831,9 +1832,11 @@ function TextTitleInspector({ block, onChange }: {
   onChange: (patch: Partial<TitleBlock | TextBlock>) => void;
 }) {
   const isTitle = block.kind === "title";
+  const isInsight = block.kind === "text" && !!block.insight;
   return (
     <div className="space-y-2">
-      <Section title={t.textTitle.content} defaultOpen>
+      {isInsight && <InsightLinkCard block={block as TextBlock} />}
+      {!isInsight && <Section title={t.textTitle.content} defaultOpen>
         <DraftTextarea
           rows={isTitle ? 2 : 4}
           value={block.text}
@@ -1846,7 +1849,7 @@ function TextTitleInspector({ block, onChange }: {
             <code key={tk.label} className="mr-1 whitespace-nowrap rounded bg-muted px-1">{tokenText(tk)}</code>
           ))}
         </p>
-      </Section>
+      </Section>}
 
       <Section title={t.textTitle.typography} defaultOpen>
         <Row label={t.textTitle.font}>

@@ -25,9 +25,10 @@ import type {
   CustomBlockKind,
   CustomChartType,
   CustomSlideConfig,
+  TextBlock,
 } from "@/lib/customSlide";
 import { newBlock, newChartBlock, CANVAS_W, CANVAS_H, FOOTER_H } from "@/lib/customSlide";
-import { alignGroupToTarget, alignRects, distributeRects, slideArea, tidyRects, type Pos } from "@/lib/blockArrange";
+import { alignGroupToTarget, alignRects, distributeRects, placeNear, slideArea, tidyRects, type Pos } from "@/lib/blockArrange";
 import { computeGroupResizePatches } from "./blockTransform";
 
 export type EditorActionLabel =
@@ -63,7 +64,9 @@ export type EditorActionLabel =
   | "Ajustar geometria"
   | "Substituir texto"
   | "Organizar blocos"
-  | "Alterar guias";
+  | "Alterar guias"
+  | "Inserir resumo"
+  | "Desvincular resumo";
 
 interface EditorState {
   config: CustomSlideConfig | null;
@@ -259,6 +262,51 @@ export function setSourceFooterAction(sourceFooter: CustomSlideConfig["sourceFoo
 /** Guias de layout do slide (desfazível como qualquer edição). */
 export function setGuidesAction(guides: CustomSlideConfig["guides"]) {
   mutate("Alterar guias", (c) => ({ ...c, guides }));
+}
+
+/**
+ * Resumo automático de um gráfico: bloco de texto ligado a ele, posto logo
+ * abaixo (ou ao lado; ou abrindo espaço no próprio gráfico). `text` é a
+ * versão atual da frase, guardada para o caso de o gráfico sair do slide.
+ */
+export function insertChartInsightAction(chartId: string, text: string): string | null {
+  const cur = baseStore.getState().config;
+  const chart = cur?.blocks.find((b) => b.id === chartId);
+  if (!cur || !chart) return null;
+  const area = slideArea(CANVAS_W, CANVAS_H, cur.showHaraldFooter ? FOOTER_H : 0);
+  const others = cur.blocks.filter((b) => b.id !== chartId && !b.hidden);
+  const { rect, shrink } = placeNear(chart, others, area, 72);
+  const zTop = cur.blocks.reduce((m, b) => Math.max(m, b.z), 0);
+  const blk = {
+    ...(newBlock("text", zTop) as TextBlock),
+    ...rect,
+    text,
+    size: 16,
+    color: "334155",
+    lineHeight: 1.35,
+    insight: { chartId },
+  } as TextBlock;
+  mutate("Inserir resumo", (c) => ({
+    ...c,
+    blocks: [
+      ...c.blocks.map((b) => (shrink && b.id === chartId ? { ...b, h: shrink.h } : b)),
+      blk,
+    ],
+  }));
+  baseStore.setState({ selectedIds: [blk.id], groupEditMemberId: null });
+  return blk.id;
+}
+
+/** Solta o resumo do gráfico: vira texto comum, com a frase atual. */
+export function unlinkChartInsightAction(id: string, text: string) {
+  mutate("Desvincular resumo", (c) => ({
+    ...c,
+    blocks: c.blocks.map((b) => {
+      if (b.id !== id || b.kind !== "text") return b;
+      const { insight: _drop, ...rest } = b;
+      return { ...rest, text };
+    }),
+  }));
 }
 
 export function addBlockAction(kind: CustomBlockKind): string | null {
@@ -718,6 +766,12 @@ export function duplicateBlocksAction(ids: string[]): string[] {
     } as CustomBlock;
     newBlocks.push(clone);
     newIds.push(newId);
+  }
+  // Gráfico e resumo duplicados juntos: a cópia do resumo lê a cópia do gráfico.
+  for (const blk of newBlocks) {
+    if (blk.kind === "text" && blk.insight && idMap.has(blk.insight.chartId)) {
+      blk.insight = { chartId: idMap.get(blk.insight.chartId)! };
+    }
   }
   const newGroups: BlockGroup[] = Array.from(groupIdMap.values()).map((gid) => ({
     id: gid,

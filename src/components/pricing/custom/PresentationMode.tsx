@@ -21,7 +21,7 @@ import type { SlideItem } from "@/lib/slidesFlow";
 import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock } from "@/lib/customSlide";
 import { BlockRenderer } from "./BlockRenderer";
 import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
-import { SlideIdContext } from "./SlideIdentity";
+import { SlideBlocksContext, SlideIdContext } from "./SlideIdentity";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
@@ -606,6 +606,7 @@ export function CustomCanvasReadOnly({
   const sorted = [...config.blocks].sort((a, b) => a.z - b.z);
   return (
     <SlideIdContext.Provider value={positionSlideId ?? slideId}>
+    <SlideBlocksContext.Provider value={config.blocks}>
     <div
       ref={ref}
       style={{
@@ -660,6 +661,7 @@ export function CustomCanvasReadOnly({
       )}
       <SlideSourceFooterReadOnly config={config} />
     </div>
+    </SlideBlocksContext.Provider>
     </SlideIdContext.Provider>
   );
 }

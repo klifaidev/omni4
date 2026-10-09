@@ -139,3 +139,49 @@ export function tidyRects(rects: readonly Rect[]): Pos[] {
   }
   return rects.map((r) => out.get(r.id)!);
 }
+
+// ---------------------------------------------------------------------------
+// Lugar para um bloco novo ao lado de outro (o resumo do gráfico)
+// ---------------------------------------------------------------------------
+
+const intersects = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Onde pôr um bloco de altura `h` junto de `anchor` sem cobrir nada:
+ * 1) logo abaixo, com a mesma largura; 2) à direita, se sobra coluna;
+ * 3) abrindo espaço — o `anchor` encolhe por baixo (`shrink`) e o bloco
+ * entra no lugar. Último caso: em cima da parte de baixo do anchor.
+ */
+export function placeNear(
+  anchor: Rect,
+  others: readonly Rect[],
+  area: Rect,
+  h: number,
+  opts: { gap?: number; minSideW?: number; maxSideW?: number; minAnchorH?: number } = {},
+): { rect: Omit<Rect, "id">; shrink?: { h: number } } {
+  const gap = opts.gap ?? 12;
+  const minSideW = opts.minSideW ?? 240;
+  const maxSideW = opts.maxSideW ?? 380;
+  const minAnchorH = opts.minAnchorH ?? 200;
+  const margin = 24;
+  const free = (r: Omit<Rect, "id">) =>
+    r.x >= area.x && r.y >= area.y && r.x + r.w <= area.x + area.w && r.y + r.h <= area.y + area.h
+    && !others.some((o) => intersects({ id: "", ...r }, o));
+
+  const below = { x: anchor.x, y: anchor.y + anchor.h + gap, w: anchor.w, h };
+  if (free(below)) return { rect: below };
+
+  const sideX = anchor.x + anchor.w + gap;
+  const sideW = Math.min(maxSideW, area.x + area.w - margin - sideX);
+  if (sideW >= minSideW) {
+    const side = { x: sideX, y: anchor.y, w: sideW, h: Math.min(anchor.h, Math.max(h, 160)) };
+    if (free(side)) return { rect: side };
+  }
+
+  const shrunkH = anchor.h - h - gap;
+  if (shrunkH >= minAnchorH) {
+    return { rect: { x: anchor.x, y: anchor.y + shrunkH + gap, w: anchor.w, h }, shrink: { h: shrunkH } };
+  }
+  return { rect: { x: anchor.x, y: anchor.y + anchor.h - h, w: anchor.w, h } };
+}

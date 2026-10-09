@@ -111,6 +111,10 @@ export interface TextBlock extends BaseBlock {
   padding?: number;
   backgroundColor?: string;
   borderRadius?: number;
+  /** Resumo automático: o texto é escrito a partir do gráfico `chartId` do
+   *  mesmo slide e acompanha os dados (lib/chartInsight). `text` guarda a
+   *  última versão, usada se o gráfico sair do slide e ao desvincular. */
+  insight?: { chartId: string };
 }
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,7 @@ import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX } from "@/lib/slideDesignTokens";
 import { DraftInput, DraftNumberInput } from "../DraftInput";
 import { strings } from "@/lib/i18n";
+import { ChartInsightCard } from "./ChartInsightCard";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
 const t = strings.slides.editor.inspectors.chart;
@@ -540,6 +541,8 @@ export function ChartInspector({
           ))}
         </div>
       </div>
+
+      <ChartInsightCard block={block} />
 
       {/* Roteiro do Slides, item 1.4: busca dentro do inspector. O Chart é o
        * único inspector com seções demais (9-10 visíveis por vez, ~11

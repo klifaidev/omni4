@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignGroupToTarget, alignRects, distributeRects, slideArea, tidyRects, type Rect } from "./blockArrange";
+import { alignGroupToTarget, alignRects, distributeRects, placeNear, slideArea, tidyRects, type Rect } from "./blockArrange";
 
 const r = (id: string, x: number, y: number, w: number, h: number): Rect => ({ id, x, y, w, h });
 
@@ -57,5 +57,22 @@ describe("organizar", () => {
     expect(by.c[0]).toBe(0);
     expect(by.d[1]).toBe(by.c[1]);
     expect(by.b[0] - 100).toBe(by.c[1] - 60); // mesmo respiro na horizontal e na vertical
+  });
+});
+
+describe("lugar para o resumo do gráfico", () => {
+  const area = slideArea(1333, 750, 85);
+  it("logo abaixo, com a mesma largura, quando há espaço livre", () => {
+    expect(placeNear(r("c", 40, 120, 600, 300), [], area, 72)).toEqual({ rect: { x: 40, y: 432, w: 600, h: 72 } });
+  });
+  it("à direita quando embaixo está ocupado", () => {
+    const res = placeNear(r("c", 40, 120, 600, 300), [r("o", 40, 440, 600, 100)], area, 72);
+    expect(res.rect).toMatchObject({ x: 652, y: 120, w: 380 });
+    expect(res.shrink).toBeUndefined();
+  });
+  it("abre espaço encolhendo o gráfico quando não sobra lugar", () => {
+    const res = placeNear(r("c", 40, 120, 1253, 520), [], area, 72);
+    expect(res.shrink).toEqual({ h: 436 });
+    expect(res.rect).toEqual({ x: 40, y: 568, w: 1253, h: 72 });
   });
 });
