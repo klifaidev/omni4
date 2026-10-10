@@ -42,6 +42,7 @@ const NAV_ITEMS: { path: string; label: string }[] = [
   { path: "/abc", label: "Portfólio de SKUs" },
   { path: "/budget", label: "Budget" },
   { path: "/positivacao", label: "Positivação" },
+  { path: "/ruptura", label: "Inteligência de Ruptura" },
   { path: "/detalhe", label: "Tabela Dinâmica" },
   { path: "/slides", label: "Slides" },
   { path: "/atividades", label: "Atividades" },

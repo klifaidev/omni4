@@ -32,6 +32,7 @@ const Alertas = lazy(() => import("./pages/Alertas.tsx"));
 const Filtros = lazy(() => import("./pages/Filtros.tsx"));
 const Positivacao = lazy(() => import("./pages/Positivacao.tsx"));
 const FarolCadastro = lazy(() => import("./pages/FarolCadastro.tsx"));
+const Ruptura = lazy(() => import("./pages/Ruptura.tsx"));
 // NotFound fica eager (import normal, acima): é a rota catch-all "*", que
 // vive fora do <Route element={<AppShell />}> e por isso fora do Suspense
 // que envolve o <Outlet /> em AppShell.tsx — lazy aqui suspenderia sem
@@ -63,6 +64,7 @@ const App = () => (
             <Route path="/filtros" element={<Filtros />} />
             <Route path="/positivacao" element={<Positivacao />} />
             <Route path="/farol" element={<FarolCadastro />} />
+            <Route path="/ruptura" element={<Ruptura />} />
             <Route path="/slides" element={null} />
             <Route path="/upload" element={<Upload />} />
           </Route>
