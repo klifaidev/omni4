@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PivotMode } from "@/lib/pivotData";
+import type { PivotTotals } from "@/lib/pivotTotals";
 
 export type PivotVizMode = "heatmap" | "plain" | "bars";
 export type PivotSortState = { col: string; measure: string; dir: "asc" | "desc" } | null;
@@ -15,6 +16,8 @@ export interface PivotLayout {
   sort: PivotSortState;
   viz: PivotVizMode;
   hideEmpty: boolean;
+  /** Totais e subtotais visíveis. Ausente em montagens antigas = tudo visível. */
+  totals?: PivotTotals;
 }
 
 export interface SavedPivotView {

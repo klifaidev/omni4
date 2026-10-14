@@ -79,6 +79,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -102,6 +103,17 @@ import {
   type PivotPhraseResult,
 } from "@/lib/pivotPhrase";
 import { evaluateFormula, formatFormula, parseFormula } from "@/lib/pivotFormula";
+import {
+  DEFAULT_PIVOT_TOTALS,
+  PIVOT_TOTALS_PRESETS,
+  describeTotals,
+  matchTotalsPreset,
+  normalizeTotals,
+  subtotalValuesHidden,
+  totalsApplicability,
+  type PivotTotals,
+  type PivotTotalsPreset,
+} from "@/lib/pivotTotals";
 import {
   currentHeapMB,
   getPendingPivotCrash,
@@ -410,6 +422,7 @@ function defaultLayout(mode: PivotMode): PivotLayout {
     sort: null,
     viz: "heatmap",
     hideEmpty: true,
+    totals: DEFAULT_PIVOT_TOTALS,
   };
 }
 
@@ -427,7 +440,11 @@ function sanitizeLayout(layout: PivotLayout | undefined, mode: PivotMode): Pivot
   const filterVals = Object.fromEntries(
     Object.entries(layout.filterVals ?? {}).filter(([dim, vals]) => filterDims.includes(dim) && Array.isArray(vals)),
   );
-  const sort = layout.sort && values.includes(layout.sort.measure) ? layout.sort : null;
+  const totals = normalizeTotals(layout.totals);
+  // Ordenar pela coluna Total sem a coluna Total na tela não teria indicador nem como desfazer.
+  const sort = layout.sort && values.includes(layout.sort.measure) && (totals.grandCol || layout.sort.col !== "__total__")
+    ? layout.sort
+    : null;
   return {
     rows: (layout.rows ?? []).filter((d) => dimIds.has(d)),
     cols: (layout.cols ?? []).filter((d) => dimIds.has(d)),
@@ -437,6 +454,7 @@ function sanitizeLayout(layout: PivotLayout | undefined, mode: PivotMode): Pivot
     sort,
     viz: layout.viz === "plain" || layout.viz === "bars" ? layout.viz : "heatmap",
     hideEmpty: layout.hideEmpty !== false,
+    totals,
   };
 }
 
@@ -685,6 +703,7 @@ export function PivotBuilder({
   // UX state
   const [viz, setViz] = useState<VizMode>(initial.layout.viz);
   const [hideEmpty, setHideEmpty] = useState(initial.layout.hideEmpty);
+  const [totals, setTotals] = useState<PivotTotals>(() => normalizeTotals(initial.layout.totals));
   const [sort, setSort] = useState<SortState>(initial.layout.sort);
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [drillSelection, setDrillSelection] = useState<DrillSelection | null>(null);
@@ -709,8 +728,8 @@ export function PivotBuilder({
   const pivotRequestRef = useRef(0);
 
   const layout = useMemo<PivotLayout>(
-    () => ({ rows: rowsDims, cols: colsDims, values: valueIds, filterDims, filterVals, sort, viz, hideEmpty }),
-    [rowsDims, colsDims, valueIds, filterDims, filterVals, sort, viz, hideEmpty],
+    () => ({ rows: rowsDims, cols: colsDims, values: valueIds, filterDims, filterVals, sort, viz, hideEmpty, totals }),
+    [rowsDims, colsDims, valueIds, filterDims, filterVals, sort, viz, hideEmpty, totals],
   );
 
   const applyLayout = useCallback((next: PivotLayout) => {
@@ -722,6 +741,7 @@ export function PivotBuilder({
     setSort(next.sort);
     setViz(next.viz);
     setHideEmpty(next.hideEmpty);
+    setTotals(normalizeTotals(next.totals));
     setExpandedRowKeys(new Set());
   }, []);
 
@@ -1321,12 +1341,20 @@ export function PivotBuilder({
     setFilterDims([]);
     setFilterVals({});
     setSort(null);
+    setTotals(DEFAULT_PIVOT_TOTALS);
     setExpandedRowKeys(new Set());
   }
 
   function applySavedView(view: SavedPivotView) {
     applyLayout(sanitizeLayout(view.layout, mode) ?? defaultLayout(mode));
     toast.success(`Visão "${view.name}" aplicada`, { description: "Ctrl+Z desfaz." });
+  }
+
+  // Totais e subtotais: só mudam o que aparece (o pivot segue calculando tudo).
+  function changeTotals(next: PivotTotals) {
+    setTotals(next);
+    // Sem a coluna Total não há cabeçalho pra mostrar nem limpar a ordenação por ela.
+    if (!next.grandCol && sort?.col === TOTAL_COL_KEY) setSort(null);
   }
 
   // ----- Frase viva -----
@@ -1548,6 +1576,7 @@ export function PivotBuilder({
             tableRef={tableRef}
             modeLabel={MODE_LABEL[mode]}
             sortedRows={sortedRows}
+            totals={totals}
             onExportReady={onExportReady}
           />
 
@@ -1614,6 +1643,11 @@ export function PivotBuilder({
               title={showTrend ? "Esconder o minigráfico de tendência" : "Mostrar o minigráfico de tendência por linha"}
             />
           )}
+          <TotalsMenu
+            totals={totals}
+            applies={totalsApplicability(rowsDims.length, colsDims.length)}
+            onChange={changeTotals}
+          />
           <ToolToggle
             icon={hideEmpty ? EyeOff : Eye}
             label="Ocultar vazias"
@@ -2105,6 +2139,7 @@ export function PivotBuilder({
               sort={sort}
               setSort={setSort}
               sortedRows={visibleRows}
+              totals={totals}
               expandedRowKeys={expandedRowKeys}
               onToggleRowGroup={handleToggleRowGroup}
               onOpenDrill={handleOpenDrill}
@@ -2310,6 +2345,113 @@ function CalcFieldDialog({
 }
 
 /** Botão liga/desliga da faixa "Exibição": ícone + rótulo, mesmo desenho pra todos. */
+const TOTALS_PRESET_LABELS: Array<{ id: PivotTotalsPreset; label: string; hint: string }> = [
+  { id: "all", label: "Todos", hint: "Total geral, coluna Total e subtotais" },
+  { id: "grand", label: "Só total geral", hint: "Sem subtotais nos grupos" },
+  { id: "none", label: "Nenhum", hint: "Só os números das linhas" },
+];
+
+/** Totais e subtotais visíveis — o "Design → Totais" do Excel, num popover só. */
+function TotalsMenu({
+  totals,
+  applies,
+  onChange,
+}: {
+  totals: PivotTotals;
+  applies: ReturnType<typeof totalsApplicability>;
+  onChange: (next: PivotTotals) => void;
+}) {
+  const summary = describeTotals(totals, applies);
+  const preset = matchTotalsPreset(totals);
+  const rows: Array<{ key: keyof PivotTotals; label: string; hint: string; blocked: string | null }> = [
+    { key: "grandRow", label: "Total geral", hint: "Linha com o total, no rodapé da tabela", blocked: null },
+    {
+      key: "grandCol",
+      label: "Coluna Total",
+      hint: "Soma de cada linha, à direita",
+      blocked: applies.grandCol ? null : "Coloque um campo em Colunas para usar",
+    },
+    {
+      key: "subtotals",
+      label: "Subtotais",
+      hint: "Valores de cada grupo de linhas",
+      blocked: applies.subtotals ? null : "Use 2 ou mais campos em Linhas para usar",
+    },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-pressed={summary !== null}
+          title="Mostrar ou ocultar totais e subtotais"
+          className={cn(
+            "inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
+            summary !== null
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-border/50 bg-secondary/40 text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Sigma className="h-3.5 w-3.5" />
+          {summary ?? "Totais"}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Totais e subtotais</div>
+        <div className="mb-3 grid grid-cols-3 gap-0.5 rounded-xl border border-border/50 bg-secondary/40 p-0.5" role="group" aria-label="Atalhos de totais">
+          {TOTALS_PRESET_LABELS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              title={p.hint}
+              aria-pressed={preset === p.id}
+              onClick={() => onChange(PIVOT_TOTALS_PRESETS[p.id])}
+              className={cn(
+                "h-7 rounded-lg px-1 text-[11px] font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/60",
+                preset === p.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <ul className="space-y-0.5">
+          {rows.map((row) => {
+            const id = `pivot-totals-${row.key}`;
+            return (
+              <li key={row.key}>
+                <label
+                  htmlFor={id}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-lg px-2 py-1.5",
+                    row.blocked ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-secondary/50",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-foreground">{row.label}</span>
+                    <span className="block text-[11px] leading-snug text-muted-foreground">{row.blocked ?? row.hint}</span>
+                  </span>
+                  <Switch
+                    id={id}
+                    checked={totals[row.key]}
+                    disabled={row.blocked !== null}
+                    onCheckedChange={(checked) => onChange({ ...totals, [row.key]: checked })}
+                  />
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        {applies.subtotals && !totals.subtotals && (
+          <p className="mt-2 rounded-lg bg-secondary/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+            Grupos abertos viram só título; recolhidos continuam mostrando o resumo.
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function ToolToggle({
   icon: Icon,
   label,
@@ -3971,7 +4113,13 @@ const PivotBodyRow = memo(function PivotBodyRow({
   rowHeight,
   compact,
   outlierCols,
+  hideValues,
+  subtotalLabel,
 }: {
+  /** Grupo aberto sem subtotais: a linha é só título, sem números. */
+  hideValues: boolean;
+  /** Mostra o sufixo " subtotal" no rótulo do grupo. */
+  subtotalLabel: boolean;
   /** Destaques ligados: colunas usadas pra média/desvio da linha (null = desligado). */
   outlierCols: PivotColHeader[] | null;
   rowHeight: number;
@@ -4113,7 +4261,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
                 title={colWindow.fixed && value ? value : undefined}
               >
                 {value}
-                {isLabelCell ? " subtotal" : ""}
+                {isLabelCell && subtotalLabel ? " subtotal" : ""}
               </span>
             </span>
           </td>
@@ -4127,18 +4275,40 @@ const PivotBodyRow = memo(function PivotBodyRow({
           className={cn("border-l border-border/10 px-2", compact ? "py-0" : "py-0.5", trendLeft !== null && "sticky z-[1] bg-card")}
           style={trendLeft !== null ? { left: trendLeft } : undefined}
         >
-          <Sparkline
-            values={trendCols.map((c) => cells.get(c.key)?.[trendMeasure.id])}
-            tone={trendMeasure.tone}
-            label={trendMeasure.label}
-            format={(v) => fmtValue(trendMeasure, v)}
-            height={compact ? 14 : TREND_H}
-          />
+          {!hideValues && (
+            <Sparkline
+              values={trendCols.map((c) => cells.get(c.key)?.[trendMeasure.id])}
+              tone={trendMeasure.tone}
+              label={trendMeasure.label}
+              format={(v) => fmtValue(trendMeasure, v)}
+              height={compact ? 14 : TREND_H}
+            />
+          )}
         </td>
       )}
       {colWindow.virtual && <td aria-hidden className="p-0" />}
       {colWindow.groups.map(({ col, isTotal }, gi) => {
         const groupBase = (colWindow.start + gi) * measures.length;
+        if (hideValues) {
+          // Só título: células vazias que mantêm a grade (e a seleção por setas).
+          return measures.map((m, idx) => (
+            <td
+              key={`h-${col.key}-${m.id}`}
+              data-ci={groupBase + idx}
+              role="gridcell"
+              aria-selected={groupBase + idx >= selC0 && groupBase + idx <= selC1}
+              tabIndex={groupBase + idx === focusC ? 0 : -1}
+              style={selectShadow(groupBase + idx) ? { boxShadow: selectShadow(groupBase + idx) } : undefined}
+              className={cn(
+                "bg-secondary/25 outline-none",
+                cellPad,
+                clip,
+                isTotal && idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
+                selectClass(groupBase + idx),
+              )}
+            />
+          ));
+        }
         if (isTotal) {
           return measures.map((m, idx) => {
             const showAs = showAsByMeasure[m.id] ?? "normal";
@@ -4245,6 +4415,7 @@ const PivotTable = memo(function PivotTable({
   sort,
   setSort,
   sortedRows,
+  totals,
   expandedRowKeys,
   onToggleRowGroup,
   onOpenDrill,
@@ -4256,6 +4427,8 @@ const PivotTable = memo(function PivotTable({
   stale,
   highlights,
 }: {
+  /** Totais e subtotais visíveis. */
+  totals: PivotTotals;
   /** Destaques automáticos (valores fora do padrão da linha). */
   highlights: boolean;
   /** Modo foco: a tabela ganha a altura da tela. */
@@ -4292,8 +4465,9 @@ const PivotTable = memo(function PivotTable({
   const [colStart, setColStart] = useState(0);
   const colStartRef = useRef(0);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
-  // Com colunas, a coluna Total fecha a tabela (como no Excel exportado).
-  const showTotal = hasCols;
+  // Com colunas, a coluna Total fecha a tabela (como no Excel exportado) —
+  // a menos que a pessoa a tenha ocultado.
+  const showTotal = hasCols && totals.grandCol;
   const shouldVirtualize = sortedRows.length > PIVOT_VIRTUAL_ROW_THRESHOLD;
   const compact = density === "compact";
   const rowHeight = compact ? 22 : PIVOT_VIRTUAL_ROW_HEIGHT;
@@ -4423,7 +4597,7 @@ const PivotTable = memo(function PivotTable({
   // Reordenar, recalcular ou trocar medidas muda o que está em cada posição.
   useEffect(() => {
     setSelection(null);
-  }, [pivot, sortedRows, measures]);
+  }, [pivot, sortedRows, measures, allGroups]);
 
   const selRange = selection
     ? {
@@ -4433,6 +4607,13 @@ const PivotTable = memo(function PivotTable({
         c1: Math.max(selection.anchor.c, selection.focus.c),
       }
     : null;
+
+  // Valor de uma célula como aparece na tela: grupo aberto sem subtotais é só título.
+  const valueAt = useCallback(
+    (row: PivotRowHeader, group: ColGroup, m: PivotMeasure, showAs: ShowAsMode): number | null =>
+      subtotalValuesHidden(totals, row, expandedRowKeys) ? null : displayValueAt(pivot, row, group, m, showAs),
+    [totals, expandedRowKeys, pivot],
+  );
 
   const cellAt = useCallback((pos: CellPos) => {
     const row = sortedRows[pos.r];
@@ -4538,14 +4719,14 @@ const PivotTable = memo(function PivotTable({
       if (withHeaders) {
         if (rowDims.length === 0) out.push("");
         rowDims.forEach((_, i) => {
-          out.push(clean(!row.isLeaf ? (i === row.depth ? `${row.values[i] ?? ""} subtotal` : "") : (row.values[i] ?? "")));
+          out.push(clean(!row.isLeaf ? (i === row.depth ? `${row.values[i] ?? ""}${totals.subtotals ? " subtotal" : ""}` : "") : (row.values[i] ?? "")));
         });
       }
       for (let c = range.c0; c <= range.c1; c++) {
         const at = cellAt({ r, c });
         if (!at) continue;
         const showAs = showAsByMeasure[at.measure.id] ?? "normal";
-        out.push(clipboardNumber(displayValueAt(pivot, at.row, at.group, at.measure, showAs), at.measure, showAs));
+        out.push(clipboardNumber(valueAt(at.row, at.group, at.measure, showAs), at.measure, showAs));
       }
       lines.push(out.join("\t"));
     }
@@ -4557,7 +4738,7 @@ const PivotTable = memo(function PivotTable({
     } else {
       toast.error("Não foi possível copiar para a área de transferência.");
     }
-  }, [selRange, rowDims, dimMap, cellAt, hasCols, sortedRows, showAsByMeasure, pivot]);
+  }, [selRange, rowDims, dimMap, cellAt, hasCols, sortedRows, showAsByMeasure, valueAt, totals.subtotals]);
 
   const handleBodyKeyDown = useCallback((event: React.KeyboardEvent) => {
     const key = event.key;
@@ -4628,7 +4809,7 @@ const PivotTable = memo(function PivotTable({
         if (!at) continue;
         cells++;
         measureIds.add(at.measure.id);
-        const v = displayValueAt(pivot, at.row, at.group, at.measure, showAsByMeasure[at.measure.id] ?? "normal");
+        const v = valueAt(at.row, at.group, at.measure, showAsByMeasure[at.measure.id] ?? "normal");
         if (v == null || !isFinite(v)) continue;
         numeric++;
         sum += v;
@@ -4641,7 +4822,7 @@ const PivotTable = memo(function PivotTable({
     // Percentuais não se somam (CM% de dois canais não é a soma dos dois).
     const additive = !!single && showAs === "normal" && single.format !== "percent" && single.agg === "sum" && !single.derive;
     return { cells, numeric, sum, min, max, avg: numeric ? sum / numeric : null, single, showAs, additive };
-  }, [selection, sortedRows, cellAt, pivot, showAsByMeasure, measures]);
+  }, [selection, sortedRows, cellAt, valueAt, showAsByMeasure, measures]);
 
   const handleToggleSort = useCallback((colKey: string, measureId: string) => {
     if (sort && sort.col === colKey && sort.measure === measureId) {
@@ -4911,6 +5092,8 @@ const PivotTable = memo(function PivotTable({
                 rowDims={rowDims}
                 hasRowGroups={hasRowGroups}
                 expanded={expandedRowKeys.has(rh.key)}
+                hideValues={subtotalValuesHidden(totals, rh, expandedRowKeys)}
+                subtotalLabel={totals.subtotals}
                 colWindow={colWindow}
                 measures={measures}
                 cells={pivot.cells.get(rh.key) ?? EMPTY_ROW_CELLS}
@@ -4937,6 +5120,7 @@ const PivotTable = memo(function PivotTable({
               </tr>
             )}
           </tbody>
+          {totals.grandRow && (
           <tfoot className="sticky bottom-0 z-10">
             <tr className="border-t border-border/50 bg-card font-semibold shadow-[0_-8px_16px_rgba(15,23,42,0.08)]">
               <td
@@ -5008,6 +5192,7 @@ const PivotTable = memo(function PivotTable({
               {colWindow.virtual && <td aria-hidden className="p-0" />}
             </tr>
           </tfoot>
+          )}
         </table>
       </div>
       {selectionStats && (
@@ -5115,8 +5300,10 @@ function ExportMenu({
   tableRef,
   modeLabel,
   sortedRows,
+  totals,
   onExportReady,
 }: {
+  totals: PivotTotals;
   pivot: PivotResult;
   measures: PivotMeasure[];
   rowDims: string[];
@@ -5159,6 +5346,8 @@ function ExportMenu({
       const exportCols = hasExplicitCols
         ? pivot.colHeaders
         : [{ key: "__all__", values: [], depth: 0, isLeaf: true }];
+      // Coluna Total e linha de total geral seguem o que está na tela.
+      const withTotalCol = hasExplicitCols && totals.grandCol;
 
       // Linha de cabeçalho: sem prefixo "Total |" quando não há colunas configuradas
       const header: string[] = [
@@ -5168,14 +5357,14 @@ function ExportMenu({
             hasExplicitCols ? `${c.values.join(" · ")} | ${m.label}` : m.label
           )
         ),
-        ...(hasExplicitCols ? measures.map((m) => `Total | ${m.label}`) : []),
+        ...(withTotalCol ? measures.map((m) => `Total | ${m.label}`) : []),
       ];
 
       // Mapa de formato por índice de coluna
       const colFormats: (string | null)[] = [
         ...rowDims.map(() => null),
         ...exportCols.flatMap(() => measures.map((m) => xlsxFmt(m.format))),
-        ...(hasExplicitCols ? measures.map((m) => xlsxFmt(m.format)) : []),
+        ...(withTotalCol ? measures.map((m) => xlsxFmt(m.format)) : []),
       ];
 
       // null/undefined viram celula genuinamente vazia no aoa_to_sheet; "" cria uma
@@ -5194,7 +5383,7 @@ function ExportMenu({
           // Hierarquia: grupo de profundidade d na coluna d; folha agrupada
           // só na última coluna (as de cima já aparecem nos subtotais).
           if (!rh.isLeaf) {
-            row.push(di === rh.depth ? `${rh.values[di] ?? ""} subtotal` : null);
+            row.push(di === rh.depth ? `${rh.values[di] ?? ""}${totals.subtotals ? " subtotal" : ""}` : null);
           } else if (rh.parentKey && di < rowDims.length - 1) {
             row.push(null);
           } else if (rh.parentKey) {
@@ -5203,13 +5392,16 @@ function ExportMenu({
             row.push(rh.values[di] ?? null);
           }
         });
+        // Sem subtotais, a linha do grupo é só título (o Excel exporta todos
+        // os grupos abertos).
+        const titleOnly = !rh.isLeaf && !totals.subtotals;
         for (const c of exportCols) {
           const cell = pivot.cells.get(rh.key)?.get(c.key) ?? {};
-          for (const m of measures) row.push(safeNum(cell[m.id]));
+          for (const m of measures) row.push(titleOnly ? null : safeNum(cell[m.id]));
         }
-        if (hasExplicitCols) {
+        if (withTotalCol) {
           const rowTot = pivot.rowTotals.get(rh.key) ?? {};
-          for (const m of measures) row.push(safeNum(rowTot[m.id]));
+          for (const m of measures) row.push(titleOnly ? null : safeNum(rowTot[m.id]));
         }
         dataRows.push(row);
 
@@ -5225,10 +5417,10 @@ function ExportMenu({
         const colTot = pivot.colTotals.get(c.key) ?? {};
         for (const m of measures) footerRow.push(safeNum(colTot[m.id]));
       }
-      if (hasExplicitCols) {
+      if (withTotalCol) {
         for (const m of measures) footerRow.push(safeNum(pivot.grandTotal[m.id]));
       }
-      dataRows.push(footerRow);
+      if (totals.grandRow) dataRows.push(footerRow);
 
       const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
 
@@ -5251,7 +5443,7 @@ function ExportMenu({
       ws["!cols"] = [
         ...rowDims.map(() => ({ wch: 25 })),
         ...exportCols.flatMap(() => measures.map(() => ({ wch: 14 }))),
-        ...(hasExplicitCols ? measures.map(() => ({ wch: 14 })) : []),
+        ...(withTotalCol ? measures.map(() => ({ wch: 14 })) : []),
       ];
 
       const wb = XLSX.utils.book_new();
@@ -5267,7 +5459,7 @@ function ExportMenu({
 
   useEffect(() => {
     if (onExportReady) onExportReady(exportXlsx);
-  }, [onExportReady, pivot, measures, rowDims, colDims, dimMap, modeLabel, sortedRows]);
+  }, [onExportReady, pivot, measures, rowDims, colDims, dimMap, modeLabel, sortedRows, totals]);
 
   const exportPng = async () => {
     if (!tableRef.current) return;
