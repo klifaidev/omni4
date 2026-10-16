@@ -26,6 +26,21 @@ export const formatNum = (v: number, digits = 0, compact = false) => {
   return ptBrNumberFormat(digits, false).format(v);
 };
 
+/**
+ * Como formatNum, mas nunca mostra "0,0" para um valor que não é zero: se
+ * arredondar nas casas pedidas zeraria o número, sobe as casas até aparecerem
+ * 2 dígitos significativos (máx. 4). Evita um cartão dizer "0,0 kg/cliente"
+ * quando o valor real é 0,0059 — o que esconde, por exemplo, uma base em
+ * toneladas lida como quilos.
+ */
+export const formatNumFit = (v: number, digits = 0) => {
+  if (!isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs === 0 || abs >= 0.5 * 10 ** -digits) return formatNum(v, digits);
+  if (abs < 0.00005) return "~0";
+  return formatNum(v, Math.min(4, Math.floor(-Math.log10(abs)) + 2));
+};
+
 export const formatPct = (v: number, digits = 1) => {
   if (!isFinite(v)) return "—";
   return `${ptBrNumberFormat(digits, false).format(v * 100)}%`;

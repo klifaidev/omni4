@@ -7,7 +7,7 @@
 // texto já sabe desenhar.
 
 import type { KpiMeasureId } from "./customSlide";
-import { formatBRL, formatNum, formatPct } from "./format";
+import { formatBRL, formatNum, formatNumFit, formatPct } from "./format";
 import { formatBRLShort } from "./textTokens";
 
 export type ChartInsightInput =
@@ -66,7 +66,7 @@ export function formatInsightValue(v: number, measure: KpiMeasureId | null): str
     case "precoMedio":
       return `${formatBRL(v, { digits: 2 })}/kg`;
     case "ticketMedio":
-      return `${formatNum(v, 1)} kg/cliente`;
+      return `${formatNumFit(v, 1)} kg/cliente`;
     case "positivacao":
       return `${formatNum(v, 0)} clientes`;
     case null:

@@ -89,6 +89,7 @@ import {
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
+import { detectVolumeUnit } from "@/lib/volumeUnit";
 import { computeCustomTablePivot } from "@/lib/customTablePivot";
 // Alias: este arquivo já tem cssEscapeId() usando o CSS global do browser
 // (window.CSS.escape) — importar o CSS do dnd-kit sem alias sombrearia esse
@@ -815,6 +816,51 @@ function KpiCompareField({ block, onChange }: {
   );
 }
 
+/** Declara a unidade do volume da base e avisa quando ela parece trocada. */
+function VolumeUnitField({ block, onChange }: {
+  block: KpiBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+}) {
+  const rows = useDeckPricingRows();
+  const unit = block.volumeUnit ?? "kg";
+  // Só a base KE30: o Budget tem a própria unidade e outros campos.
+  const detection = useMemo(
+    () => (block.dataSource === "budget" ? null : detectVolumeUnit(rows)),
+    [rows, block.dataSource],
+  );
+  const suggest = detection && detection.guess !== "unknown" && detection.guess !== unit ? detection.guess : null;
+  return (
+    <>
+      {suggest && detection && (
+        <div role="status" className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-[11px] leading-snug">
+          <p>
+            {suggest === "ton"
+              ? t.kpi.volumeUnitSuggestTon(`${Math.round(detection.shareBelowOne * 100)}%`)
+              : t.kpi.volumeUnitSuggestKg}
+          </p>
+          <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => onChange({ volumeUnit: suggest } as never)}>
+            {suggest === "ton" ? t.kpi.volumeUnitUseTon : t.kpi.volumeUnitUseKg}
+          </Button>
+        </div>
+      )}
+      <MoreOptions customized={unit === "ton" || suggest !== null}>
+        <Row label={t.kpi.volumeUnit}>
+          <Segmented
+            value={unit}
+            onChange={(v) => onChange({ volumeUnit: v as never } as never)}
+            options={[
+              { value: "kg", label: t.kpi.volumeUnitOptions.kg },
+              { value: "ton", label: t.kpi.volumeUnitOptions.ton },
+            ]}
+          />
+        </Row>
+        <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
+      </MoreOptions>
+    </>
+  );
+}
+
 function KpiInspector({ block, onChange }: {
   block: KpiBlock;
   onChange: (p: Partial<CustomBlock>) => void;
@@ -878,22 +924,10 @@ function KpiInspector({ block, onChange }: {
                   { value: "number", label: t.kpi.formatOptions.number },
                 ]} />
             </Row>
-            {/* Correção da base (volume em toneladas): rara, e só depende da
-                base — fica guardada, abrindo sozinha se estiver em uso. */}
+            {/* Unidade em que a COLUNA de volume da base vem (não a do cartão):
+                sugerida pela própria base, e aberta quando há sugestão. */}
             {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
-              <MoreOptions customized={block.volumeUnit === "ton"}>
-                <Row label={t.kpi.volumeUnit}>
-                  <Segmented
-                    value={block.volumeUnit ?? "kg"}
-                    onChange={(v) => onChange({ volumeUnit: v as never } as never)}
-                    options={[
-                      { value: "kg", label: t.kpi.volumeUnitOptions.kg },
-                      { value: "ton", label: t.kpi.volumeUnitOptions.ton },
-                    ]}
-                  />
-                </Row>
-                <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
-              </MoreOptions>
+              <VolumeUnitField block={block} onChange={onChange} />
             )}
           </>
         )}

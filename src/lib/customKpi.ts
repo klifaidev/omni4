@@ -5,7 +5,7 @@ import type { PricingRow, Filters } from "./types";
 import { applyFilters } from "./analytics";
 import { clienteId } from "./farol";
 import type { KpiBlock, KpiMeasureId, KpiPeriodMode, KpiFormat } from "./customSlide";
-import { formatBRL, formatNum, formatPct, monthLabel } from "./format";
+import { formatBRL, formatNum, formatNumFit, formatPct, monthLabel } from "./format";
 import { POSITIVACAO_DIMS } from "./positivacao";
 import { resolvePeriodValue, type PeriodSelectionMode, type RelativePeriodPreset } from "./relativePeriods";
 
@@ -108,8 +108,8 @@ export function formatValue(
   const f = format === "auto" ? inferFormat(measure) : format;
   if (f === "currency") return formatBRL(v, { digits: decimals ?? 0 });
   if (f === "percent") return formatPct(v, decimals ?? 1);
-  if (f === "tons") return `${formatNum(v / 1000, decimals ?? 1)} t`;
-  if (measure === "ticketMedio") return `${formatNum(v, decimals ?? 1)} kg/cliente`;
+  if (f === "tons") return `${formatNumFit(v / 1000, decimals ?? 1)} t${measure === "ticketMedio" ? "/cliente" : ""}`;
+  if (measure === "ticketMedio") return `${formatNumFit(v, decimals ?? 1)} kg/cliente`;
   return formatNum(v, decimals ?? 0);
 }
 

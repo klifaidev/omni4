@@ -573,9 +573,14 @@ export const ptBR = {
             colorHex: "Cor (hex)",
             cardBg: "Fundo do cartão",
             reactToFilters: "Reagir a filtros do slide",
-            volumeUnit: "Unidade do volume",
+            volumeUnit: "Volume da base em",
             volumeUnitOptions: { kg: "Quilos (Kg)", ton: "Toneladas" },
-            volumeUnitHint: "Se a coluna de volume da sua base vem em toneladas, marque aqui — o app multiplica por 1.000 antes de calcular Volume, Ticket Médio e Preço Médio, então os três ficam certos juntos.",
+            volumeUnitHint: "Diz em que unidade a COLUNA de volume da base vem — não como o número aparece no cartão. Em Toneladas, o app multiplica por 1.000 antes de calcular Volume, Ticket Médio e Preço Médio, e os três saem certos juntos. Para mostrar o valor em toneladas, use o Formato.",
+            volumeUnitSuggestTon: (pct: string) =>
+              `${pct} das linhas da base têm menos de 1 de volume — ela parece vir em toneladas. Com "Quilos", este cartão mostra um valor 1.000 vezes menor que o real.`,
+            volumeUnitSuggestKg: "A maioria das linhas tem dezenas de unidades de volume — a base parece vir em quilos. Com \"Toneladas\", este cartão mostra um valor 1.000 vezes maior que o real.",
+            volumeUnitUseTon: "Usar Toneladas",
+            volumeUnitUseKg: "Usar Quilos",
             // Fase 1 do "Roteiro do Slides" — o KPI era o único inspector
             // sem nenhum agrupamento (Section), enquanto o resto do editor
             // (Chart pós-flatten, Table, Omni) já usava. Estes 3 títulos
