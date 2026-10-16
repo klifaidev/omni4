@@ -127,7 +127,9 @@ import {
 } from "@/lib/relativePeriods";
 import { strings } from "@/lib/i18n";
 import { InsightLinkCard } from "../chart/ChartInsightCard";
-import { TEXT_TOKENS, tokenText } from "@/lib/textTokens";
+import { periodTokenValue } from "@/lib/textTokens";
+import { resolvePeriodValue } from "@/lib/relativePeriods";
+import { LiveTextInput } from "../tokens/LiveTextInput";
 
 const t = strings.slides.editor.inspectors.blocks;
 // Reaproveita o vocabulário de Borda/Sombra do inspector de Forma pro novo
@@ -852,6 +854,13 @@ function KpiInspector({ block, onChange }: {
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
   const unavailable = unavailableMeasuresForSource(block.dataSource);
+  // {período} no rótulo: o período deste cartão (mesma conta do slide).
+  const kpiRows = useDeckPricingRows();
+  const kpiPeriodToken = useMemo(() => {
+    const mode = block.periodMode ?? "all";
+    if (mode === "all") return periodTokenValue("all", null);
+    return periodTokenValue(mode, resolvePeriodValue(kpiRows, mode, block.periodValue, block.periodSelectionMode, block.relativePeriod));
+  }, [kpiRows, block.periodMode, block.periodValue, block.periodSelectionMode, block.relativePeriod]);
   // Mesma gramática do resto do painel (rótulo à esquerda, controle à
   // direita). Antes o KPI era o último com rótulos em caixa alta
   // empilhados, cor digitada em hex e um seletor de período próprio.
@@ -859,7 +868,8 @@ function KpiInspector({ block, onChange }: {
     <div className="space-y-2">
       <Section title={t.kpi.sourceSection} defaultOpen>
         <Row label={t.kpi.label}>
-          <DraftInput className="h-8 text-[13px]" value={block.label}
+          <LiveTextInput value={block.label} aria-label={t.kpi.label}
+            blockValues={{ "período": kpiPeriodToken }}
             onCommit={(v) => onChange({ label: v } as never)} />
         </Row>
         <Row label={t.kpi.valueSource}>
@@ -1193,11 +1203,11 @@ function TableBlockEditor({ block, onChange }: {
 
       <Section title={t.table.titleSection} defaultOpen>
         <Row label={t.table.titleText}>
-          <DraftInput
+          <LiveTextInput
             value={block.title ?? ""}
             onCommit={(value) => onChange({ title: value } as never)}
             placeholder={t.table.titlePlaceholder}
-            className="h-7 text-xs"
+            aria-label={t.table.titleText}
           />
         </Row>
         <Row label={t.table.titleSizeLabel}>
@@ -1712,7 +1722,7 @@ function TopSkuBlockEditor({ block, onChange }: {
   return (
     <div className="space-y-3">
       <Row label={t.topSku.title}>
-        <DraftInput className="h-8 text-[13px]" value={block.title ?? ""}
+        <LiveTextInput value={block.title ?? ""} aria-label={t.topSku.title}
           onCommit={(v) => onChange({ title: v } as never)} />
       </Row>
       <Row label={t.topSku.rankBy}>
@@ -1859,18 +1869,15 @@ function TextTitleInspector({ block, onChange }: {
     <div className="space-y-2">
       {isInsight && <InsightLinkCard block={block as TextBlock} />}
       {!isInsight && <Section title={t.textTitle.content} defaultOpen>
-        <DraftTextarea
+        <LiveTextInput
+          multiline
           rows={isTitle ? 2 : 4}
           value={block.text}
+          aria-label={t.textTitle.content}
           onCommit={(value) => onChange({ text: value })}
           className="text-xs"
         />
-        <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
-          {t.textTitle.markupHint}{" "}
-          {TEXT_TOKENS.map((tk) => (
-            <code key={tk.label} className="mr-1 whitespace-nowrap rounded bg-muted px-1">{tokenText(tk)}</code>
-          ))}
-        </p>
+        <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">{t.textTitle.markupHint}</p>
       </Section>}
 
       <Section title={t.textTitle.typography} defaultOpen>
@@ -2246,10 +2253,10 @@ function OmniTitleSection({ showTitle, title, defaultTitle, onChange }: {
       </Row>
       {showTitle && (
         <Row label={tc.text}>
-          <DraftInput
-            className="h-7 w-full rounded border border-border/50 bg-background px-2 text-xs"
+          <LiveTextInput
             value={title ?? ""}
             placeholder={defaultTitle}
+            aria-label={tc.text}
             onCommit={(value) => onChange({ title: value || undefined })}
           />
         </Row>

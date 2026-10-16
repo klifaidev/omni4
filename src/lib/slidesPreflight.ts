@@ -141,6 +141,20 @@ function checkBlockContent(
   slideLabel: string,
   issues: SlidePreflightIssue[],
 ) {
+  // Valores vivos também valem em rótulos e títulos de outros blocos.
+  if (block.kind !== "title" && block.kind !== "text" && !block.hidden) {
+    const b = block as { label?: string; title?: string; style?: { xAxis?: { titleText?: string }; yAxis?: { titleText?: string }; yAxis2?: { titleText?: string } } };
+    const fields = [b.label, b.title, b.style?.xAxis?.titleText, b.style?.yAxis?.titleText, b.style?.yAxis2?.titleText];
+    const unknown = Array.from(new Set(fields.flatMap((f) => findUnknownTokens(f))));
+    if (unknown.length > 0) {
+      issues.push(issue(
+        "warning", slideId, slideNumber, slideLabel,
+        "Valor não reconhecido",
+        `${unknown.join(", ")} não é um valor conhecido e vai aparecer assim no slide. Digite { no título para ver a lista de valores.`,
+        block.id,
+      ));
+    }
+  }
   if (block.kind === "title" || block.kind === "text") {
     const text = block.text.trim();
     if (!text) {
@@ -160,7 +174,7 @@ function checkBlockContent(
       issues.push(issue(
         "warning", slideId, slideNumber, slideLabel,
         "Valor não reconhecido",
-        `${unknownTokens.join(", ")} não é um valor conhecido e vai aparecer assim no slide. Use "Inserir valor" na barra do texto.`,
+        `${unknownTokens.join(", ")} não é um valor conhecido e vai aparecer assim no slide. Digite { no texto para ver a lista de valores.`,
         block.id,
       ));
     }

@@ -18,7 +18,7 @@ import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "./bridgeYtd
 import { isCurrentFiscalYearMonth, latestFiscalYearStartYear } from "./fiscalYear";
 import { monthLabel } from "./format";
 import { stripInlineMarkup } from "./richText";
-import { resolveTextTokens } from "./textTokens";
+import { computeTokenValues, resolveTextTokens } from "./textTokens";
 import type { SlideFlowItem, BudgetEvoRow } from "./exportPpt";
 import { defaultCustomSlide, type CustomSlideConfig } from "./customSlide";
 
@@ -265,12 +265,15 @@ function itemToFlowBuilder(item: SlideItem, ctx: BuildContext): SlideFlowItem {
     }
     case "cover": {
       const cfg = item.config;
+      // "Fechamento {mês}" sai resolvido no PowerPoint, como na tela.
+      const tokenValues = computeTokenValues(ctx.pricingRows, ctx.budgetRows, null);
+      const live = (text: string | undefined) => (text ? stripInlineMarkup(resolveTextTokens(text, tokenValues)) : text);
       return {
         build: async (pptx) => {
           const { addCoverSlide } = await import("./exportPpt");
           await addCoverSlide(pptx, {
-            title: cfg.title || "Apresentação",
-            subtitle: cfg.subtitle,
+            title: live(cfg.title) || "Apresentação",
+            subtitle: live(cfg.subtitle),
             variant: cfg.variant,
           });
         },

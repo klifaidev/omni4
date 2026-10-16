@@ -83,6 +83,7 @@ import {
   computeTrendlineSeries, type ChartTooltipPayload,
 } from "./chartHelpers";
 import brMapRaw from "@/assets/br.svg?raw";
+import { RichTextContent, useResolvedText } from "../RichTextContent";
 
 type PeriodLikeRow = { mes?: number; ano?: number; periodo?: string };
 type ChartClickState = {
@@ -632,7 +633,22 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       });
     };
   }, [block.chartType, block.id, cacheSlideId]);
-  const style = useMemo(() => ensureChartStyle(block.style), [block.style]);
+  const rawStyle = useMemo(() => ensureChartStyle(block.style), [block.style]);
+  // Títulos de eixo aceitam valores vivos ({mês}, {ano}…): resolvidos aqui,
+  // uma vez, para todos os tipos de gráfico lerem o texto pronto.
+  const xAxisTitle = useResolvedText(rawStyle.xAxis.titleText);
+  const yAxisTitle = useResolvedText(rawStyle.yAxis.titleText);
+  const yAxis2Title = useResolvedText(rawStyle.yAxis2?.titleText);
+  const style = useMemo(() => {
+    if (xAxisTitle === rawStyle.xAxis.titleText && yAxisTitle === rawStyle.yAxis.titleText
+      && yAxis2Title === (rawStyle.yAxis2?.titleText ?? "")) return rawStyle;
+    return {
+      ...rawStyle,
+      xAxis: { ...rawStyle.xAxis, titleText: xAxisTitle },
+      yAxis: { ...rawStyle.yAxis, titleText: yAxisTitle },
+      ...(rawStyle.yAxis2 ? { yAxis2: { ...rawStyle.yAxis2, titleText: yAxis2Title } } : {}),
+    };
+  }, [rawStyle, xAxisTitle, yAxisTitle, yAxis2Title]);
   const effectiveMeasure = safeMeasureForSource(block.measure, block.dataSource)
     ?? "rol";
   const safeMeasureLine = safeMeasureForSource(style.measureLine, block.dataSource);
@@ -2069,7 +2085,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
           fontWeight: style.general.titleBold ? 700 : 500,
           fontStyle: style.general.titleItalic ? "italic" : "normal",
           padding: "4px 8px",
-        }}>{block.title}</div>
+        }}><RichTextContent text={block.title} /></div>
       )}
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
         {customNonBlockingWarnings.length > 0 && (

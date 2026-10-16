@@ -39,6 +39,7 @@ import { useSlideFilters } from "../SlideFilterContext";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX } from "@/lib/slideDesignTokens";
 import { DraftInput, DraftNumberInput } from "../DraftInput";
+import { LiveTextInput } from "../tokens/LiveTextInput";
 import { strings } from "@/lib/i18n";
 import { ChartInsightCard } from "./ChartInsightCard";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
@@ -1611,7 +1612,7 @@ export function ChartInspector({
         <ToggleField label={t.general.showTitle} value={style.general.titleShow}
           onChange={(v) => updPath("general", { titleShow: v })} />
         {style.general.titleShow && (
-          <DraftInput className="h-8 text-[13px]" value={block.title ?? ""}
+          <LiveTextInput value={block.title ?? ""}
             aria-label={t.general.chartTitleLabel}
             placeholder={t.general.chartTitleLabel}
             onCommit={(value) => onChange({ title: value })} />
@@ -2142,8 +2143,9 @@ function AxisGroup({ title, axis, defaults, valueAxis, onChange, onReset }: {
       {axis.show && (
         <>
           <Row label={t.axis.axisTitle}>
-            <DraftInput className="h-8 text-[13px]" value={axis.titleText}
+            <LiveTextInput value={axis.titleText}
               placeholder={t.axis.noTitle}
+              aria-label={t.axis.axisTitle}
               onCommit={(value) => onChange({ titleText: value })} />
           </Row>
           {valueAxis && (

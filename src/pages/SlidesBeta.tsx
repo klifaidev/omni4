@@ -34,6 +34,7 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { LiveTextInput } from "@/components/pricing/custom/tokens/LiveTextInput";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -618,22 +619,31 @@ function CoverConfigPanel({
       </div>
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.coverPanel.title}</Label>
-        <Input
-          value={cfg.title}
-          readOnly={readOnly}
-          onChange={(e) => onChange({ ...item, config: { ...cfg, title: e.target.value } })}
-          className="h-9 text-sm"
-        />
+        {readOnly ? (
+          <Input value={cfg.title} readOnly className="h-9 text-sm" />
+        ) : (
+          <LiveTextInput
+            value={cfg.title}
+            aria-label={t.coverPanel.title}
+            onCommit={(title) => onChange({ ...item, config: { ...cfg, title } })}
+            className="h-9 text-sm"
+          />
+        )}
       </div>
       <div className="space-y-1.5">
         <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.coverPanel.subtitle}</Label>
-        <Textarea
-          value={cfg.subtitle ?? ""}
-          readOnly={readOnly}
-          onChange={(e) => onChange({ ...item, config: { ...cfg, subtitle: e.target.value } })}
-          rows={2}
-          className="text-sm resize-none"
-        />
+        {readOnly ? (
+          <Textarea value={cfg.subtitle ?? ""} readOnly rows={2} className="text-sm resize-none" />
+        ) : (
+          <LiveTextInput
+            multiline
+            rows={2}
+            value={cfg.subtitle ?? ""}
+            aria-label={t.coverPanel.subtitle}
+            onCommit={(subtitle) => onChange({ ...item, config: { ...cfg, subtitle } })}
+            className="text-sm resize-none"
+          />
+        )}
       </div>
     </div>
   );

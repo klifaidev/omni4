@@ -3,15 +3,15 @@
 // bloco com mesma fonte/tamanho/cor/alinhamento. Toolbar flutuante de
 // formatação acima/abaixo do bloco.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
-import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { Bold, Italic, AlignLeft, AlignCenter, AlignRight, Braces } from "lucide-react";
 import type { TitleBlock, TextBlock, CustomBlock } from "@/lib/customSlide";
 import { cn } from "@/lib/utils";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "@/lib/slideBrandKit";
 import { isSampleText } from "@/lib/sampleTexts";
 import { toggleInlineMarker, type TextSelectionEdit } from "@/lib/richText";
-import { TEXT_TOKENS, normalizeTokenName, tokenText } from "@/lib/textTokens";
 import { useDeckTokenValues } from "@/hooks/useDeckRows";
 import { strings } from "@/lib/i18n";
+import { TokenSuggestions, useTokenAutocomplete } from "./tokens/TokenAutocomplete";
 
 const tText = strings.slides.editor.inspectors.blocks.textTitle;
 
@@ -24,6 +24,8 @@ interface InlineEditorApi {
   /** Marca/desmarca o trecho selecionado. `false` se não havia seleção. */
   toggleMarker: (marker: "**" | "*") => boolean;
   insert: (text: string) => void;
+  /** Abre a lista de valores vivos no cursor (botão "Valor vivo" da barra). */
+  openTokens: () => void;
   exit: () => void;
   isOwnField: (el: Element | null) => boolean;
 }
@@ -136,6 +138,16 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
   const onExitRef = useRef(onExit);
   useEffect(() => { onExitRef.current = onExit; }, [onExit]);
 
+  // "{" no texto abre a lista de valores vivos ({mês}, {ROL do mês}…).
+  const auto = useTokenAutocomplete({
+    apply: (text, caret) => applyEdit({ value: text, start: caret, end: caret }),
+  });
+  const tokenValues = useDeckTokenValues();
+  const syncTokens = () => {
+    const ta = ref.current;
+    if (ta) auto.update(ta.value, ta.selectionStart);
+  };
+
   useEffect(() => {
     const api: InlineEditorApi = {
       toggleMarker,
@@ -146,6 +158,12 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
         const caret = start + text.length;
         applyEdit({ value: ta.value.slice(0, start) + text + ta.value.slice(ta.selectionEnd), start: caret, end: caret });
       },
+      openTokens: () => {
+        const ta = ref.current;
+        if (!ta) return;
+        ta.focus();
+        auto.openAt(ta.value, ta.selectionStart);
+      },
       exit: () => onExitRef.current(),
       isOwnField: (el) => !!el && el === ref.current,
     };
@@ -153,7 +171,7 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
     return () => {
       if (inlineEditorBridge.current === api) inlineEditorBridge.current = null;
     };
-  }, [toggleMarker, applyEdit]);
+  }, [toggleMarker, applyEdit, auto.openAt]);
 
   return (
     <>
@@ -164,14 +182,22 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
         const nextValue = e.target.value;
         setDraftValue(nextValue);
         scheduleTextCommit(nextValue);
+        auto.update(nextValue, e.target.selectionStart);
+      }}
+      onClick={syncTokens}
+      onKeyUp={(e) => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") syncTokens();
       }}
       onBlur={(event) => {
+        auto.close();
         if (localDirtyRef.current) commitTextValue(pendingValueRef.current);
         const nextTarget = event.relatedTarget as HTMLElement | null;
         if (nextTarget?.closest("[data-inline-text-toolbar='true']")) return;
         onExit();
       }}
       onKeyDown={(e) => {
+        // Lista de valores aberta: setas, Enter, Tab e Esc são dela.
+        if (auto.handleKeyDown(e, e.currentTarget.value, e.currentTarget.selectionStart)) return;
         if (e.key === "Escape") {
           e.preventDefault();
           onExit();
@@ -225,6 +251,20 @@ export function InlineTextEditor({ block, onPatch, onExit }: EditorProps) {
       }}
       data-export-hide="true"
     />
+    <TokenSuggestions
+      anchorRef={ref}
+      open={auto.open}
+      query={auto.query}
+      items={auto.items}
+      active={auto.active}
+      values={tokenValues}
+      onHover={auto.setActive}
+      onPick={(def) => {
+        const ta = ref.current;
+        if (ta) auto.pick(def, ta.value, ta.selectionStart);
+      }}
+      onClose={auto.close}
+    />
     </>
   );
 }
@@ -237,8 +277,6 @@ interface ToolbarProps {
 
 export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
   const [hexDraft, setHexDraft] = useState(`#${block.color}`);
-  // "Inserir valor" mostra o que cada valor vale agora neste deck.
-  const tokenValues = useDeckTokenValues();
   // Se o bloco está perto do topo do canvas, mostra a toolbar abaixo.
   const placeBelow = block.y < 80;
   const inv = 1 / scale;
@@ -401,26 +439,16 @@ export function InlineTextToolbar({ block, scale, onPatch }: ToolbarProps) {
       </div>
 
       <div className="border-l border-border pl-2 ml-1">
-        <select
-          aria-label={tText.insertValue}
-          value=""
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value) inlineEditorBridge.current?.insert(value);
-          }}
-          className="h-7 max-w-[150px] rounded border border-border bg-background px-1 text-xs"
+        <button
+          type="button"
+          title={tText.insertValueHint}
+          onMouseDown={keepTextFocus}
+          onClick={() => inlineEditorBridge.current?.openTokens()}
+          className="inline-flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent"
         >
-          <option value="">{tText.insertValue}</option>
-          {(["date", "number"] as const).map((group) => (
-            <optgroup key={group} label={tText.tokenGroups[group]}>
-              {TEXT_TOKENS.filter((tk) => tk.group === group).map((tk) => (
-                <option key={tk.label} value={tokenText(tk)}>
-                  {tk.label} — {tokenValues.get(normalizeTokenName(tk.label)) ?? tk.hint}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          <Braces className="h-3.5 w-3.5" />
+          {tText.insertValue}
+        </button>
       </div>
     </div>
   );

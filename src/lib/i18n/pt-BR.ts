@@ -672,8 +672,9 @@ export const ptBR = {
           },
           textTitle: {
             content: "Conteúdo",
-            markupHint: "Selecione um trecho e use Ctrl+B / Ctrl+I (ou **negrito**, *itálico*). Valores que se atualizam com o mês:",
-            insertValue: "Inserir valor…",
+            markupHint: "Selecione um trecho e use Ctrl+B / Ctrl+I (ou **negrito**, *itálico*). Digite { para inserir um valor vivo — mês, ROL, variações — que se atualiza sozinho com o mês de referência.",
+            insertValue: "Valor vivo",
+            insertValueHint: "Inserir um valor que se atualiza com o mês (ou digite { no texto)",
             tokenGroups: { date: "Datas", number: "Números do mês" },
             typography: "Tipografia",
             font: "Fonte",

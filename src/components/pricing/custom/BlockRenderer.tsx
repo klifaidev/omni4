@@ -50,7 +50,8 @@ import { resolveTableFit, resolveTopSkuFit } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { ShapeRenderer } from "./ShapeRenderer";
-import { RichTextContent } from "./RichTextContent";
+import { RichTextContent, useResolvedText } from "./RichTextContent";
+import { periodTokenValue } from "@/lib/textTokens";
 import { useSlideBlock } from "./SlideIdentity";
 import { useChartInsight } from "./chart/useChartInsight";
 import { useSlideFilters } from "./SlideFilterContext";
@@ -692,6 +693,13 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     [rows, effectiveBlock, budgetAsRows, periodFilterValues.length, volumeScale],
   );
   const comparisonColor = comparison?.good == null ? SLIDE_HEX.slate500 : comparison.good ? SLIDE_HEX.success : SLIDE_HEX.danger;
+  // {período} no rótulo do cartão é o período DELE, não o mês do deck.
+  const periodToken = useMemo(() => {
+    if (periodFilterValues.length === 1) return periodTokenValue("month", periodFilterValues[0]);
+    const mode = effectiveBlock.periodMode ?? "all";
+    if (mode === "all") return periodTokenValue("all", null);
+    return periodTokenValue(mode, resolvePeriodValue(rows, mode, effectiveBlock.periodValue, effectiveBlock.periodSelectionMode, effectiveBlock.relativePeriod));
+  }, [periodFilterValues, effectiveBlock, rows]);
   const comparisonText = comparison
     ? `${comparison.direction === "up" ? "▲" : comparison.direction === "down" ? "▼" : "●"} ${formatKpiDelta(comparison)} ${t.kpi.vsReference(comparison.mode === "budget" ? t.kpi.budgetRef : comparison.referenceLabel)}`
     : null;
@@ -703,6 +711,8 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
         return base.replace("(Kg/cliente)", "(t/cliente)").replace("(R$/Kg)", "(R$/t)").replace("(Kg)", "(t)");
       })()
     : null;
+  // Rótulo com valores vivos: "Volume médio {período}" → "Volume médio julho/2026".
+  const labelText = useResolvedText(b.label || measureLabel || t.kpi.fallbackLabel, { "período": periodToken });
   // Período fixo em modo "mês" guarda o código interno cru (ex.: "006.2026"),
   // não um rótulo pronto — sem formatar, esse código vazava direto pro
   // rodapé do card ("Ticket Médio (Kg/cliente) · 006.2026" em vez de
@@ -755,7 +765,6 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   if (readOnly) {
     const fill = isTransparent ? "transparent" : `#${cardBg}`;
     const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
-    const labelText = b.label || measureLabel || t.kpi.fallbackLabel;
     const footerText = b.source === "dynamic"
       ? `${measureLabel ?? ""}${periodDescriptor ? ` · ${periodDescriptor}` : ""}`
       : "";
@@ -831,7 +840,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       fontFamily: "Calibri, sans-serif",
     }}>
       <div style={{ fontSize: 14, color: SLIDE_HEX.slate500, textTransform: "uppercase", letterSpacing: 1 }}>
-        {b.label || measureLabel || t.kpi.fallbackLabel}
+        {labelText}
       </div>
       <div style={{
         fontSize: valueSize, fontWeight: 700, color: `#${b.color}`,
@@ -1415,9 +1424,8 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
         whiteSpace: "nowrap",
         textOverflow: "ellipsis",
       }}
-      title={tableTitle}
     >
-      {tableTitle}
+      <RichTextContent text={tableTitle} />
     </div>
   ) : null;
   const hasSingleMeasure = measures.length === 1;
@@ -2031,7 +2039,7 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontFamily: "Calibri", overflow: "hidden" }}>
         {b.title && (
           <div style={{ height: topTitleH, fontSize: 16, fontWeight: 700, color: SLIDE_HEX.chart1, padding: "4px 8px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-            {b.title}
+            <RichTextContent text={b.title} />
           </div>
         )}
         <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
@@ -2500,7 +2508,7 @@ function omniEmpty(msg: string = t.omni.emptyDefault) {
 function omniTitle(title: string) {
   return (
     <div style={{ fontSize: 12, fontWeight: 700, color: SLIDE_HEX.chart2, marginBottom: 6, paddingLeft: 2 }}>
-      {title}
+      <RichTextContent text={title} />
     </div>
   );
 }

@@ -34,6 +34,7 @@ import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters"
 import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCache";
 import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
+import { useResolvedText } from "./custom/RichTextContent";
 
 const C = SLIDE_PREVIEW_COLORS;
 
@@ -120,7 +121,10 @@ function HaraldFooterStripe() {
 // COVER preview
 // ---------------------------------------------------------------------------
 function CoverPreview({ item }: { item: Extract<SlideItem, { kind: "cover" }> }) {
-  const { title, subtitle, variant } = item.config;
+  const { variant } = item.config;
+  // Valores vivos na capa: "Fechamento {mês}" → "Fechamento agosto/2026".
+  const title = useResolvedText(item.config.title);
+  const subtitle = useResolvedText(item.config.subtitle);
   const isDivider = variant === "divider";
   return (
     <Frame label={isDivider ? "Divisor" : "Capa"}>
