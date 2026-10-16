@@ -20,7 +20,8 @@ import { useSlidesFlow } from "@/store/slidesFlow";
 import type { SlideItem } from "@/lib/slidesFlow";
 import { CANVAS_W, CANVAS_H, FOOTER_H, type CustomSlideConfig, type CustomBlock } from "@/lib/customSlide";
 import { BlockRenderer } from "./BlockRenderer";
-import { SlideFilterProvider, useSlideFilters, dimensionLabel } from "./SlideFilterContext";
+import { SlideFilterProvider } from "./SlideFilterContext";
+import { CrossFilterBar, CrossFilterEscape } from "./CrossFilterUi";
 import { SlideBlocksContext, SlideIdContext } from "./SlideIdentity";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { fitCanvasScale } from "@/lib/canvasFit";
@@ -143,6 +144,14 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
 
   const slide = slides[idx];
   const prevSlide = prevIdx !== null ? slides[prevIdx] : null;
+  // Filtro cruzado "em todos os slides": clicar numa marca e seguir a
+  // apresentação contando a história dela.
+  const [pinFilters, setPinFilters] = useState(false);
+  const slideBlocks = useMemo(() => {
+    if (!slide || slide.kind !== "custom") return [];
+    const cfg = (slide.id === currentSlideId && currentConfig) || (slide as DeckSlide).config as CustomSlideConfig | undefined;
+    return cfg?.blocks ?? [];
+  }, [slide, currentSlideId, currentConfig]);
 
   // Vizinhos pré-aquecidos (montados, invisíveis). Entram só depois da
   // transição e dentro de startTransition: montar o próximo slide no mesmo
@@ -196,7 +205,7 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
           transition: "width 200ms ease-out",
         }} />
       </div>
-      <SlideFilterProvider slideKey={slide?.id}>
+      <SlideFilterProvider slideKey={slide?.id} persist={pinFilters} interactive>
         <div
           style={{
             position: "absolute", inset: 0,
@@ -373,8 +382,11 @@ export function PresentationMode({ currentSlideId, currentConfig, initialPresent
         {presenterMode && slide && (
           <SpeakerNotesBar notes={(slide as DeckSlide).config && ((slide as DeckSlide).config as { speakerNotes?: string }).speakerNotes || ""} />
         )}
-        {/* Clear filters bar */}
-        <ClearFiltersFloater />
+        {/* Filtro cruzado: chips, blocos afetados e "em todos os slides". */}
+        <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 10, maxWidth: "min(900px, 90vw)" }}>
+          <CrossFilterBar blocks={slideBlocks} pinned={pinFilters} onTogglePin={() => setPinFilters((v) => !v)} />
+          <CrossFilterEscape />
+        </div>
 
         {/* Thumbnail strip (bottom) */}
         {thumbsOpen && (
@@ -473,27 +485,6 @@ function NavArrow({ side, disabled, onClick }: { side: "left" | "right"; disable
     >
       <Icon className="h-7 w-7" />
     </button>
-  );
-}
-
-function ClearFiltersFloater() {
-  const { filters, clearAll } = useSlideFilters();
-  if (filters.length === 0) return null;
-  return (
-    <div style={{
-      position: "absolute", bottom: 18, right: 16,
-      padding: "6px 12px", borderRadius: 999,
-      background: "hsl(var(--chart-1) / 0.85)", color: SLIDE_HEX.white,
-      display: "flex", alignItems: "center", gap: 8, fontSize: 12,
-      zIndex: 10,
-    }}>
-      <FunnelIcon className="h-3.5 w-3.5" />
-      <span>{filters.length} filtro{filters.length > 1 ? "s" : ""} ativo{filters.length > 1 ? "s" : ""}</span>
-      <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px] text-white hover:bg-white/15"
-        onClick={clearAll}>
-          Limpar ({filters.length})
-      </Button>
-    </div>
   );
 }
 

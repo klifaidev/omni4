@@ -64,6 +64,10 @@ export interface BaseBlock {
   enterAnimation?: BlockEnterAnimation;
   /** Oculto visualmente no canvas (não exportado). Default false. */
   hidden?: boolean;
+  /** Filtro cruzado: reage aos cliques nos outros blocos do slide. Default true. */
+  participatesInCrossFilter?: boolean;
+  /** Filtro cruzado: um clique neste bloco filtra os outros. Default true onde há o que clicar. */
+  emitsCrossFilter?: boolean;
 }
 
 /** Group of blocks that move/resize as a unit. Bounding box is derived from members. */

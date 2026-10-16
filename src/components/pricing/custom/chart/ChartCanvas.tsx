@@ -12,7 +12,7 @@ import {
   ReferenceLine, ReferenceArea,
 } from "recharts";
 import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
-import { KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
+import { CHART_TYPE_LABELS, KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
@@ -63,8 +63,12 @@ import { clienteId } from "@/lib/farol";
 import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocalDataStatus";
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
-import { useSlideFilters, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
+import { useSlideFilters, useIncomingFilters, useReportFilterStatus, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
+import { applyCrossFilters, OTHERS_LABEL_RE } from "@/lib/crossFilter";
 import { resolveFieldValue } from "./filterHelpers";
+
+/** Tipos que, sem dimensão no eixo X, desenham a evolução no tempo. */
+const TEMPORAL_CHART_TYPES = new Set<string>(["line", "area", "stackedArea", "column", "bar", "stackedColumn", "stackedBar", "combo"]);
 import { monthLabel } from "@/lib/format";
 import { isSlidePerfEnabled, markSlidePerf, measureSlidePerf, recordSlidePerfEvent, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, getSlideCalcCacheValue, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
@@ -697,37 +701,18 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     () => cf.filters.find((f) => f.sourceBlockId === block.id) ?? null,
     [cf.filters, block.id],
   );
-  // Incoming filters from other blocks; matched by dim against this block's xDim/colorDim/breakdown.
-  const myDims = useMemo(() => {
-    const set = new Set<string>();
-    if (xDim) set.add(xDim);
-    if (block.fieldWells?.colorDim) set.add(block.fieldWells.colorDim);
-    if (block.breakdown) set.add(block.breakdown);
-    return set;
-  }, [xDim, block.fieldWells?.colorDim, block.breakdown]);
-  const incoming = useMemo(() => {
-    if (!participates) return [];
-    return cf.filters.filter(
-      (f) => f.sourceBlockId !== block.id && (myDims.has(f.dimension) || f.dimension === "period")
-    );
-  }, [cf.filters, participates, block.id, myDims]);
-  // Apply incoming filters to dsRows
-  const dsRows = useMemo(() => {
-    if (incoming.length === 0) return rawDsRows;
-    return rawDsRows.filter((r) => {
-      for (const f of incoming) {
-        if (f.dimension === "period") {
-          const row = r as PeriodLikeRow;
-          const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
-          if (!f.values.includes(lbl) && !f.values.includes(String(row.periodo))) return false;
-        } else {
-          const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
-          if (!f.values.includes(v)) return false;
-        }
-      }
-      return true;
-    });
-  }, [rawDsRows, incoming]);
+  // Filtros dos OUTROS blocos valem para as linhas da base, seja qual for a
+  // dimensão que este gráfico desenha (lib/crossFilter). Gráfico no tempo
+  // não some com o clique num mês: o mês fica destacado (activePeriods).
+  const isTemporalChart = (!xDim || xDim === "period") && TEMPORAL_CHART_TYPES.has(block.chartType);
+  const incomingAll = useIncomingFilters(block.id, participates);
+  const crossResult = useMemo(
+    () => applyCrossFilters(rawDsRows, incomingAll, { ignorePeriod: isTemporalChart }),
+    [rawDsRows, incomingAll, isTemporalChart],
+  );
+  useReportFilterStatus(block.id, crossResult.applied.length || crossResult.skipped.length ? crossResult : null);
+  const incoming = crossResult.applied;
+  const dsRows = crossResult.rows;
   const dsRowsSignature = useMemo(() => getCachedRowsSignature(dsRows), [dsRows]);
   const budgetSignature = useMemo(() => getCachedRowsSignature(budget), [budget]);
   const rowsForDataSource = useMemo(() => {
@@ -737,24 +722,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
       return pricing;
     };
-    const applyIncoming = (base: PricingRow[]) => {
-      if (incoming.length === 0) return base;
-      return base.filter((r) => {
-        for (const f of incoming) {
-          if (f.dimension === "period") {
-            const row = r as PeriodLikeRow;
-            const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
-            if (!f.values.includes(lbl) && !f.values.includes(String(row.periodo))) return false;
-          } else {
-            const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
-            if (!f.values.includes(v)) return false;
-          }
-        }
-        return true;
-      });
-    };
-    return (dataSource: ChartBlock["dataSource"]) => applyIncoming(sourceRows(dataSource));
-  }, [pricing, budget, incoming]);
+    return (dataSource: ChartBlock["dataSource"]) =>
+      applyCrossFilters(sourceRows(dataSource), incomingAll, { ignorePeriod: isTemporalChart }).rows;
+  }, [pricing, budget, incomingAll, isTemporalChart]);
 
   // Determine the dimension this block emits
   const emitDim: string = (xDim && xDim !== "period" ? xDim
@@ -769,16 +739,17 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     if (!emits) return;
     const v = String(rawValue ?? "");
     if (!v) return;
-    const filter = { sourceBlockId: block.id, dimension, values: [v] };
-    if (opts?.shift) cf.toggleFilter(filter);
-    else {
-      if (ownFilter && ownFilter.dimension === dimension
-          && ownFilter.values.length === 1 && ownFilter.values[0] === v) {
-        cf.clearFilter(block.id);
-      } else {
-        cf.setFilter(filter);
-      }
+    const sourceLabel = (block.title ?? "").replace(/\*+/g, "").trim() || CHART_TYPE_LABELS[block.chartType];
+    // "Outros (5)" agrupa o resto: filtra tudo MENOS os itens mostrados.
+    if (OTHERS_LABEL_RE.test(v)) {
+      const shown = data.series.map((ser) => ser.name).filter((name) => !OTHERS_LABEL_RE.test(name));
+      cf.setFilter({ sourceBlockId: block.id, dimension, values: shown, exclude: true, label: v, sourceLabel });
+      return;
     }
+    const filter = { sourceBlockId: block.id, dimension, values: [v], sourceLabel };
+    // Clicar de novo no mesmo valor desfaz (regra do reducer).
+    if (opts?.shift) cf.toggleFilter(filter);
+    else cf.setFilter(filter);
   };
 
   // Click handler â€” emits/toggles a filter on this block's emit dimension
@@ -2042,22 +2013,6 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
 
   return (
     <Wrapper style={style} hasIncoming={incoming.length > 0}>
-      {/* Incoming filter badges (top-left, informational) */}
-      <div style={{ position: "absolute", top: 4, left: 4, zIndex: 5,
-        display: "flex", flexDirection: "column", gap: 2, pointerEvents: "none" }}>
-        {incoming.map((f) => (
-          <span key={f.sourceBlockId + f.dimension} style={{
-            background: SLIDE_RGBA.incomingBadgeBg, color: SLIDE_HEX.white, fontSize: 10,
-            padding: "2px 6px", borderRadius: 9999, fontWeight: 600,
-          }}>
-            {dimensionLabel(f.dimension)}: {f.values.join(", ")}
-          </span>
-        ))}
-        {!participates && (
-          <span style={{ background: SLIDE_HEX.slate, color: SLIDE_HEX.white, fontSize: 9,
-            padding: "1px 5px", borderRadius: 4 }}>ðŸ”’ sem filtro</span>
-        )}
-      </div>
       {/* Active emitted filter pill (top-right, click to clear) */}
       {ownFilter && emits && (
         <div
@@ -2076,7 +2031,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         >
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: SLIDE_HEX.blue }} />
           {ownFilter.values.length === 1 ? ownFilter.values[0] : `${ownFilter.values.length} selecionados`}
-          <span style={{ marginLeft: 2, opacity: 0.7 }}>Ã—</span>
+          <span style={{ marginLeft: 2, opacity: 0.7 }}>×</span>
         </div>
       )}
       {style.general.titleShow && block.title && (

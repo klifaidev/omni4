@@ -57,6 +57,7 @@ import { LINES as DRE_LINES } from "@/components/pricing/DreTable";
 import { ShapeHandleOverlay } from "./ShapeHandleOverlay";
 import { BlockRenderer, CUSTOM_TABLE_MEASURES, CUSTOM_TABLE_DIMS, TABLE_COLUMN_RESIZE_HANDLE_CANCEL_SELECTOR } from "./BlockRenderer";
 import { SlideFilterProvider } from "./SlideFilterContext";
+import { CrossFilterBar, CrossFilterEscape } from "./CrossFilterUi";
 import { cn } from "@/lib/utils";
 import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { registerCustomCanvas } from "@/lib/customCanvasRegistry";
@@ -69,7 +70,6 @@ import {
   BlockAppearanceControls,
   BlockSpecificEditor,
   BrandKitPopover,
-  ClearFiltersToolbar,
   clientToCanvas,
   DataSourceBadge,
   GroupOverlay,
@@ -1858,7 +1858,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const refreshUserTpls = () => { /* picker reloads internally */ };
 
   return (
-    <SlideFilterProvider slideKey={slideId}>
+    <SlideFilterProvider slideKey={slideId} interactive>
     <SlideIdContext.Provider value={slideId}>
     <SlideBlocksContext.Provider value={config.blocks}>
     <div className={cn(
@@ -2282,7 +2282,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
 
       {/* ====== Canvas ====== */}
       <div className="flex min-h-0 min-w-0 flex-col gap-2">
-        <ClearFiltersToolbar />
+        <CrossFilterBar blocks={config.blocks} />
         <div
           ref={wrapperRef}
           className={cn(
@@ -2650,7 +2650,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                       >
                         <div data-block-id={blk.id} data-block-visual-id={blk.id} data-block-kind={blk.kind} style={{
                           width: "100%", height: "100%",
-                          pointerEvents: blk.kind === "chart" || blk.kind === "table" ? "auto" : "none",
+                          pointerEvents: blk.kind === "chart" || blk.kind === "table" || blk.kind === "topSku" ? "auto" : "none",
                           visibility: blk.hidden ? "hidden" : "visible",
                         }}>
                           <BlockRenderer
@@ -3117,6 +3117,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
           </Button>
         </div>
 
+        {/* Filtro cruzado: o que está filtrando o slide, de onde veio e o que mudou. */}
+        <CrossFilterBar blocks={config.blocks} hintOnly className="px-1" />
+        <CrossFilterEscape />
         <SpeakerNotesBar
           value={config.speakerNotes ?? ""}
           onChange={(v) => { if (canEdit()) setSpeakerNotesAction(v); }}

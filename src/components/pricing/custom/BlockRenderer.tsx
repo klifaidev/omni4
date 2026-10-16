@@ -54,7 +54,9 @@ import { RichTextContent, useResolvedText } from "./RichTextContent";
 import { periodTokenValue } from "@/lib/textTokens";
 import { useSlideBlock } from "./SlideIdentity";
 import { useChartInsight } from "./chart/useChartInsight";
-import { useSlideFilters } from "./SlideFilterContext";
+import { useCrossFilteredRows, useSlideFilters } from "./SlideFilterContext";
+import { isPeriodDim } from "@/lib/crossFilter";
+import { CrossFilterBadge, isDataBlock, RowFilterOverlay } from "./CrossFilterUi";
 import { resolveFieldValue } from "./chart/filterHelpers";
 import { isSlidePerfEnabled, recordSlideRender } from "@/lib/slidesPerfCounters";
 import { buildSlideCalcCacheKey, getCachedRowsSignature, getOrComputeSlideCalc, type SlideCalcCacheKeyInput } from "@/lib/slideCalcCache";
@@ -81,6 +83,15 @@ function useDataSource(
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
     return pricing;
   }, [dataSource, pricing, budget]);
+}
+
+/**
+ * Linhas do bloco com os cliques dos OUTROS blocos do slide aplicados
+ * (lib/crossFilter). `ignorePeriod`: blocos que comparam ou mostram a
+ * evolução no tempo não encolhem para um mês quando alguém clica num mês.
+ */
+function useBlockRows<T>(block: CustomBlock, rows: T[], opts?: { ignorePeriod?: boolean }): T[] {
+  return useCrossFilteredRows(block.id, block.participatesInCrossFilter !== false, rows, opts).rows;
 }
 
 function MissingLocalData({ label }: { label: string }) {
@@ -512,8 +523,10 @@ function BlockRendererInner({ block: rawBlock, readOnly, isEditing, cacheSlideId
   }
   const opacity = block.opacity == null ? 100 : Math.max(0, Math.min(100, block.opacity));
   return (
-    <div style={{ width: "100%", height: "100%", opacity: opacity === 100 ? undefined : opacity / 100 }}>
+    <div style={{ width: "100%", height: "100%", opacity: opacity === 100 ? undefined : opacity / 100, position: isDataBlock(block) ? "relative" : undefined }}>
       {content}
+      {/* Só aparece com filtro ativo — na exportação nunca há (data-export-hide). */}
+      {isDataBlock(block) && <CrossFilterBadge blockId={block.id} />}
     </div>
   );
 }
@@ -617,7 +630,6 @@ function SimpleLayoutRender({
 function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean }) {
   const pricing = useDeckPricingRows();
   const budget = useDeckBudgetRows();
-  const { filters } = useSlideFilters();
   const participates = b.participatesInCrossFilter !== false;
 
   const missingData = missingLocalDataLabel(b.dataSource, {
@@ -626,49 +638,15 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   });
   const baseRows = useDataSource(b.dataSource, pricing, budget);
 
-  // Split incoming filters into "period" (special: format-tolerant + overrides
-  // the block's own periodMode/periodValue) and "dimensional" (other dims).
-  const incoming = useMemo(
-    () => (participates ? filters.filter((f) => f.sourceBlockId !== b.id) : []),
-    [filters, participates, b.id],
+  // Cliques nos outros blocos filtram as linhas do cartão. Um clique num mês
+  // também troca o período do cartão (effectiveBlock, abaixo). Sem dados no
+  // recorte o cartão mostra zero — antes voltava em silêncio ao total.
+  const cross = useCrossFilteredRows(b.id, participates, baseRows);
+  const rows = cross.rows;
+  const periodFilterValues = useMemo(
+    () => cross.applied.filter((f) => isPeriodDim(f.dimension)).flatMap((f) => f.values),
+    [cross.applied],
   );
-  const periodFilterValues = useMemo(() => {
-    const vals: string[] = [];
-    for (const f of incoming) {
-      if (f.dimension === "period" || f.dimension === "periodo") vals.push(...f.values);
-    }
-    return vals;
-  }, [incoming]);
-
-  const rows = useMemo(() => {
-    if (incoming.length === 0) return baseRows;
-    const applyPeriod = (r: (typeof baseRows)[number]) => {
-      if (periodFilterValues.length === 0) return true;
-      const row = r as { mes?: number; ano?: number; periodo?: string };
-      const lbl = monthLabel(row.mes ?? 0, row.ano ?? 0);
-      const raw = String(row.periodo ?? "");
-      return periodFilterValues.includes(lbl) || periodFilterValues.includes(raw);
-    };
-    const hasDimensional = incoming.some(
-      (f) => f.dimension !== "period" && f.dimension !== "periodo",
-    );
-    const filtered = baseRows.filter((r) => {
-      // Period filter — match against display label OR raw periodo.
-      if (!applyPeriod(r)) return false;
-      for (const f of incoming) {
-        if (f.dimension === "period" || f.dimension === "periodo") continue;
-        const v = resolveFieldValue(r as unknown as Record<string, unknown>, f.dimension);
-        if (!f.values.includes(v)) return false;
-      }
-      return true;
-    });
-    // Fallback: if dimensional filters cause empty results but period filter is active,
-    // show period-only totals instead of zero.
-    if (filtered.length === 0 && periodFilterValues.length > 0 && hasDimensional) {
-      return baseRows.filter(applyPeriod);
-    }
-    return filtered;
-  }, [baseRows, incoming, periodFilterValues]);
 
   // When a cross-filter period is active, override the block's own
   // periodMode so computeKpiBlock doesn't double-filter into an empty set.
@@ -869,7 +847,7 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
 }
 
 function BridgeRender({ block: b, cacheSlideId }: { block: BridgeBlock; cacheSlideId?: string }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const metric = usePricing((s) => s.metric);
   const pricingSignature = useMemo(() => getCachedRowsSignature(pricing), [pricing]);
   const filteredRows = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
@@ -1244,7 +1222,10 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     pricing: pricing.length,
     budget: budget.length,
   });
-  const sourceRows = useDataSource(b.dataSource, pricing, budget);
+  // Tabela com meses nas colunas não encolhe para um mês: o clique filtra as outras dimensões.
+  const sourceRows = useBlockRows(b, useDataSource(b.dataSource, pricing, budget), {
+    ignorePeriod: !!b.colDim && /period|mes/i.test(b.colDim),
+  });
 
   const data = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
@@ -1907,6 +1888,18 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
           {headerCells}
           {bodyCells}
           {othersCells}
+          {/* Clique numa linha filtra o slide pela última dimensão da linha. */}
+          <RowFilterOverlay
+            blockId={b.id}
+            emits={b.emitsCrossFilter !== false}
+            dimension={b.rowDims[b.rowDims.length - 1]}
+            sourceLabel={tableTitle || "Tabela"}
+            rows={visibleHeaders.map((rh, ri) => ({
+              key: rh.key, top: (ri + 1) * rowH, height: rowH,
+              value: rh.values[rh.values.length - 1] ?? "",
+              label: displayHeader(b.rowDims, rh.values),
+            }))}
+          />
           {resizeHandles}
         </div>
         {b.exportNote && fit.truncated && (
@@ -1945,7 +1938,7 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
     pricing: pricing.length,
     budget: budget.length,
   });
-  const rows = useDataSource(b.dataSource, pricing, budget);
+  const rows = useBlockRows(b, useDataSource(b.dataSource, pricing, budget));
   // Sempre busca todos para podermos calcular o efetivo + Outros
   const allItems = useMemo(
     () => computeTopRanking(
@@ -2045,6 +2038,19 @@ function TopSkuRender({ block: b }: { block: TopSkuBlock }) {
         <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
           {headerCells}
           {bodyCells}
+          <RowFilterOverlay
+            blockId={b.id}
+            emits={b.emitsCrossFilter !== false}
+            dimension={b.dim}
+            sourceLabel={(b.title ?? "").replace(/\*+/g, "").trim() || "Top SKU"}
+            rows={items.map((it, i) => {
+              const isOthers = b.showOthers && i === items.length - 1 && hidden.length > 0;
+              return {
+                key: `${it.name}-${i}`, top: (i + 1) * rowH, height: rowH, value: it.name,
+                othersOf: isOthers ? visible.map((v) => v.name) : undefined,
+              };
+            })}
+          />
         </div>
       </div>
     );
@@ -2148,7 +2154,7 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
     pricing: pricingRows.length,
     budget: budgetRows.length,
   });
-  const sourceRows = useDataSource(blk.dataSource, pricingRows, budgetRows);
+  const sourceRows = useBlockRows(blk, useDataSource(blk.dataSource, pricingRows, budgetRows));
   const months = useMonthsInfo();
 
   const filteredRows = useMemo(
@@ -2606,7 +2612,7 @@ function omniAggregatedValue(sum: { value: number; rol: number }, metric: OmniMe
 
 // ---- omni_evolucao_mensal ----
 function OmniEvolucaoMensalRender({ block: b }: { block: OmniEvolucaoMensalBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const series = useMemo(() => computeCanalTrend(filtered, null, "cm"), [filtered]);
   const info = omniMetricInfo(b.metric);
@@ -2661,7 +2667,7 @@ function heatColorOmni(v: number | null, min: number, max: number): { bg: string
 }
 
 function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonalidadeBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2748,7 +2754,7 @@ function OmniHeatmapSazonalidadeRender({ block: b }: { block: OmniHeatmapSazonal
 
 // ---- omni_herois_ofensores ----
 function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(() => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"), [filtered, b.dim]);
   const minRolForPct = useMemo(() => rows.reduce((s, r) => s + r.rol, 0) * 0.01, [rows]);
@@ -2781,7 +2787,7 @@ function OmniHeroisOfensoresRender({ block: b }: { block: OmniHeroisOfensoresBlo
 
 // ---- omni_canal_trend ----
 function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2841,7 +2847,7 @@ function OmniCanalTrendRender({ block: b }: { block: OmniCanalTrendBlock }) {
 
 // ---- omni_canal_mix ----
 function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const allHistory = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
 
@@ -2892,7 +2898,7 @@ function OmniCanalMixRender({ block: b }: { block: OmniCanalMixBlock }) {
 
 // ---- omni_custo_evolucao ----
 function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
@@ -2933,7 +2939,7 @@ function OmniCustoEvolucaoRender({ block: b }: { block: OmniCustoEvolucaoBlock }
 
 // ---- omni_positivacao ----
 function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const dim = b.dim ?? "categoria";
   const series = useMemo(() => buildPositivacaoSeries(filtered, dim, 13), [filtered, dim]);
@@ -2975,7 +2981,7 @@ function OmniPositivacaoRender({ block: b }: { block: OmniPositivacaoBlock }) {
 
 // ---- omni_uf_map ----
 function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const { states, labelPoints } = useMemo(() => parseBrazilSvg(brMapRaw), []);
   const labelPointByUf = useMemo(() => new Map(labelPoints.map((point) => [point.uf, point])), [labelPoints]);
@@ -3079,7 +3085,7 @@ function OmniUfMapRender({ block: b }: { block: OmniUfMapBlock }) {
 
 // ---- omni_custo_composicao ----
 function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
@@ -3120,7 +3126,7 @@ function OmniCustoComposicaoRender({ block: b }: { block: OmniCustoComposicaoBlo
 
 // ---- omni_price_decomp ----
 function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const months  = useMonthsInfo();
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
 
@@ -3169,7 +3175,7 @@ function OmniPriceDecompRender({ block: b }: { block: OmniPriceDecompBlock }) {
 
 // ---- omni_bridge_pvm ----
 function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const budget = useDeckBudgetRows();
   const metric = usePricing((s) => s.metric);
   const months  = useMonthsInfo();
@@ -3211,7 +3217,7 @@ function OmniBridgePvmRender({ block: b }: { block: OmniBridgePvmBlock }) {
 
 // ---- omni_farol ----
 function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
 
   const { result, skuRefLabel, skuCompLabel } = useMemo(() => {
     const rows = applyOmniFilters(pricing, b);
@@ -3293,7 +3299,7 @@ function OmniFarolRender({ block: b }: { block: OmniFarolBlock }) {
 
 // ---- omni_abc_curva ----
 function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
@@ -3314,7 +3320,7 @@ function OmniAbcCurvaRender({ block: b }: { block: OmniAbcCurvaBlock }) {
 
 // ---- omni_portfolio_matrix ----
 function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const info = omniMetricInfo(b.metric);
   const rows = useMemo(
@@ -3336,7 +3342,7 @@ function OmniPortfolioMatrixRender({ block: b }: { block: OmniPortfolioMatrixBlo
 
 // ---- omni_abc_bars ----
 function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows());
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const rows = useMemo(
     () => aggregateBy(filtered, "cm", (r) => (r as never as Record<string, string>)[b.dim] || "—"),
@@ -3372,7 +3378,7 @@ function OmniAbcBarsRender({ block: b }: { block: OmniAbcBarsBlock }) {
 
 // ---- omni_custo_pressao ----
 function OmniCustoPressaoRender({ block: b }: { block: OmniCustoPressaoBlock }) {
-  const pricing = useDeckPricingRows();
+  const pricing = useBlockRows(b, useDeckPricingRows(), { ignorePeriod: true });
   const filtered = useMemo(() => applyOmniFilters(pricing, b), [pricing, b]);
   const evolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
 
