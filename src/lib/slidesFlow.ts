@@ -36,6 +36,8 @@ export interface BaseSlideItem {
   /** Oculto na esteira: não entra em export (PPTX/PDF) nem na apresentação
    *  ao vivo, mas continua editável normalmente. Default false. */
   hidden?: boolean;
+  /** Grupo da esteira a que o slide pertence (lib/slideGroups). */
+  groupId?: string;
 }
 
 export interface BridgePvmSlideConfig {
@@ -199,13 +201,16 @@ export interface BuildContext {
   pricingRows: PricingRow[];
   budgetRows: BudgetRow[];
   metric: Metric;
+  /** Nome do grupo de cada slide (id do slide → nome): vira seção no PowerPoint. */
+  sectionOf?: ReadonlyMap<string, string>;
 }
 
 export function itemToFlow(item: SlideItem, ctx: BuildContext): SlideFlowItem {
   // Notas do apresentador vão junto para o PowerPoint (painel de anotações).
   const notes = item.config.speakerNotes?.trim();
   const flow = itemToFlowBuilder(item, ctx);
-  return notes ? { ...flow, notes } : flow;
+  const section = ctx.sectionOf?.get(item.id);
+  return { ...flow, ...(notes ? { notes } : null), ...(section ? { section } : null) };
 }
 
 function itemToFlowBuilder(item: SlideItem, ctx: BuildContext): SlideFlowItem {

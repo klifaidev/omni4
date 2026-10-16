@@ -9,6 +9,7 @@ import {
   migrateSlidesFlowItemsDataSources,
   restoreSlidesFlowRawStateFromBackup,
   sanitizeSlidesFlowItems,
+  useSlidesFlow,
   type ElectronSlidesFlowAPI,
 } from "./slidesFlow";
 
@@ -302,5 +303,80 @@ describe("createElectronSlidesFlowStorage", () => {
 
     expect(read).toBe(legacyRaw);
     expect(files.get("pricing.slidesFlow.v1")).toBe(legacyRaw);
+  });
+});
+
+describe("grupos da esteira (store)", () => {
+  const slide = (id: string) => ({ id, kind: "cover" as const, label: id, config: { title: id, subtitle: "", variant: "cover" as const } });
+  const seed = (ids: string[]) => useSlidesFlow.setState({ items: ids.map(slide) as never, groups: [], groupUndo: null, presets: [], selectedId: null });
+  const members = (gid: string) => useSlidesFlow.getState().items.filter((i) => i.groupId === gid).map((i) => i.id);
+
+  it("cria o grupo, junta os slides e o Desfazer devolve a esteira como estava", () => {
+    seed(["a", "b", "c", "d"]);
+    const gid = useSlidesFlow.getState().createGroup(["b", "d"], "Resultados")!;
+    expect(useSlidesFlow.getState().items.map((i) => i.id)).toEqual(["a", "b", "d", "c"]);
+    expect(members(gid)).toEqual(["b", "d"]);
+    expect(useSlidesFlow.getState().undoGroupAction()).toBe(true);
+    expect(useSlidesFlow.getState().items.map((i) => i.id)).toEqual(["a", "b", "c", "d"]);
+    expect(useSlidesFlow.getState().groups).toEqual([]);
+    expect(useSlidesFlow.getState().undoGroupAction()).toBe(false);
+  });
+
+  it("remover o último slide de um grupo apaga o grupo", () => {
+    seed(["a", "b"]);
+    const gid = useSlidesFlow.getState().createGroup(["a"])!;
+    useSlidesFlow.getState().removeItem("a");
+    expect(useSlidesFlow.getState().groups.find((g) => g.id === gid)).toBeUndefined();
+  });
+
+  it("arrastar sobre um grupo entra nele; sobre um slide solto, sai", () => {
+    seed(["a", "b", "c", "d"]);
+    const gid = useSlidesFlow.getState().createGroup(["a", "b"])!;
+    useSlidesFlow.getState().reorder("d", `group:${gid}`);
+    expect(members(gid)).toEqual(["d", "a", "b"]);
+    useSlidesFlow.getState().reorder("d", "c");
+    expect(members(gid)).toEqual(["a", "b"]);
+  });
+
+  it("ocultar o grupo oculta todos os slides; excluir o grupo leva os slides e dá para desfazer", () => {
+    seed(["a", "b", "c"]);
+    const gid = useSlidesFlow.getState().createGroup(["a", "b"])!;
+    useSlidesFlow.getState().setGroupHidden(gid, true);
+    expect(useSlidesFlow.getState().items.filter((i) => i.hidden).map((i) => i.id)).toEqual(["a", "b"]);
+    useSlidesFlow.getState().removeGroup(gid);
+    expect(useSlidesFlow.getState().items.map((i) => i.id)).toEqual(["c"]);
+    useSlidesFlow.getState().undoGroupAction();
+    expect(useSlidesFlow.getState().items.map((i) => i.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("carregar pré-definição traz os grupos com ids novos", () => {
+    seed(["a", "b", "c"]);
+    const gid = useSlidesFlow.getState().createGroup(["a", "b"], "Resultados")!;
+    const preset = useSlidesFlow.getState().savePreset("Modelo");
+    seed(["x"]);
+    useSlidesFlow.setState({ presets: [preset] });
+    useSlidesFlow.getState().loadPreset(preset.id);
+    const state = useSlidesFlow.getState();
+    expect(state.groups).toHaveLength(1);
+    expect(state.groups[0].name).toBe("Resultados");
+    expect(state.groups[0].id).not.toBe(gid);
+    expect(state.items.filter((i) => i.groupId === state.groups[0].id)).toHaveLength(2);
+  });
+
+  it("duplicar a esteira cria cópias dos grupos, sem misturar com os originais", () => {
+    seed(["a", "b"]);
+    const gid = useSlidesFlow.getState().createGroup(["a", "b"], "G")!;
+    useSlidesFlow.getState().duplicateDeck();
+    const state = useSlidesFlow.getState();
+    expect(state.groups).toHaveLength(2);
+    expect(members(gid)).toHaveLength(2);
+    expect(state.items).toHaveLength(4);
+  });
+
+  it("esteira antiga, sem groups, continua válida", () => {
+    seed(["a"]);
+    useSlidesFlow.setState({ groups: undefined as never });
+    useSlidesFlow.getState().normalizeFlowGroups();
+    expect(useSlidesFlow.getState().items).toHaveLength(1);
   });
 });

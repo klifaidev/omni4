@@ -2,6 +2,24 @@
 import { create } from "zustand";
 import { persist, type StateStorage } from "zustand/middleware";
 import { createDeferredPackedStorage } from "@/lib/slidesFlowPersist";
+import {
+  addItemsToGroup,
+  duplicateGroupItems,
+  groupItems,
+  isGroupColor,
+  moveGroup,
+  moveItem,
+  normalizeGroups,
+  remapGroups,
+  removeItemsFromGroups,
+  sanitizeGroups,
+  ungroup as ungroupItems,
+  uniqueGroupName,
+  isGroupDragId,
+  groupIdFromDragId,
+  type GroupColorKey,
+  type SlideGroup,
+} from "@/lib/slideGroups";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
 import { migrateDataSource, newBlock, type FilterableBlock } from "@/lib/customSlide";
@@ -46,14 +64,28 @@ export interface SlidesPreset {
   /** Filtro Global salvo junto com esta pré-definição. Ausente em presets
    *  antigos — trate como `{}` (nenhum filtro global). */
   globalFilters?: Filters;
+  /** Grupos da esteira salvos junto (ausente em pré-definições antigas). */
+  groups?: SlideGroup[];
   createdAt: number;
   updatedAt: number;
+}
+
+/** Foto da esteira para o "Desfazer" das ações de grupo. */
+export interface SlidesGroupUndo {
+  label: string;
+  items: SlideItem[];
+  groups: SlideGroup[];
+  selectedId: string | null;
 }
 
 export type SlideTransition = "none" | "fade" | "slide-left" | "slide-up" | "zoom";
 
 interface SlidesFlowState {
   items: SlideItem[];
+  /** Grupos da esteira (a ordem da lista continua em `items`). */
+  groups: SlideGroup[];
+  /** Última ação de grupo — o toast "Desfazer" volta a esta foto. Não é gravado. */
+  groupUndo: SlidesGroupUndo | null;
   presets: SlidesPreset[];
   selectedId: string | null;
   transition: SlideTransition;
@@ -78,6 +110,31 @@ interface SlidesFlowState {
   clearItems: () => void;
   duplicateDeck: () => void;
   select: (id: string | null) => void;
+
+  /** Exclui vários slides de uma vez (com "Desfazer"). */
+  removeItems: (ids: string[]) => void;
+  /** Oculta ou mostra vários slides de uma vez. */
+  setItemsHidden: (ids: string[], hidden: boolean) => void;
+
+  // Grupos
+  /** Agrupa os slides (juntos no lugar do primeiro). Devolve o id do grupo novo. */
+  createGroup: (ids: string[], name?: string) => string | null;
+  addToGroup: (ids: string[], groupId: string) => void;
+  removeFromGroup: (ids: string[]) => void;
+  ungroup: (groupId: string) => void;
+  /** Exclui o grupo E os slides dele. */
+  removeGroup: (groupId: string) => void;
+  duplicateGroup: (groupId: string) => string | null;
+  renameGroup: (groupId: string, name: string) => void;
+  setGroupColor: (groupId: string, color: GroupColorKey) => void;
+  toggleGroupCollapsed: (groupId: string) => void;
+  setAllGroupsCollapsed: (collapsed: boolean) => void;
+  /** Oculta (ou volta a mostrar) todos os slides do grupo. */
+  setGroupHidden: (groupId: string, hidden: boolean) => void;
+  /** Desfaz a última ação de grupo (devolve false se não há o que desfazer). */
+  undoGroupAction: () => boolean;
+  /** Reaplica as regras de grupo (depois de alterações diretas em `items`). */
+  normalizeFlowGroups: () => void;
   setTransition: (t: SlideTransition) => void;
 
   // Filtro Global
@@ -463,6 +520,8 @@ export const useSlidesFlow = create<SlidesFlowState>()(
   persist(
     (set, get) => ({
       items: [],
+      groups: [],
+      groupUndo: null,
       presets: [],
       selectedId: null,
       transition: "fade",
@@ -501,10 +560,10 @@ export const useSlidesFlow = create<SlidesFlowState>()(
         }),
 
       removeItem: (id) =>
-        set((s) => ({
-          items: s.items.filter((i) => i.id !== id),
-          selectedId: s.selectedId === id ? null : s.selectedId,
-        })),
+        set((s) => {
+          const next = normalizeGroups(s.items.filter((i) => i.id !== id), s.groups);
+          return { items: next.items, groups: next.groups, selectedId: s.selectedId === id ? null : s.selectedId };
+        }),
 
       duplicateItem: (id) =>
         set((s) => {
@@ -527,31 +586,171 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           })),
         })),
 
+      // Aceita ids de slide e de cabeçalho de grupo ("group:ID"): soltar um
+      // slide sobre outro grupo o coloca nele; sobre um slide solto o tira
+      // do grupo; arrastar o cabeçalho leva o grupo inteiro.
       reorder: (sourceId, targetId) =>
         set((s) => {
-          const from = s.items.findIndex((i) => i.id === sourceId);
-          const to = s.items.findIndex((i) => i.id === targetId);
-          if (from < 0 || to < 0 || from === to) return {};
-          const items = [...s.items];
-          const [moved] = items.splice(from, 1);
-          items.splice(to, 0, moved);
-          return { items };
+          const next = isGroupDragId(sourceId)
+            ? moveGroup(s.items, s.groups, groupIdFromDragId(sourceId), targetId)
+            : moveItem(s.items, s.groups, sourceId, targetId);
+          if (next.items === s.items && next.groups === s.groups) return {};
+          return { items: next.items, groups: next.groups };
         }),
 
-      clearItems: () => set({ items: [], selectedId: null }),
+      clearItems: () => set({ items: [], groups: [], selectedId: null }),
 
       duplicateDeck: () =>
         set((s) => {
           if (s.items.length === 0) return {};
-          const clones = s.items.map((i) => {
+          const cloned = s.items.map((i) => {
             const c = JSON.parse(JSON.stringify(i)) as SlideItem;
             c.id = newId();
             return c;
           });
-          const nextItems = [...s.items, ...clones];
-          return { items: nextItems, selectedId: clones[0]?.id ?? s.selectedId };
+          // A cópia do deck tem os seus próprios grupos (não se mistura com os originais).
+          const copy = remapGroups(
+            cloned,
+            s.groups.map((g) => ({ ...g, name: `${g.name} (cópia)` })),
+            newId,
+          );
+          const nextItems = [...s.items, ...copy.items];
+          return {
+            items: nextItems,
+            groups: [...s.groups, ...copy.groups],
+            selectedId: copy.items[0]?.id ?? s.selectedId,
+          };
         }),
       select: (id) => set({ selectedId: id }),
+
+      removeItems: (ids) => {
+        const state = get();
+        const gone = new Set(ids);
+        if (!state.items.some((i) => gone.has(i.id))) return;
+        const result = normalizeGroups(state.items.filter((i) => !gone.has(i.id)), state.groups);
+        set({
+          items: result.items,
+          groups: result.groups,
+          selectedId: state.selectedId && gone.has(state.selectedId) ? null : state.selectedId,
+          groupUndo: { label: ids.length === 1 ? "Slide excluído" : `${ids.length} slides excluídos`, items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+      },
+
+      setItemsHidden: (ids, hidden) => {
+        const wanted = new Set(ids);
+        set((s) => ({
+          items: s.items.map((i) => (wanted.has(i.id) && !!i.hidden !== hidden ? ({ ...i, hidden } as SlideItem) : i)),
+        }));
+      },
+
+      createGroup: (ids, name) => {
+        const state = get();
+        const groupId = newId();
+        const result = groupItems(state.items, state.groups, ids, groupId, name);
+        if (!result) return null;
+        set({
+          items: result.items,
+          groups: result.groups,
+          groupUndo: { label: "Grupo criado", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+        return groupId;
+      },
+
+      addToGroup: (ids, groupId) => {
+        const state = get();
+        if (!state.groups.some((g) => g.id === groupId)) return;
+        const result = addItemsToGroup(state.items, state.groups, ids, groupId);
+        if (result.items === state.items) return;
+        set({
+          items: result.items,
+          groups: result.groups,
+          groupUndo: { label: "Slides movidos para o grupo", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+      },
+
+      removeFromGroup: (ids) => {
+        const state = get();
+        const result = removeItemsFromGroups(state.items, state.groups, ids);
+        if (result.items === state.items) return;
+        set({
+          items: result.items,
+          groups: result.groups,
+          groupUndo: { label: "Slides tirados do grupo", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+      },
+
+      ungroup: (groupId) => {
+        const state = get();
+        const result = ungroupItems(state.items, state.groups, groupId);
+        set({
+          items: result.items,
+          groups: result.groups,
+          groupUndo: { label: "Grupo desfeito", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+      },
+
+      removeGroup: (groupId) => {
+        const state = get();
+        const kept = state.items.filter((i) => i.groupId !== groupId);
+        const result = normalizeGroups(kept, state.groups.filter((g) => g.id !== groupId));
+        const selectedGone = state.selectedId && !kept.some((i) => i.id === state.selectedId);
+        set({
+          items: result.items,
+          groups: result.groups,
+          selectedId: selectedGone ? null : state.selectedId,
+          groupUndo: { label: "Grupo excluído", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+      },
+
+      duplicateGroup: (groupId) => {
+        const state = get();
+        const copyId = newId();
+        const result = duplicateGroupItems(state.items, state.groups, groupId, copyId, (item) => {
+          const c = JSON.parse(JSON.stringify(item)) as SlideItem;
+          c.id = newId();
+          return c;
+        });
+        if (!result) return null;
+        set({
+          items: result.items,
+          groups: result.groups,
+          groupUndo: { label: "Grupo duplicado", items: state.items, groups: state.groups, selectedId: state.selectedId },
+        });
+        return copyId;
+      },
+
+      renameGroup: (groupId, name) =>
+        set((s) => ({
+          groups: s.groups.map((g) => (g.id === groupId ? { ...g, name: uniqueGroupName(name, s.groups, groupId) } : g)),
+        })),
+
+      setGroupColor: (groupId, color) =>
+        set((s) => (isGroupColor(color) ? { groups: s.groups.map((g) => (g.id === groupId ? { ...g, color } : g)) } : {})),
+
+      toggleGroupCollapsed: (groupId) =>
+        set((s) => ({ groups: s.groups.map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g)) })),
+
+      setAllGroupsCollapsed: (collapsed) =>
+        set((s) => ({ groups: s.groups.map((g) => (!!g.collapsed === collapsed ? g : { ...g, collapsed })) })),
+
+      setGroupHidden: (groupId, hidden) =>
+        set((s) => ({
+          items: s.items.map((i) => (i.groupId === groupId && !!i.hidden !== hidden ? ({ ...i, hidden } as SlideItem) : i)),
+        })),
+
+      undoGroupAction: () => {
+        const undo = get().groupUndo;
+        if (!undo) return false;
+        set({ items: undo.items, groups: undo.groups, selectedId: undo.selectedId, groupUndo: null });
+        return true;
+      },
+
+      normalizeFlowGroups: () =>
+        set((s) => {
+          const current = Array.isArray(s.groups) ? s.groups : [];
+          const next = normalizeGroups(s.items, current);
+          return next.items === s.items && next.groups === s.groups ? {} : { items: next.items, groups: next.groups };
+        }),
 
       savePreset: (name, description) => {
         const now = Date.now();
@@ -562,6 +761,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           // deep clone para evitar mutações futuras vazarem para o preset
           items: JSON.parse(JSON.stringify(get().items)),
           globalFilters: JSON.parse(JSON.stringify(get().globalFilters)),
+          groups: JSON.parse(JSON.stringify(get().groups)),
           createdAt: now,
           updatedAt: now,
         };
@@ -580,6 +780,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           description: preset.description?.trim(),
           items: safeItems,
           globalFilters: preset.globalFilters ? JSON.parse(JSON.stringify(preset.globalFilters)) : {},
+          groups: sanitizeGroups(preset.groups),
           createdAt: Number.isFinite(preset.createdAt) ? preset.createdAt : now,
           updatedAt: now,
         };
@@ -595,6 +796,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
                   ...p,
                   items: JSON.parse(JSON.stringify(s.items)),
                   globalFilters: JSON.parse(JSON.stringify(s.globalFilters)),
+                  groups: JSON.parse(JSON.stringify(s.groups)),
                   updatedAt: Date.now(),
                 }
               : p,
@@ -610,9 +812,14 @@ export const useSlidesFlow = create<SlidesFlowState>()(
           ...JSON.parse(JSON.stringify(i)),
           id: newId(),
         })) as SlideItem[];
-        const safeItems = sanitizeSlidesFlowItems(items);
+        // Os grupos da pré-definição ganham ids novos junto com os slides.
+        const withGroups = remapGroups(sanitizeSlidesFlowItems(items), sanitizeGroups(p.groups), newId);
+        const normalized = normalizeGroups(withGroups.items, withGroups.groups);
+        const safeItems = normalized.items;
         set({
           items: safeItems,
+          groups: normalized.groups,
+          groupUndo: null,
           selectedId: safeItems[0]?.id ?? null,
           globalFilters: p.globalFilters ? JSON.parse(JSON.stringify(p.globalFilters)) : {},
         });
@@ -639,6 +846,7 @@ export const useSlidesFlow = create<SlidesFlowState>()(
       storage: createDeferredPackedStorage(() => pickSlidesFlowStorage()),
       partialize: (s) => ({
         items: s.items,
+        groups: s.groups,
         presets: s.presets,
         transition: s.transition,
         globalFilters: s.globalFilters,
@@ -659,6 +867,18 @@ export const useSlidesFlow = create<SlidesFlowState>()(
             state.globalFilters = {};
           }
           if (typeof state.referencePeriod !== "string") state.referencePeriod = null;
+          // Grupos: arquivo antigo não tem; arquivo estragado não derruba a esteira.
+          try {
+            const normalized = normalizeGroups(
+              Array.isArray(state.items) ? state.items : [],
+              sanitizeGroups((state as { groups?: unknown }).groups),
+            );
+            state.items = normalized.items;
+            state.groups = normalized.groups;
+          } catch (groupsError) {
+            console.error("[slidesFlow] Falha ao ler os grupos da esteira; seguem sem grupos.", groupsError);
+            state.groups = [];
+          }
           try {
             const safeItems = sanitizeSlidesFlowItems(Array.isArray(state.items) ? state.items : []);
             state.items = migrateSlidesFlowItemsDataSources(safeItems);

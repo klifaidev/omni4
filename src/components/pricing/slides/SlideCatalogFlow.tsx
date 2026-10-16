@@ -2,9 +2,15 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlertTriangle, Copy, Eye, EyeOff, Filter as FilterIcon, GripVertical, MessageSquare, Pencil, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Copy, Eye, EyeOff, Filter as FilterIcon, FolderInput, FolderMinus, FolderPlus, GripVertical, MessageSquare, MoreHorizontal, Pencil, Plus, Sparkles, StickyNote, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+  DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { SlideGroup } from "@/lib/slideGroups";
+import { groupHex } from "./FlowGroup";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { cn } from "@/lib/utils";
@@ -160,13 +166,30 @@ export const FlowCard = React.memo(function FlowCard({
   onRemove,
   onDuplicate,
   onToggleHidden,
+  checked = false,
+  selectionMode = false,
+  onToggleCheck,
+  groups = [],
+  onGroupWithThis,
+  onMoveToGroup,
+  onLeaveGroup,
 }: {
   item: SlideItem;
   index: number;
   selected: boolean;
   preflightIssues?: SlidePreflightIssue[];
   previewVisible?: boolean;
-  onSelect: () => void;
+  /** Clique no card (a página lê Ctrl/Cmd e Shift no evento). */
+  onSelect: (event?: React.MouseEvent) => void;
+  /** Slide marcado na seleção múltipla. */
+  checked?: boolean;
+  /** Há seleção múltipla em andamento: o número vira caixa de seleção em todos os cards. */
+  selectionMode?: boolean;
+  onToggleCheck?: () => void;
+  groups?: SlideGroup[];
+  onGroupWithThis?: () => void;
+  onMoveToGroup?: (groupId: string) => void;
+  onLeaveGroup?: () => void;
   /** Abre o slide no editor (duplo clique ou botão Editar). */
   onOpen?: () => void;
   onRemove: () => void;
@@ -225,7 +248,7 @@ export const FlowCard = React.memo(function FlowCard({
             style={style}
             className={cn(
               "group relative flex items-center gap-2 rounded-xl border bg-card/60 px-2.5 py-2 transition-all duration-200 animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-              selected
+              selected || checked
                 ? "border-primary/60 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.35),_0_8px_24px_-12px_hsl(var(--primary)/0.35)]"
                 : "border-border/40 hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_16px_-8px_hsl(0_0%_0%/0.4)]",
               preflightSeverity === "error" && !selected && "border-destructive/50",
@@ -234,7 +257,7 @@ export const FlowCard = React.memo(function FlowCard({
               isHidden && "opacity-50",
             )}
             data-flow-id={item.id}
-            onClick={onSelect}
+            onClick={(e) => onSelect(e)}
             onDoubleClick={onOpen}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -245,7 +268,7 @@ export const FlowCard = React.memo(function FlowCard({
             tabIndex={0}
             role="button"
             aria-label={displayName}
-            aria-pressed={selected}
+            aria-pressed={selected || checked}
             onMouseEnter={resetHoverPreviewDelay}
             onMouseMove={resetHoverPreviewDelay}
             onMouseLeave={clearHoverPreviewDelay}
@@ -260,9 +283,32 @@ export const FlowCard = React.memo(function FlowCard({
               <GripVertical className="h-4 w-4" />
             </button>
 
-            <span className="w-6 shrink-0 text-center text-[10px] font-semibold tabular-nums tracking-wider text-muted-foreground/70">
-              {String(index + 1).padStart(2, "0")}
-            </span>
+            {/* O número vira caixa de seleção ao passar o mouse — marca vários slides para agrupar. */}
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={checked}
+              aria-label={`Selecionar o slide ${index + 1}`}
+              title={checked ? "Tirar da seleção" : "Selecionar (Ctrl+clique soma, Shift+clique seleciona o intervalo)"}
+              onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
+              className="group/check relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className={cn(
+                "text-[10px] font-semibold tabular-nums tracking-wider text-muted-foreground/70 transition-opacity",
+                (checked || selectionMode) ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0",
+              )}>
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className={cn(
+                "absolute inset-0.5 flex items-center justify-center rounded border transition-all",
+                checked
+                  ? "border-primary bg-primary text-primary-foreground opacity-100"
+                  : "border-muted-foreground/40 bg-background/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:border-primary",
+                selectionMode && !checked && "opacity-100",
+              )}>
+                {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+              </span>
+            </button>
 
             {/* 160px (antes 104): dá pra reconhecer o slide pela miniatura. */}
             <div className="pointer-events-none relative w-[104px] shrink-0 overflow-hidden rounded-md border border-border/50 bg-white shadow-sm sm:w-[160px]">
@@ -364,6 +410,49 @@ export const FlowCard = React.memo(function FlowCard({
               >
                 <Copy className="h-3.5 w-3.5" />
               </Button>
+              {onGroupWithThis && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Agrupar"
+                      title="Agrupar"
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem onSelect={onGroupWithThis}>
+                      <FolderPlus className="mr-2 h-3.5 w-3.5" /> Novo grupo com este slide
+                    </DropdownMenuItem>
+                    {groups.filter((g) => g.id !== item.groupId).length > 0 && onMoveToGroup && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <FolderInput className="mr-2 h-3.5 w-3.5" /> Mover para o grupo
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-52">
+                          <DropdownMenuLabel className="text-[11px] text-muted-foreground">Grupo de destino</DropdownMenuLabel>
+                          {groups.filter((g) => g.id !== item.groupId).map((g) => (
+                            <DropdownMenuItem key={g.id} onSelect={() => onMoveToGroup(g.id)}>
+                              <span className="mr-2 h-2.5 w-2.5 rounded-full" style={{ background: groupHex(g.color) }} />
+                              <span className="truncate">{g.name}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+                    {item.groupId && onLeaveGroup && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={onLeaveGroup}>
+                          <FolderMinus className="mr-2 h-3.5 w-3.5" /> Tirar do grupo
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <Button
                 variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive"
                 onClick={(e) => { e.stopPropagation(); onRemove(); }}

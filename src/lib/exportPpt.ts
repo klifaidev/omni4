@@ -1398,6 +1398,9 @@ export interface SlideFlowItem {
   /** Notas do apresentador — vão para o painel de anotações do PowerPoint
    *  no primeiro slide que `build` criar. */
   notes?: string;
+  /** Nome do grupo da esteira: vira uma SEÇÃO no PowerPoint (painel de
+   *  miniaturas agrupado, como o "Seção" do próprio PowerPoint). */
+  section?: string;
 }
 
 export interface ExportSlideFlowResult {
@@ -1409,17 +1412,61 @@ export interface ExportSlideFlowResult {
  *  slide que ele criou. Cada `build` cria seus slides via pptx.addSlide (às
  *  vezes mais de um, como o Bridge), então registramos os criados.
  *  Devolve os nomes dos slides montados em modo degradado. */
+const UNGROUPED_SECTION = "Sem grupo";
+
+/**
+ * Seção de cada slide. Com seções no arquivo, TODO slide precisa estar numa —
+ * o PowerPoint pede para "reparar" se sobrar um fora —, então os slides sem
+ * grupo (em sequência) ganham uma seção própria. O pptxgenjs liga o slide à
+ * seção pelo TÍTULO, por isso cada bloco precisa de um título único: "Sem
+ * grupo" que reaparece depois de um grupo vira "Sem grupo (2)".
+ */
+export function planPptSections(items: ReadonlyArray<{ section?: string }>): Array<string | null> {
+  if (!items.some((it) => it.section?.trim())) return items.map(() => null);
+  const used = new Set<string>();
+  const plan: Array<string | null> = [];
+  let previousName: string | null = null;
+  let currentTitle = "";
+  for (const item of items) {
+    const name = item.section?.trim() || UNGROUPED_SECTION;
+    if (name !== previousName) {
+      let title = name;
+      for (let n = 2; used.has(title); n++) title = `${name} (${n})`;
+      used.add(title);
+      currentTitle = title;
+      previousName = name;
+    }
+    plan.push(currentTitle);
+  }
+  return plan;
+}
+
 export async function buildFlowItems(pptx: PptxGenJS, items: SlideFlowItem[]): Promise<string[]> {
   const created: PptxGenJS.Slide[] = [];
   const addSlide = pptx.addSlide.bind(pptx);
+  // Seção atual: todo slide criado enquanto ela vale entra nela.
+  let currentSection: string | null = null;
   pptx.addSlide = ((...args: Parameters<typeof addSlide>) => {
-    const slide = addSlide(...args);
+    let options: unknown = args[0];
+    if (currentSection) {
+      const base = typeof options === "string" ? { masterName: options } : ((options as object | undefined) ?? {});
+      options = { ...base, sectionTitle: currentSection };
+    }
+    const slide = addSlide(options as Parameters<typeof addSlide>[0]);
     created.push(slide);
     return slide;
   }) as typeof pptx.addSlide;
 
   const failedSlides: string[] = [];
+  const sectionPlan = planPptSections(items);
+  const declaredSections = new Set<string>();
   for (let i = 0; i < items.length; i++) {
+    const section = sectionPlan[i];
+    if (section && !declaredSections.has(section)) {
+      pptx.addSection({ title: section });
+      declaredSections.add(section);
+    }
+    currentSection = section;
     const firstNew = created.length;
     const result = await items[i].build(pptx);
     if (result === false) failedSlides.push(items[i].label ?? `Slide ${i + 1}`);

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { itemToFlow, type SlideItem } from "@/lib/slidesFlow";
+import { useSlidesFlow } from "@/store/slidesFlow";
 import type { Metric, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 
@@ -61,7 +62,14 @@ export function useSlideExport({
     if (!canExport()) return;
     setExporting(true);
     try {
-      const flow = visibleItems.map((i) => itemToFlow(i, { pricingRows, budgetRows, metric }));
+      // Grupos da esteira viram seções do PowerPoint.
+      const { groups } = useSlidesFlow.getState();
+      const sectionOf = new Map<string, string>();
+      for (const i of visibleItems) {
+        const name = i.groupId ? groups.find((g) => g.id === i.groupId)?.name : undefined;
+        if (name) sectionOf.set(i.id, name);
+      }
+      const flow = visibleItems.map((i) => itemToFlow(i, { pricingRows, budgetRows, metric, sectionOf }));
       const bridgeIdx = visibleItems.findIndex((i) => i.kind === "bridge_pvm");
       // pptxgenjs + jszip (~520KB) mesma lógica do PDF acima: só baixa
       // quando o usuário realmente exporta.

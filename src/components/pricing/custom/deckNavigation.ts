@@ -32,10 +32,12 @@ export function applyTemplateDeckToSlidesFlow({
     const rest = newItems.slice(1);
     items.splice(idx, 1, first, ...rest);
     useSlidesFlow.setState({ items, selectedId: first.id });
+    useSlidesFlow.getState().normalizeFlowGroups();
     return first.config;
   }
 
   items.splice(idx + 1, 0, ...newItems);
   useSlidesFlow.setState({ items, selectedId: newItems[0].id });
+  useSlidesFlow.getState().normalizeFlowGroups();
   return null;
 }

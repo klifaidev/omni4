@@ -7,7 +7,7 @@
 //  3. Pode salvar a esteira como Pré-definição (localStorage)
 //  4. Exporta tudo num único PPTX preservando a ordem
 // ============================================================================
-import { useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   DndContext,
@@ -36,6 +36,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { LiveTextInput } from "@/components/pricing/custom/tokens/LiveTextInput";
 import { slidesBreadcrumb } from "@/lib/memoryGuard";
+import { buildFlowRows, rangeIds, sortableIdsOf } from "@/lib/slideGroups";
+import { FlowGroupBody, FlowGroupHeader, FlowSelectionBar, groupHex } from "@/components/pricing/slides/FlowGroup";
+import type { GroupColorKey } from "@/lib/slideGroups";
 import { takePendingSlidesCrash } from "@/lib/crashRecovery";
 import { useSlidesSafety } from "@/store/slidesSafety";
 import { Textarea } from "@/components/ui/textarea";
@@ -674,11 +677,13 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick,
-  currentUser, onCommentEvent, previewVisible = true,
+  currentUser, onCommentEvent, previewVisible = true, groupColor,
 }: {
   item: SlideItem;
   index: number;
   active: boolean;
+  /** Cor do grupo a que o slide pertence (faixa à esquerda). */
+  groupColor?: GroupColorKey;
   onClick: () => void;
   currentUser: { name: string; color: string };
   onCommentEvent?: (event: SlideCommentEvent) => void;
@@ -689,6 +694,7 @@ function StripThumbnail({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    ...(groupColor ? { boxShadow: `inset 3px 0 0 ${groupHex(groupColor)}` } : null),
   };
   const meta = metaOf(item.kind);
   const Icon = ICON_MAP[meta.icon];
@@ -999,6 +1005,7 @@ function FullscreenCustomEditor({
   const addItem = useSlidesFlow((s) => s.addItem);
   const removeItem = useSlidesFlow((s) => s.removeItem);
   const reorder = useSlidesFlow((s) => s.reorder);
+  const stripGroups = useSlidesFlow((s) => s.groups);
 
   const current = items.find((i) => i.id === selectedId) ?? null;
   const idx = current ? items.findIndex((i) => i.id === current.id) : -1;
@@ -1179,6 +1186,21 @@ function FullscreenCustomEditor({
                 <SortableContext items={stripSortableIds} strategy={verticalListSortingStrategy}>
                   <div className="flex flex-col gap-1.5 p-1.5">
                     {items.map((it, i) => (
+                      <Fragment key={it.id}>
+                        {/* Etiqueta do grupo antes do primeiro slide dele. */}
+                        {it.groupId && items[i - 1]?.groupId !== it.groupId && (() => {
+                          const g = stripGroups.find((x) => x.id === it.groupId);
+                          return g ? (
+                            <div
+                              className="flex items-center gap-1 truncate rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                              style={{ background: `${groupHex(g.color)}22`, color: groupHex(g.color) }}
+                              title={`Grupo: ${g.name}`}
+                            >
+                              <Layers className="h-2.5 w-2.5 shrink-0" />
+                              <span className="truncate">{g.name}</span>
+                            </div>
+                          ) : null;
+                        })()}
                       <StripThumbnail
                         key={it.id}
                         item={it}
@@ -1187,11 +1209,13 @@ function FullscreenCustomEditor({
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
                         previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
+                        groupColor={it.groupId ? stripGroups.find((x) => x.id === it.groupId)?.color : undefined}
                         onClick={() => {
                           if (it.id === current?.id) return;
                           select(it.id);
                         }}
                       />
+                      </Fragment>
                     ))}
                   </div>
                 </SortableContext>
@@ -1976,6 +2000,21 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const reorder = useSlidesFlow((s) => s.reorder);
   const clearItems = useSlidesFlow((s) => s.clearItems);
   const transition = useSlidesFlow((s) => s.transition);
+  const groups = useSlidesFlow((s) => s.groups);
+  const createGroup = useSlidesFlow((s) => s.createGroup);
+  const addToGroup = useSlidesFlow((s) => s.addToGroup);
+  const removeFromGroup = useSlidesFlow((s) => s.removeFromGroup);
+  const ungroupSlides = useSlidesFlow((s) => s.ungroup);
+  const removeGroup = useSlidesFlow((s) => s.removeGroup);
+  const duplicateGroup = useSlidesFlow((s) => s.duplicateGroup);
+  const renameGroup = useSlidesFlow((s) => s.renameGroup);
+  const setGroupColor = useSlidesFlow((s) => s.setGroupColor);
+  const toggleGroupCollapsed = useSlidesFlow((s) => s.toggleGroupCollapsed);
+  const setAllGroupsCollapsed = useSlidesFlow((s) => s.setAllGroupsCollapsed);
+  const setGroupHidden = useSlidesFlow((s) => s.setGroupHidden);
+  const removeItems = useSlidesFlow((s) => s.removeItems);
+  const setItemsHidden = useSlidesFlow((s) => s.setItemsHidden);
+  const undoGroupAction = useSlidesFlow((s) => s.undoGroupAction);
 
   // O app caiu na última vez nos Slides: reabre com as miniaturas pausadas.
   useEffect(() => {
@@ -2264,7 +2303,133 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   };
 
   const flowPreviewWindow = useVirtualPreviewWindow(items.length, FLOW_CARD_ESTIMATED_HEIGHT);
-  const flowSortableIds = useMemo(() => items.map((item) => item.id), [items]);
+  const flowRows = useMemo(() => buildFlowRows(items, groups), [items, groups]);
+  const flowSortableIds = useMemo(() => sortableIdsOf(flowRows), [flowRows]);
+
+  // ---- Seleção múltipla e grupos ------------------------------------------
+  // `selectedId` continua sendo o slide aberto no painel; `multiIds` são os
+  // slides marcados (caixa de seleção, Ctrl/Shift+clique) para agrupar etc.
+  const [multiIds, setMultiIds] = useState<string[]>([]);
+  const anchorIdRef = useRef<string | null>(null);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const clearRenaming = useCallback(() => setRenamingGroupId(null), []);
+
+  // Slides que saíram da esteira saem da seleção.
+  useEffect(() => {
+    setMultiIds((prev) => {
+      if (prev.length === 0) return prev;
+      const alive = prev.filter((id) => items.some((i) => i.id === id));
+      return alive.length === prev.length ? prev : alive;
+    });
+  }, [items]);
+
+  // Abrir um slide que está num grupo recolhido expande o grupo.
+  useEffect(() => {
+    if (!selectedId) return;
+    const state = useSlidesFlow.getState();
+    const gid = state.items.find((i) => i.id === selectedId)?.groupId;
+    if (gid && state.groups.find((g) => g.id === gid)?.collapsed) state.toggleGroupCollapsed(gid);
+  }, [selectedId]);
+
+  /** Aviso com "Desfazer" depois de uma ação de grupo. */
+  const announceGroupAction = useCallback((message: string) => {
+    toast(message, {
+      duration: 7000,
+      action: { label: "Desfazer", onClick: () => { undoGroupAction(); } },
+    });
+  }, [undoGroupAction]);
+
+  // `withCurrent`: o Ctrl+clique soma ao slide aberto (como no Explorer); a
+  // caixa de seleção marca só o slide clicado.
+  const toggleChecked = useCallback((id: string, withCurrent = false) => {
+    setMultiIds((prev) => {
+      const base = prev.length > 0 ? prev : (withCurrent && selectedId && selectedId !== id ? [selectedId] : []);
+      return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    });
+    anchorIdRef.current = id;
+  }, [selectedId]);
+
+  const handleCardSelect = useCallback((id: string, event?: React.MouseEvent) => {
+    if (event && (event.ctrlKey || event.metaKey)) {
+      toggleChecked(id, true);
+      select(id);
+      return;
+    }
+    if (event?.shiftKey && (anchorIdRef.current ?? selectedId)) {
+      setMultiIds(rangeIds(useSlidesFlow.getState().items, (anchorIdRef.current ?? selectedId)!, id));
+      select(id);
+      return;
+    }
+    setMultiIds([]);
+    anchorIdRef.current = id;
+    select(id);
+  }, [select, selectedId, toggleChecked]);
+
+  /** Slides alvo das ações: os marcados, ou o slide aberto. */
+  const actionIds = useMemo(
+    () => (multiIds.length > 0 ? multiIds : selectedId ? [selectedId] : []),
+    [multiIds, selectedId],
+  );
+
+  const groupSlides = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    const gid = createGroup(ids);
+    if (!gid) return;
+    setMultiIds([]);
+    setRenamingGroupId(gid); // já abre o nome para digitar
+    announceGroupAction(ids.length === 1 ? "Grupo criado com 1 slide" : `Grupo criado com ${ids.length} slides`);
+  }, [createGroup, announceGroupAction]);
+
+  const moveToGroup = useCallback((ids: string[], groupId: string) => {
+    const name = useSlidesFlow.getState().groups.find((g) => g.id === groupId)?.name ?? "grupo";
+    addToGroup(ids, groupId);
+    setMultiIds([]);
+    announceGroupAction(`Movido para “${name}”`);
+  }, [addToGroup, announceGroupAction]);
+
+  const leaveGroup = useCallback((ids: string[]) => {
+    removeFromGroup(ids);
+    setMultiIds([]);
+    announceGroupAction("Tirado do grupo");
+  }, [removeFromGroup, announceGroupAction]);
+
+  const deleteSlides = useCallback((ids: string[]) => {
+    removeItems(ids);
+    setMultiIds([]);
+    announceGroupAction(ids.length === 1 ? "Slide excluído" : `${ids.length} slides excluídos`);
+  }, [removeItems, announceGroupAction]);
+
+  // Atalhos da esteira: Ctrl+G agrupa, Ctrl+Shift+G desfaz o grupo, Esc limpa a seleção.
+  useEffect(() => {
+    if (isStandby || fullscreenOpen || presentationOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        const state = useSlidesFlow.getState();
+        if (e.shiftKey) {
+          const gid = state.items.find((i) => i.id === (multiIds[0] ?? state.selectedId))?.groupId;
+          if (gid) {
+            state.ungroup(gid);
+            setMultiIds([]);
+            announceGroupAction("Grupo desfeito");
+          }
+          return;
+        }
+        groupSlides(multiIds.length > 0 ? multiIds : state.selectedId ? [state.selectedId] : []);
+        return;
+      }
+      if (e.key === "Escape" && multiIds.length > 0) {
+        e.preventDefault();
+        setMultiIds([]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isStandby, fullscreenOpen, presentationOpen, multiIds, groupSlides, announceGroupAction]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const onDragStart = (e: DragStartEvent) => {
@@ -2540,6 +2705,16 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
               <Badge variant="secondary" className="h-5 px-2 slides-type-badge tabular-nums">
                 {items.length} {t.page.esteira.slideCount(items.length)}
               </Badge>
+              {groups.length > 0 && (
+                <Button
+                  variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+                  onClick={() => setAllGroupsCollapsed(!groups.every((g) => g.collapsed))}
+                  title={groups.every((g) => g.collapsed) ? "Expandir todos os grupos" : "Recolher todos os grupos"}
+                >
+                  <Layers className="h-3 w-3" />
+                  {groups.length} {groups.length === 1 ? "grupo" : "grupos"} · {groups.every((g) => g.collapsed) ? "expandir" : "recolher"}
+                </Button>
+              )}
               {items.length > 0 && (
                  <span className="hidden slides-type-label text-muted-foreground/70 tabular-nums 2xl:inline">
                   {t.page.esteira.minutesEstimate(Math.max(1, Math.round((items.length * 30) / 60)))}
@@ -2819,27 +2994,86 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                 ) : (
                   <SortableContext items={flowSortableIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
-                      {items.map((item, idx) => (
-                        <FlowCard
-                          key={item.id}
-                          item={item}
-                          index={idx}
-                          selected={selectedId === item.id}
-                          previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
-                          onSelect={() => select(item.id)}
-                          onOpen={() => { select(item.id); setFullscreenOpen(true); }}
-                          onRemove={() => removeItem(item.id)}
-                          onDuplicate={() => duplicateItem(item.id)}
-                          onToggleHidden={() => updateItem(item.id, (it) => ({ ...it, hidden: !it.hidden } as SlideItem))}
-                        />
-                      ))}
+                      {flowRows.map((row) => {
+                        const renderCard = (item: SlideItem, idx: number) => (
+                          <FlowCard
+                            key={item.id}
+                            item={item}
+                            index={idx}
+                            selected={selectedId === item.id}
+                            checked={multiIds.includes(item.id)}
+                            selectionMode={multiIds.length > 0}
+                            previewVisible={flowPreviewWindow.isPreviewVisible(idx) || selectedId === item.id}
+                            onSelect={(e) => handleCardSelect(item.id, e)}
+                            onToggleCheck={() => toggleChecked(item.id)}
+                            onOpen={() => { select(item.id); setFullscreenOpen(true); }}
+                            onRemove={() => removeItem(item.id)}
+                            onDuplicate={() => duplicateItem(item.id)}
+                            onToggleHidden={() => updateItem(item.id, (it) => ({ ...it, hidden: !it.hidden } as SlideItem))}
+                            groups={groups}
+                            onGroupWithThis={() => groupSlides([item.id])}
+                            onMoveToGroup={(gid) => moveToGroup([item.id], gid)}
+                            onLeaveGroup={() => leaveGroup([item.id])}
+                          />
+                        );
+                        if (row.type === "slide") return renderCard(row.item, row.index);
+                        const { group, members } = row;
+                        return (
+                          <div key={group.id}>
+                            <FlowGroupHeader
+                              group={group}
+                              count={members.length}
+                              allHidden={members.every((m) => m.item.hidden)}
+                              previewNames={members.slice(0, 3).map((m) => slideDisplayName(m.item, metaOf(m.item.kind).title))}
+                              startRename={renamingGroupId === group.id}
+                              onRenameStarted={clearRenaming}
+                              onToggle={() => toggleGroupCollapsed(group.id)}
+                              onRename={(name) => renameGroup(group.id, name)}
+                              onColor={(c) => setGroupColor(group.id, c)}
+                              onToggleHidden={() => setGroupHidden(group.id, !members.every((m) => m.item.hidden))}
+                              onDuplicate={() => { duplicateGroup(group.id); announceGroupAction(`Grupo “${group.name}” duplicado`); }}
+                              onUngroup={() => { ungroupSlides(group.id); announceGroupAction(`Grupo “${group.name}” desfeito`); }}
+                              onDelete={() => { removeGroup(group.id); setMultiIds([]); announceGroupAction(`Grupo “${group.name}” excluído`); }}
+                              onSelectAll={() => {
+                                setMultiIds(members.map((m) => m.item.id));
+                                anchorIdRef.current = members[0]?.item.id ?? null;
+                                if (members[0]) select(members[0].item.id);
+                              }}
+                            />
+                            {!group.collapsed && (
+                              <FlowGroupBody color={group.color}>
+                                {members.map((m) => renderCard(m.item, m.index))}
+                              </FlowGroupBody>
+                            )}
+                          </div>
+                        );
+                      })}
                       <QuickAddSlideButton onAdd={addSlideFromShortcut} />
+                      {groups.length === 0 && items.length >= 3 && multiIds.length === 0 && (
+                        <p className="px-1 pt-1 text-center text-[11px] text-muted-foreground/70">
+                          Dica: marque vários slides (caixa no número, Ctrl+clique ou Shift+clique) e use <kbd className="rounded border border-border/60 px-1 text-[10px]">Ctrl</kbd>+<kbd className="rounded border border-border/60 px-1 text-[10px]">G</kbd> para agrupar.
+                        </p>
+                      )}
                     </div>
                   </SortableContext>
                 )}
               </FlowDropZone>
             </div>
           </div>
+          {multiIds.length > 0 && (
+            <FlowSelectionBar
+              count={multiIds.length}
+              groups={groups}
+              anyGrouped={multiIds.some((id) => items.find((i) => i.id === id)?.groupId)}
+              allHidden={multiIds.every((id) => items.find((i) => i.id === id)?.hidden)}
+              onGroup={() => groupSlides(multiIds)}
+              onMoveToGroup={(gid) => moveToGroup(multiIds, gid)}
+              onLeaveGroup={() => leaveGroup(multiIds)}
+              onToggleHidden={() => setItemsHidden(multiIds, !multiIds.every((id) => items.find((i) => i.id === id)?.hidden))}
+              onDelete={() => deleteSlides(multiIds)}
+              onClear={() => setMultiIds([])}
+            />
+          )}
           {(templateApplying || importApplying || exporting) && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/55 backdrop-blur-sm">
               <div className="surface-overlay flex min-w-[260px] items-center gap-3 rounded-xl border border-border/60 px-4 py-3">
