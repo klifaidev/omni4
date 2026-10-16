@@ -35,6 +35,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { LiveTextInput } from "@/components/pricing/custom/tokens/LiveTextInput";
+import { slidesBreadcrumb } from "@/lib/memoryGuard";
+import { takePendingSlidesCrash } from "@/lib/crashRecovery";
+import { useSlidesSafety } from "@/store/slidesSafety";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -78,7 +81,7 @@ import {
 import { smartDefaults } from "@/lib/slidesSmartDefaults";
 import { warmSlideChartData } from "@/lib/slideDeckPreparation";
 import { guardSlideReadOnly } from "@/lib/slidesReadOnly";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ShieldAlert } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
@@ -1881,6 +1884,8 @@ function PresetsPanel({ onLoadedDeck }: { onLoadedDeck?: (items: SlideItem[], na
                 variant="ghost" size="icon" className="h-6 w-6"
                 title={t.presets.loadTitle}
                 onClick={() => {
+                  // Rastro para o log: se o app cair, fica registrado o que foi carregado.
+                  slidesBreadcrumb(`carregar pré-definição "${p.name}" (${p.items.length} slides)`);
                   loadPreset(p.id);
                   onLoadedDeck?.(useSlidesFlow.getState().items, p.name);
                   toast.success(t.presets.loadedToast(p.name));
@@ -1936,6 +1941,27 @@ interface SlidesBetaProps {
   isStandby?: boolean;
 }
 
+/** Aviso do modo seguro: por que as miniaturas estão pausadas e como voltar. */
+function SlidesSafetyBanner() {
+  const paused = useSlidesSafety((s) => s.thumbnailsPaused);
+  const reason = useSlidesSafety((s) => s.reason);
+  const resume = useSlidesSafety((s) => s.resume);
+  if (!paused) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
+      <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
+      <span className="min-w-0 flex-1">
+        {reason === "crash"
+          ? "O app fechou da última vez em que você usava os Slides. Para não acontecer de novo, as miniaturas estão pausadas — editar, apresentar e exportar funcionam normalmente."
+          : "A memória ficou quase no limite e as miniaturas foram pausadas para o app não fechar. Editar, apresentar e exportar funcionam normalmente."}
+      </span>
+      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={resume}>
+        Mostrar miniaturas
+      </Button>
+    </div>
+  );
+}
+
 export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBetaProps) {
   usePageTitle(t.page.title, !isStandby);
   const reduceMotion = useReducedMotion();
@@ -1950,6 +1976,14 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const reorder = useSlidesFlow((s) => s.reorder);
   const clearItems = useSlidesFlow((s) => s.clearItems);
   const transition = useSlidesFlow((s) => s.transition);
+
+  // O app caiu na última vez nos Slides: reabre com as miniaturas pausadas.
+  useEffect(() => {
+    if (takePendingSlidesCrash()) {
+      useSlidesSafety.getState().pause("crash");
+      slidesBreadcrumb("Slides reabertos em modo seguro após queda");
+    }
+  }, []);
 
   const months = useMonthsInfo();
   const budgetRowsAll = useDeckBudgetRows();
@@ -2495,6 +2529,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
         {/* ===== Coluna central: esteira ===== */}
         <main className="surface-base relative flex flex-col overflow-hidden">
+          <SlidesSafetyBanner />
           {/* Header da esteira */}
           {/* flex-wrap: em telas estreitas (1366px) a barra quebrava para fora
               da tela e o botão Apresentar sumia. Abaixo de 2xl, os botões

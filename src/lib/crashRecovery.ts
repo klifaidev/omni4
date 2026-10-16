@@ -16,12 +16,27 @@ export type PivotCrashBreadcrumb = {
   heapMB: number | null;
 };
 
+/** Rastro dos Slides: o que estava acontecendo e quanta memória havia. */
+export type SlidesCrashBreadcrumb = {
+  area: "slides";
+  action: string;
+  heapMB: number | null;
+  heapLimitMB: number | null;
+  /** Linhas copiadas no worker dos Slides. */
+  workerRows: number;
+  slides: number;
+  /** Tamanho aproximado da esteira gravada (MB). */
+  deckMB?: number;
+};
+
+export type RendererBreadcrumb = PivotCrashBreadcrumb | SlidesCrashBreadcrumb;
+
 export type CrashState = {
   reason: string;
   exitCode: number | null;
   route: string;
   at: string;
-  breadcrumb: PivotCrashBreadcrumb | null;
+  breadcrumb: RendererBreadcrumb | null;
 };
 
 /** Crash mais velho que isso não vale mais modo seguro. */
@@ -29,6 +44,7 @@ const CRASH_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CONSUME_TIMEOUT_MS = 1500;
 
 let pendingPivotCrash: CrashState | null = null;
+let pendingSlidesCrash: CrashState | null = null;
 
 function isCrashState(value: unknown): value is CrashState {
   if (!value || typeof value !== "object") return false;
@@ -52,6 +68,8 @@ export async function loadCrashState(): Promise<void> {
     const age = Date.now() - new Date(state.at).getTime();
     if (!(age >= 0 && age <= CRASH_STATE_MAX_AGE_MS)) return;
     if (state.route === "/detalhe") pendingPivotCrash = state;
+    // Slides: reabre com as miniaturas pausadas (lib/memoryGuard, store/slidesSafety).
+    if (state.route === "/slides") pendingSlidesCrash = state;
   } catch (error) {
     console.warn("[crash-recovery] Falha ao ler o estado do último crash", error);
   }
@@ -64,6 +82,27 @@ export function getPendingPivotCrash(): CrashState | null {
 
 export function resolvePendingPivotCrash(): void {
   pendingPivotCrash = null;
+}
+
+/** Crash na aba Slides ainda não tratado (consumido uma vez). */
+export function takePendingSlidesCrash(): CrashState | null {
+  const state = pendingSlidesCrash;
+  pendingSlidesCrash = null;
+  return state;
+}
+
+/** Rastro genérico — vai pro log do Electron se o app cair. */
+export function sendRendererBreadcrumb(breadcrumb: RendererBreadcrumb | null): void {
+  try {
+    window.electronAPI?.app?.breadcrumb?.(breadcrumb);
+  } catch {
+    // Rastro é só diagnóstico; nunca pode quebrar a tela.
+  }
+}
+
+export function heapStats(): { usedMB: number; limitMB: number } | null {
+  const memory = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+  return memory ? { usedMB: Math.round(memory.usedJSHeapSize / 1e6), limitMB: Math.round(memory.jsHeapSizeLimit / 1e6) } : null;
 }
 
 /** Rastro do tamanho da montagem — vai pro log do Electron se o app cair. */

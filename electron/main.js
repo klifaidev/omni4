@@ -61,9 +61,12 @@ function rendererRecoveryHtml(details, route) {
   const reason = details?.reason || "unknown";
   const exitCode = details?.exitCode ?? "unknown";
   const fromPivot = route === "/detalhe";
+  const fromSlides = route === "/slides";
   const outOfMemory = reason === "oom";
   const lead = fromPivot
     ? `${outOfMemory ? "A Tabela Dinâmica ficou pesada demais para a memória disponível." : "A Tabela Dinâmica parou de responder."} Ao reabrir, ela volta em modo seguro: a última montagem não é recalculada sozinha.`
+    : fromSlides
+    ? "Os Slides ficaram pesados demais para a memória disponível. Ao reabrir, a esteira volta em modo seguro, com as miniaturas pausadas — seus slides estão salvos."
     : "Isso normalmente acontece quando uma operação fica pesada demais para a memória disponível. O evento foi registrado no log técnico para diagnóstico.";
   // O botão chama o processo principal por IPC (preload). Navegar direto da
   // página data: pra file:// é bloqueado pelo Chromium ("Not allowed to load
@@ -773,7 +776,17 @@ function getSlidesFlowFilePath(key) {
   return path.join(getSlidesFlowDir(), `${key}.json`);
 }
 
+// Backups da esteira: no máximo uma rotação a cada 3 minutos por arquivo.
+// Antes cada gravação copiava os 5 backups — com esteira de 36 MB eram 180 MB
+// de disco a cada alteração.
+const SLIDES_FLOW_BACKUP_MIN_INTERVAL_MS = 3 * 60 * 1000;
+const lastSlidesFlowBackupAt = new Map();
+
 function rotateSlidesFlowBackups(destino) {
+  const now = Date.now();
+  const last = lastSlidesFlowBackupAt.get(destino) ?? 0;
+  if (now - last < SLIDES_FLOW_BACKUP_MIN_INTERVAL_MS && fs.existsSync(`${destino}.bak1`)) return;
+  lastSlidesFlowBackupAt.set(destino, now);
   for (let i = SLIDES_FLOW_BACKUP_COUNT; i >= 2; i -= 1) {
     const src = `${destino}.bak${i - 1}`;
     const dst = `${destino}.bak${i}`;

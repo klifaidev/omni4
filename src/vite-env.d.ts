@@ -25,7 +25,7 @@ interface Window {
     app?: {
       reopen?: (route: string) => void;
       consumeCrashState?: () => Promise<unknown>;
-      breadcrumb?: (payload: import("./lib/crashRecovery").PivotCrashBreadcrumb | null) => void;
+      breadcrumb?: (payload: import("./lib/crashRecovery").RendererBreadcrumb | null) => void;
     };
     bases?: import("./hooks/use-bases-locais").ElectronBasesAPI;
     slidesFlow?: import("./store/slidesFlow").ElectronSlidesFlowAPI;

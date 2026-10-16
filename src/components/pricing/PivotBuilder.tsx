@@ -2542,7 +2542,8 @@ function PivotCrashNotice({
   onOpenAnyway: () => void;
   onStartLight: () => void;
 }) {
-  const crumb = crash.breadcrumb;
+  // Só o rastro da própria Tabela Dinâmica descreve a montagem.
+  const crumb = crash.breadcrumb?.area === "pivot" ? crash.breadcrumb : null;
   const when = new Date(crash.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const describe = (ids: string[]) => (ids.length ? ids.map(labelOf).join(" · ") : "—");
   return (

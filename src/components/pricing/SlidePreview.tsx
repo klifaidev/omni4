@@ -35,6 +35,7 @@ import { getCachedRowsSignature, getOrComputeSlideCalc } from "@/lib/slideCalcCa
 import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 import { useResolvedText } from "./custom/RichTextContent";
+import { useSlidesSafety } from "@/store/slidesSafety";
 
 const C = SLIDE_PREVIEW_COLORS;
 
@@ -875,13 +876,25 @@ type CustomSlideConfigOf = Extract<SlideItem, { kind: "custom" }>["config"];
  * um objeto novo com o mesmo conteúdo — a comparação por conteúdo (frações de
  * ms) evita um re-render inteiro do slide (~50ms com tabela/gráfico reais).
  */
+// Texto da config guardado por objeto: um slide com imagens coladas tem MBs,
+// e serializar as duas configs a cada comparação pesava a esteira inteira.
+const configTextCache = new WeakMap<object, string>();
+function configText(config: CustomSlideConfigOf): string {
+  let text = configTextCache.get(config);
+  if (text === undefined) {
+    text = JSON.stringify(config);
+    configTextCache.set(config, text);
+  }
+  return text;
+}
+
 const ThumbnailCanvas = memo(
   function ThumbnailCanvas({ config, slideId }: { config: CustomSlideConfigOf; slideId: string }) {
     if (isSlidePerfEnabled()) recordSlideRender("ThumbnailCanvas", slideId);
     return <CustomCanvasReadOnly config={config} slideId={slideId} />;
   },
   (prev, next) => prev.slideId === next.slideId
-    && (prev.config === next.config || JSON.stringify(prev.config) === JSON.stringify(next.config)),
+    && (prev.config === next.config || configText(prev.config) === configText(next.config)),
 );
 
 function CustomSlideThumbnail({
@@ -934,6 +947,19 @@ function CustomSlideThumbnail({
   );
 }
 
+function SlideThumbnailPaused({ width, label }: { width: number; label?: string }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg border border-dashed border-border/60 bg-muted/25 px-2 text-center"
+      style={{ width, height: (CANVAS_H / CANVAS_W) * width }}
+      title="Miniatura pausada para poupar memória"
+    >
+      <span className="line-clamp-2 text-[10px] font-medium text-foreground/80">{label || "Slide"}</span>
+      <span className="text-[9px] text-muted-foreground">miniatura pausada</span>
+    </div>
+  );
+}
+
 function SlideThumbnailPlaceholder({ width }: { width: number }) {
   return (
     <div
@@ -967,8 +993,12 @@ export const ScaledPreview = memo(function ScaledPreview({
 }) {
   if (isSlidePerfEnabled()) recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
-  const mounted = useStaggeredMount(!deferUntilVisible, staggerMount);
+  // Modo seguro (crash anterior ou memória no limite): slides com dados não
+  // montam miniatura — são o que mais consome memória numa esteira longa.
+  const paused = useSlidesSafety((s) => s.thumbnailsPaused) && item.kind === "custom";
+  const mounted = useStaggeredMount(!deferUntilVisible && !paused, staggerMount);
 
+  if (paused) return <SlideThumbnailPaused width={previewW} label={item.label} />;
   if (!mounted) return <SlideThumbnailPlaceholder width={previewW} />;
 
   if (item.kind === "custom") {

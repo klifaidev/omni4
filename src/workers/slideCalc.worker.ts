@@ -51,7 +51,18 @@ function rowsFor(request: WorkerRequest): PricingRow[] {
   return rows;
 }
 
-self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+type ReleaseRequest = { type: "release"; rowsKey: string } | { type: "releaseAll" };
+
+self.onmessage = (event: MessageEvent<WorkerRequest | ReleaseRequest>) => {
+  // A tela libera cópias que não usa mais (teto de memória do worker).
+  if (event.data.type === "release") {
+    rowsByKey.delete(event.data.rowsKey);
+    return;
+  }
+  if (event.data.type === "releaseAll") {
+    rowsByKey.clear();
+    return;
+  }
   const request = event.data;
   try {
     const rows = rowsFor(request);

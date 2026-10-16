@@ -4,6 +4,7 @@ import "./index.css";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { installGlobalRendererErrorHandlers } from "@/lib/rendererErrorReporting";
 import { loadCrashState } from "@/lib/crashRecovery";
+import { startMemoryGuard } from "@/lib/memoryGuard";
 
 installGlobalRendererErrorHandlers();
 
@@ -16,4 +17,6 @@ void loadCrashState().finally(() => {
       <App />
     </AppErrorBoundary>,
   );
+  // Guarda de memória: libera caches antes de a tela chegar ao limite e cair.
+  startMemoryGuard();
 });

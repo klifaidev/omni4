@@ -1,6 +1,7 @@
 // Slides Flow store — itens em construção + presets persistidos em localStorage.
 import { create } from "zustand";
-import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import { persist, type StateStorage } from "zustand/middleware";
+import { createDeferredPackedStorage } from "@/lib/slidesFlowPersist";
 import type { SlideItem, SlideKind } from "@/lib/slidesFlow";
 import { defaultItem, newId } from "@/lib/slidesFlow";
 import { migrateDataSource, newBlock, type FilterableBlock } from "@/lib/customSlide";
@@ -631,7 +632,11 @@ export const useSlidesFlow = create<SlidesFlowState>()(
     }),
     {
       name: SLIDES_FLOW_STORAGE_KEY,
-      storage: createJSONStorage(() => pickSlidesFlowStorage()),
+      // Grava espaçado e com cada imagem uma vez só (lib/slidesFlowPersist):
+      // com imagens repetidas em pré-definições a esteira chegava a 36 MB, e
+      // cada alteração a transformava em texto na hora — crash ao carregar
+      // pré-definição com a base grande na memória.
+      storage: createDeferredPackedStorage(() => pickSlidesFlowStorage()),
       partialize: (s) => ({
         items: s.items,
         presets: s.presets,
