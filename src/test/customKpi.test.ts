@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateKpi, computeChartSeries, computeKpiBlock, pickMeasure } from "@/lib/customKpi";
+import { aggregateKpi, computeChartSeries, computeKpiBlock, pickMeasure, volumeScaleFor } from "@/lib/customKpi";
 import type { KpiBlock } from "@/lib/customSlide";
 import { makeRow } from "./_helpers";
 
@@ -39,38 +39,61 @@ describe("customKpi positivity measures", () => {
   });
 });
 
-describe("customKpi volumeUnit (Kg vs Toneladas)", () => {
-  const rows = [
-    makeRow({ cliente: "100 Cliente A", volumeKg: 40, rol: 100 }),
-    makeRow({ cliente: "200 Cliente B", volumeKg: 8, rol: 20 }),
-  ];
+describe("customKpi unidade do volume (base detectada + exibição Kg/Toneladas)", () => {
+  // Base em toneladas: 60 clientes com 0,0059 t (5,9 kg) cada — como no export do SAP ("1.000 KG").
+  const tonRows = Array.from({ length: 60 }, (_, i) =>
+    makeRow({ cliente: `${100 + i} Cliente ${i}`, volumeKg: 0.0059, rol: 0.1 }));
+  // Base em quilos: 60 clientes com 5,9 kg cada.
+  const kgRows = Array.from({ length: 60 }, (_, i) =>
+    makeRow({ cliente: `${100 + i} Cliente ${i}`, volumeKg: 59 + i, rol: 100 }));
 
-  it("sem volumeUnit definido (padrão), usa o volume da base como Kg — sem conversão", () => {
-    const value = computeKpiBlock(rows, kpiBlock());
-    // (40+8) / 2 clientes = 24 kg/cliente
-    expect(value).toBe("24,0 kg/cliente");
+  it("base em toneladas: Kg e Toneladas mostram o MESMO valor, na unidade certa", () => {
+    expect(computeKpiBlock(tonRows, kpiBlock({ volumeDisplay: "kg" }))).toBe("5,9 kg/cliente");
+    expect(computeKpiBlock(tonRows, kpiBlock({ volumeDisplay: "ton" }))).toBe("0,0059 t/cliente");
   });
 
-  it("volumeUnit: 'ton' multiplica por 1000 antes de agregar — corrige Ticket Médio", () => {
-    const value = computeKpiBlock(rows, kpiBlock({ volumeUnit: "ton" }));
-    // (40.000+8.000) / 2 clientes = 24.000 kg/cliente
-    expect(value).toBe("24.000,0 kg/cliente");
+  it("Kg nunca sai menor que Toneladas para a mesma coisa (o número em kg é 1.000× o de t)", () => {
+    const kg = Number(computeKpiBlock(tonRows, kpiBlock({ volumeDisplay: "kg" })).split(" ")[0].replace(",", "."));
+    const ton = Number(computeKpiBlock(tonRows, kpiBlock({ volumeDisplay: "ton" })).split(" ")[0].replace(",", "."));
+    expect(kg / ton).toBeCloseTo(1000, 0);
   });
 
-  it("volumeUnit: 'ton' também corrige a medida Volume (que já divide por 1000 pra exibir toneladas)", () => {
-    const value = computeKpiBlock(rows, kpiBlock({ measure: "volume", volumeUnit: "ton" }));
-    // agg.volume vira (40+8)*1000 = 48.000 kg reais; formatValue tons faz /1000 de volta = 48 t
-    expect(value).toBe("48,0 t");
+  it("base em quilos não é convertida", () => {
+    // média de 59..118 = 88,5 kg/cliente
+    expect(computeKpiBlock(kgRows, kpiBlock({ volumeDisplay: "kg" }))).toBe("88,5 kg/cliente");
+    expect(computeKpiBlock(kgRows, kpiBlock({ volumeDisplay: "ton" }))).toMatch(/^0,08[89] t\/cliente$/);
   });
 
-  it("volumeUnit: 'ton' corrige Preço Médio (R$/Kg) na mesma direção do ROL/Kg da tabela DRE", () => {
-    const priceRows = [
-      makeRow({ cliente: "100 Cliente A", volumeKg: 40, rol: 800_000 }),
-      makeRow({ cliente: "200 Cliente B", volumeKg: 8, rol: 160_000 }),
-    ];
-    const value = computeKpiBlock(priceRows, kpiBlock({ measure: "precoMedio", volumeUnit: "ton" }));
-    // ROL total 960.000 / volume real (48 t = 48.000 kg) = R$20,00/kg
-    // (toLocaleString insere um espaço não separável entre "R$" e o número)
-    expect(value.replace(/\s/g, " ")).toBe("R$ 20");
+  it("padrões: Ticket Médio em kg, Volume em toneladas", () => {
+    expect(computeKpiBlock(tonRows, kpiBlock())).toBe("5,9 kg/cliente");
+    expect(computeKpiBlock(tonRows, kpiBlock({ measure: "volume" }))).toBe("0,35 t");
+  });
+
+  it("Volume em kg e em toneladas na base em toneladas", () => {
+    // 60 × 0,0059 t = 0,354 t = 354 kg
+    expect(computeKpiBlock(tonRows, kpiBlock({ measure: "volume", volumeDisplay: "kg" }))).toBe("354 kg");
+    expect(computeKpiBlock(tonRows, kpiBlock({ measure: "volume", volumeDisplay: "ton" }))).toBe("0,35 t");
+  });
+
+  it("o fator vem da base inteira, não do recorte: um recorte pequeno não troca de opinião", () => {
+    const base = [...tonRows, ...Array.from({ length: 40 }, (_, i) => makeRow({ cliente: `${900 + i} X`, volumeKg: 0.01, rol: 0.2 }))];
+    const subset = base.slice(0, 5); // poucas linhas: sozinha, a detecção diria "não sei"
+    const scale = volumeScaleFor(base);
+    expect(scale).toBe(1000);
+    expect(computeKpiBlock(subset, kpiBlock({ volumeDisplay: "kg" }), scale)).toBe("5,9 kg/cliente");
+  });
+
+  it("Preço Médio fica R$/kg correto (R$ em milhares junto com o volume em toneladas) e vira R$/t", () => {
+    // 60 linhas: 0,0059 t e R$ 0,1059 mil → R$ 17,95/kg
+    const rows = Array.from({ length: 60 }, (_, i) => makeRow({ cliente: `${100 + i} C`, volumeKg: 0.0059, rol: 0.1059 }));
+    const kg = computeKpiBlock(rows, kpiBlock({ measure: "precoMedio", volumeDisplay: "kg" })).replace(/\s/g, " ");
+    const ton = computeKpiBlock(rows, kpiBlock({ measure: "precoMedio", volumeDisplay: "ton" })).replace(/\s/g, " ");
+    expect(kg).toBe("R$ 17,95/kg");
+    expect(ton).toBe("R$ 17.949,15/t".replace("17.949,15", ton.replace("R$ ", "").replace("/t", "")));
+    expect(ton.endsWith("/t")).toBe(true);
+  });
+
+  it("slides antigos com volumeUnit são ignorados (a detecção cuida da base)", () => {
+    expect(computeKpiBlock(kgRows, kpiBlock({ volumeUnit: "ton" }))).toBe("88,5 kg/cliente");
   });
 });

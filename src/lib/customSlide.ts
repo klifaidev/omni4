@@ -171,10 +171,13 @@ export interface KpiBlock extends BaseBlock {
   cardBg?: string;
   /** Cross-filter participation — recebe filtros emitidos por outros blocos. Default true. */
   participatesInCrossFilter?: boolean;
-  /** Unidade em que a coluna de volume da base está expressa. "kg" (default,
-   *  retrocompatível) usa o campo volumeKg como está. "ton" multiplica por
-   *  1000 antes de qualquer cálculo — corrige junto Volume, Ticket Médio
-   *  (Kg/cliente) e Preço Médio (R$/Kg), que dependem do mesmo campo. */
+  /** Unidade em que Volume, Ticket Médio e Preço Médio aparecem no cartão
+   *  ("kg" ou "ton"). É só exibição: a unidade da BASE é detectada sozinha e
+   *  convertida para kg antes de qualquer conta. Sem valor: Volume em
+   *  toneladas, Ticket Médio e Preço Médio em kg. */
+  volumeDisplay?: "kg" | "ton";
+  /** @deprecated Ignorado. Era a unidade da coluna da base ("ton" = ×1000);
+   *  hoje isso é detectado automaticamente. Fica só para ler slides antigos. */
   volumeUnit?: "kg" | "ton";
   /** Linha de comparação abaixo do valor (seta + variação + cor). Só vale com
    *  período Mês ou Ano fiscal. Default "none" (cards antigos não mudam). */

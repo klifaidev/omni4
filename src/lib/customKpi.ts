@@ -6,6 +6,7 @@ import { applyFilters } from "./analytics";
 import { clienteId } from "./farol";
 import type { KpiBlock, KpiMeasureId, KpiPeriodMode, KpiFormat } from "./customSlide";
 import { formatBRL, formatNum, formatNumFit, formatPct, monthLabel } from "./format";
+import { detectVolumeUnit } from "./volumeUnit";
 import { POSITIVACAO_DIMS } from "./positivacao";
 import { resolvePeriodValue, type PeriodSelectionMode, type RelativePeriodPreset } from "./relativePeriods";
 
@@ -25,17 +26,19 @@ export interface KpiAgg {
   frete: number;
   comissao: number;
   clientesPositivados: Set<string>;
+  /** 1000 quando a base traz o volume em toneladas e `volume` já foi convertido para kg. */
+  volumeScale: number;
 }
 
 /**
- * `volumeMultiplier`: 1 quando a coluna de volume da base já está em Kg
- * (padrão). Passe 1000 quando o bloco declarar `volumeUnit: "ton"` — a
- * multiplicação acontece aqui, uma única vez, antes de qualquer medida
- * (Volume, Ticket Médio, Preço Médio) usar o total agregado, então as três
- * ficam corretas juntas sem precisar de lógica separada em cada uma.
+ * `volumeMultiplier`: 1 quando a coluna de volume da base já está em Kg;
+ * 1000 quando ela vem em toneladas (ver `volumeScaleFor`). A multiplicação
+ * acontece aqui, uma única vez, antes de qualquer medida (Volume, Ticket
+ * Médio, Preço Médio) usar o total agregado — `agg.volume` é sempre kg reais.
  */
 export function aggregateKpi(rows: PricingRow[], volumeMultiplier = 1): KpiAgg {
   const acc = emptyKpiAgg();
+  acc.volumeScale = volumeMultiplier;
   for (const r of rows) {
     addToKpiAgg(acc, r, volumeMultiplier);
   }
@@ -52,6 +55,7 @@ function emptyKpiAgg(): KpiAgg {
     frete: 0,
     comissao: 0,
     clientesPositivados: new Set<string>(),
+    volumeScale: 1,
   };
 }
 
@@ -88,9 +92,69 @@ export function pickMeasure(agg: KpiAgg, measure: KpiMeasureId): number {
     case "comissao": return agg.comissao;
     case "cmPct": return agg.rol > 0 ? agg.cm / agg.rol : 0;
     case "mbPct": return agg.rol > 0 ? agg.mb / agg.rol : 0;
-    case "precoMedio": return agg.volume > 0 ? agg.rol / agg.volume : 0;
+    // Bases em toneladas vêm com o R$ em milhares ("1.000 BRL"): ROL/volume
+    // nas unidades originais já é R$/kg. Por isso o volume convertido volta à
+    // escala da base aqui — o preço não muda com a conversão do volume.
+    case "precoMedio": return agg.volume > 0 ? agg.rol / (agg.volume / agg.volumeScale) : 0;
     case "positivacao": return agg.clientesPositivados.size;
     case "ticketMedio": return agg.clientesPositivados.size > 0 ? agg.volume / agg.clientesPositivados.size : 0;
+  }
+}
+
+const scaleCache = new WeakMap<object, number>();
+
+/**
+ * Fator que leva o volume da base a kg: 1000 quando ela parece vir em
+ * toneladas (export do SAP em "1.000 KG"), 1 caso contrário. Calculado sobre a
+ * base inteira — nunca sobre um recorte filtrado, que mudaria de opinião a
+ * cada filtro — e guardado por array.
+ */
+export function volumeScaleFor(rows: ReadonlyArray<{ volumeKg?: number }>): number {
+  const cached = scaleCache.get(rows);
+  if (cached !== undefined) return cached;
+  const scale = detectVolumeUnit(rows).guess === "ton" ? 1000 : 1;
+  scaleCache.set(rows, scale);
+  return scale;
+}
+
+export type VolumeDisplay = "kg" | "ton";
+const VOLUME_FAMILY: readonly KpiMeasureId[] = ["volume", "ticketMedio", "precoMedio"];
+
+export function isVolumeMeasure(measure: KpiMeasureId): boolean {
+  return VOLUME_FAMILY.includes(measure);
+}
+
+/** Unidade em que o cartão mostra o volume (a escolha da pessoa, ou o padrão da medida). */
+export function volumeDisplayOf(block: Pick<KpiBlock, "volumeDisplay" | "format" | "measure">): VolumeDisplay {
+  if (block.volumeDisplay) return block.volumeDisplay;
+  if (block.format === "tons") return "ton";
+  return (block.measure ?? "rol") === "volume" ? "ton" : "kg";
+}
+
+/** Toneladas com 2 dígitos significativos: 354 kg → "0,35 t", 5,9 kg → "0,0059 t". */
+function formatTons(tons: number, decimals?: number): string {
+  if (decimals !== undefined) return formatNumFit(tons, decimals);
+  const abs = Math.abs(tons);
+  if (abs === 0) return "0";
+  const auto = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : Math.min(5, 1 - Math.floor(Math.log10(abs)));
+  return formatNumFit(tons, auto);
+}
+
+/** `v` chega em kg (ou R$/kg no preço); o texto sai na unidade escolhida. */
+export function formatVolumeMeasure(
+  v: number, measure: KpiMeasureId, display: VolumeDisplay, decimals?: number,
+): string {
+  if (!isFinite(v)) return "—";
+  const ton = display === "ton";
+  switch (measure) {
+    case "volume":
+      return ton ? `${formatTons(v / 1000, decimals)} t` : `${formatNumFit(v, decimals ?? 0)} kg`;
+    case "ticketMedio":
+      return ton ? `${formatTons(v / 1000, decimals)} t/cliente` : `${formatNumFit(v, decimals ?? 1)} kg/cliente`;
+    case "precoMedio":
+      return ton ? `${formatBRL(v * 1000, { digits: decimals ?? 2 })}/t` : `${formatBRL(v, { digits: decimals ?? 2 })}/kg`;
+    default:
+      return formatNum(v, decimals ?? 0);
   }
 }
 
@@ -113,7 +177,11 @@ export function formatValue(
   return formatNum(v, decimals ?? 0);
 }
 
-export function computeKpiBlock(rows: PricingRow[], block: KpiBlock): string {
+/**
+ * `volumeScale`: passe o fator da base INTEIRA (`volumeScaleFor(baseRows)`)
+ * quando `rows` já é um recorte; sem ele, é calculado sobre `rows`.
+ */
+export function computeKpiBlock(rows: PricingRow[], block: KpiBlock, volumeScale?: number): string {
   if (block.source === "manual") return block.manualValue ?? "—";
   const measure = block.measure ?? "rol";
   const mode = block.periodMode ?? "all";
@@ -123,9 +191,10 @@ export function computeKpiBlock(rows: PricingRow[], block: KpiBlock): string {
     mode,
     value,
   );
-  const volumeMultiplier = block.volumeUnit === "ton" ? 1000 : 1;
-  const agg = aggregateKpi(filtered, volumeMultiplier);
-  return formatValue(pickMeasure(agg, measure), block.format ?? "auto", measure);
+  const agg = aggregateKpi(filtered, volumeScale ?? volumeScaleFor(rows));
+  const measured = pickMeasure(agg, measure);
+  if (isVolumeMeasure(measure)) return formatVolumeMeasure(measured, measure, volumeDisplayOf({ ...block, measure }));
+  return formatValue(measured, block.format ?? "auto", measure);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +255,7 @@ export function computeKpiComparison(
   rows: PricingRow[],
   block: KpiBlock,
   budgetRows?: PricingRow[],
+  volumeScale?: number,
 ): KpiComparison | null {
   const mode = block.compare ?? "none";
   if (block.source !== "dynamic" || mode === "none") return null;
@@ -210,9 +280,11 @@ export function computeKpiComparison(
   }
   if (refRows.length === 0) return null;
 
-  const mult = block.volumeUnit === "ton" ? 1000 : 1;
-  const now = pickMeasure(aggregateKpi(periodFilter(filtered, periodMode, current), mult), measure);
-  const before = pickMeasure(aggregateKpi(refRows, mult), measure);
+  // O Budget é outra base: tem a própria unidade de volume.
+  const nowScale = volumeScale ?? volumeScaleFor(rows);
+  const refScale = mode === "budget" && budgetRows ? volumeScaleFor(budgetRows) : nowScale;
+  const now = pickMeasure(aggregateKpi(periodFilter(filtered, periodMode, current), nowScale), measure);
+  const before = pickMeasure(aggregateKpi(refRows, refScale), measure);
   const pp = measure === "cmPct" || measure === "mbPct";
   const delta = pp ? now - before : before !== 0 ? (now - before) / Math.abs(before) : NaN;
   if (!Number.isFinite(delta)) return null;

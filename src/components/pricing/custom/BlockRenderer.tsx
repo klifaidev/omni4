@@ -40,7 +40,7 @@ import { buildUnifiedRows, ALL_DIMENSIONS } from "@/lib/pivotData";
 import { usePricing } from "@/store/pricing";
 import { monthLabel, formatBRL, parsePeriod } from "@/lib/format";
 import {
-  computeKpiBlock, computeKpiComparison, formatKpiDelta, computeTopRanking, formatValue, inferFormat,
+  computeKpiBlock, computeKpiComparison, formatKpiDelta, computeTopRanking, formatValue, inferFormat, volumeScaleFor, volumeDisplayOf, isVolumeMeasure,
 } from "@/lib/customKpi";
 import { calcFarol } from "@/lib/farol";
 import { KPI_MEASURES, resolveEffectiveBlock } from "@/lib/customSlide";
@@ -678,7 +678,9 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
     [b, periodFilterValues.length],
   );
 
-  const value = useMemo(() => computeKpiBlock(rows, effectiveBlock), [rows, effectiveBlock]);
+  // A unidade do volume é uma propriedade da base inteira, não do recorte.
+  const volumeScale = useMemo(() => volumeScaleFor(baseRows), [baseRows]);
+  const value = useMemo(() => computeKpiBlock(rows, effectiveBlock, volumeScale), [rows, effectiveBlock, volumeScale]);
   const budgetAsRows = useMemo(
     () => (b.compare === "budget" && budget.length ? budgetRowsAsPricingFiltered(budget, "budget") : undefined),
     [b.compare, budget],
@@ -686,15 +688,20 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   // Com filtro de período vindo de outro bloco, o card mostra um agregado
   // alheio — comparar "com o mês anterior" daquilo não faz sentido.
   const comparison = useMemo(
-    () => (periodFilterValues.length > 0 ? null : computeKpiComparison(rows, effectiveBlock, budgetAsRows)),
-    [rows, effectiveBlock, budgetAsRows, periodFilterValues.length],
+    () => (periodFilterValues.length > 0 ? null : computeKpiComparison(rows, effectiveBlock, budgetAsRows, volumeScale)),
+    [rows, effectiveBlock, budgetAsRows, periodFilterValues.length, volumeScale],
   );
   const comparisonColor = comparison?.good == null ? SLIDE_HEX.slate500 : comparison.good ? SLIDE_HEX.success : SLIDE_HEX.danger;
   const comparisonText = comparison
     ? `${comparison.direction === "up" ? "▲" : comparison.direction === "down" ? "▼" : "●"} ${formatKpiDelta(comparison)} ${t.kpi.vsReference(comparison.mode === "budget" ? t.kpi.budgetRef : comparison.referenceLabel)}`
     : null;
+  // O rótulo do catálogo diz "(Kg)"; em toneladas, vira "(t)".
   const measureLabel = b.source === "dynamic"
-    ? KPI_MEASURES.find((m) => m.id === b.measure)?.label
+    ? (() => {
+        const base = KPI_MEASURES.find((m) => m.id === b.measure)?.label;
+        if (!base || !isVolumeMeasure(b.measure ?? "rol") || volumeDisplayOf(b) !== "ton") return base;
+        return base.replace("(Kg/cliente)", "(t/cliente)").replace("(R$/Kg)", "(R$/t)").replace("(Kg)", "(t)");
+      })()
     : null;
   // Período fixo em modo "mês" guarda o código interno cru (ex.: "006.2026"),
   // não um rótulo pronto — sem formatar, esse código vazava direto pro
@@ -2462,7 +2469,8 @@ function DreRender({ block: blk }: { block: DreBlock; readOnly?: boolean }) {
       </div>
     );
   }
-function labelOfDim(id: string): string {
+
+function labelOfDim(id: string): string {
   return ALL_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 

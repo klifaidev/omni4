@@ -89,7 +89,7 @@ import {
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
-import { detectVolumeUnit } from "@/lib/volumeUnit";
+import { volumeDisplayOf, volumeScaleFor } from "@/lib/customKpi";
 import { computeCustomTablePivot } from "@/lib/customTablePivot";
 // Alias: este arquivo já tem cssEscapeId() usando o CSS global do browser
 // (window.CSS.escape) — importar o CSS do dnd-kit sem alias sombrearia esse
@@ -816,47 +816,33 @@ function KpiCompareField({ block, onChange }: {
   );
 }
 
-/** Declara a unidade do volume da base e avisa quando ela parece trocada. */
+/** Unidade em que Volume, Ticket Médio e Preço Médio aparecem no cartão. */
 function VolumeUnitField({ block, onChange }: {
   block: KpiBlock;
   onChange: (p: Partial<CustomBlock>) => void;
 }) {
   const rows = useDeckPricingRows();
-  const unit = block.volumeUnit ?? "kg";
-  // Só a base KE30: o Budget tem a própria unidade e outros campos.
-  const detection = useMemo(
-    () => (block.dataSource === "budget" ? null : detectVolumeUnit(rows)),
+  const display = volumeDisplayOf(block);
+  // A conversão da base é automática; só avisamos quando ela acontece.
+  const converted = useMemo(
+    () => block.dataSource !== "budget" && volumeScaleFor(rows) === 1000,
     [rows, block.dataSource],
   );
-  const suggest = detection && detection.guess !== "unknown" && detection.guess !== unit ? detection.guess : null;
   return (
     <>
-      {suggest && detection && (
-        <div role="status" className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-[11px] leading-snug">
-          <p>
-            {suggest === "ton"
-              ? t.kpi.volumeUnitSuggestTon(`${Math.round(detection.shareBelowOne * 100)}%`)
-              : t.kpi.volumeUnitSuggestKg}
-          </p>
-          <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]"
-            onClick={() => onChange({ volumeUnit: suggest } as never)}>
-            {suggest === "ton" ? t.kpi.volumeUnitUseTon : t.kpi.volumeUnitUseKg}
-          </Button>
-        </div>
+      <Row label={t.kpi.volumeUnit}>
+        <Segmented
+          value={display}
+          onChange={(v) => onChange({ volumeDisplay: v as never, format: "auto" } as never)}
+          options={[
+            { value: "kg", label: t.kpi.volumeUnitOptions.kg },
+            { value: "ton", label: t.kpi.volumeUnitOptions.ton },
+          ]}
+        />
+      </Row>
+      {converted && (
+        <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeBaseConverted}</p>
       )}
-      <MoreOptions customized={unit === "ton" || suggest !== null}>
-        <Row label={t.kpi.volumeUnit}>
-          <Segmented
-            value={unit}
-            onChange={(v) => onChange({ volumeUnit: v as never } as never)}
-            options={[
-              { value: "kg", label: t.kpi.volumeUnitOptions.kg },
-              { value: "ton", label: t.kpi.volumeUnitOptions.ton },
-            ]}
-          />
-        </Row>
-        <p className="text-[10px] leading-snug text-muted-foreground">{t.kpi.volumeUnitHint}</p>
-      </MoreOptions>
     </>
   );
 }
@@ -913,6 +899,7 @@ function KpiInspector({ block, onChange }: {
               periodValue={block.periodValue ?? null}
               onChange={(patch) => onChange(patch as never)} />
             <KpiCompareField block={block} onChange={onChange} />
+            {!(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
             <Row label={t.kpi.format}>
               <SelectField value={block.format ?? "auto"}
                 onChange={(v) => onChange({ format: v as never } as never)}
@@ -924,6 +911,7 @@ function KpiInspector({ block, onChange }: {
                   { value: "number", label: t.kpi.formatOptions.number },
                 ]} />
             </Row>
+            )}
             {/* Unidade em que a COLUNA de volume da base vem (não a do cartão):
                 sugerida pela própria base, e aberta quando há sugestão. */}
             {(["volume", "ticketMedio", "precoMedio"] as const).includes((block.measure ?? "rol") as never) && (
