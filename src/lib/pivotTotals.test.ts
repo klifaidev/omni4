@@ -5,7 +5,6 @@ import {
   describeTotals,
   matchTotalsPreset,
   normalizeTotals,
-  subtotalValuesHidden,
   totalsApplicability,
 } from "./pivotTotals";
 
@@ -29,28 +28,6 @@ describe("atalhos", () => {
     expect(matchTotalsPreset(PIVOT_TOTALS_PRESETS.grand)).toBe("grand");
     expect(matchTotalsPreset(PIVOT_TOTALS_PRESETS.none)).toBe("none");
     expect(matchTotalsPreset({ grandRow: true, grandCol: false, subtotals: true })).toBeNull();
-  });
-});
-
-describe("subtotalValuesHidden", () => {
-  const group = { key: "g", isLeaf: false };
-  const leaf = { key: "l", isLeaf: true };
-  const off = { ...DEFAULT_PIVOT_TOTALS, subtotals: false };
-
-  it("com subtotais ligados nunca esconde", () => {
-    expect(subtotalValuesHidden(DEFAULT_PIVOT_TOTALS, group, new Set(["g"]))).toBe(false);
-  });
-
-  it("sem subtotais, o grupo aberto vira só título", () => {
-    expect(subtotalValuesHidden(off, group, new Set(["g"]))).toBe(true);
-  });
-
-  it("sem subtotais, o grupo recolhido ainda mostra o resumo", () => {
-    expect(subtotalValuesHidden(off, group, new Set())).toBe(false);
-  });
-
-  it("folhas nunca são afetadas", () => {
-    expect(subtotalValuesHidden(off, leaf, new Set(["l"]))).toBe(false);
   });
 });
 

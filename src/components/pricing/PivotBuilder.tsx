@@ -109,7 +109,6 @@ import {
   describeTotals,
   matchTotalsPreset,
   normalizeTotals,
-  subtotalValuesHidden,
   totalsApplicability,
   type PivotTotals,
   type PivotTotalsPreset,
@@ -1097,8 +1096,9 @@ export function PivotBuilder({
       }
     };
     emit(pivot.rowHeaders.filter((header) => header.depth === 0 && !header.isLeaf).map((header) => header.key));
-    return rows;
-  }, [pivot, pivotShape.measures, sort, hideEmpty]);
+    // Sem subtotais: só as folhas, na mesma ordem hierárquica.
+    return totals.subtotals ? rows : rows.filter((row) => row.isLeaf);
+  }, [pivot, pivotShape.measures, sort, hideEmpty, totals.subtotals]);
 
   // Esconde os descendentes de grupos recolhidos (qualquer nível).
   const visibleRows = useMemo(() => {
@@ -2444,7 +2444,7 @@ function TotalsMenu({
         </ul>
         {applies.subtotals && !totals.subtotals && (
           <p className="mt-2 rounded-lg bg-secondary/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-            Grupos abertos viram só título; recolhidos continuam mostrando o resumo.
+            A tabela fica plana: sem linhas de grupo, cada linha repete os rótulos (Cliente, Categoria…), pronta para copiar, filtrar ou levar ao Excel.
           </p>
         )}
       </PopoverContent>
@@ -4113,13 +4113,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
   rowHeight,
   compact,
   outlierCols,
-  hideValues,
-  subtotalLabel,
 }: {
-  /** Grupo aberto sem subtotais: a linha é só título, sem números. */
-  hideValues: boolean;
-  /** Mostra o sufixo " subtotal" no rótulo do grupo. */
-  subtotalLabel: boolean;
   /** Destaques ligados: colunas usadas pra média/desvio da linha (null = desligado). */
   outlierCols: PivotColHeader[] | null;
   rowHeight: number;
@@ -4261,7 +4255,7 @@ const PivotBodyRow = memo(function PivotBodyRow({
                 title={colWindow.fixed && value ? value : undefined}
               >
                 {value}
-                {isLabelCell && subtotalLabel ? " subtotal" : ""}
+                {isLabelCell ? " subtotal" : ""}
               </span>
             </span>
           </td>
@@ -4275,40 +4269,18 @@ const PivotBodyRow = memo(function PivotBodyRow({
           className={cn("border-l border-border/10 px-2", compact ? "py-0" : "py-0.5", trendLeft !== null && "sticky z-[1] bg-card")}
           style={trendLeft !== null ? { left: trendLeft } : undefined}
         >
-          {!hideValues && (
-            <Sparkline
-              values={trendCols.map((c) => cells.get(c.key)?.[trendMeasure.id])}
-              tone={trendMeasure.tone}
-              label={trendMeasure.label}
-              format={(v) => fmtValue(trendMeasure, v)}
-              height={compact ? 14 : TREND_H}
-            />
-          )}
+          <Sparkline
+            values={trendCols.map((c) => cells.get(c.key)?.[trendMeasure.id])}
+            tone={trendMeasure.tone}
+            label={trendMeasure.label}
+            format={(v) => fmtValue(trendMeasure, v)}
+            height={compact ? 14 : TREND_H}
+          />
         </td>
       )}
       {colWindow.virtual && <td aria-hidden className="p-0" />}
       {colWindow.groups.map(({ col, isTotal }, gi) => {
         const groupBase = (colWindow.start + gi) * measures.length;
-        if (hideValues) {
-          // Só título: células vazias que mantêm a grade (e a seleção por setas).
-          return measures.map((m, idx) => (
-            <td
-              key={`h-${col.key}-${m.id}`}
-              data-ci={groupBase + idx}
-              role="gridcell"
-              aria-selected={groupBase + idx >= selC0 && groupBase + idx <= selC1}
-              tabIndex={groupBase + idx === focusC ? 0 : -1}
-              style={selectShadow(groupBase + idx) ? { boxShadow: selectShadow(groupBase + idx) } : undefined}
-              className={cn(
-                "bg-secondary/25 outline-none",
-                cellPad,
-                clip,
-                isTotal && idx === 0 ? "border-l-2 border-border/40" : "border-l border-border/10",
-                selectClass(groupBase + idx),
-              )}
-            />
-          ));
-        }
         if (isTotal) {
           return measures.map((m, idx) => {
             const showAs = showAsByMeasure[m.id] ?? "normal";
@@ -4454,7 +4426,11 @@ const PivotTable = memo(function PivotTable({
   pivotConfig: PivotConfig;
 }) {
   const hasCols = colDims.length > 0 && pivot.colHeaders.length > 0;
-  const hasRowGroups = useMemo(() => pivot.rowHeaders.some((row) => !row.isLeaf), [pivot.rowHeaders]);
+  // Sem subtotais a tabela é plana: nenhuma linha de grupo, rótulos repetidos.
+  const hasRowGroups = useMemo(
+    () => totals.subtotals && pivot.rowHeaders.some((row) => !row.isLeaf),
+    [pivot.rowHeaders, totals.subtotals],
+  );
   const cols = hasCols ? pivot.colHeaders : NO_COL_HEADERS;
   const [showAsByMeasure, setShowAsByMeasure] = useState<ShowAsMap>({});
   const [showAsMenu, setShowAsMenu] = useState<{ measureId: string; x: number; y: number } | null>(null);
@@ -4608,13 +4584,6 @@ const PivotTable = memo(function PivotTable({
       }
     : null;
 
-  // Valor de uma célula como aparece na tela: grupo aberto sem subtotais é só título.
-  const valueAt = useCallback(
-    (row: PivotRowHeader, group: ColGroup, m: PivotMeasure, showAs: ShowAsMode): number | null =>
-      subtotalValuesHidden(totals, row, expandedRowKeys) ? null : displayValueAt(pivot, row, group, m, showAs),
-    [totals, expandedRowKeys, pivot],
-  );
-
   const cellAt = useCallback((pos: CellPos) => {
     const row = sortedRows[pos.r];
     const group = allGroups[Math.floor(pos.c / Math.max(1, measures.length))];
@@ -4719,14 +4688,14 @@ const PivotTable = memo(function PivotTable({
       if (withHeaders) {
         if (rowDims.length === 0) out.push("");
         rowDims.forEach((_, i) => {
-          out.push(clean(!row.isLeaf ? (i === row.depth ? `${row.values[i] ?? ""}${totals.subtotals ? " subtotal" : ""}` : "") : (row.values[i] ?? "")));
+          out.push(clean(!row.isLeaf ? (i === row.depth ? `${row.values[i] ?? ""} subtotal` : "") : (row.values[i] ?? "")));
         });
       }
       for (let c = range.c0; c <= range.c1; c++) {
         const at = cellAt({ r, c });
         if (!at) continue;
         const showAs = showAsByMeasure[at.measure.id] ?? "normal";
-        out.push(clipboardNumber(valueAt(at.row, at.group, at.measure, showAs), at.measure, showAs));
+        out.push(clipboardNumber(displayValueAt(pivot, at.row, at.group, at.measure, showAs), at.measure, showAs));
       }
       lines.push(out.join("\t"));
     }
@@ -4738,7 +4707,7 @@ const PivotTable = memo(function PivotTable({
     } else {
       toast.error("Não foi possível copiar para a área de transferência.");
     }
-  }, [selRange, rowDims, dimMap, cellAt, hasCols, sortedRows, showAsByMeasure, valueAt, totals.subtotals]);
+  }, [selRange, rowDims, dimMap, cellAt, hasCols, sortedRows, showAsByMeasure, pivot]);
 
   const handleBodyKeyDown = useCallback((event: React.KeyboardEvent) => {
     const key = event.key;
@@ -4809,7 +4778,7 @@ const PivotTable = memo(function PivotTable({
         if (!at) continue;
         cells++;
         measureIds.add(at.measure.id);
-        const v = valueAt(at.row, at.group, at.measure, showAsByMeasure[at.measure.id] ?? "normal");
+        const v = displayValueAt(pivot, at.row, at.group, at.measure, showAsByMeasure[at.measure.id] ?? "normal");
         if (v == null || !isFinite(v)) continue;
         numeric++;
         sum += v;
@@ -4822,7 +4791,7 @@ const PivotTable = memo(function PivotTable({
     // Percentuais não se somam (CM% de dois canais não é a soma dos dois).
     const additive = !!single && showAs === "normal" && single.format !== "percent" && single.agg === "sum" && !single.derive;
     return { cells, numeric, sum, min, max, avg: numeric ? sum / numeric : null, single, showAs, additive };
-  }, [selection, sortedRows, cellAt, valueAt, showAsByMeasure, measures]);
+  }, [selection, sortedRows, cellAt, pivot, showAsByMeasure, measures]);
 
   const handleToggleSort = useCallback((colKey: string, measureId: string) => {
     if (sort && sort.col === colKey && sort.measure === measureId) {
@@ -5092,8 +5061,6 @@ const PivotTable = memo(function PivotTable({
                 rowDims={rowDims}
                 hasRowGroups={hasRowGroups}
                 expanded={expandedRowKeys.has(rh.key)}
-                hideValues={subtotalValuesHidden(totals, rh, expandedRowKeys)}
-                subtotalLabel={totals.subtotals}
                 colWindow={colWindow}
                 measures={measures}
                 cells={pivot.cells.get(rh.key) ?? EMPTY_ROW_CELLS}
@@ -5383,7 +5350,10 @@ function ExportMenu({
           // Hierarquia: grupo de profundidade d na coluna d; folha agrupada
           // só na última coluna (as de cima já aparecem nos subtotais).
           if (!rh.isLeaf) {
-            row.push(di === rh.depth ? `${rh.values[di] ?? ""}${totals.subtotals ? " subtotal" : ""}` : null);
+            row.push(di === rh.depth ? `${rh.values[di] ?? ""} subtotal` : null);
+          } else if (!totals.subtotals) {
+            // Tabela plana: todos os rótulos em toda linha (pronta para filtro/tabela dinâmica).
+            row.push(rh.values[di] ?? null);
           } else if (rh.parentKey && di < rowDims.length - 1) {
             row.push(null);
           } else if (rh.parentKey) {
@@ -5392,16 +5362,13 @@ function ExportMenu({
             row.push(rh.values[di] ?? null);
           }
         });
-        // Sem subtotais, a linha do grupo é só título (o Excel exporta todos
-        // os grupos abertos).
-        const titleOnly = !rh.isLeaf && !totals.subtotals;
         for (const c of exportCols) {
           const cell = pivot.cells.get(rh.key)?.get(c.key) ?? {};
-          for (const m of measures) row.push(titleOnly ? null : safeNum(cell[m.id]));
+          for (const m of measures) row.push(safeNum(cell[m.id]));
         }
         if (withTotalCol) {
           const rowTot = pivot.rowTotals.get(rh.key) ?? {};
-          for (const m of measures) row.push(titleOnly ? null : safeNum(rowTot[m.id]));
+          for (const m of measures) row.push(safeNum(rowTot[m.id]));
         }
         dataRows.push(row);
 

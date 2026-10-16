@@ -1,5 +1,6 @@
 // Totais e subtotais da Tabela Dinâmica — o que fica visível, como no Excel
-// (Design → Totais Gerais / Subtotais).
+// (Design → Totais Gerais / Subtotais). Sem subtotais a tabela fica PLANA:
+// nenhuma linha de grupo e os rótulos repetidos em toda linha.
 //
 // Só controla a EXIBIÇÃO: o pivot continua calculando todos os totais, porque
 // "% do total", ordenação e destaques dependem deles.
@@ -43,19 +44,6 @@ export function matchTotalsPreset(totals: PivotTotals): PivotTotalsPreset | null
     if (totalsEqual(PIVOT_TOTALS_PRESETS[id], totals)) return id;
   }
   return null;
-}
-
-/**
- * Sem subtotais, um grupo ABERTO vira só título (os filhos já mostram os
- * números). Um grupo recolhido continua mostrando o resumo — senão recolher
- * esconderia a informação e o botão ficaria sem sentido.
- */
-export function subtotalValuesHidden(
-  totals: PivotTotals,
-  row: { key: string; isLeaf: boolean },
-  expandedKeys: ReadonlySet<string>,
-): boolean {
-  return !totals.subtotals && !row.isLeaf && expandedKeys.has(row.key);
 }
 
 /** O que a tabela atual consegue mostrar — desliga no menu o que não se aplica. */
