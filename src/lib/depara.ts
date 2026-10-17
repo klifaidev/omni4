@@ -155,3 +155,64 @@ export function searchDeParaSkus(query: string, limit = 60): DeParaSkuSearchResu
   }
   return results;
 }
+
+/** Desfaz a correção feita no app para o SKU (volta ao De/Para padrão). */
+export function removeDeParaOverride(sku: string) {
+  if (!runtimeOverrides[sku]) return;
+  runtimeOverrides = { ...runtimeOverrides };
+  delete runtimeOverrides[sku];
+  persistOverrides();
+}
+
+/** Correção atual do SKU no app (cópia), ou null. */
+export function getDeParaOverride(sku: string): DeParaOverrideEntry | null {
+  return runtimeOverrides[sku] ? { ...runtimeOverrides[sku] } : null;
+}
+
+/** Volta as correções dos SKUs exatamente ao estado guardado (null = sem correção). */
+export function restoreDeParaOverrides(snapshot: Record<string, DeParaOverrideEntry | null>) {
+  runtimeOverrides = { ...runtimeOverrides };
+  for (const [sku, entry] of Object.entries(snapshot)) {
+    if (entry) runtimeOverrides[sku] = { ...entry };
+    else delete runtimeOverrides[sku];
+  }
+  persistOverrides();
+}
+
+export function hasDeParaOverride(sku: string): boolean {
+  return Boolean(runtimeOverrides[sku]);
+}
+
+/** SKU está no De/Para padrão do app (não foi criado aqui)? */
+export function isDefaultDeParaSku(sku: string): boolean {
+  return Boolean(RAW[sku]);
+}
+
+export interface DeParaListEntry {
+  sku: string;
+  entry: DeParaEntry;
+  source: "padrao" | "app";
+  missingFields: (keyof DeParaEntry)[];
+}
+
+/** Todos os SKUs do De/Para (padrão + corrigidos/criados no app). */
+export function listDeParaEntries(): DeParaListEntry[] {
+  return Array.from(allSkuKeys())
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((sku) => ({
+      sku,
+      entry: getDeParaBySku(sku)!,
+      source: runtimeOverrides[sku] ? "app" : "padrao",
+      missingFields: getMissingDeParaFields(sku),
+    }));
+}
+
+/** Entradas completas (todos os campos) — base das sugestões. */
+export function completeDeParaEntries(): Array<{ sku: string; entry: DeParaEntry }> {
+  const out: Array<{ sku: string; entry: DeParaEntry }> = [];
+  for (const sku of allSkuKeys()) {
+    if (getMissingDeParaFields(sku).length > 0) continue;
+    out.push({ sku, entry: getDeParaBySku(sku)! });
+  }
+  return out;
+}

@@ -2,7 +2,10 @@ import { create } from "zustand";
 import type { Filters, LoadedFile, Metric, PricingRow } from "@/lib/types";
 import type { MissingMappings } from "@/lib/csv";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
-import { getDeParaBySku, getMissingDeParaFields, type DeParaOverrideEntry } from "@/lib/depara";
+import { getDeParaBySku, getMissingDeParaFields, type DeParaOverrideEntry, type DeParaEntry } from "@/lib/depara";
+
+type SkuField = keyof DeParaEntry;
+import { getCanalAjustado, getMercadoAjustadoFromRegiao, getRegionalFromUf, getUfFromRegiao } from "@/lib/deparaComercial";
 
 interface PricingState {
   rows: PricingRow[];
@@ -39,6 +42,10 @@ interface PricingState {
   dismissMissing: () => void;
   reclassifyInovacao: () => void;
   applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
+  /** Reaplica o De/Para Comercial (canal, UF, mercado, regional) nas linhas carregadas. */
+  applyComercialDePara: () => void;
+  /** Grava campos de produto em todas as linhas de cada SKU (desfazer correção). */
+  setSkuFields: (fieldsBySku: Record<string, Partial<Record<SkuField, string | undefined>>>) => void;
 
   setPvm: (base: string | null, comp: string | null) => void;
   setPvmMode: (mode: "fy" | "month") => void;
@@ -209,6 +216,38 @@ export const usePricing = create<PricingState>((set, get) => ({
         })
         .filter((item) => item.missingFields.length > 0);
       return { rows, missing: { ...s.missing, skus } };
+    }),
+
+  setSkuFields: (fieldsBySku) =>
+    set((s) => ({
+      rows: s.rows.map((r) => (r.sku && fieldsBySku[r.sku] ? { ...r, ...fieldsBySku[r.sku] } : r)),
+    })),
+
+  applyComercialDePara: () =>
+    set((s) => {
+      let changed = false;
+      const rows = s.rows.map((r) => {
+        const canalAjustado = (r.canal && getCanalAjustado(r.canal)) || undefined;
+        const uf = (r.regiao && getUfFromRegiao(r.regiao)) || undefined;
+        const mercadoAjustado = (r.regiao && getMercadoAjustadoFromRegiao(r.regiao)) || undefined;
+        const regional = (uf && getRegionalFromUf(uf)) || undefined;
+        if (
+          canalAjustado === r.canalAjustado &&
+          uf === r.uf &&
+          mercadoAjustado === r.mercadoAjustado &&
+          regional === r.regional
+        ) return r;
+        changed = true;
+        return { ...r, canalAjustado, uf, mercadoAjustado, regional };
+      });
+      if (!changed) return {};
+      const missing = {
+        ...s.missing,
+        canais: s.missing.canais.filter((c) => !getCanalAjustado(c)),
+        regioes: s.missing.regioes.filter((r) => !getUfFromRegiao(r) && !getMercadoAjustadoFromRegiao(r)),
+        ufs: s.missing.ufs.filter((u) => !getRegionalFromUf(u)),
+      };
+      return { rows, missing };
     }),
 
   setPvm: (base, comp) => set({ pvmBase: base, pvmComp: comp }),

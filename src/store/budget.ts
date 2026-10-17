@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import type { BudgetFile, BudgetRow } from "@/lib/budget";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
-import { getDeParaBySku, type DeParaOverrideEntry } from "@/lib/depara";
+import { getDeParaBySku, type DeParaOverrideEntry, type DeParaEntry } from "@/lib/depara";
+
+type SkuField = keyof DeParaEntry;
+import { getCanalAjustado } from "@/lib/deparaComercial";
 
 interface BudgetState {
   rows: BudgetRow[];
@@ -12,6 +15,10 @@ interface BudgetState {
   clearBudget: () => void;
   reclassifyInovacao: () => void;
   applySkuDeParaEntries: (entries: Record<string, DeParaOverrideEntry>) => void;
+  /** Reaplica o Canal Ajustado (De/Para Comercial) nas linhas carregadas. */
+  applyComercialDePara: () => void;
+  /** Grava campos de produto em todas as linhas de cada SKU (desfazer correção). */
+  setSkuFields: (fieldsBySku: Record<string, Partial<Record<SkuField, string | undefined>>>) => void;
 }
 
 function sortPeriods(periods: Iterable<string>) {
@@ -104,6 +111,23 @@ export const useBudget = create<BudgetState>((set) => ({
           };
         }),
       };
+    }),
+
+  setSkuFields: (fieldsBySku) =>
+    set((s) => ({
+      rows: s.rows.map((r) => (r.sku && fieldsBySku[r.sku] ? { ...r, ...fieldsBySku[r.sku] } : r)),
+    })),
+
+  applyComercialDePara: () =>
+    set((s) => {
+      let changed = false;
+      const rows = s.rows.map((r) => {
+        const canalAjustado = (r.canal && getCanalAjustado(r.canal)) || undefined;
+        if (canalAjustado === r.canalAjustado) return r;
+        changed = true;
+        return { ...r, canalAjustado };
+      });
+      return changed ? { rows } : {};
     }),
 }));
 

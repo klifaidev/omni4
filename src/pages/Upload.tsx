@@ -1,8 +1,8 @@
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
-import { MissingMappingsAlert } from "@/components/pricing/MissingMappingsAlert";
+import { DeParaHealthCard, DeParaPendingBanner } from "@/components/pricing/deparas/DeParaHealthCard";
+import { DeParaCenter } from "@/components/pricing/deparas/DeParaCenter";
 import { BaseIntake } from "@/components/pricing/bases/BaseIntake";
-import { ExportDeparasCard } from "@/components/pricing/ExportDeparasCard";
 import { CustomTableEditorDialog } from "@/components/pricing/CustomTableEditorDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -445,7 +445,7 @@ export default function Upload() {
     <>
       <Topbar title="Bases" subtitle="Base One, Real, Budget, Ruptura, De/Paras e tabelas personalizadas" />
       <div className="space-y-6 px-8 py-6">
-        <MissingMappingsAlert />
+        <DeParaPendingBanner />
 
         {isDemoData && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-5 py-3 animate-fade-in">
@@ -717,7 +717,7 @@ export default function Upload() {
           </GlassCard>
         </div>
 
-        <ExportDeparasCard />
+        <DeParaHealthCard />
 
         {basesLocais.isElectron && Object.keys(infoSalvas).length > 0 && (
           <GlassCard>
@@ -787,6 +787,8 @@ export default function Upload() {
           </p>
         </GlassCard>
       </div>
+
+      <DeParaCenter />
 
       <CustomTableEditorDialog
         open={customEditorOpen}

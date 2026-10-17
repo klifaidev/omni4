@@ -1,33 +1,15 @@
 // Exportador unificado dos De Paras → XLSX (várias abas).
 // Útil para validação e auditoria.
 import * as XLSX from "xlsx";
-import deparaPrincipal from "@/data/depara.json";
-import deparaComercial from "@/data/depara_comercial.json";
+import { listDeParaEntries, type DeParaEntry } from "./depara";
+import { getComercialEntries, type ComercialMapId } from "./deparaComercial";
 import { getInovacaoMap } from "./deparaInovacao";
-
-interface DeParaPrincipalEntry {
-  categoria: string;
-  subcategoria: string;
-  marca: string;
-  tecnologia: string;
-  formato: string;
-  mercado: string;
-  faixaPeso: string;
-  sabor: string;
-  skuDesc: string;
-}
+import type { PendingItem } from "./deparaHealth";
 
 interface DeParaInovacaoEntry {
   classificacao: string;
   anoLancamento?: number | string | null;
   legado?: string | null;
-}
-
-interface DeParaComercialShape {
-  canalToCanalAjustado: Record<string, string>;
-  regiaoToUf: Record<string, string>;
-  regiaoToMercadoAjustado: Record<string, string>;
-  ufToRegional: Record<string, string>;
 }
 
 function autoSizeCols(rows: Record<string, unknown>[], headers: string[]) {
@@ -126,16 +108,15 @@ function buildSkuDescFallback(rowsBySource: SkuDescSourceRow[][]): Map<string, s
 export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
   const wb = XLSX.utils.book_new();
 
-  // 1) De Para Principal (SKU → atributos)
-  const principal = deparaPrincipal as Record<string, DeParaPrincipalEntry>;
+  // 1) De Para Principal (SKU → atributos) — com as correções feitas no app.
   // Alguns SKUs vêm sem nome no De/Para mestre. Para esses casos, usa a
   // descrição original tal como veio na base carregada (Real/Budget) — sem
   // ela o SKU fica sem nenhuma referência para ser
   // classificado depois. Os demais níveis (categoria, marca etc.) continuam
   // em branco normalmente; só o nome é recuperado.
   const skuDescFallback = buildSkuDescFallback(rowsBySource);
-  const principalRows = Object.entries(principal)
-    .map(([sku, v]) => ({
+  const principalRows = listDeParaEntries()
+    .map(({ sku, entry: v, source }) => ({
       SKU: sku,
       Descrição: (v.skuDesc && v.skuDesc.trim()) || skuDescFallback.get(sku) || "",
       Categoria: v.categoria ?? "",
@@ -146,12 +127,13 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
       Mercado: v.mercado ?? "",
       "Faixa de Peso": v.faixaPeso ?? "",
       Sabor: v.sabor ?? "",
+      Origem: source === "app" ? "Corrigido no app" : "Padrão",
     }))
     .sort((a, b) => a.SKU.localeCompare(b.SKU));
   appendSheet(
     wb,
     "1. SKU - Hierarquia",
-    ["SKU", "Descrição", "Categoria", "Subcategoria", "Marca", "Tecnologia", "Formato", "Mercado", "Faixa de Peso", "Sabor"],
+    ["SKU", "Descrição", "Categoria", "Subcategoria", "Marca", "Tecnologia", "Formato", "Mercado", "Faixa de Peso", "Sabor", "Origem"],
     principalRows,
   );
 
@@ -172,28 +154,25 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
     inovRows,
   );
 
-  // 3-6) De Para Comercial — uma aba para cada mapeamento
-  const comercial = deparaComercial as DeParaComercialShape;
+  // 3-6) De Para Comercial — uma aba para cada mapeamento, com as correções do app.
+  const comercialRows = (id: ComercialMapId, fromHeader: string, toHeader: string) =>
+    getComercialEntries(id).map((e) => ({
+      [fromHeader]: e.key,
+      [toHeader]: e.value,
+      Origem: e.source === "app" ? "Corrigido no app" : "Padrão",
+    }));
 
-  const canalRows = Object.entries(comercial.canalToCanalAjustado)
-    .map(([from, to]) => ({ "Canal Origem": from, "Canal Ajustado": to }))
-    .sort((a, b) => a["Canal Origem"].localeCompare(b["Canal Origem"]));
-  appendSheet(wb, "3. Canal → Canal Ajustado", ["Canal Origem", "Canal Ajustado"], canalRows);
+  const canalRows = comercialRows("canalToCanalAjustado", "Canal Origem", "Canal Ajustado");
+  appendSheet(wb, "3. Canal → Canal Ajustado", ["Canal Origem", "Canal Ajustado", "Origem"], canalRows);
 
-  const regiaoUfRows = Object.entries(comercial.regiaoToUf)
-    .map(([from, to]) => ({ "Região Origem": from, UF: to }))
-    .sort((a, b) => a["Região Origem"].localeCompare(b["Região Origem"]));
-  appendSheet(wb, "4. Região → UF", ["Região Origem", "UF"], regiaoUfRows);
+  const regiaoUfRows = comercialRows("regiaoToUf", "Região Origem", "UF");
+  appendSheet(wb, "4. Região → UF", ["Região Origem", "UF", "Origem"], regiaoUfRows);
 
-  const regiaoMercRows = Object.entries(comercial.regiaoToMercadoAjustado)
-    .map(([from, to]) => ({ "Região Origem": from, "Mercado Ajustado": to }))
-    .sort((a, b) => a["Região Origem"].localeCompare(b["Região Origem"]));
-  appendSheet(wb, "5. Região → Mercado Ajust.", ["Região Origem", "Mercado Ajustado"], regiaoMercRows);
+  const regiaoMercRows = comercialRows("regiaoToMercadoAjustado", "Região Origem", "Mercado Ajustado");
+  appendSheet(wb, "5. Região → Mercado Ajust.", ["Região Origem", "Mercado Ajustado", "Origem"], regiaoMercRows);
 
-  const ufRegionalRows = Object.entries(comercial.ufToRegional)
-    .map(([from, to]) => ({ UF: from, Regional: to }))
-    .sort((a, b) => a.UF.localeCompare(b.UF));
-  appendSheet(wb, "6. UF → Regional", ["UF", "Regional"], ufRegionalRows);
+  const ufRegionalRows = comercialRows("ufToRegional", "UF", "Regional");
+  appendSheet(wb, "6. UF → Regional", ["UF", "Regional", "Origem"], ufRegionalRows);
 
   // Aba de índice
   const indexRows = [
@@ -211,4 +190,33 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
   wb.SheetNames = ["Índice", ...wb.SheetNames.filter((n) => n !== "Índice")];
 
   downloadWorkbook(wb, "de-paras_auditoria");
+}
+
+const PENDING_FIELD_LABEL: Record<keyof DeParaEntry, string> = {
+  categoria: "Categoria",
+  subcategoria: "Subcategoria",
+  marca: "Marca",
+  tecnologia: "Tecnologia",
+  formato: "Formato",
+  mercado: "Mercado",
+  faixaPeso: "Faixa de Peso",
+  sabor: "Sabor",
+  skuDesc: "Descrição",
+};
+
+/** Pendências de todos os De/Paras, na ordem de impacto — para resolver fora do app. */
+export function exportPendenciasXlsx(pending: PendingItem[], mapTitle: (id: PendingItem["map"]) => string) {
+  const wb = XLSX.utils.book_new();
+  const rows = pending.map((p) => ({
+    "De/Para": mapTitle(p.map),
+    Valor: p.key,
+    Descrição: p.label ?? "",
+    "ROL (Real)": p.onlyBudget ? "" : Number(p.rol.toFixed(2)),
+    "% do ROL": p.onlyBudget ? "" : Number((p.share * 100).toFixed(3)),
+    Linhas: p.rows,
+    "Campos faltando": p.missingFields?.map((f) => PENDING_FIELD_LABEL[f]).join(", ") ?? "",
+    Observação: p.onlyBudget ? "Só aparece no Budget" : "",
+  }));
+  appendSheet(wb, "Pendências", ["De/Para", "Valor", "Descrição", "ROL (Real)", "% do ROL", "Linhas", "Campos faltando", "Observação"], rows);
+  downloadWorkbook(wb, "de-paras_pendencias");
 }

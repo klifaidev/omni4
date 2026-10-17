@@ -216,6 +216,9 @@ export async function preloadSavedBases(
 
   try {
     await Promise.all(available.map((tipo) => loadOneBase(tipo)));
+    // O cache das bases pode ser de antes de uma correção de De/Para Comercial.
+    usePricing.getState().applyComercialDePara();
+    useBudget.getState().applyComercialDePara();
   } finally {
     usePricing.getState().setParsingEnd();
   }
