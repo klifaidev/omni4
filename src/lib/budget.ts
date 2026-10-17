@@ -8,6 +8,7 @@ import { getInovacao, getLegado } from "./deparaInovacao";
 import { getCanalAjustado } from "./deparaComercial";
 import { normHeader, parseDecimal, parsePeriod } from "./format";
 import { createStringInterner, internTrimmed } from "./stringIntern";
+import { BUDGET_HEADER_MAP as HEADER_MAP } from "./intake/headerMaps";
 import type { Filters } from "./types";
 
 export interface BudgetRow {
@@ -53,36 +54,6 @@ export interface ParsedBudget {
   warnings: string[];
 }
 
-// Header canonical map (normalized → canonical key)
-const HEADER_MAP: Record<string, string> = {
-  canal: "canal",
-  channel: "canal",
-  sku: "sku",
-  artigo: "sku",
-  codigo: "sku",
-  codsku: "sku",
-  descricaodoproduto: "skuDesc",
-  descricaoproduto: "skuDesc",
-  descricao: "skuDesc",
-  produto: "skuDesc",
-  data: "periodo",
-  datacorreta: "periodo",
-  periodo: "periodo",
-  mes: "periodo",
-  competencia: "periodo",
-  volume: "volume",
-  qtde: "volume",
-  quantidade: "volume",
-  receita: "receita",
-  rol: "receita",
-  cm: "cm",
-  contribuicaomarginal: "cm",
-  contribmarginal: "cm",
-  cpv: "cpv",
-  cmv: "cpv",
-  custo: "cpv",
-  status: "status",
-};
 
 // Identifica linhas de Budget na coluna STATUS (ex.: "1.Budget Vendas").
 function isBudgetStatus(raw: unknown): boolean {
@@ -90,6 +61,8 @@ function isBudgetStatus(raw: unknown): boolean {
   const s = normHeader(String(raw)); // remove acentos, espaços, pontuação, lowercase
   return s.includes("budgetvendas");
 }
+
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
 
 function dataToPeriod(raw: unknown): ReturnType<typeof parsePeriod> | null {
   if (raw == null || raw === "") return null;
@@ -99,12 +72,16 @@ function dataToPeriod(raw: unknown): ReturnType<typeof parsePeriod> | null {
     const ano = raw.getFullYear();
     return parsePeriod(`${mes}/${ano}`);
   }
+  // Data serial do Excel (planilha lida sem cellDates, ex.: Base One) — pode
+  // vir com fração de hora. Conta em UTC: não depende do fuso da máquina.
+  if (typeof raw === "number" && raw > 30000 && raw < 80000) {
+    const date = new Date(EXCEL_EPOCH_MS + Math.floor(raw) * 86_400_000);
+    return parsePeriod(`${date.getUTCMonth() + 1}/${date.getUTCFullYear()}`);
+  }
   return parsePeriod(typeof raw === "number" ? raw : String(raw));
 }
 
 export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
-  const intern = createStringInterner();
-  const warnings: string[] = [];
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
 
@@ -112,35 +89,82 @@ export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
   const sheetName =
     wb.SheetNames.find((n) => normHeader(n).includes("baseconsolidada")) ?? wb.SheetNames[0];
   if (!sheetName) {
-    return {
-      rows: [],
-      file: { name: file.name, rowCount: 0, months: [], uploadedAt: Date.now() },
-      warnings: ["Nenhuma aba encontrada no arquivo."],
-    };
+    return emptyBudget(file.name, "Nenhuma aba encontrada no arquivo.");
   }
-  const sheet = wb.Sheets[sheetName];
-  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+  const table = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], {
+    header: 1,
     defval: "",
     raw: true,
+    blankrows: false,
   });
-
-  if (json.length === 0) {
-    return {
-      rows: [],
-      file: { name: file.name, rowCount: 0, months: [], uploadedAt: Date.now() },
-      warnings: [`Aba "${sheetName}" está vazia.`],
-    };
+  const [header = [], ...dataRows] = table;
+  if (dataRows.length === 0) {
+    return emptyBudget(file.name, `Aba "${sheetName}" está vazia.`);
   }
+  return parseBudgetTable(header.map((h) => String(h ?? "")), dataRows, file.name);
+}
 
-  // Build column → canonical key map from first row
-  const sample = json[0];
-  const colKey: Record<string, string> = {};
-  for (const col of Object.keys(sample)) {
-    const k = HEADER_MAP[normHeader(col)];
-    if (k) colKey[col] = k;
+function emptyBudget(name: string, warning: string): ParsedBudget {
+  return {
+    rows: [],
+    file: { name, rowCount: 0, months: [], uploadedAt: Date.now() },
+    warnings: [warning],
+  };
+}
+
+/**
+ * Coluna → campo do Budget. Cabeçalhos com o MESMO texto valem pela primeira
+ * ocorrência; nomes diferentes que caem no mesmo campo, pela última (ex.:
+ * "data" e "Data correta" → vale "Data correta").
+ */
+export function mapBudgetColumns(headers: string[]): Map<number, string> {
+  const colKey = new Map<number, string>();
+  const seenText = new Set<string>();
+  const fieldCol = new Map<string, number>();
+  headers.forEach((rawHeader, index) => {
+    const text = String(rawHeader ?? "");
+    const key = HEADER_MAP[normHeader(text)];
+    if (!key || seenText.has(text)) return;
+    seenText.add(text);
+    const previous = fieldCol.get(key);
+    if (previous !== undefined) colKey.delete(previous);
+    fieldCol.set(key, index);
+    colKey.set(index, key);
+  });
+  return colKey;
+}
+
+function isBlankRow(row: ArrayLike<unknown>): boolean {
+  for (let i = 0; i < row.length; i++) {
+    const v = row[i];
+    if (v !== null && v !== undefined && v !== "") return false;
   }
+  return true;
+}
+
+/** Índice da coluna de data do Budget (ou -1). */
+export function budgetPeriodColumn(headers: string[]): number {
+  for (const [index, key] of mapBudgetColumns(headers)) if (key === "periodo") return index;
+  return -1;
+}
+
+/** Período ("005.2025") de um valor da coluna de data do Budget. */
+export function budgetPeriodOf(raw: unknown): string | null {
+  return dataToPeriod(raw)?.periodo ?? null;
+}
+
+/**
+ * Lê o Budget a partir de uma tabela (cabeçalho + linhas). Usado pelo XLSX do
+ * Budget e pelas abas reconhecidas como Budget numa Base One.
+ */
+export function parseBudgetTable(headers: string[], dataRows: ArrayLike<unknown>[], fileName: string): ParsedBudget {
+  const intern = createStringInterner();
+  const warnings: string[] = [];
+  const colKey = mapBudgetColumns(headers);
+  const keys = new Set(colKey.values());
+  const columns = Array.from(colKey.entries());
   const required = ["sku", "canal", "periodo", "volume", "receita", "cm"];
-  const missingReq = required.filter((r) => !Object.values(colKey).includes(r));
+  const missingReq = required.filter((r) => !keys.has(r));
   if (missingReq.length) {
     warnings.push(`Colunas obrigatórias ausentes: ${missingReq.join(", ")}.`);
   }
@@ -148,14 +172,16 @@ export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
   const rows: BudgetRow[] = [];
   const monthsSet = new Set<string>();
   let skippedNoPeriod = 0;
-  
+
   let countBudget = 0;
   let countReal = 0;
-  const hasStatusCol = Object.values(colKey).includes("status");
+  const hasStatusCol = keys.has("status");
 
-  for (const r of json) {
+  for (const r of dataRows) {
+    if (!r || isBlankRow(r)) continue;
     const norm: Record<string, unknown> = {};
-    for (const [col, key] of Object.entries(colKey)) norm[key] = r[col];
+    // Célula vazia vira "" — como o leitor de XLSX sempre entregou (defval).
+    for (const [index, key] of columns) norm[key] = r[index] ?? "";
 
     const p = dataToPeriod(norm.periodo);
     if (!p) { skippedNoPeriod++; continue; }
@@ -224,7 +250,7 @@ export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
   return {
     rows,
     file: {
-      name: file.name,
+      name: fileName,
       rowCount: rows.length,
       months: Array.from(monthsSet).sort(),
       uploadedAt: Date.now(),

@@ -1,7 +1,7 @@
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { MissingMappingsAlert } from "@/components/pricing/MissingMappingsAlert";
-import { UploadQueue } from "@/components/pricing/UploadQueue";
+import { BaseIntake } from "@/components/pricing/bases/BaseIntake";
 import { ExportDeparasCard } from "@/components/pricing/ExportDeparasCard";
 import { CustomTableEditorDialog } from "@/components/pricing/CustomTableEditorDialog";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
 } from "@/store/customTables";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { useMonthsInfo } from "@/store/selectors";
-import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, Pencil, Plus } from "lucide-react";
+import { Trash2, FileSpreadsheet, Calendar, CheckCircle2, AlertTriangle, Database, Target, Sparkles, Loader2, HardDrive, Clock, Pencil, Plus, PackageX, ScanSearch } from "lucide-react";
 import { monthLabel } from "@/lib/format";
 import { getFreshness, type FreshnessStatus } from "@/lib/freshness";
 import { cn } from "@/lib/utils";
@@ -28,8 +28,10 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useUploadGuard } from "@/store/uploadGuard";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { parseCsvFile, type ParsedCsv } from "@/lib/csv";
-import { parseBudgetFile, type ParsedBudget } from "@/lib/budget";
+import type { ParsedCsv } from "@/lib/csv";
+import type { ParsedBudget } from "@/lib/budget";
+import { parseSavedBudgetFile, parseSavedRealFile } from "@/lib/intake/intake";
+import { useRuptura } from "@/store/ruptura";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
 import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
 import { useBasesLocais, type InfoArquivoBase, type TipoBase, type InfoBase } from "@/hooks/use-bases-locais";
@@ -44,14 +46,26 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const EXPECTED_COLS = [
-  "Periodo (ex.: 005.2025)",
-  "Marca, Canal, Categoria, Subcategoria",
-  "SKU, Descrição SKU, Cliente",
-  "Região, Mercado, Sabor, Tecnologia, Faixa de Peso",
-  "ROL (Receita Op. Líquida)",
-  "Volume (kg), CMV / Custo",
-  "Margem Bruta, Contribuição Marginal",
+// Como o Omni4 reconhece cada base numa planilha — mostrado no fim da aba.
+const RECOGNITION_GUIDE = [
+  {
+    kind: "Real",
+    icon: Database,
+    tone: "text-primary bg-primary/10",
+    signature: "Período/ano + Rec. Líquida, com colunas que só o KE30 tem (Cliente, Região, Gestor) e período como “009.2026 Setembro 2026”.",
+  },
+  {
+    kind: "Budget",
+    icon: Target,
+    tone: "text-accent bg-accent/10",
+    signature: "Sku + data + RECEITA, e a coluna STATUS com “1.Budget Vendas” (as demais linhas entram como Realizado).",
+  },
+  {
+    kind: "Ruptura",
+    icon: PackageX,
+    tone: "text-destructive bg-destructive/10",
+    signature: "Produto (SKU) + PDV + data da pesquisa + “Produto em Ruptura” respondido com Sim/Não.",
+  },
 ];
 
 function arquivosDaBase(base: InfoBase | undefined): InfoArquivoBase[] {
@@ -101,13 +115,15 @@ function StatusHeroCard({
   subtitle: string;
   icon: typeof Database;
   freshness: FreshnessStatus;
-  accent: "primary" | "accent";
+  accent: "primary" | "accent" | "destructive";
   rightSlot?: React.ReactNode;
 }) {
   const accentClasses =
     accent === "primary"
       ? "from-primary/15 to-primary/0 border-primary/20 [&_.acc]:text-primary [&_.acc-bg]:bg-primary/15"
-      : "from-accent/15 to-accent/0 border-accent/20 [&_.acc]:text-accent [&_.acc-bg]:bg-accent/15";
+      : accent === "accent"
+        ? "from-accent/15 to-accent/0 border-accent/20 [&_.acc]:text-accent [&_.acc-bg]:bg-accent/15"
+        : "from-destructive/10 to-destructive/0 border-destructive/20 [&_.acc]:text-destructive [&_.acc-bg]:bg-destructive/15";
 
   return (
     <div
@@ -157,6 +173,7 @@ function StatusHeroCard({
 const TIPO_LABELS: Record<TipoBase, string> = {
   ke30: "KE30 (Real)",
   budget: "Budget",
+  ruptura: "Ruptura",
   personalizado: "Personalizado",
   deparaInovacao: "De/Para Inovação",
 };
@@ -195,25 +212,26 @@ export default function Upload() {
   const setInovacaoDepara = useInovacaoDepara((s) => s.setDepara);
 
   const realFreshness = useMemo(() => getFreshness(months), [months]);
+  const rupturaModel = useRuptura((s) => s.model);
+  const rupturaMonths = useMemo(
+    () => (rupturaModel?.months ?? []).map((m) => {
+      const [ano, mes] = m.split("-").map((x) => parseInt(x, 10));
+      return { mes, ano, periodo: m };
+    }),
+    [rupturaModel],
+  );
+  const rupturaFreshness = useMemo(() => getFreshness(rupturaMonths), [rupturaMonths]);
   const budgetFreshness = useMemo(() => getFreshness(budgetMonths), [budgetMonths]);
 
   const basesLocais = useBasesLocais();
   const autoLoadedRef = useRef(false);
   const [infoSalvas, setInfoSalvas] = useState<Record<string, InfoBase>>({});
-  const [pendingSaveQueue, setPendingSaveQueue] = useState<Array<{ tipo: TipoBase; file: File; dataExistente: string }>>([]);
-  const [basesSalvas, setBasesSalvas] = useState<Record<string, boolean>>({});
   const [deletePending, setDeletePending] = useState<{ tipo: TipoBase; nomeArquivo?: string } | null>(null);
 
   const refreshInfoSalvas = useCallback(async () => {
     if (!basesLocais.isElectron) return;
     const info = await basesLocais.infoBasesSalvas();
     setInfoSalvas(info as Record<string, InfoBase>);
-    setBasesSalvas({
-      ke30: !!info.ke30,
-      budget: !!info.budget,
-      deparaInovacao: !!info.deparaInovacao,
-      personalizado: !!info.personalizado,
-    });
   }, [basesLocais.isElectron, basesLocais.infoBasesSalvas]);
 
   const persistCustomTables = useCallback(async (tables: CustomTable[], successMessage?: string) => {
@@ -276,7 +294,7 @@ export default function Upload() {
             if (!parsed) {
               const file = await basesLocais.carregarArquivo("ke30", arquivo.nomeArquivo);
               if (!file) continue;
-              parsed = await parseCsvFile(file);
+              parsed = await parseSavedRealFile(file);
               if (parsed.rows.length > 0) {
                 saveProcessedBaseInBackground("ke30", arquivo.nomeArquivo, "ke30-parsed-csv", parsed);
               }
@@ -299,7 +317,7 @@ export default function Upload() {
             if (!parsed) {
               const file = await basesLocais.carregarArquivo("budget", arquivo.nomeArquivo);
               if (!file) continue;
-              parsed = await parseBudgetFile(file);
+              parsed = await parseSavedBudgetFile(file);
               if (parsed.rows.length > 0) {
                 saveProcessedBaseInBackground("budget", arquivo.nomeArquivo, "budget-parsed-xlsx", parsed);
               }
@@ -317,45 +335,6 @@ export default function Upload() {
     autoLoad();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleAfterApply = useCallback(
-    async (applied: { tipo: TipoBase; file: File; parsed?: ParsedCsv | ParsedBudget }[]) => {
-      const toConfirm: Array<{ tipo: TipoBase; file: File; dataExistente: string }> = [];
-      for (const { tipo, file, parsed } of applied) {
-        try {
-          const infoAtual = await basesLocais.infoBasesSalvas();
-          const jaExiste = infoAtual[tipo]?.nomeArquivos?.includes(file.name);
-          if (jaExiste) {
-            toConfirm.push({
-              tipo,
-              file,
-              dataExistente: new Date(infoAtual[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
-            });
-          } else {
-            const resultado = await basesLocais.salvarBase(tipo, file);
-            if (resultado?.ok) {
-              if (tipo === "ke30" && parsed) {
-                saveProcessedBaseInBackground("ke30", file.name, "ke30-parsed-csv", parsed);
-              }
-              if (tipo === "budget" && parsed) {
-                saveProcessedBaseInBackground("budget", file.name, "budget-parsed-xlsx", parsed);
-              }
-              toast.success(`Base ${tipo.toUpperCase()} salva localmente.`);
-            } else {
-              toast.error(`Falha ao salvar base ${tipo.toUpperCase()} localmente.`);
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "erro desconhecido";
-          console.error(`Erro ao salvar base ${tipo}:`, err);
-          toast.error(`Erro ao salvar base ${tipo.toUpperCase()}: ${msg}`);
-        }
-      }
-      await refreshInfoSalvas();
-      if (toConfirm.length > 0) setPendingSaveQueue(toConfirm);
-    },
-    [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
-  );
-
   const handleDeleteBase = useCallback(
     async (tipo: TipoBase, nomeArquivo?: string) => {
       await basesLocais.deletarBase(tipo, nomeArquivo);
@@ -367,37 +346,6 @@ export default function Upload() {
       await refreshInfoSalvas();
     },
     [basesLocais.deletarBase, refreshInfoSalvas, setCustomTables],
-  );
-
-  const handleSaveFileFromQueue = useCallback(
-    async (tipo: TipoBase, file: File) => {
-      const info = await basesLocais.infoBasesSalvas();
-      const jaExiste = info[tipo]?.nomeArquivos?.includes(file.name);
-      if (jaExiste) {
-        setPendingSaveQueue((prev) => [
-          ...prev,
-          {
-            tipo: tipo as TipoBase,
-            file,
-            dataExistente: new Date(info[tipo]!.ultimaModificacao).toLocaleDateString("pt-BR"),
-          },
-        ]);
-      } else {
-        const resultado = await basesLocais.salvarBase(tipo as TipoBase, file);
-        if (resultado?.ok) {
-          toast.success(`Base ${TIPO_LABELS[tipo]} salva localmente.`);
-          await refreshInfoSalvas();
-        } else {
-          toast.error(`Falha ao salvar base ${TIPO_LABELS[tipo]} localmente.`);
-        }
-      }
-    },
-    [basesLocais.infoBasesSalvas, basesLocais.salvarBase, refreshInfoSalvas],
-  );
-
-  const savedTypesSet = useMemo(
-    () => new Set(Object.entries(basesSalvas).filter(([, v]) => v).map(([k]) => k)),
-    [basesSalvas],
   );
 
   const openCustomTable = useCallback((table?: CustomTable) => {
@@ -495,7 +443,7 @@ export default function Upload() {
 
   return (
     <>
-      <Topbar title="Bases" subtitle="Gerencie Real, Budget e tabelas personalizadas" />
+      <Topbar title="Bases" subtitle="Base One, Real, Budget, Ruptura, De/Paras e tabelas personalizadas" />
       <div className="space-y-6 px-8 py-6">
         <MissingMappingsAlert />
 
@@ -535,8 +483,8 @@ export default function Upload() {
         </div>
 
 
-        {/* Status hero — Real | Budget */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {/* Status hero — Real | Budget | Ruptura */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <StatusHeroCard
             title="Base Real"
             subtitle="Vendas, custos e margens efetivos"
@@ -563,33 +511,36 @@ export default function Upload() {
               </div>
             }
           />
+          <StatusHeroCard
+            title="Base Ruptura"
+            subtitle="Pesquisas de ausência nos PDVs"
+            icon={PackageX}
+            accent="destructive"
+            freshness={rupturaFreshness}
+            rightSlot={
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">{rupturaMonths.length} mês(es)</div>
+                <div className="text-xs text-muted-foreground">
+                  {rupturaModel ? `${rupturaModel.cells.month.length.toLocaleString("pt-BR")} avaliações` : "—"}
+                </div>
+              </div>
+            }
+          />
         </div>
 
-        {/* Upload em fila com botão Aplicar */}
+        {/* Entrada de bases: Base One, CSV do KE30 ou planilha avulsa */}
         <GlassCard className="relative">
-          <header className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">Upload de bases</h3>
-              <p className="text-[11px] text-muted-foreground">
-                Adicione vários arquivos (Real e Budget). O app só será atualizado quando você clicar em <span className="font-medium text-foreground">Aplicar</span>.
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
-              <Badge variant="secondary" className="text-[10px]">.csv (Real)</Badge>
-              <Badge variant="secondary" className="text-[10px]">.xlsx (Budget)</Badge>
-            </div>
+          <header className="mb-3">
+            <h3 className="text-sm font-semibold">Atualizar bases</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Um arquivo por mês basta. O app só é atualizado quando você clicar em <span className="font-medium text-foreground">Aplicar</span>.
+            </p>
           </header>
-          <UploadQueue
-            onAfterApply={basesLocais.isElectron ? handleAfterApply : undefined}
-            savedTypes={basesLocais.isElectron ? savedTypesSet : undefined}
-            onSaveFile={basesLocais.isElectron ? handleSaveFileFromQueue : undefined}
-            onDeleteFile={basesLocais.isElectron ? (t) => setDeletePending({ tipo: t as TipoBase }) : undefined}
-            isElectron={basesLocais.isElectron}
-          />
+          <BaseIntake onApplied={refreshInfoSalvas} />
           {parsing && (
             <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-background/70 backdrop-blur-sm">
               <Loader2 className="h-7 w-7 animate-spin text-primary" />
-              <span className="text-sm text-muted-foreground">Processando arquivo...</span>
+              <span className="text-sm text-muted-foreground">Carregando bases salvas...</span>
             </div>
           )}
         </GlassCard>
@@ -775,7 +726,7 @@ export default function Upload() {
               <h3 className="text-sm font-medium">Bases salvas localmente</h3>
             </header>
             <div className="space-y-2">
-              {(["ke30", "budget", "deparaInovacao", "personalizado"] as const).map((tipo) => {
+              {(["ke30", "budget", "ruptura", "deparaInovacao", "personalizado"] as const).map((tipo) => {
                 const info = infoSalvas[tipo];
                 if (!info) return null;
                 return (
@@ -809,71 +760,40 @@ export default function Upload() {
         )}
 
         <GlassCard>
-          <h3 className="mb-3 text-sm font-medium">Colunas esperadas no CSV (Real)</h3>
-          <ul className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground md:grid-cols-2">
-            {EXPECTED_COLS.map((c) => (
-              <li key={c} className="flex items-start gap-2">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
-                {c}
+          <header className="mb-3 flex items-center gap-2">
+            <ScanSearch className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-medium">Como o Omni4 reconhece cada base</h3>
+          </header>
+          <p className="mb-3 max-w-3xl text-[11px] text-muted-foreground">
+            Cada aba é lida pelo conteúdo — colunas e valores —, não pelo nome nem pela posição. O cabeçalho pode estar em
+            qualquer uma das 30 primeiras linhas e as colunas podem mudar de ordem. Se uma aba ficar em dúvida, a revisão
+            mostra e você escolhe o tipo antes de aplicar.
+          </p>
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            {RECOGNITION_GUIDE.map(({ kind, icon: Icon, tone, signature }) => (
+              <li key={kind} className="rounded-xl border border-border/40 bg-secondary/20 p-3">
+                <div className="flex items-center gap-2">
+                  <span className={cn("flex h-6 w-6 items-center justify-center rounded-md", tone)}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="text-xs font-semibold">{kind}</span>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{signature}</p>
               </li>
             ))}
           </ul>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            Aceita separadores “;” ou “,”, decimais BR (1.234,56) ou internacional (1234.56).
-            Linhas com ROL ≤ 0 são descartadas.
+            O CSV do KE30 continua aceito: separadores “;” ou “,”, decimais BR (1.234,56) ou internacional (1234.56).
           </p>
         </GlassCard>
       </div>
 
-      {/* Dialog: confirmar substituição de base salva (processa fila) */}
       <CustomTableEditorDialog
         open={customEditorOpen}
         table={editingCustomTable}
         onOpenChange={setCustomEditorOpen}
         onSave={handleSaveCustomTable}
       />
-
-      <AlertDialog
-        open={pendingSaveQueue.length > 0}
-        onOpenChange={(open) => { if (!open) setPendingSaveQueue((prev) => prev.slice(1)); }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Substituir arquivo salvo?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O arquivo{" "}
-              <span className="font-medium">{pendingSaveQueue[0]?.file.name}</span> já está salvo na base{" "}
-              {pendingSaveQueue[0] ? TIPO_LABELS[pendingSaveQueue[0].tipo] : ""}. Deseja substituí-lo?
-              {pendingSaveQueue.length > 1 && (
-                <span className="ml-1 text-muted-foreground">
-                  ({pendingSaveQueue.length - 1} mais na fila)
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingSaveQueue((prev) => prev.slice(1))}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                const current = pendingSaveQueue[0];
-                if (!current) return;
-                const resultado = await basesLocais.salvarBase(current.tipo, current.file);
-                if (resultado?.ok) {
-                  toast.success(`Base ${TIPO_LABELS[current.tipo]} substituída e salva localmente.`);
-                } else {
-                  toast.error(`Falha ao substituir base ${TIPO_LABELS[current.tipo]}.`);
-                }
-                setPendingSaveQueue((prev) => prev.slice(1));
-                await refreshInfoSalvas();
-              }}
-            >
-              Substituir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Dialog: confirmar exclusão de base salva */}
       <AlertDialog open={deletePending !== null} onOpenChange={(open) => { if (!open) setDeletePending(null); }}>

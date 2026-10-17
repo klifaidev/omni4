@@ -10,154 +10,8 @@ import {
   getRegionalFromUf,
 } from "./deparaComercial";
 import { createStringInterner, internTrimmed } from "./stringIntern";
+import { REAL_HEADER_MAP as HEADER_MAP } from "./intake/headerMaps";
 
-// Map of normalized header → canonical field
-// Keys are normalized via normHeader (lowercase, no accents/spaces/punct).
-const HEADER_MAP: Record<string, keyof PricingRow | "ignore"> = {
-  // period
-  periodo: "periodo",
-  periodoano: "periodo",          // "Período/ano"
-  mes: "periodo",
-  mesano: "periodo",
-  anomes: "periodo",
-  competencia: "periodo",
-  data: "periodo",
-  // dims — marca
-  marca: "marca",
-  "02marca": "marca",
-  brand: "marca",
-  // canal
-  canal: "canal",
-  canalvenda: "canal",
-  canaldevenda: "canal",
-  canaldistrib: "canal",          // "Canal distrib."
-  canaldistribuicao: "canal",
-  channel: "canal",
-  // categoria
-  categoria: "categoria",
-  "01categoria": "categoria",
-  category: "categoria",
-  familia: "categoria",
-  "03familia": "categoria",
-  // subcategoria / formato
-  subcategoria: "subcategoria",
-  "04formato": "subcategoria",
-  formato: "subcategoria",
-  subcategory: "subcategoria",
-  // sku / artigo
-  sku: "sku",
-  artigo: "sku",
-  codsku: "sku",
-  codigosku: "sku",
-  codigo: "sku",
-  cdsku: "sku",
-  // descrição produto
-  descricaosku: "skuDesc",
-  descricao: "skuDesc",
-  descsku: "skuDesc",
-  produto: "skuDesc",
-  product: "skuDesc",
-  item: "skuDesc",
-  // cliente
-  cliente: "cliente",
-  client: "cliente",
-  customer: "cliente",
-  razaosocial: "cliente",
-  gestorresp: "gestorResp",
-  gestorresponsavel: "gestorResp",
-  responsavel: "gestorResp",
-  gerente: "gestorResp",
-  // região
-  regiao: "regiao",
-  uf: "regiao",
-  estado: "regiao",
-  region: "regiao",
-  // mercado
-  mercado: "mercado",
-  "05mercado": "mercado",
-  market: "mercado",
-  // sabor
-  sabor: "sabor",
-  "07sabor": "sabor",
-  flavor: "sabor",
-  // tecnologia
-  tecnologia: "tecnologia",
-  technology: "tecnologia",
-  // faixa peso
-  faixapeso: "faixaPeso",
-  faixadepeso: "faixaPeso",
-  "06faixadepeso": "faixaPeso",
-  weightrange: "faixaPeso",
-  // measures — receita
-  rol: "rol",
-  receita: "rol",
-  receitaliquida: "rol",
-  recliquida: "rol",              // "Rec. Líquida"
-  receitaoperacionalliquida: "rol",
-  netrevenue: "rol",
-  netsales: "rol",
-  faturamento: "rol",
-  faturamentoliquido: "rol",
-  vendaliquida: "rol",
-  // volume
-  volume: "volumeKg",
-  volumekg: "volumeKg",
-  kg: "volumeKg",
-  pesoliquido: "volumeKg",        // "Peso líquido"
-  qtdkg: "volumeKg",
-  quantidade: "volumeKg",
-  qtde: "volumeKg",
-  // custo
-  cogs: "cogs",
-  cmv: "cogs",
-  cpv: "cogs",                    // "CPV"
-  custo: "cogs",
-  custototal: "cogs",
-  custovariavel: "cogs",
-  // margem bruta
-  margembruta: "margemBruta",
-  mb: "margemBruta",
-  grossmargin: "margemBruta",
-  // contribuição marginal
-  contribuicaomarginal: "contribMarginal",
-  contribmarginal: "contribMarginal",
-  cm: "contribMarginal",
-  margemcontribuicao: "contribMarginal",
-  // frete sobre vendas
-  frete: "frete",
-  fretesobrevendas: "frete",
-  fretevendas: "frete",
-  freight: "frete",
-  // comissão
-  comissao: "comissao",
-  comissaorepres: "comissao",
-  comissaorepresentante: "comissao",
-  comissaorepresentantes: "comissao",
-  commission: "comissao",
-  // CPV components (Matéria Prima e Embalagem) — exibidos no DRE
-  materiaprima: "materiaPrima",
-  materiaprimaajustado: "materiaPrima",
-  materiaprimaajust: "materiaPrima",
-  mp: "materiaPrima",
-  rawmaterial: "materiaPrima",
-  embalagem: "embalagem",
-  embalagemajustado: "embalagem",
-  embalagemajust: "embalagem",
-  packaging: "embalagem",
-  // custo fixo components (MOD e CIF)
-  mod: "mod",
-  modajustado: "mod",
-  maodeobra: "mod",
-  maodeobraajustado: "mod",
-  cif: "cif",
-  cifajustado: "cif",
-  // STATUS é apenas ignorada aqui (a separação Real/Budget acontece na aba Budget,
-  // a partir do XLSX de Budget — o CSV Real importa todas as linhas).
-  status: "ignore",
-  // explicit ignores (avoid noise in unmapped list)
-  ctbmg: "ignore",                // "Ctb. Mg. %"
-  centro: "ignore",
-};
 
 const GENERIC_UNIT_HEADERS = new Set(["1000", "1000kg", "1000brl"]);
 
@@ -248,7 +102,6 @@ export interface ParsedCsv {
 }
 
 export async function parseCsvFile(file: File): Promise<ParsedCsv> {
-  const intern = createStringInterner();
   // Try UTF-8 first; fallback to Windows-1252 if replacement char detected
   let text = await file.text();
   if (text.includes("\uFFFD")) {
@@ -264,13 +117,69 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
   const delimiter = detectDelimiter(sample);
   const parseText = prepareCsvForParsing(text, delimiter);
 
-  const result = Papa.parse<Record<string, string>>(parseText, {
-    header: true,
+  const result = Papa.parse<string[]>(parseText, {
+    header: false,
     delimiter,
     skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
   });
+  const [headerRow = [], ...dataRows] = result.data;
+  if (result.errors.length) {
+    // eslint-disable-next-line no-console
+    console.log(`[CSV] ${file.name} — erros do parser:`, result.errors.slice(0, 5));
+  }
+  return parseRealTable(headerRow.map((h) => String(h ?? "").trim()), dataRows, file.name, { delimiter });
+}
 
+/**
+ * Coluna → campo do app. Mesma regra para CSV e planilha: cabeçalhos com o
+ * MESMO texto valem pela primeira ocorrência (como o leitor de CSV sempre
+ * fez); nomes diferentes que caem no mesmo campo valem pela última.
+ */
+export function mapRealColumns(headers: string[]): { colMap: Map<number, keyof PricingRow>; unmapped: string[] } {
+  const colMap = new Map<number, keyof PricingRow>();
+  const unmapped: string[] = [];
+  const seenText = new Set<string>();
+  const fieldCol = new Map<keyof PricingRow, number>();
+  headers.forEach((rawHeader, index) => {
+    const text = String(rawHeader ?? "").trim();
+    const canonical = HEADER_MAP[normHeader(text)];
+    if (!canonical || canonical === "ignore") {
+      unmapped.push(text);
+      return;
+    }
+    if (seenText.has(text)) return;
+    seenText.add(text);
+    const previous = fieldCol.get(canonical);
+    if (previous !== undefined) colMap.delete(previous);
+    fieldCol.set(canonical, index);
+    colMap.set(index, canonical);
+  });
+  return { colMap, unmapped };
+}
+
+/** Índice da coluna de período da base Real (ou -1). */
+export function realPeriodColumn(headers: string[]): number {
+  for (const [index, field] of mapRealColumns(headers).colMap) if (field === "periodo") return index;
+  return -1;
+}
+
+const REAL_NUMERIC_FIELDS = new Set<keyof PricingRow>([
+  "rol", "volumeKg", "cogs", "margemBruta", "contribMarginal",
+  "frete", "comissao", "materiaPrima", "embalagem", "mod", "cif",
+]);
+
+/**
+ * Lê a base Real a partir de uma tabela (cabeçalho + linhas). Usado pelo CSV
+ * do KE30 e pelas abas de planilha (Base One) — as duas fontes geram
+ * exatamente as mesmas linhas.
+ */
+export function parseRealTable(
+  headers: string[],
+  dataRows: ArrayLike<unknown>[],
+  fileName: string,
+  diagnostics: { delimiter?: string } = {},
+): ParsedCsv {
+  const intern = createStringInterner();
   const warnings: string[] = [];
   const rows: PricingRow[] = [];
   const monthsSet = new Set<string>();
@@ -282,49 +191,32 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
   const missingRegioes = new Set<string>();
   const missingUfs = new Set<string>();
 
-  // Build column map
-  const sampleRow = result.data[0] ?? {};
-  const allHeaders = Object.keys(sampleRow);
-  const colMap: Record<string, keyof PricingRow> = {};
-  const unmapped: string[] = [];
-  for (const rawHeader of allHeaders) {
-    const key = normHeader(rawHeader);
-    const canonical = HEADER_MAP[key];
-    if (canonical && canonical !== "ignore") {
-      colMap[rawHeader] = canonical as keyof PricingRow;
-    } else {
-      unmapped.push(rawHeader);
-    }
-  }
+  const { colMap, unmapped } = mapRealColumns(headers);
+  const columns = Array.from(colMap.entries());
 
   // Diagnostics counters
   let rejectedNoPeriod = 0;
-  let firstFailureSample: Record<string, unknown> | null = null;
+  let firstFailureSample: ArrayLike<unknown> | null = null;
 
   // Detect missing critical columns
-  const mappedFields = new Set(Object.values(colMap));
+  const mappedFields = new Set(colMap.values());
   if (!mappedFields.has("periodo")) {
     warnings.push(
-      `Coluna de período não encontrada. Headers detectados: ${allHeaders.join(", ") || "(nenhum)"}.`,
+      `Coluna de período não encontrada. Headers detectados: ${headers.join(", ") || "(nenhum)"}.`,
     );
   }
   if (!mappedFields.has("rol")) {
     warnings.push(
-      `Coluna de receita (ROL) não encontrada. Headers detectados: ${allHeaders.join(", ") || "(nenhum)"}.`,
+      `Coluna de receita (ROL) não encontrada. Headers detectados: ${headers.join(", ") || "(nenhum)"}.`,
     );
   }
 
-  for (const raw of result.data) {
+  for (const raw of dataRows) {
+    if (!raw) continue;
     const obj: Partial<PricingRow> = {};
-    for (const [src, dest] of Object.entries(colMap)) {
-      const val = raw[src];
-      if (
-        dest === "rol" || dest === "volumeKg" || dest === "cogs" ||
-        dest === "margemBruta" || dest === "contribMarginal" ||
-        dest === "frete" || dest === "comissao" ||
-        dest === "materiaPrima" || dest === "embalagem" ||
-        dest === "mod" || dest === "cif"
-      ) {
+    for (const [index, dest] of columns) {
+      const val = raw[index];
+      if (REAL_NUMERIC_FIELDS.has(dest)) {
         (obj as Record<string, number>)[dest] = parseDecimal(val);
       } else {
         (obj as Record<string, string>)[dest] = internTrimmed(val, intern);
@@ -430,16 +322,15 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
 
   // Diagnostics output
   // eslint-disable-next-line no-console
-  console.groupCollapsed(`[CSV] ${file.name} — diagnóstico`);
-  console.log("Delimitador detectado:", JSON.stringify(delimiter));
-  console.log("Total de linhas brutas:", result.data.length);
-  console.log("Headers brutos:", allHeaders);
-  console.log("Mapeamento aplicado:", colMap);
+  console.groupCollapsed(`[Real] ${fileName} — diagnóstico`);
+  if (diagnostics.delimiter) console.log("Delimitador detectado:", JSON.stringify(diagnostics.delimiter));
+  console.log("Total de linhas brutas:", dataRows.length);
+  console.log("Headers brutos:", headers);
+  console.log("Mapeamento aplicado:", Object.fromEntries(columns.map(([i, f]) => [headers[i], f])));
   console.log("Headers ignorados (sem mapeamento):", unmapped);
   console.log("Rejeitadas (período inválido):", rejectedNoPeriod);
   console.log("Linhas importadas:", rows.length);
-  if (firstFailureSample) console.log("Exemplo de linha rejeitada:", firstFailureSample);
-  if (result.errors.length) console.log("Erros do parser:", result.errors.slice(0, 5));
+  if (firstFailureSample) console.log("Exemplo de linha rejeitada:", Array.from(firstFailureSample));
   console.groupEnd();
 
   if (rows.length === 0) {
@@ -455,7 +346,7 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
   return {
     rows,
     file: {
-      name: file.name,
+      name: fileName,
       rowCount: rows.length,
       months: Array.from(monthsSet).sort(),
     },

@@ -99,4 +99,9 @@ export interface RupturaModel {
     sims: number[];
   };
   quality: RupturaQuality;
+  /**
+   * Arquivos salvos (em ordem) que formaram este modelo. O cache só vale
+   * enquanto a pasta tiver exatamente esses arquivos.
+   */
+  sources?: string[];
 }

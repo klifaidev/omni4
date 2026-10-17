@@ -1,9 +1,9 @@
-import { parseBudgetFile } from "@/lib/budget";
-import { parseCsvFile } from "@/lib/csv";
+import { parseSavedBudgetFile, parseSavedRealFile } from "@/lib/intake/intake";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
 import { useBudget } from "@/store/budget";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
+import { useRuptura } from "@/store/ruptura";
 import { loadProcessedBase, saveProcessedBaseInBackground } from "@/lib/processedBaseCache";
 import type { ParsedBudget } from "@/lib/budget";
 import type { ParsedCsv } from "@/lib/csv";
@@ -24,9 +24,11 @@ const BASE_LABELS: Record<TipoBase, string> = {
   deparaInovacao: "De/Para Inovacao",
   ke30: "KE30 (Real)",
   budget: "Budget",
+  ruptura: "Ruptura",
+  personalizado: "Personalizado",
 };
 
-const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget"];
+const LOAD_ORDER: TipoBase[] = ["deparaInovacao", "ke30", "budget", "ruptura"];
 
 function base64ToFile(base64: string, nomeArquivo: string, ultimaModificacao: string): File {
   const binary = atob(base64);
@@ -169,7 +171,7 @@ export async function preloadSavedBases(
           if (!parsed) {
             const file = await carregarArquivo("ke30", arquivo);
             if (!file) continue;
-            parsed = await parseCsvFile(file);
+            parsed = await parseSavedRealFile(file);
             if (parsed.rows.length > 0) {
               saveProcessedBaseInBackground("ke30", arquivo.nomeArquivo, "ke30-parsed-csv", parsed);
             }
@@ -186,7 +188,7 @@ export async function preloadSavedBases(
           if (!parsed) {
             const file = await carregarArquivo("budget", arquivo);
             if (!file) continue;
-            parsed = await parseBudgetFile(file);
+            parsed = await parseSavedBudgetFile(file);
             if (parsed.rows.length > 0) {
               saveProcessedBaseInBackground("budget", arquivo.nomeArquivo, "budget-parsed-xlsx", parsed);
             }
@@ -195,6 +197,12 @@ export async function preloadSavedBases(
             useBudget.getState().addBudget(parsed.rows, parsed.file, false);
           }
         }
+      }
+
+      if (tipo === "ruptura") {
+        // Modelo consolidado em cache (ou remontado dos arquivos salvos).
+        await useRuptura.getState().loadSaved();
+        if (useRuptura.getState().status === "error") throw new Error(useRuptura.getState().error ?? "ruptura");
       }
 
       loaded.push(label);

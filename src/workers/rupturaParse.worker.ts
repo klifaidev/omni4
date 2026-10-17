@@ -1,7 +1,8 @@
 // Lê a planilha de ruptura fora da thread da interface: a base de referência
 // tem ~550 mil linhas e leva dezenas de segundos só no XLSX.read.
 import * as XLSX from "xlsx";
-import { buildRupturaModel, pickRupturaSheet } from "@/lib/ruptura/parse";
+import { compactAllRows, decodeCompactTable, isCompactTableName } from "@/lib/intake/compactTable";
+import { buildRupturaModel, detectRupturaHeader, pickRupturaSheet } from "@/lib/ruptura/parse";
 import type { RupturaModel } from "@/lib/ruptura/types";
 
 export type RupturaWorkerRequest = { buffer: ArrayBuffer; fileName: string };
@@ -13,10 +14,30 @@ export type RupturaWorkerResponse =
 
 const post = (message: RupturaWorkerResponse) => (self as unknown as Worker).postMessage(message);
 
-self.onmessage = (event: MessageEvent<RupturaWorkerRequest>) => {
+/** Arquivo .omnib (parte de Ruptura de uma Base One já convertida). */
+async function modelFromCompact(buffer: ArrayBuffer, fileName: string): Promise<RupturaModel | string> {
+  const { table, meta } = await decodeCompactTable(buffer);
+  const rows = compactAllRows(table);
+  const header = detectRupturaHeader(rows.slice(0, 30));
+  if ("error" in header) return header.error;
+  post({ type: "progress", stage: "consolidating", done: 0, total: rows.length });
+  return buildRupturaModel(rows, header, {
+    fileName,
+    sheetName: meta.sheetName,
+    onProgress: (done, total) => post({ type: "progress", stage: "consolidating", done, total }),
+  });
+}
+
+self.onmessage = async (event: MessageEvent<RupturaWorkerRequest>) => {
   const { buffer, fileName } = event.data;
   try {
     post({ type: "progress", stage: "reading" });
+    if (isCompactTableName(fileName)) {
+      const model = await modelFromCompact(buffer, fileName);
+      if (typeof model === "string") post({ type: "error", message: model });
+      else post({ type: "done", model });
+      return;
+    }
     const wb = XLSX.read(new Uint8Array(buffer), { type: "array", dense: true });
     const picked = pickRupturaSheet(wb.SheetNames, (name) => {
       const ws = wb.Sheets[name];
