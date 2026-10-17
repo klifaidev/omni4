@@ -4,6 +4,7 @@ import {
   crossFilterReducer,
   describeFilter,
   dimensionAvailable,
+  filterGesture,
   normalizeFilterValue,
   rowMatches,
   type CrossFilter,
@@ -103,5 +104,23 @@ describe("crossFilter — estado", () => {
     expect(describeFilter(f({ values: ["Melken"] }))).toBe("Marca: Melken");
     expect(describeFilter(f({ dimension: "canalAjustado", values: ["A", "B", "C"] }))).toBe("Canal: 3 valores");
     expect(describeFilter(f({ values: ["Melken"], exclude: true, label: "Outros (2)" }))).toBe("Marca: Outros (2)");
+  });
+});
+
+describe("gesto de filtrar (Ctrl+clique)", () => {
+  it("clique solto nunca filtra", () => {
+    expect(filterGesture({}).ctrl).toBe(false);
+    expect(filterGesture({ shiftKey: true }).ctrl).toBe(false);
+    expect(filterGesture(undefined, null).ctrl).toBe(false);
+  });
+
+  it("Ctrl ou ⌘ filtra; Shift junto soma", () => {
+    expect(filterGesture({ ctrlKey: true })).toEqual({ ctrl: true, shift: false });
+    expect(filterGesture({ metaKey: true })).toEqual({ ctrl: true, shift: false });
+    expect(filterGesture({ ctrlKey: true, shiftKey: true })).toEqual({ ctrl: true, shift: true });
+  });
+
+  it("junta o evento do gráfico e o evento nativo (Recharts passa os dois)", () => {
+    expect(filterGesture({ shiftKey: true }, { ctrlKey: true })).toEqual({ ctrl: true, shift: true });
   });
 });

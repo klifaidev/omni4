@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Filter, Pin, PinOff, X } from "lucide-react";
 import type { CustomBlock } from "@/lib/customSlide";
-import { describeFilter, dimensionLabel, type CrossFilter } from "@/lib/crossFilter";
+import { describeFilter, dimensionLabel, filterGesture, type CrossFilter } from "@/lib/crossFilter";
 import { cn } from "@/lib/utils";
 import { useFilterStatuses, useBlockFilterStatus, useSlideFilters, type BlockFilterStatus } from "./SlideFilterContext";
 
@@ -63,7 +63,7 @@ export function CrossFilterBar({ blocks, pinned, onTogglePin, className, showHin
     return (
       <div data-export-hide="true" className={cn("flex items-center gap-2 text-[11px] text-muted-foreground", className)}>
         <Filter className="h-3.5 w-3.5" />
-        Clique numa barra, fatia ou linha de tabela para filtrar os outros blocos · Shift+clique soma valores · Esc limpa
+        Ctrl+clique numa barra, fatia ou linha de tabela filtra os outros blocos · Ctrl+Shift+clique soma valores · Esc limpa
       </div>
     );
   }
@@ -209,9 +209,10 @@ export interface FilterRow {
 }
 
 /**
- * Camada clicável sobre as linhas de uma tabela/ranking: clique filtra o
- * slide pela linha, Shift+clique soma, clicar de novo desfaz. A linha
- * escolhida fica marcada e as outras esmaecem — como as barras do gráfico.
+ * Camada clicável sobre as linhas de uma tabela/ranking: Ctrl+clique filtra o
+ * slide pela linha, Ctrl+Shift+clique soma, Ctrl+clique de novo desfaz. Um
+ * clique solto não filtra (e passa direto para o bloco). A linha escolhida
+ * fica marcada e as outras esmaecem — como as barras do gráfico.
  */
 export function RowFilterOverlay({ blockId, emits, dimension, sourceLabel, rows }: {
   blockId: string;
@@ -232,14 +233,17 @@ export function RowFilterOverlay({ blockId, emits, dimension, sourceLabel, rows 
           <button
             key={r.key}
             type="button"
-            title={`${selected ? "Clique para desfazer" : `Filtrar o slide por ${r.label ?? r.value}`} · Shift+clique soma`}
+            title={`${selected ? "Ctrl+clique para desfazer" : `Ctrl+clique para filtrar o slide por ${r.label ?? r.value}`} · Ctrl+Shift+clique soma`}
             aria-pressed={selected}
-            onMouseDown={(e) => e.stopPropagation()}
+            // Sem Ctrl o gesto é do bloco (selecionar, arrastar): não intercepta.
+            onMouseDown={(e) => { if (filterGesture(e).ctrl) e.stopPropagation(); }}
             onClick={(e) => {
+              const gesture = filterGesture(e);
+              if (!gesture.ctrl) return;
               e.stopPropagation();
               if (r.othersOf) {
                 setFilter({ sourceBlockId: blockId, dimension, values: r.othersOf, exclude: true, label: r.label ?? r.value, sourceLabel });
-              } else if (e.shiftKey) {
+              } else if (gesture.shift) {
                 toggleFilter({ sourceBlockId: blockId, dimension, values: [r.value], sourceLabel });
               } else {
                 setFilter({ sourceBlockId: blockId, dimension, values: [r.value], sourceLabel });

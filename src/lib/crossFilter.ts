@@ -28,6 +28,31 @@ export interface CrossFilter {
 
 export const isPeriodDim = (dim: string) => dim === "period" || dim === "periodo";
 
+/** Evento de mouse com os modificadores que importam para o filtro. */
+export interface FilterGestureEvent {
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}
+
+/**
+ * Filtrar exige Ctrl+clique (⌘+clique no Mac): um clique solto — acidental ou
+ * só para selecionar o bloco — nunca filtra o slide. Ctrl+Shift+clique soma
+ * valores ao filtro do bloco.
+ */
+export function filterGesture(...events: Array<FilterGestureEvent | null | undefined>): { ctrl: boolean; shift: boolean } {
+  let ctrl = false;
+  let shift = false;
+  for (const e of events) {
+    if (!e) continue;
+    if (e.ctrlKey || e.metaKey) ctrl = true;
+    if (e.shiftKey) shift = true;
+  }
+  return { ctrl, shift };
+}
+
+export const FILTER_GESTURE_HINT = "Ctrl+clique";
+
 export const DIM_ALIASES: Record<string, string[]> = {
   marca: ["marca", "marcaDesc", "marca_id"],
   canal: ["canal", "canalAjustado", "canalDesc"],

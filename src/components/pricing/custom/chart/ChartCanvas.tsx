@@ -64,7 +64,7 @@ import { localDataMissingMessage, missingLocalDataLabel } from "@/lib/slideLocal
 import { aggregateKpi, computeChartSeries, computeTopRanking, formatValue, inferFormat, pickMeasure } from "@/lib/customKpi";
 import { resolveChartFit } from "@/lib/customCapacity";
 import { useSlideFilters, useIncomingFilters, useReportFilterStatus, dimensionLabel, type ActiveFilter } from "../SlideFilterContext";
-import { applyCrossFilters, OTHERS_LABEL_RE } from "@/lib/crossFilter";
+import { applyCrossFilters, filterGesture, OTHERS_LABEL_RE } from "@/lib/crossFilter";
 import { resolveFieldValue } from "./filterHelpers";
 
 /** Tipos que, sem dimensão no eixo X, desenham a evolução no tempo. */
@@ -91,13 +91,15 @@ import { RichTextContent, useResolvedText } from "../RichTextContent";
 
 type PeriodLikeRow = { mes?: number; ano?: number; periodo?: string };
 type ChartClickState = {
-  nativeEvent?: { stopPropagation?: () => void; shiftKey?: boolean };
+  nativeEvent?: { stopPropagation?: () => void; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean };
   stopPropagation?: () => void;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
   activeLabel?: unknown;
   activePayload?: Array<{ payload?: Record<string, unknown> }>;
 };
-type ChartMouseEvent = { stopPropagation?: () => void; shiftKey?: boolean };
+type ChartMouseEvent = { stopPropagation?: () => void; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean };
 type RechartsDotProps = {
   key?: string;
   cx?: number;
@@ -116,7 +118,7 @@ type PieLabelProps = {
   percent: number; value: number; name: string; fill?: string;
 };
 type TreemapNode = { name?: string };
-type TreemapEvent = { stopPropagation?: () => void };
+type TreemapEvent = { stopPropagation?: () => void; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean };
 type BoxPlotRow = { q1: number; q3: number };
 type BoxPlotShapeProps = {
   x: number; y: number; width: number; height: number;
@@ -735,8 +737,9 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   // Core emit â€” takes an explicit dimension so callers can disambiguate
   // between the X-axis click (period on a temporal line chart) and the
   // legend/series click (colorDim/breakdown).
-  const handleEmitOn = (dimension: string, rawValue: unknown, opts?: { shift?: boolean }) => {
-    if (!emits) return;
+  // `opts.ctrl` é o gesto de filtrar (Ctrl/⌘+clique): sem ele, nada filtra.
+  const handleEmitOn = (dimension: string, rawValue: unknown, opts?: { shift?: boolean; ctrl?: boolean }) => {
+    if (!emits || !opts?.ctrl) return;
     const v = String(rawValue ?? "");
     if (!v) return;
     const sourceLabel = (block.title ?? "").replace(/\*+/g, "").trim() || CHART_TYPE_LABELS[block.chartType];
@@ -753,14 +756,14 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   };
 
   // Click handler â€” emits/toggles a filter on this block's emit dimension
-  const handleEmit = (rawValue: unknown, opts?: { shift?: boolean }) => {
+  const handleEmit = (rawValue: unknown, opts?: { shift?: boolean; ctrl?: boolean }) => {
     handleEmitOn(emitDim, rawValue, opts);
   };
 
   // Legend click â€” emits filter on the series dimension (not the X-axis dim)
-  const handleLegendEmit = (value: string, shift: boolean) => {
+  const handleLegendEmit = (value: string, gesture: { ctrl: boolean; shift: boolean }) => {
     if (!legendDim) return;
-    handleEmitOn(legendDim, value, { shift });
+    handleEmitOn(legendDim, value, gesture);
   };
 
   // Helper for Recharts top-level onClick (point/bar payload).
@@ -769,18 +772,18 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
   // user actually clicked, even when the chart is broken down by another
   // dimension (colorDim/breakdown).
   const chartOnClick = (e: ChartClickState, nativeEvent?: ChartMouseEvent) => {
+    // Recharts passa (estado, evento): o modificador pode estar em qualquer um.
+    const gesture = filterGesture(nativeEvent, e?.nativeEvent, e);
+    // Sem Ctrl o clique é só do bloco (selecionar); não filtra nem é engolido.
+    if (!emits || !gesture.ctrl) return;
     e?.nativeEvent?.stopPropagation?.();
     e?.stopPropagation?.();
     nativeEvent?.stopPropagation?.();
-    if (!emits) return;
     const label = e?.activeLabel ?? e?.activePayload?.[0]?.payload?.__period
       ?? e?.activePayload?.[0]?.payload?.name;
     if (label == null) return;
     const dim = xDim ?? emitDim;
-    // Recharts passes (state, event) â€” shiftKey lives on the native event.
-    // Fall back to e.shiftKey for callers (Pie/Scatter) that pass a synthetic event directly.
-    const shift = !!(nativeEvent?.shiftKey ?? e?.shiftKey);
-    handleEmitOn(dim, label, { shift });
+    handleEmitOn(dim, label, gesture);
   };
 
   // Active period values from any source (own or incoming) â€” used by the
@@ -1680,8 +1683,10 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
           activeShape={renderPieShape as never}
           label={pieLabel as never}
           onClick={(_d: unknown, idx: number, e: ChartMouseEvent) => {
+            const gesture = filterGesture(e);
+            if (!gesture.ctrl) return;
             e?.stopPropagation?.();
-            handleEmit(ranking[idx]?.name, { shift: !!e?.shiftKey });
+            handleEmit(ranking[idx]?.name, gesture);
           }}
         >
           {ranking.map((r, i) => {
@@ -1829,7 +1834,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
         measureFmt={measureFmt}
         ownFilter={ownFilter}
         emits={emits}
-        onStateClick={(uf, event) => handleEmitOn("uf", uf, { shift: !!event.shiftKey })}
+        onStateClick={(uf, event) => handleEmitOn("uf", uf, filterGesture(event))}
       />
     );
   } else if (ct === "waterfall") {
@@ -1851,7 +1856,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
     }));
     chart = (
       <FunnelSVG data={fdata} style={style} measureFmt={measureFmt}
-        onSliceClick={(name, e) => { e?.stopPropagation?.(); handleEmit(name, { shift: !!e.shiftKey }); }}
+        onSliceClick={(name, e) => { const gesture = filterGesture(e); if (!gesture.ctrl) return; e?.stopPropagation?.(); handleEmit(name, gesture); }}
         dimmedNames={ownFilter && ownFilter.dimension === emitDim
           ? new Set(fdata.map(d => d.name).filter(n => !ownFilter.values.includes(n))) : null} />
     ) as React.ReactElement;
@@ -1875,7 +1880,7 @@ function ChartCanvasComponent({ block, cacheSlideId }: { block: ChartBlock; cach
       <Treemap data={tdata} isAnimationActive={false} dataKey="size" nameKey="name"
         stroke={style.treemap.borderColor}
         aspectRatio={4 / 3}
-        onClick={((node: TreemapNode, _idx?: number, e?: TreemapEvent) => { e?.stopPropagation?.(); handleEmit(node?.name); }) as never}
+        onClick={((node: TreemapNode, _idx?: number, e?: TreemapEvent) => { const gesture = filterGesture(e); if (!gesture.ctrl) return; e?.stopPropagation?.(); handleEmit(node?.name, gesture); }) as never}
         content={<TreemapTile cfg={style.treemap} dl={style.dataLabels} fmt={measureFmt} dimmedNames={ownFilter && ownFilter.dimension === emitDim ? new Set(ranking.map(r => r.name).filter(n => !ownFilter.values.includes(n))) : null} />} />
     );
   } else if (ct === "radar") {
@@ -2289,6 +2294,7 @@ function BrazilMapChart({
                 transition: "opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1), fill 260ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke-width 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
               }}
               onClick={(event) => {
+                if (!filterGesture(event).ctrl) return;
                 event.stopPropagation();
                 if (emits && hasValue) onStateClick(state.uf, event);
               }}
@@ -2376,7 +2382,7 @@ interface CustomLegendProps {
   payload?: Array<{ value: string; color: string }>;
   ownFilter: ActiveFilter | null;
   legendDim: string;
-  onLegendClick: (value: string, shift: boolean) => void;
+  onLegendClick: (value: string, gesture: { ctrl: boolean; shift: boolean }) => void;
   emits: boolean;
   colorMap?: Map<string, string>;
 }
@@ -2580,10 +2586,16 @@ function CustomLegend({ payload, ownFilter, legendDim, onLegendClick, emits, col
           <button
             key={entry.value}
             type="button"
-            aria-label={emits ? `Filtrar sÃ©rie ${entry.value}` : `SÃ©rie ${entry.value}`}
+            aria-label={emits ? `Filtrar sÃ©rie ${entry.value} (Ctrl+clique)` : `SÃ©rie ${entry.value}`}
+            title={emits ? "Ctrl+clique para filtrar o slide por esta série" : undefined}
             aria-pressed={emits && isFilterDim ? isActive : undefined}
             disabled={!emits}
-            onClick={(e) => { e.stopPropagation(); if (emits) onLegendClick(entry.value, e.shiftKey); }}
+            onClick={(e) => {
+              const gesture = filterGesture(e);
+              if (!emits || !gesture.ctrl) return;
+              e.stopPropagation();
+              onLegendClick(entry.value, gesture);
+            }}
             style={{
               display: "flex", alignItems: "center", gap: 5,
               padding: "2px 8px", borderRadius: 20,
