@@ -3,7 +3,7 @@
 // dinâmicas. Atalhos de teclado, registro do canvas para o exporter, menu
 // de templates built-in / do usuário.
 
-import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode, type RefObject } from "react";
+import { memo, startTransition, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -224,6 +224,7 @@ import { GuidesLayer } from "./canvas/GuidesLayer";
 import { DEFAULT_MARGIN, mergeGuides, presetGuides, type GuidePreset } from "@/lib/slideGuides";
 import { SlideBlocksContext, SlideIdContext } from "./SlideIdentity";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import { cancelIdle, scheduleIdle, type IdleCallbackHandle, type IdleDeadlineLike } from "@/components/pricing/slides/idleScheduler";
 import type { SlideItem } from "@/lib/slidesFlow";
 import type { GridSize } from "./editorPrefs";
 import { useSlideEditorScale } from "./useSlideEditorScale";
@@ -254,17 +255,16 @@ const UNDO_STYLE_KEYS = new Set([
   "shadowEnabled", "shadowColor", "shadowOpacity", "shadowBlur", "shadowX", "shadowY", "style",
 ]);
 
-// Painel de propriedades de UM bloco. Memoizado: na renderização urgente do
-// clique (seleção nova, painel ainda adiado) ele recebe as mesmas props e não
-// redesenha — só a renderização adiada monta o painel do bloco novo.
+// Painel de propriedades de UM bloco. Memoizado: os painéis mantidos vivos
+// (escondidos) recebem sempre as mesmas props e não redesenham quando a
+// seleção muda — só o painel do bloco que de fato mudou.
 const SingleBlockInspector = memo(function SingleBlockInspector({
-  block, onChange, styleFocusRequest, stylePanelHighlight, inspectorStyleRef,
+  block, onChange, styleFocusRequest, stylePanelHighlight,
 }: {
   block: CustomBlock;
   onChange: (patch: Partial<CustomBlock>) => void;
   styleFocusRequest: number;
   stylePanelHighlight: boolean;
-  inspectorStyleRef: RefObject<HTMLDivElement>;
 }) {
   return (
     <div className="space-y-3">
@@ -286,7 +286,7 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
           posição/tamanho/opacidade — o menos usado, já que se ajusta
           arrastando no slide — ficam numa seção recolhida no fim. */}
       <div
-        ref={inspectorStyleRef}
+        data-inspector-style-scope="true"
         className={cn(
           "rounded-lg transition-[box-shadow,background-color] duration-300",
           stylePanelHighlight && "bg-primary/5 shadow-[0_0_0_2px_hsl(var(--primary)/0.35)]",
@@ -317,6 +317,21 @@ const SingleBlockInspector = memo(function SingleBlockInspector({
     </div>
   );
 });
+
+/** Quantos painéis de propriedades ficam montados (escondidos) no editor. */
+const INSPECTOR_KEEP_ALIVE = 12;
+
+/** Põe `id` no fim da fila dos painéis vivos, descartando o mais antigo
+ *  (nunca o do bloco selecionado) quando passa do limite. */
+function keepInspectorWarm(prev: string[], id: string, selectedId: string | null): string[] {
+  const next = [...prev.filter((x) => x !== id), id];
+  while (next.length > INSPECTOR_KEEP_ALIVE) {
+    const evict = next.findIndex((x) => x !== selectedId && x !== id);
+    if (evict < 0) break;
+    next.splice(evict, 1);
+  }
+  return next;
+}
 
 /** Roda depois que o navegador pintar o quadro atual (aviso de carregamento visível). */
 function afterNextPaint(fn: () => void) {
@@ -536,7 +551,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const canvasShellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const paletteRailRef = useRef<HTMLDivElement>(null);
-  const inspectorStyleRef = useRef<HTMLDivElement>(null);
+  const inspectorPanelsRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef(1);
   const speculativeChartWarmSignaturesRef = useRef<Set<string>>(new Set());
   const { prefs, scale, scaleKey } = useSlideEditorScale(wrapperRef, canvasShellRef);
@@ -586,6 +601,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [canvasPanning, setCanvasPanning] = useState(false);
   const [styleFocusRequest, setStyleFocusRequest] = useState(0);
+  // Bloco que pediu o foco no estilo: só o painel DELE recebe o pedido (os
+  // painéis mantidos vivos dos outros blocos não pulam de aba).
+  const [styleFocusBlockId, setStyleFocusBlockId] = useState<string | null>(null);
   const [stylePanelHighlight, setStylePanelHighlight] = useState(false);
 
   // Marquee selection rectangle (canvas-space coords).
@@ -720,7 +738,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       },
     });
   }, [canEdit, config.background, config.backgroundImage, config.theme, config.showHaraldFooter, slideId]);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selected?.id ?? null;
   const focusSelectedBlockStyle = useCallback(() => {
+    setStyleFocusBlockId(selectedIdRef.current);
     setStyleFocusRequest(Date.now());
   }, []);
   useEffect(() => {
@@ -728,7 +749,9 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let rafId = 0;
     const focusStylePanel = () => {
-      const scope = inspectorStyleRef.current;
+      const scope = inspectorPanelsRef.current?.querySelector<HTMLElement>(
+        '[data-inspector-active="true"] [data-inspector-style-scope="true"]',
+      );
       if (!scope) return;
       const target = scope.querySelector<HTMLElement>("[data-style-panel-target='true']") ?? scope;
       target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -788,19 +811,127 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const updateBlockRef = useRef(updateBlock);
   updateBlockRef.current = updateBlock;
 
-  // Painel de propriedades em renderização adiada: o clique marca a seleção
-  // no slide na hora e o painel (a parte cara — até ~95ms montando um
-  // gráfico) vem em seguida, numa renderização que o React pode fatiar. Até
-  // lá o painel anterior fica esmaecido.
+  // Painel de propriedades. Montar o painel de um gráfico é caro (dezenas de
+  // controles), então:
+  // 1. Painéis já montados ficam vivos (escondidos) — voltar a um bloco é só
+  //    mostrar o painel dele, sem remontar nada.
+  // 2. O painel é preparado antes do clique: ao passar o mouse num bloco e,
+  //    com o editor ocioso, para os blocos do slide (os mais pesados antes).
+  // 3. Bloco ainda não preparado: renderização adiada (que o React fatia) —
+  //    o clique marca a seleção na hora e o painel anterior fica esmaecido
+  //    até o novo chegar.
   const deferredInspectorId = useDeferredValue(selected?.id ?? null);
-  const inspectorBlockId = selected ? deferredInspectorId : null;
-  const inspectorBlock = inspectorBlockId
-    ? (config.blocks.find((b) => b.id === inspectorBlockId) ?? null)
-    : null;
-  const inspectorPending = !!selected && inspectorBlock?.id !== selected.id;
-  const handleInspectorChange = useCallback((patch: Partial<CustomBlock>) => {
-    if (inspectorBlockId) updateBlockRef.current(inspectorBlockId, patch);
-  }, [inspectorBlockId]);
+  const [warmInspectorIds, setWarmInspectorIds] = useState<string[]>([]);
+  const blockById = useMemo(() => new Map(config.blocks.map((b) => [b.id, b] as const)), [config.blocks]);
+  // `warmInspectorIds` lido na renderização urgente só tem o que já foi
+  // desenhado (atualizações em transição ainda pendentes não entram).
+  const visibleInspectorId = !selected
+    ? null
+    : warmInspectorIds.includes(selected.id) ? selected.id : deferredInspectorId;
+  const mountedInspectorIds = useMemo(() => {
+    const ids = deferredInspectorId && !warmInspectorIds.includes(deferredInspectorId)
+      ? [...warmInspectorIds, deferredInspectorId]
+      : warmInspectorIds;
+    return ids.filter((id) => blockById.has(id));
+  }, [warmInspectorIds, deferredInspectorId, blockById]);
+  const inspectorPending = !!selected && visibleInspectorId !== selected.id;
+  // Painel mostrado passa a contar como usado agora (fim da fila de descarte).
+  useEffect(() => {
+    if (!deferredInspectorId) return;
+    setWarmInspectorIds((prev) => keepInspectorWarm(prev, deferredInspectorId, deferredInspectorId));
+  }, [deferredInspectorId]);
+  const prewarmInspector = useCallback((id: string) => {
+    startTransition(() => {
+      setWarmInspectorIds((prev) => (prev.includes(id) ? prev : keepInspectorWarm(prev, id, selectedIdRef.current)));
+    });
+  }, []);
+  const warmInspectorIdsRef = useRef(warmInspectorIds);
+  warmInspectorIdsRef.current = warmInspectorIds;
+  // Cada painel lembra onde estava rolado: voltar a um bloco volta ao mesmo
+  // ponto; um bloco novo abre no topo.
+  const inspectorScrollTopsRef = useRef(new Map<string, number>());
+  const shownInspectorIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const viewport = inspectorPanelsRef.current?.closest<HTMLElement>("[data-radix-scroll-area-viewport]");
+    if (!viewport) return;
+    const shownId = multiSelected.length < 2 ? visibleInspectorId : null;
+    if (shownInspectorIdRef.current !== shownId) {
+      shownInspectorIdRef.current = shownId;
+      viewport.scrollTop = shownId ? (inspectorScrollTopsRef.current.get(shownId) ?? 0) : 0;
+    }
+    const onScroll = () => {
+      if (shownId) inspectorScrollTopsRef.current.set(shownId, viewport.scrollTop);
+    };
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", onScroll);
+  }, [visibleInspectorId, multiSelected.length, prefs.inspectorCollapsed]);
+  // Mouse parado sobre um bloco por um instante: prepara o painel dele — até
+  // o clique chegar, ele já está pronto.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || readOnly) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let hoveredId: string | null = null;
+    const onOver = (e: PointerEvent) => {
+      const id = (e.target as Element | null)?.closest<HTMLElement>("[data-block-id]")?.getAttribute("data-block-id") ?? null;
+      if (id === hoveredId) return;
+      hoveredId = id;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (!id || warmInspectorIdsRef.current.includes(id)) return;
+      timer = setTimeout(() => prewarmInspector(id), 60);
+    };
+    el.addEventListener("pointerover", onOver);
+    return () => {
+      el.removeEventListener("pointerover", onOver);
+      if (timer) clearTimeout(timer);
+    };
+  }, [readOnly, prewarmInspector, slideId]);
+  // Editor ocioso: prepara os painéis dos blocos do slide, um por vez, os
+  // mais pesados primeiro (gráfico, tabela, KPI). Espera um pouco depois de
+  // abrir/trocar de slide para não disputar com a montagem do canvas.
+  const blockKindsSignature = config.blocks.map((b) => `${b.id}:${b.kind}`).join("|");
+  // Bloco excluído ou outro slide aberto: solta os painéis que sobraram.
+  useEffect(() => {
+    setWarmInspectorIds((prev) => {
+      const next = prev.filter((id) => blockById.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockKindsSignature]);
+  useEffect(() => {
+    if (readOnly || isStandby) return;
+    const weight = (kind: CustomBlock["kind"]) => (kind === "chart" ? 0 : kind === "table" ? 1 : kind === "kpi" ? 2 : 3);
+    const queue = blockKindsSignature
+      ? blockKindsSignature.split("|").map((part) => {
+          const sep = part.lastIndexOf(":");
+          return { id: part.slice(0, sep), kind: part.slice(sep + 1) as CustomBlock["kind"] };
+        })
+      : [];
+    queue.sort((a, b) => weight(a.kind) - weight(b.kind));
+    const ids = queue.map((q) => q.id).slice(0, INSPECTOR_KEEP_ALIVE - 1);
+    let handle: IdleCallbackHandle | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const next = (deadline: IdleDeadlineLike) => {
+      if (cancelled) return;
+      if (!deadline.didTimeout && deadline.timeRemaining() < 10) {
+        handle = scheduleIdle(next);
+        return;
+      }
+      const id = ids.find((x) => !warmInspectorIdsRef.current.includes(x));
+      if (!id) return;
+      prewarmInspector(id);
+      // Dá tempo da renderização fatiada do painel terminar antes do próximo.
+      timer = setTimeout(() => { handle = scheduleIdle(next); }, 120);
+    };
+    timer = setTimeout(() => { handle = scheduleIdle(next); }, 1200);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (handle !== null) cancelIdle(handle);
+    };
+  }, [blockKindsSignature, readOnly, isStandby, prewarmInspector]);
   const getBlockOnPatch = useCallback((id: string) => {
     let fn = onPatchCache.current.get(id);
     if (!fn) {
@@ -3200,7 +3331,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
         </div>
         {/* Scrollable content */}
         <ScrollArea className="flex-1">
-        <div className="min-w-0 space-y-3 p-3">
+        <div ref={inspectorPanelsRef} className="min-w-0 space-y-3 p-3">
           {multiSelected.length >= 2 ? (
             <MultiSelectInspector
               selectedIds={selectedIds}
@@ -3218,24 +3349,33 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
               <p>{t.inspector.emptyStateLine2}</p>
               <p>{t.inspector.emptyStateLine3Prefix} <kbd>Shift</kbd> {t.inspector.emptyStateLine3Suffix}</p>
             </div>
-          ) : inspectorBlock ? (
-            <div
-              className={cn("transition-opacity duration-100", inspectorPending && "pointer-events-none opacity-50")}
-              aria-busy={inspectorPending || undefined}
-            >
-              <SingleBlockInspector
-                block={inspectorBlock}
-                onChange={handleInspectorChange}
-                styleFocusRequest={styleFocusRequest}
-                stylePanelHighlight={stylePanelHighlight}
-                inspectorStyleRef={inspectorStyleRef}
-              />
-            </div>
-          ) : (
-            // Primeiro clique (vindo de "nada selecionado"): o painel chega na
+          ) : visibleInspectorId && blockById.has(visibleInspectorId) ? null : (
+            // Primeiro clique num bloco ainda não preparado: o painel chega na
             // renderização adiada logo em seguida.
             <div aria-busy="true" className="h-24" />
           )}
+          {/* Painéis vivos: só o do bloco em foco aparece; os outros ficam
+              montados e escondidos. */}
+          {mountedInspectorIds.map((id) => {
+            const active = multiSelected.length < 2 && !!selected && id === visibleInspectorId;
+            return (
+              <div
+                key={id}
+                hidden={!active}
+                data-inspector-panel={id}
+                data-inspector-active={active ? "true" : undefined}
+                className={cn(active && inspectorPending && "pointer-events-none opacity-50")}
+                aria-busy={(active && inspectorPending) || undefined}
+              >
+                <SingleBlockInspector
+                  block={blockById.get(id)!}
+                  onChange={getBlockOnPatch(id)}
+                  styleFocusRequest={styleFocusBlockId === id ? styleFocusRequest : 0}
+                  stylePanelHighlight={active && stylePanelHighlight}
+                />
+              </div>
+            );
+          })}
         </div>
         </ScrollArea>
       </div>

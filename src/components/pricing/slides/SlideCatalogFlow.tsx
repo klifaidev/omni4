@@ -12,6 +12,7 @@ import {
 import type { SlideGroup } from "@/lib/slideGroups";
 import { groupHex } from "./FlowGroup";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
+import { THUMBNAIL_LAYER } from "@/lib/slideThumbnailPool";
 import { cn } from "@/lib/utils";
 import { SLIDE_CATALOG, isItemReady, metaOf, slideDisplayName, type SlideItem, type SlideKind } from "@/lib/slidesFlow";
 import { useDeckTokenValues } from "@/hooks/useDeckRows";
@@ -292,6 +293,7 @@ export const FlowCard = React.memo(function FlowCard({
             targetWidth={160}
             deferUntilVisible={!previewVisible}
             staggerMount={selected ? "priority" : true}
+            pooled={THUMBNAIL_LAYER.flow}
           />
           <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-1">
             {statusSeverity && (

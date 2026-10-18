@@ -92,6 +92,8 @@ import { cn } from "@/lib/utils";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { SlidePreview, ScaledPreview } from "@/components/pricing/SlidePreview";
+import { SlideThumbnailPoolHost } from "@/components/pricing/thumbnailPool";
+import { THUMBNAIL_LAYER, whenPooledThumbnailReady, type ThumbnailLayer } from "@/lib/slideThumbnailPool";
 import { CustomSlideEditor } from "@/components/pricing/custom/CustomSlideEditor";
 import { TemplateGallery } from "@/components/pricing/custom/TemplateGallery";
 import { ImportPptxDialog } from "@/components/pricing/custom/ImportPptxDialog";
@@ -196,22 +198,9 @@ const STRIP_THUMBNAIL_ESTIMATED_HEIGHT = 126;
 // Card (110px com a miniatura de 160px) + 8px de espaço entre cards.
 const FLOW_CARD_ESTIMATED_HEIGHT = 118;
 const SLIDE_PREVIEW_OVERSCAN = 8;
+// Acima disso o pré-carregamento mostra o aviso com progresso; decks menores
+// se preparam em silêncio (é rápido demais para valer um aviso).
 const DECK_PREP_THRESHOLD = 8;
-const DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE = 2;
-const DECK_PREP_MAX_CHART_BLOCKS_TOTAL = 40;
-
-// Quantos slides preparamos de forma sincrona (bloqueando a abertura) quando o
-// deck e grande: apenas o que realmente cabe na tira no momento em que ela
-// abre (posicao de rolagem inicial = topo + a altura real da area visivel),
-// mais a mesma margem de overscan usada pela virtualizacao da lista. O resto
-// do deck fica a cargo do preenchimento em segundo plano via
-// requestIdleCallback (useIdleSlideChartPrecompute) — nunca bloqueando a
-// abertura, mesmo com 48+ slides.
-function estimateInitialVisibleSlideCount(): number {
-  if (typeof window === "undefined") return DECK_PREP_THRESHOLD + SLIDE_PREVIEW_OVERSCAN;
-  const viewportHeight = window.innerHeight || 900;
-  return Math.max(1, Math.ceil(viewportHeight / FLOW_CARD_ESTIMATED_HEIGHT) + SLIDE_PREVIEW_OVERSCAN);
-}
 
 type DeckPreparationState = {
   visible: boolean;
@@ -233,6 +222,10 @@ function slideToastInfo(message: string) {
 
 function slideToastError(message: string) {
   toast.error(message, { icon: <X className="h-4 w-4 text-destructive" /> });
+}
+
+function showOverlay(items: SlideItem[]): boolean {
+  return items.length > DECK_PREP_THRESHOLD;
 }
 
 function deckPreparationSignature(items: SlideItem[]): string {
@@ -677,11 +670,13 @@ function CustomSlideFullscreenTrigger({ onOpen }: { onOpen: () => void }) {
 // ----------------------------------------------------------------------------
 function StripThumbnail({
   item, index, active, onClick,
-  currentUser, onCommentEvent, previewVisible = true, groupColor,
+  currentUser, onCommentEvent, previewVisible = true, groupColor, poolLayer = THUMBNAIL_LAYER.editor,
 }: {
   item: SlideItem;
   index: number;
   active: boolean;
+  /** Camada do encaixe da miniatura compartilhada (ver thumbnailPool.tsx). */
+  poolLayer?: ThumbnailLayer;
   /** Cor do grupo a que o slide pertence (faixa à esquerda). */
   groupColor?: GroupColorKey;
   onClick: () => void;
@@ -761,6 +756,7 @@ function StripThumbnail({
             deferUntilVisible={!previewVisible}
             staggerMount={active ? "priority" : true}
             followLiveEdits
+            pooled={poolLayer}
           />
         </div>
       </div>
@@ -1098,6 +1094,19 @@ function FullscreenCustomEditor({
     else onOpenChange(false);
   };
   const stripPreviewWindow = useVirtualPreviewWindow(items.length, STRIP_THUMBNAIL_ESTIMATED_HEIGHT);
+  // A tira pega as miniaturas da esteira só depois que o editor termina de
+  // aparecer (animação de ~200 ms) e as devolve assim que ele começa a
+  // fechar — a esteira, visível por trás durante a animação, nunca fica com
+  // cartões em branco.
+  const [stripOwnsThumbnails, setStripOwnsThumbnails] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setStripOwnsThumbnails(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setStripOwnsThumbnails(true), 220);
+    return () => window.clearTimeout(timer);
+  }, [open]);
   const stripSortableIds = useMemo(() => items.map((item) => item.id), [items]);
 
   return (
@@ -1209,6 +1218,7 @@ function FullscreenCustomEditor({
                         currentUser={currentUser}
                         onCommentEvent={onCommentEvent}
                         previewVisible={stripPreviewWindow.isPreviewVisible(i) || it.id === current?.id}
+                        poolLayer={stripOwnsThumbnails ? THUMBNAIL_LAYER.editor : THUMBNAIL_LAYER.standby}
                         groupColor={it.groupId ? stripGroups.find((x) => x.id === it.groupId)?.color : undefined}
                         onClick={() => {
                           if (it.id === current?.id) return;
@@ -2100,24 +2110,24 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   }, [catalogSearch]);
 
   const startDeckPreparation = useCallback((deckItems: SlideItem[], title: string = t.deckPreparation.defaultTitle) => {
-    if (deckItems.length <= DECK_PREP_THRESHOLD) return false;
+    if (deckItems.length === 0) return false;
     if (typeof window === "undefined") return false;
     const signature = deckPreparationSignature(deckItems);
     if (preparedDeckSignaturesRef.current.has(signature)) return false;
 
     deckPreparationGenerationRef.current += 1;
     const generation = deckPreparationGenerationRef.current;
-    deckPreparationSkippedRef.current = false;
-    // Aquece os dados de grafico dos slides visiveis na abertura, pra as
-    // miniaturas (renderizadas ao vivo) ja montarem com cache pronto. O resto
-    // do deck fica pro preenchimento em segundo plano (useIdleSlideChartPrecompute).
-    const queuedItems = deckItems.slice(0, Math.min(deckItems.length, estimateInitialVisibleSlideCount()));
+    deckPreparationSkippedRef.current = !showOverlay(deckItems);
+    // Prepara a esteira INTEIRA: os dados de todos os gráficos de todos os
+    // slides e a miniatura de cada um já desenhada (a mesma que a esteira e o
+    // editor compartilham). Antes só os slides da primeira tela e no máximo 2
+    // gráficos por slide — o resto montava ao rolar, e rolar engasgava.
+    const queuedItems = deckItems;
     const total = queuedItems.length;
     const startedAt = Date.now();
-    let warmedChartBlocks = 0;
 
     setDeckPreparation({
-      visible: true,
+      visible: !deckPreparationSkippedRef.current,
       title,
       total,
       done: 0,
@@ -2142,16 +2152,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
           : previous);
 
         try {
-          const remainingChartBudget = Math.max(0, DECK_PREP_MAX_CHART_BLOCKS_TOTAL - warmedChartBlocks);
-          if (remainingChartBudget > 0) {
-            warmedChartBlocks += await warmSlideChartData(item, {
-              maxBlocks: Math.min(DECK_PREP_MAX_CHART_BLOCKS_PER_SLIDE, remainingChartBudget),
-              onBlock: yieldDeckPreparationFrame,
-            });
-          }
+          await warmSlideChartData(item, { onBlock: yieldDeckPreparationFrame });
         } catch {
           // Um calculo com erro nao deve impedir o restante do deck de aquecer.
         }
+        if (generation !== deckPreparationGenerationRef.current) return;
+        // Com o cache pronto, a miniatura monta sem calcular nada.
+        await whenPooledThumbnailReady(item);
 
         const done = index + 1;
         setDeckPreparation((previous) => previous && generation === deckPreparationGenerationRef.current
@@ -2464,6 +2471,9 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
 
   return (
     <>
+      {/* Miniaturas compartilhadas por esteira e editor (vivas enquanto a
+          página de Slides existir — inclusive ao trocar de aba). */}
+      <SlideThumbnailPoolHost />
       <Topbar
         title={t.page.title}
         showPeriodStrip={false}

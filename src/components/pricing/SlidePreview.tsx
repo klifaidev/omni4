@@ -4,7 +4,7 @@
 // Espelha exatamente: cores, posições, fontes (proporcionalmente), curvas suaves
 // para o Budget Evo (Overview CM/VOL) e bridge waterfall com retângulos pretos
 // (totais) + linha vermelha curta (deltas) + labels abaixo.
-import React, { memo, startTransition, useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import {
   computeBudgetEvoAccumGap,
@@ -36,6 +36,13 @@ import { SLIDE_HEX, SLIDE_PREVIEW_COLORS } from "@/lib/slideColors";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 import { useResolvedText } from "./custom/RichTextContent";
 import { useSlidesSafety } from "@/store/slidesSafety";
+import { PooledSlideThumbnail, SlideThumbnailPlaceholder, ThumbnailCanvas } from "./thumbnailPool";
+import {
+  isThumbnailPoolActive,
+  useStaggeredMount,
+  type StaggeredMountPriority,
+  type ThumbnailLayer,
+} from "@/lib/slideThumbnailPool";
 
 const C = SLIDE_PREVIEW_COLORS;
 
@@ -803,99 +810,9 @@ const PREVIEW_W_INSPECTOR = 260;
 //
 // Agora o componente é sempre o mesmo: nada é desmontado ao entrar ou sair da
 // edição, e memo + referências estáveis de item garantem que editar um slide
-// só re-renderiza a miniatura DAQUELE slide.
-
-/**
- * Fila de montagem escalonada: listas longas (tira do editor, esteira, tira
- * do modo Apresentação) montam no máximo uma miniatura nova por quadro, em
- * vez de renderizar dezenas de slides (com gráficos e tabelas) de uma vez ao
- * abrir. Placeholder primeiro, miniaturas preenchendo em sequência.
- *
- * Cada montagem roda dentro de startTransition: uma miniatura com tabela e
- * gráfico reais custa ~50-75ms pra renderizar, e como transição o React fatia
- * esse trabalho e devolve o controle ao navegador entre as fatias — digitação
- * e cliques nunca esperam uma miniatura terminar de montar.
- */
-type StaggeredMountPriority = boolean | "priority";
-const staggeredMountQueue: Array<() => void> = [];
-let staggeredMountPumpScheduled = false;
-
-function pumpStaggeredMounts(): void {
-  staggeredMountPumpScheduled = false;
-  const job = staggeredMountQueue.shift();
-  if (job) startTransition(job);
-  if (staggeredMountQueue.length > 0) scheduleStaggeredMountPump();
-}
-
-function scheduleStaggeredMountPump(): void {
-  if (staggeredMountPumpScheduled) return;
-  staggeredMountPumpScheduled = true;
-  // Depois da pintura do quadro atual, pra nunca empilhar duas montagens
-  // de slide no mesmo quadro.
-  requestAnimationFrame(() => {
-    window.setTimeout(pumpStaggeredMounts, 0);
-  });
-}
-
-/**
- * Uma vez montada, a miniatura fica montada (não pisca ao rolar de volta).
- * `"priority"` entra na frente da fila (slide aberto/selecionado).
- */
-function useStaggeredMount(canMount: boolean, stagger: StaggeredMountPriority): boolean {
-  const [mounted, setMounted] = useState(canMount && !stagger);
-  useEffect(() => {
-    if (mounted || !canMount) return;
-    if (!stagger) {
-      setMounted(true);
-      return;
-    }
-    let cancelled = false;
-    const job = () => {
-      if (!cancelled) setMounted(true);
-    };
-    if (stagger === "priority") staggeredMountQueue.unshift(job);
-    else staggeredMountQueue.push(job);
-    scheduleStaggeredMountPump();
-    return () => {
-      cancelled = true;
-      const index = staggeredMountQueue.indexOf(job);
-      if (index >= 0) staggeredMountQueue.splice(index, 1);
-    };
-  }, [mounted, canMount, stagger]);
-  return mounted;
-}
-
-type CustomSlideConfigOf = Extract<SlideItem, { kind: "custom" }>["config"];
-
-/**
- * Só re-renderiza quando o CONTEÚDO da config muda. A config de um slide que
- * não está sendo editado mantém a mesma referência (a store só troca o item
- * editado), então editar o slide A nunca redesenha B, C, D. Quando a
- * referência muda mas o conteúdo não — ex.: ao sair de um slide, a miniatura
- * passa da config ao vivo da store pra config gravada no item, que pode ser
- * um objeto novo com o mesmo conteúdo — a comparação por conteúdo (frações de
- * ms) evita um re-render inteiro do slide (~50ms com tabela/gráfico reais).
- */
-// Texto da config guardado por objeto: um slide com imagens coladas tem MBs,
-// e serializar as duas configs a cada comparação pesava a esteira inteira.
-const configTextCache = new WeakMap<object, string>();
-function configText(config: CustomSlideConfigOf): string {
-  let text = configTextCache.get(config);
-  if (text === undefined) {
-    text = JSON.stringify(config);
-    configTextCache.set(config, text);
-  }
-  return text;
-}
-
-const ThumbnailCanvas = memo(
-  function ThumbnailCanvas({ config, slideId }: { config: CustomSlideConfigOf; slideId: string }) {
-    if (isSlidePerfEnabled()) recordSlideRender("ThumbnailCanvas", slideId);
-    return <CustomCanvasReadOnly config={config} slideId={slideId} />;
-  },
-  (prev, next) => prev.slideId === next.slideId
-    && (prev.config === next.config || configText(prev.config) === configText(next.config)),
-);
+// só re-renderiza a miniatura DAQUELE slide. A fila escalonada, o memo por
+// conteúdo e a miniatura compartilhada entre esteira e editor vivem em
+// thumbnailPool.tsx.
 
 function CustomSlideThumbnail({
   item,
@@ -960,24 +877,13 @@ function SlideThumbnailPaused({ width, label }: { width: number; label?: string 
   );
 }
 
-function SlideThumbnailPlaceholder({ width }: { width: number }) {
-  return (
-    <div
-      aria-hidden
-      className="flex items-center justify-center overflow-hidden rounded-lg border border-border/40 bg-muted/35"
-      style={{ width, height: (CANVAS_H / CANVAS_W) * width }}
-    >
-      <div className="h-6 w-24 rounded-full bg-background/60" />
-    </div>
-  );
-}
-
 export const ScaledPreview = memo(function ScaledPreview({
   item,
   targetWidth,
   deferUntilVisible = false,
   staggerMount = false,
   followLiveEdits = false,
+  pooled,
 }: {
   item: SlideItem;
   targetWidth?: number;
@@ -990,15 +896,25 @@ export const ScaledPreview = memo(function ScaledPreview({
   staggerMount?: StaggeredMountPriority;
   /** Tira do editor fullscreen: acompanha a edição ao vivo do slide aberto. */
   followLiveEdits?: boolean;
+  /**
+   * Esteira e tira do editor: usa a miniatura compartilhada da página (ver
+   * thumbnailPool.tsx) em vez de desenhar uma cópia própria. O valor é a
+   * camada do encaixe. Sempre acompanha a edição ao vivo.
+   */
+  pooled?: ThumbnailLayer;
 }) {
   if (isSlidePerfEnabled()) recordSlideRender("ScaledPreview", item.id);
   const previewW = targetWidth ?? PREVIEW_W_INSPECTOR;
   // Modo seguro (crash anterior ou memória no limite): slides com dados não
   // montam miniatura — são o que mais consome memória numa esteira longa.
   const paused = useSlidesSafety((s) => s.thumbnailsPaused) && item.kind === "custom";
-  const mounted = useStaggeredMount(!deferUntilVisible && !paused, staggerMount);
+  const usePool = pooled !== undefined && item.kind === "custom" && isThumbnailPoolActive();
+  const mounted = useStaggeredMount(!deferUntilVisible && !paused && !usePool, staggerMount);
 
   if (paused) return <SlideThumbnailPaused width={previewW} label={item.label} />;
+  if (usePool && item.kind === "custom") {
+    return <PooledSlideThumbnail item={item} previewW={previewW} layer={pooled} priority={staggerMount === "priority"} />;
+  }
   if (!mounted) return <SlideThumbnailPlaceholder width={previewW} />;
 
   if (item.kind === "custom") {

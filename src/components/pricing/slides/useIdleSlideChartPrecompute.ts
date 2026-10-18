@@ -4,9 +4,6 @@ import { warmSlideChartData } from "@/lib/slideDeckPreparation";
 import { incrementSlidePerfCounter, isSlidePerfEnabled } from "@/lib/slidesPerfCounters";
 import { cancelIdle, itemsByDistanceFromSelection, scheduleIdle, type IdleCallbackHandle, type IdleDeadlineLike } from "./idleScheduler";
 
-const CHART_PRECOMPUTE_MAX_BLOCKS_PER_SLIDE = 2;
-const CHART_PRECOMPUTE_MAX_BLOCKS_TOTAL = 40;
-
 function recordIdleMetric(name: string, id?: string): void {
   if (!isSlidePerfEnabled()) return;
   incrementSlidePerfCounter(name, id);
@@ -16,7 +13,8 @@ function recordIdleMetric(name: string, id?: string): void {
  * Aquece o cache de dados de gráfico (warmSlideChartData) do deck inteiro em
  * segundo plano, do slide mais próximo da seleção atual para o mais distante,
  * usando requestIdleCallback — as miniaturas (renderizadas ao vivo) montam
- * com o cache pronto e não calculam nada no quadro da montagem.
+ * com o cache pronto e não calculam nada no quadro da montagem. Todos os
+ * gráficos de todos os slides (antes: 2 por slide e ~13 no deck inteiro).
  */
 export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: string | null): void {
   const generationRef = useRef(0);
@@ -38,7 +36,6 @@ export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: stri
     generationRef.current += 1;
     const generation = generationRef.current;
     const queue = [...ordered];
-    let warmedBlocks = 0;
     let handle: IdleCallbackHandle | null = null;
     let cancelled = false;
 
@@ -52,17 +49,13 @@ export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: stri
         handle = scheduleIdle(runNext);
         return;
       }
-      if (warmedBlocks >= CHART_PRECOMPUTE_MAX_BLOCKS_TOTAL) return;
-
       const item = queue.shift();
       if (!item) return;
 
       runningRef.current = true;
       recordIdleMetric("SlideChartPrecompute:start", item.id);
-      const remainingBudget = Math.max(0, CHART_PRECOMPUTE_MAX_BLOCKS_TOTAL - warmedBlocks);
-      warmSlideChartData(item, { maxBlocks: Math.min(CHART_PRECOMPUTE_MAX_BLOCKS_PER_SLIDE, remainingBudget) })
-        .then((warmed) => {
-          warmedBlocks += warmed;
+      warmSlideChartData(item)
+        .then(() => {
           recordIdleMetric("SlideChartPrecompute:done", item.id);
         })
         .catch(() => {
@@ -70,7 +63,7 @@ export function useIdleSlideChartPrecompute(items: SlideItem[], selectedId: stri
         })
         .finally(() => {
           runningRef.current = false;
-          if (!cancelled && generation === generationRef.current && queue.length > 0 && warmedBlocks < CHART_PRECOMPUTE_MAX_BLOCKS_TOTAL) {
+          if (!cancelled && generation === generationRef.current && queue.length > 0) {
             handle = scheduleIdle(runNext);
           }
         });
