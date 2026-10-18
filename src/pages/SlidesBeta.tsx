@@ -93,6 +93,7 @@ import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { SlidePreview, ScaledPreview } from "@/components/pricing/SlidePreview";
 import { SlideThumbnailPoolHost } from "@/components/pricing/thumbnailPool";
+import { CLOSE_SLIDES_EDITOR_EVENT } from "@/lib/slidesEditorEvents";
 import { THUMBNAIL_LAYER, whenPooledThumbnailReady, type ThumbnailLayer } from "@/lib/slideThumbnailPool";
 import { CustomSlideEditor } from "@/components/pricing/custom/CustomSlideEditor";
 import { TemplateGallery } from "@/components/pricing/custom/TemplateGallery";
@@ -2083,6 +2084,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  // "Abrir na aba" de um visual enviado de uma aba fecha o editor antes de
+  // trocar de rota.
+  useEffect(() => {
+    const close = () => setFullscreenOpen(false);
+    window.addEventListener(CLOSE_SLIDES_EDITOR_EVENT, close);
+    return () => window.removeEventListener(CLOSE_SLIDES_EDITOR_EVENT, close);
+  }, []);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [presentationPresenterMode, setPresentationPresenterMode] = useState(false);
   const [activeRailTab, setActiveRailTab] = useState<SlidesRailTab | null>(null);

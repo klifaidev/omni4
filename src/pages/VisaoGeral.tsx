@@ -2,6 +2,10 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { EvolucaoMensalVisual } from "@/components/pricing/tabVisuals/EvolucaoMensalVisual";
+import { computeEvolucaoMensal } from "@/components/pricing/tabVisuals/evolucaoMensal";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { AbcBar } from "@/components/pricing/AbcBar";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -18,21 +22,9 @@ import {
   computeKPIs,
   computeKPIComparison,
   getKpiComparisonContext,
-  computeCanalTrend,
 } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
 import { useMemo, useState } from "react";
-import {
-  ComposedChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
 import { usePageTitle } from "@/hooks/use-page-title";
 
 type PerfBy = "categoria" | "subcategoria" | "sku";
@@ -112,14 +104,7 @@ export default function VisaoGeral() {
   );
   const periodoInfo = useMemo(() => periodoLabel(selected, allPeriods), [selected, allPeriods]);
 
-  const monthlyTrend = useMemo(
-    () =>
-      computeCanalTrend(filtered, null, metric).map((p) => ({
-        ...p,
-        margemPctNum: p.margemPct * 100,
-      })),
-    [filtered, metric],
-  );
+  const monthlyTrend = useMemo(() => computeEvolucaoMensal(filtered, { metric }), [filtered, metric]);
 
   const bySku = useMemo(
     () => aggregateBy(filtered, metric, (r) => r.skuDesc || r.sku || "—"),
@@ -306,11 +291,14 @@ export default function VisaoGeral() {
         </div>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Visão Geral", visualization: "Evolução mensal - ROL, Margem % e Volume" },
-            target: { blockKind: "omni_evolucao_mensal", blockLabel: "Evolução Mensal" },
-            config: { metric, breakdown: null, chartType: "line", filters, selectedPeriods: selected },
-          }}
+          payload={tabVisualPayload({
+            page: "Visão Geral",
+            visualization: "Evolução mensal — ROL, Margem % e Volume",
+            visualId: TAB_VISUAL_IDS.evolucaoMensal,
+            params: { metric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
         <GlassCard>
           <header className="mb-4">
@@ -322,66 +310,10 @@ export default function VisaoGeral() {
           {monthlyTrend.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">Sem dados mensais para exibir.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={monthlyTrend} margin={{ top: 10, right: 24, bottom: 8, left: 8 }}>
-                <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                />
-                <YAxis
-                  yAxisId="left"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  tickFormatter={(v) => formatBRL(Number(v), { compact: true })}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover) / 0.95)",
-                    border: "1px solid hsl(var(--border) / 0.6)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(value: number, name: string) => {
-                    if (name === "Margem %") return [`${value.toFixed(1)}%`, name];
-                    if (name === "Volume (kg)") return [formatTon(value), name];
-                    return [formatBRL(value, { compact: true }), name];
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar
-                  yAxisId="left"
-                  dataKey="volumeKg"
-                  name="Volume (kg)"
-                  fill="hsl(var(--warning) / 0.35)"
-                  stroke="hsl(var(--warning) / 0.6)"
-                  radius={[4, 4, 0, 0]}
-                />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="rol"
-                  name="ROL (R$)"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2.2}
-                  dot={{ r: 3 }}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="margemPctNum"
-                  name="Margem %"
-                  stroke="hsl(var(--success))"
-                  strokeWidth={2.2}
-                  dot={{ r: 3 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
+            // Mesmo componente que o slide desenha ao receber este visual.
+            <div className="h-[320px]">
+              <EvolucaoMensalVisual data={monthlyTrend} variant="tab" />
+            </div>
           )}
         </GlassCard>
         </SendToSlideHover>

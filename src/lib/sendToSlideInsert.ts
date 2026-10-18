@@ -8,6 +8,8 @@ import {
   type KpiMeasureId,
   type OmniBaseBlock,
   type TableBlock,
+  type TabVisualBlock,
+  type TabVisualPeriod,
   type TopSkuBlock,
 } from "@/lib/customSlide";
 import {
@@ -238,7 +240,18 @@ export function buildNativeSlideConfigFromPayload(
   return item;
 }
 
-export function buildCustomBlockFromPayload(payload: SendToSlidePayload, config: CustomSlideConfig): CustomBlock {
+export interface BuildCustomBlockOptions {
+  /** Visual da aba: período escolhido no diálogo (ao vivo ou travado). */
+  tabVisualPeriod?: TabVisualPeriod;
+  /** Visual da aba: versão atual no catálogo. */
+  tabVisualVersion?: number;
+}
+
+export function buildCustomBlockFromPayload(
+  payload: SendToSlidePayload,
+  config: CustomSlideConfig,
+  options: BuildCustomBlockOptions = {},
+): CustomBlock {
   const zTop = config.blocks.reduce((max, block) => Math.max(max, block.z), 0);
   const kind = targetToCustomKind(payload.target.blockKind);
   const block = newBlock(kind, zTop);
@@ -248,6 +261,17 @@ export function buildCustomBlockFromPayload(payload: SendToSlidePayload, config:
   const title = payload.source.visualization;
 
   if ("title" in block) block.title = title;
+
+  if (block.kind === "tab_visual") {
+    const visual = block as TabVisualBlock;
+    visual.visualId = asString(payload.config.visualId) ?? "";
+    visual.visualVersion = options.tabVisualVersion ?? 1;
+    visual.params = isRecord(payload.config.params) ? { ...payload.config.params } : {};
+    visual.filters = filters;
+    visual.period = options.tabVisualPeriod ?? { mode: "live", months: null };
+    visual.title = title;
+    return visual;
+  }
 
   if (block.kind === "kpi") {
     const measure = asKpiMeasure(payload.config.measure);

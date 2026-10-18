@@ -255,16 +255,28 @@ export function markPoolHostRendered(): void {
   hostRendered = true;
 }
 
-/** O host se inscreve para saber de pedidos novos; o retorno desmonta o pool. */
+/** Pedidos de um host que saiu, refeitos quando um host voltar. */
+let detachedRequests: string[] = [];
+
+/**
+ * O host se inscreve para saber de pedidos novos; o retorno o desinscreve.
+ * Os encaixes continuam registrados (podem sobreviver ao host — ex.: recarga
+ * a quente no desenvolvimento) e os pedidos voltam pela fila escalonada
+ * quando um host novo chega, em vez de desenharem todos de uma vez.
+ */
 export function attachPoolHost(onRequest: () => void): () => void {
   hostRendered = true;
   hostListeners.add(onRequest);
+  const pending = detachedRequests;
+  detachedRequests = [];
+  pending.forEach((id) => requestPooledThumbnail(id));
   return () => {
     hostListeners.delete(onRequest);
     hostRendered = false;
-    for (const id of [...entries.keys()]) forgetEntry(id);
-    parking?.remove();
-    parking = null;
+    detachedRequests = [...requested, ...queuedRequests.keys()];
+    requested.clear();
+    queuedRequests.forEach((queued) => queued.cancel());
+    queuedRequests.clear();
   };
 }
 

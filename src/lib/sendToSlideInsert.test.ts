@@ -5,7 +5,8 @@ import {
   buildCustomBlockFromPayload,
   buildNativeSlideConfigFromPayload,
 } from "./sendToSlideInsert";
-import type { SendToSlidePayload } from "./sendToSlide";
+import { tabVisualPayload, type SendToSlidePayload } from "./sendToSlide";
+import type { TabVisualBlock } from "./customSlide";
 import type { PricingRow } from "./types";
 import type { SlideItem } from "./slidesFlow";
 
@@ -29,6 +30,28 @@ function row(periodo: string, mes: number, ano: number): PricingRow {
 }
 
 describe("sendToSlideInsert", () => {
+  it("visual da aba leva a receita: id, versão, opções, filtros (multivalor) e período escolhido", () => {
+    const payload = tabVisualPayload({
+      page: "Visão Geral",
+      visualization: "Evolução mensal",
+      visualId: "visao-geral.evolucao-mensal",
+      params: { metric: "mb" },
+      filters: { canal: ["Varejo", "Atacado"] },
+      selectedPeriods: ["008.2026", "009.2026"],
+    });
+    const block = buildCustomBlockFromPayload(payload, defaultCustomSlide(), {
+      tabVisualPeriod: { mode: "live", months: 2 },
+      tabVisualVersion: 3,
+    }) as TabVisualBlock;
+    expect(block.kind).toBe("tab_visual");
+    expect(block.visualId).toBe("visao-geral.evolucao-mensal");
+    expect(block.visualVersion).toBe(3);
+    expect(block.params).toEqual({ metric: "mb" });
+    expect(block.filters).toEqual({ canal: ["Varejo", "Atacado"] });
+    expect(block.period).toEqual({ mode: "live", months: 2 });
+    expect(block.title).toBe("Evolução mensal");
+  });
+
   it("preserves a relative period when creating a KPI block", () => {
     const payload: SendToSlidePayload = {
       source: { page: "Visao Geral", visualization: "ROL Total" },

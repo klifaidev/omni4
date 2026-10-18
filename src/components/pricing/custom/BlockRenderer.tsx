@@ -54,6 +54,7 @@ import { RichTextContent, useResolvedText } from "./RichTextContent";
 import { periodTokenValue } from "@/lib/textTokens";
 import { useSlideBlock } from "./SlideIdentity";
 import { useChartInsight } from "./chart/useChartInsight";
+import { TabVisualRender } from "./TabVisualRender";
 import { useCrossFilteredRows, useSlideFilters } from "./SlideFilterContext";
 import { isPeriodDim } from "@/lib/crossFilter";
 import { CrossFilterBadge, isDataBlock, RowFilterOverlay } from "./CrossFilterUi";
@@ -520,6 +521,7 @@ function BlockRendererInner({ block: rawBlock, readOnly, isEditing, cacheSlideId
     case "omni_abc_curva":            content = <OmniAbcCurvaRender block={block} />; break;
     case "omni_portfolio_matrix":     content = <OmniPortfolioMatrixRender block={block} />; break;
     case "omni_abc_bars":             content = <OmniAbcBarsRender block={block} />; break;
+    case "tab_visual":                content = <TabVisualRender block={block} readOnly={readOnly} />; break;
   }
   const opacity = block.opacity == null ? 100 : Math.max(0, Math.min(100, block.opacity));
   return (

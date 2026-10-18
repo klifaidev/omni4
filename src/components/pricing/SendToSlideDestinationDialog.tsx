@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, FilePlus2, Info, Lock, Presentation, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -18,6 +18,12 @@ import {
   sendToSlideCreatesNativeSlide,
 } from "@/lib/sendToSlideInsert";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import { usePricing } from "@/store/pricing";
+import type { TabVisualPeriod } from "@/lib/customSlide";
+import { defaultTabVisualPeriod, sortedPeriodsOf, tabVisualPeriodOptions } from "@/lib/tabVisualPeriod";
+import type { Filters } from "@/lib/types";
+import { getTabVisual } from "@/components/pricing/tabVisuals/registry";
+import { TabVisualSendPanel } from "@/components/pricing/tabVisuals/TabVisualSendPanel";
 import type { SlideItem } from "@/lib/slidesFlow";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +45,24 @@ export function SendToSlideDestinationDialog() {
   const select = useSlidesFlow((s) => s.select);
   const [payload, setPayload] = useState<SendToSlidePayload | null>(null);
   const [destination, setDestination] = useState<Destination>("new");
+  // Visual do catálogo: período escolhido no diálogo (null = o padrão).
+  const [tabPeriodChoice, setTabPeriodChoice] = useState<TabVisualPeriod | null>(null);
+  const pricingRows = usePricing((s) => s.rows);
+  const tabVisual = payload?.target.blockKind === "tab_visual" ? getTabVisual(String(payload.config.visualId ?? "")) : undefined;
+  const tabSelected = Array.isArray(payload?.config.selectedPeriods) ? (payload.config.selectedPeriods as string[]) : null;
+  const tabPeriods = useMemo(() => {
+    if (!tabVisual) return null;
+    const all = sortedPeriodsOf(pricingRows);
+    return { options: tabVisualPeriodOptions(tabSelected, all), fallback: defaultTabVisualPeriod(tabSelected, all) };
+  }, [tabVisual, pricingRows, tabSelected]);
+  const tabPeriod = tabPeriodChoice ?? tabPeriods?.fallback ?? null;
 
   const recentSlideId = selectedId ?? items.find((item) => item.kind === "custom")?.id ?? null;
   useEffect(() => {
     const latest = getLatestSendToSlidePayload();
     if (latest) {
       setPayload(latest);
+      setTabPeriodChoice(null);
       const recent = useSlidesFlow.getState().selectedId;
       const currentItems = useSlidesFlow.getState().items;
       const canUseRecent = recent
@@ -57,6 +75,7 @@ export function SendToSlideDestinationDialog() {
       const detail = (event as CustomEvent<SendToSlidePayload>).detail;
       if (!detail) return;
       setPayload(detail);
+      setTabPeriodChoice(null);
       const recent = useSlidesFlow.getState().selectedId;
       const currentItems = useSlidesFlow.getState().items;
       const canUseRecent = recent
@@ -72,6 +91,10 @@ export function SendToSlideDestinationDialog() {
 
   const close = () => setPayload(null);
 
+  const blockOptions = tabVisual && tabPeriod
+    ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version }
+    : {};
+
   const confirm = () => {
     const state = useSlidesFlow.getState();
     let targetId: string | null = null;
@@ -85,11 +108,18 @@ export function SendToSlideDestinationDialog() {
       if (kind === "custom") {
         updateItem(created.id, (item) => {
           if (item.kind !== "custom") return item;
-          const block = buildCustomBlockFromPayload(payload, item.config);
+          const block = buildCustomBlockFromPayload(payload, item.config, blockOptions);
+          let blocks = item.config.blocks;
+          // Slide novo com um visual da aba: o nome do visual vira o título do
+          // slide (em vez de "Título do slide" + o mesmo nome repetido no bloco).
+          if (block.kind === "tab_visual" && blocks.some((b) => b.kind === "title")) {
+            blocks = blocks.map((b) => (b.kind === "title" ? { ...b, text: payload.source.visualization } : b));
+            block.showTitle = false;
+          }
           return {
             ...item,
             label: payload.source.visualization,
-            config: { ...item.config, blocks: [...item.config.blocks, block] },
+            config: { ...item.config, blocks: [...blocks, block] },
           };
         });
       } else {
@@ -105,7 +135,7 @@ export function SendToSlideDestinationDialog() {
       if (target.kind === "custom") {
         updateItem(target.id, (item) => {
           if (item.kind !== "custom") return item;
-          const block = buildCustomBlockFromPayload(payload, item.config);
+          const block = buildCustomBlockFromPayload(payload, item.config, blockOptions);
           return { ...item, config: { ...item.config, blocks: [...item.config.blocks, block] } };
         });
       } else {
@@ -129,9 +159,22 @@ export function SendToSlideDestinationDialog() {
         <DialogHeader>
           <DialogTitle>Enviar para Slide</DialogTitle>
           <DialogDescription>
-            Escolha onde inserir "{payload.source.visualization}". O app vai levar a configuração da visualização, não uma imagem.
+            {tabVisual
+              ? <>Escolha onde inserir "{payload.source.visualization}". Vai o mesmo gráfico da aba, com os dados vivos — não uma imagem.</>
+              : <>Escolha onde inserir "{payload.source.visualization}". O app vai levar a configuração da visualização, não uma imagem.</>}
           </DialogDescription>
         </DialogHeader>
+
+        {tabVisual && tabPeriod && tabPeriods && (
+          <TabVisualSendPanel
+            visual={tabVisual}
+            params={(payload.config.params as Record<string, unknown> | undefined) ?? {}}
+            filters={(payload.config.filters as Filters | undefined) ?? {}}
+            period={tabPeriod}
+            options={tabPeriods.options}
+            onPeriodChange={setTabPeriodChoice}
+          />
+        )}
 
         {payload.notes && payload.notes.length > 0 && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">

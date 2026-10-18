@@ -45,7 +45,10 @@ export type CustomBlockKind =
   | "omni_farol"
   | "omni_abc_curva"
   | "omni_portfolio_matrix"
-  | "omni_abc_bars";
+  | "omni_abc_bars"
+  // Visual da aba — o MESMO componente que a aba desenha (ver
+  // components/pricing/tabVisuals), não uma tradução para outro elemento.
+  | "tab_visual";
 
 export type BlockEnterAnimation = "none" | "fade" | "slide-up" | "pop";
 
@@ -765,10 +768,40 @@ export type OmniBlock =
   | OmniPortfolioMatrixBlock
   | OmniAbcBarsBlock;
 
+/**
+ * Período de um visual da aba no slide:
+ * - `live`: acompanha o mês de referência do deck — os últimos `months` meses
+ *   até ele (`null` = todo o histórico até ele);
+ * - `locked`: fica preso nos meses escolhidos ao enviar (`null` = todos).
+ */
+export type TabVisualPeriod =
+  | { mode: "live"; months: number | null }
+  | { mode: "locked"; periods: string[] | null };
+
+/**
+ * Visual enviado de uma aba. Guarda só a receita (qual visual, versão,
+ * opções, filtros e período) — nunca código nem imagem. O desenho é o mesmo
+ * componente que a aba usa, no tema claro do slide.
+ */
+export interface TabVisualBlock extends BaseBlock {
+  kind: "tab_visual";
+  /** Id no catálogo (ex.: "visao-geral.evolucao-mensal"). */
+  visualId: string;
+  /** Versão do visual quando foi enviado (para migrar decks antigos). */
+  visualVersion: number;
+  /** Opções do visual (ex.: { metric: "cm" }). */
+  params: Record<string, unknown>;
+  filters: Filters;
+  useGlobalFilter?: boolean;
+  period: TabVisualPeriod;
+  title: string;
+  showTitle: boolean;
+}
+
 export type CustomBlock =
   | TitleBlock | TextBlock | KpiBlock | ImageBlock
   | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock | DreBlock
-  | OmniBlock;
+  | OmniBlock | TabVisualBlock;
 
 export interface CustomSlideConfig {
   blocks: CustomBlock[];
@@ -915,6 +948,12 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         dataSource: "ke30",
         filters: {},
       } as DreBlock;
+    case "tab_visual":
+      return { id, kind, z, x: 60, y: 130, w: 1213, h: 470,
+        visualId: "", visualVersion: 1, params: {}, filters: {},
+        period: { mode: "live", months: null },
+        title: "", showTitle: true,
+      } as TabVisualBlock;
     // --- Omni Analytics ---
     case "omni_evolucao_mensal":
       return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
@@ -1168,6 +1207,7 @@ export const BLOCK_LABELS: Record<CustomBlockKind, string> = {
   omni_abc_curva: "Curva ABC / Pareto",
   omni_portfolio_matrix: "Matriz de Portfólio",
   omni_abc_bars: "Barras ABC",
+  tab_visual: "Visual da aba",
 };
 
 // ---------------------------------------------------------------------------
