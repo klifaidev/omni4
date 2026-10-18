@@ -44,14 +44,20 @@ export function TabVisualInspector({ block, onChange }: {
     // Travar congela exatamente o que está na tela agora; destravar volta a
     // acompanhar o mês de referência com a mesma janela.
     const shown = resolveTabVisualPeriods(deckRows, block.period);
-    const options = tabVisualPeriodOptions(shown, all);
+    const options = tabVisualPeriodOptions(shown, all, deckRows);
     onChange({ period: mode === "live" ? options.live : options.locked });
   };
 
-  const months = block.period.mode === "live" ? block.period.months : null;
+  const livePeriod = block.period.mode === "live" ? block.period : null;
+  const months = livePeriod?.months ?? null;
+  // Meses escolhidos na aba que não terminam no mês de referência (ou não
+  // são seguidos): opção própria, para não virarem "últimos N" sem querer.
+  const custom = !!livePeriod && (!!livePeriod.offsets || (livePeriod.endOffset ?? 0) > 0);
+  const windowValue = custom ? "custom" : months == null ? "all" : String(months);
   const windowOptions = [
+    ...(custom ? [{ value: "custom", label: "Meses escolhidos na aba" }] : []),
     { value: "all", label: "Todo o histórico" },
-    ...[...new Set([...WINDOW_CHOICES, ...(months ? [months] : [])])]
+    ...[...new Set([...WINDOW_CHOICES, ...(months && !custom ? [months] : [])])]
       .sort((a, b) => a - b)
       .map((n) => ({ value: String(n), label: n === 1 ? "Só o mês de referência" : `Últimos ${n} meses` })),
   ];
@@ -98,8 +104,11 @@ export function TabVisualInspector({ block, onChange }: {
         {live && (
           <Row label="Janela">
             <SelectField
-              value={months == null ? "all" : String(months)}
-              onChange={(v) => onChange({ period: { mode: "live", months: v === "all" ? null : Number(v) } satisfies TabVisualPeriod })}
+              value={windowValue}
+              onChange={(v) => {
+                if (v === "custom") return;
+                onChange({ period: { mode: "live", months: v === "all" ? null : Number(v) } satisfies TabVisualPeriod });
+              }}
               options={windowOptions}
             />
           </Row>

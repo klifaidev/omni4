@@ -19,6 +19,7 @@ import {
 } from "@/lib/sendToSlideInsert";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { usePricing } from "@/store/pricing";
+import { useDeckPricingRows } from "@/hooks/useDeckRows";
 import type { TabVisualPeriod } from "@/lib/customSlide";
 import { defaultTabVisualPeriod, sortedPeriodsOf, tabVisualPeriodOptions } from "@/lib/tabVisualPeriod";
 import type { Filters } from "@/lib/types";
@@ -48,13 +49,18 @@ export function SendToSlideDestinationDialog() {
   // Visual do catálogo: período escolhido no diálogo (null = o padrão).
   const [tabPeriodChoice, setTabPeriodChoice] = useState<TabVisualPeriod | null>(null);
   const pricingRows = usePricing((s) => s.rows);
+  // O "ao vivo" conta os meses a partir do mês de referência do deck.
+  const deckRows = useDeckPricingRows();
   const tabVisual = payload?.target.blockKind === "tab_visual" ? getTabVisual(String(payload.config.visualId ?? "")) : undefined;
   const tabSelected = Array.isArray(payload?.config.selectedPeriods) ? (payload.config.selectedPeriods as string[]) : null;
   const tabPeriods = useMemo(() => {
     if (!tabVisual) return null;
     const all = sortedPeriodsOf(pricingRows);
-    return { options: tabVisualPeriodOptions(tabSelected, all), fallback: defaultTabVisualPeriod(tabSelected, all) };
-  }, [tabVisual, pricingRows, tabSelected]);
+    return {
+      options: tabVisualPeriodOptions(tabSelected, all, deckRows),
+      fallback: defaultTabVisualPeriod(tabSelected, all, deckRows),
+    };
+  }, [tabVisual, pricingRows, tabSelected, deckRows]);
   const tabPeriod = tabPeriodChoice ?? tabPeriods?.fallback ?? null;
 
   const recentSlideId = selectedId ?? items.find((item) => item.kind === "custom")?.id ?? null;

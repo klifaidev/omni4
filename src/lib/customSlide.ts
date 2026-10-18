@@ -770,12 +770,14 @@ export type OmniBlock =
 
 /**
  * Período de um visual da aba no slide:
- * - `live`: acompanha o mês de referência do deck — os últimos `months` meses
- *   até ele (`null` = todo o histórico até ele);
+ * - `live`: anda com o mês de referência do deck — `months` meses terminando
+ *   `endOffset` meses antes dele (0/ausente = no próprio mês; `months: null`
+ *   = todo o histórico até ele). Seleção não contígua: `offsets`, quantos
+ *   meses antes da referência fica cada mês escolhido;
  * - `locked`: fica preso nos meses escolhidos ao enviar (`null` = todos).
  */
 export type TabVisualPeriod =
-  | { mode: "live"; months: number | null }
+  | { mode: "live"; months: number | null; endOffset?: number; offsets?: number[] }
   | { mode: "locked"; periods: string[] | null };
 
 /**
