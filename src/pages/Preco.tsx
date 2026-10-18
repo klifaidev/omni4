@@ -3,6 +3,12 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { PrecoDecompVisual, PrecoEvolucaoVisual, PrecoRankingVisual } from "@/components/pricing/tabVisuals/PrecoVisuals";
+import { computePriceEvolution, computePriceRanking } from "@/components/pricing/tabVisuals/precoData";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
+import { sortedPeriodsOf } from "@/lib/tabVisualPeriod";
+import { getDeckPricingRows } from "@/hooks/useDeckRows";
 import { DataTable, type DataTableColumn } from "@/components/pricing/DataTable";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { usePricing } from "@/store/pricing";
@@ -21,12 +27,6 @@ import brMapRaw from "@/assets/br.svg?raw";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  Tooltip as UiTooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   ArrowRight,
   BarChart3,
   BookOpen,
@@ -35,20 +35,16 @@ import {
   Filter,
   Info,
   MapPin,
-  TrendingDown,
   TrendingUp,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip as RTooltip,
   XAxis,
@@ -237,6 +233,10 @@ export default function Preco() {
     [rows, filters],
   );
 
+  // Último mês que o deck de Slides enxerga: a referência para a base e a
+  // comparação avançarem junto no slide.
+  const deckAnchor = sortedPeriodsOf(getDeckPricingRows()).at(-1) ?? null;
+
   const result = useMemo(() => {
     if (!base || !comp || base === comp) return null;
     const labels =
@@ -363,13 +363,17 @@ export default function Preco() {
           <>
             <DecompositionKpis result={result} />
             <SendToSlideHover
-              payload={{
-                source: { page: "Análise de Preço", visualization: "Decomposição de Preço" },
-                target: { blockKind: "omni_price_decomp", blockLabel: "Decomposição de Preço" },
-                config: { base, comp, periodMode, filters, selectedPeriods },
-              }}
+              payload={tabVisualPayload({
+                page: "Análise de Preço",
+                visualization: `Decomposição de Preço — ${result.baseLabel} × ${result.compLabel}`,
+                visualId: TAB_VISUAL_IDS.precoDecomp,
+                params: { base, comp, periodMode, anchor: deckAnchor, follow: "live" },
+                filters,
+                selectedPeriods: null,
+              })}
             >
-              <DecompositionCards result={result} />
+              {/* Mesmo componente que o slide desenha ao receber este visual. */}
+              <PrecoDecompVisual data={result} />
             </SendToSlideHover>
             <ReadingCard result={result} />
             <SendToSlideHover
@@ -392,11 +396,14 @@ export default function Preco() {
               />
             </SendToSlideHover>
             <SendToSlideHover
-              payload={{
-                source: { page: "Análise de Preço", visualization: "Ranking de SKUs por variação de preço" },
-                target: { blockKind: "topSku", blockLabel: "Top Ranking" },
-                config: { dim: "skuDesc", measure: "precoMedio", rankingMetric, filters, selectedPeriods },
-              }}
+              payload={tabVisualPayload({
+                page: "Análise de Preço",
+                visualization: `Ranking de SKUs por variação de preço — ${result.baseLabel} × ${result.compLabel}`,
+                visualId: TAB_VISUAL_IDS.precoRanking,
+                params: { base, comp, periodMode, anchor: deckAnchor, follow: "live", metric: rankingMetric },
+                filters,
+                selectedPeriods: null,
+              })}
             >
               <RankingSection
                 result={result}
@@ -405,11 +412,14 @@ export default function Preco() {
               />
             </SendToSlideHover>
             <SendToSlideHover
-              payload={{
-                source: { page: "Análise de Preço", visualization: "Evolução do preço médio" },
-                target: { blockKind: "chart", blockLabel: "Gráfico" },
-                config: { chartType: "line", measure: "precoMedio", breakdown: evolDim === "total" ? null : evolDim, filters, selectedPeriods },
-              }}
+              payload={tabVisualPayload({
+                page: "Análise de Preço",
+                visualization: "Evolução do preço médio",
+                visualId: TAB_VISUAL_IDS.precoEvolucao,
+                params: { dim: evolDim },
+                filters,
+                selectedPeriods: null,
+              })}
             >
               <EvolutionSection rows={filtered} dim={evolDim} onDimChange={setEvolDim} />
             </SendToSlideHover>
@@ -474,114 +484,6 @@ function DecompositionKpis({ result }: { result: PriceDecompositionResult }) {
         value={`${result.variacaoTotal >= 0 ? "+" : "−"}${fmtRsKg(Math.abs(result.variacaoTotal))}/kg`}
         subValue={formatPct(result.variacaoPct)}
         accent={result.variacaoTotal >= 0 ? "green" : "red"}
-      />
-    </div>
-  );
-}
-
-function EffectCard({
-  title,
-  tooltip,
-  rsPerKg,
-  rsTotal,
-  pct,
-  totalAbs,
-  Icon,
-}: {
-  title: string;
-  tooltip: string;
-  rsPerKg: number;
-  rsTotal: number;
-  pct: number;
-  totalAbs: number;
-  Icon: typeof TrendingUp;
-}) {
-  const positive = rsTotal >= 0;
-  const share = totalAbs > 0 ? Math.min(1, Math.abs(rsTotal) / totalAbs) : 0;
-  return (
-    <GlassCard
-      glow={positive ? "green" : "red"}
-      className="space-y-4"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div
-            className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-              positive ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-          </div>
-          <h3 className="text-base font-medium">{title}</h3>
-        </div>
-        <TooltipProvider>
-          <UiTooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Saiba mais"
-              >
-                <Info className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-xs">{tooltip}</TooltipContent>
-          </UiTooltip>
-        </TooltipProvider>
-      </div>
-
-      <div className="space-y-1">
-        <div
-          className={`break-words text-3xl font-light tabular-nums ${
-            positive ? "text-success" : "text-destructive"
-          }`}
-        >
-          {positive ? "+" : "−"}
-          {fmtRsKg(Math.abs(rsPerKg))}/kg
-        </div>
-        <div className="text-sm text-muted-foreground">
-          Total: {positive ? "+" : "−"}
-          {formatBRL(Math.abs(rsTotal), { compact: true })}
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted-foreground">
-          <span>Participação na variação</span>
-          <span className="tabular-nums">{formatPct(Math.abs(pct))}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-secondary/40">
-          <div
-            className={`h-full rounded-full ${positive ? "bg-success" : "bg-destructive"}`}
-            style={{ width: `${share * 100}%` }}
-          />
-        </div>
-      </div>
-    </GlassCard>
-  );
-}
-
-function DecompositionCards({ result }: { result: PriceDecompositionResult }) {
-  const totalAbs = Math.abs(result.efeitoPrecoRs) + Math.abs(result.efeitoMixRs);
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <EffectCard
-        title="Efeito Preço Puro"
-        tooltip="Variação explicada pela mudança de preço real de cada SKU, mantendo o mix constante."
-        rsPerKg={result.efeitoPrecoRsKg}
-        rsTotal={result.efeitoPrecoRs}
-        pct={result.pctPreco}
-        totalAbs={totalAbs}
-        Icon={result.efeitoPrecoRs >= 0 ? TrendingUp : TrendingDown}
-      />
-      <EffectCard
-        title="Efeito Mix de SKUs"
-        tooltip="Variação explicada pela mudança na participação de volume de cada SKU, entrada/saída de SKUs e ajustes sem volume que afetam o preço médio."
-        rsPerKg={result.efeitoMixRsKg}
-        rsTotal={result.efeitoMixRs}
-        pct={result.pctMix}
-        totalAbs={totalAbs}
-        Icon={result.efeitoMixRs >= 0 ? TrendingUp : TrendingDown}
       />
     </div>
   );
@@ -1238,20 +1140,7 @@ function RankingSection({
       ? s.efeitoMixRs
       : s.deltaPrecoRs + s.efeitoMixRs;
 
-  const top10 = useMemo(
-    () =>
-      [...result.skus]
-        .filter((s) => valueOf(s) !== 0)
-        .sort((a, b) => Math.abs(valueOf(b)) - Math.abs(valueOf(a)))
-        .slice(0, 10)
-        .map((s) => ({
-          name: (s.skuDesc || s.sku).slice(0, 20),
-          fullName: s.skuDesc || s.sku,
-          value: valueOf(s),
-        })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [result.skus, metric],
-  );
+  const rankingData = useMemo(() => computePriceRanking(result, metric), [result, metric]);
 
   const tableRows = useMemo(
     () =>
@@ -1357,49 +1246,7 @@ function RankingSection({
       </header>
 
       <div className="h-[360px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={top10}
-            layout="vertical"
-            margin={{ top: 8, right: 60, left: 8, bottom: 8 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-            <XAxis
-              type="number"
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={11}
-              tickFormatter={(v) => formatBRL(Number(v), { compact: true })}
-            />
-            <YAxis
-              type="category"
-              dataKey="name"
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={11}
-              width={140}
-            />
-            <RTooltip
-              cursor={{ fill: "hsl(var(--secondary) / 0.4)" }}
-              contentStyle={{
-                background: "hsl(var(--popover))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-              formatter={(value: number) => [formatBRL(value, { compact: true }), "Impacto"]}
-              labelFormatter={(_, payload) =>
-                (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName ?? ""
-              }
-            />
-            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-              {top10.map((d, i) => (
-                <Cell
-                  key={i}
-                  fill={d.value >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))"}
-                />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <PrecoRankingVisual data={rankingData} variant="tab" />
       </div>
 
       <DataTable
@@ -1422,58 +1269,7 @@ function EvolutionSection({
   dim: EvolDim;
   onDimChange: (d: EvolDim) => void;
 }) {
-  const months = useMonthsInfo();
-  const labelOf = (periodo: string) =>
-    months.find((m) => m.periodo === periodo)?.label ?? periodo;
-
-  const { data, keys } = useMemo(() => {
-    const periods = Array.from(new Set(rows.map((r) => r.periodo))).sort();
-    const byPeriod = new Map<string, Map<string, { rol: number; vol: number }>>();
-    const seriesSet = new Set<string>();
-    for (const r of rows) {
-      const seriesKey =
-        dim === "total" ? "Total" : (dim === "marca" ? r.marca : r.canal) || "—";
-      seriesSet.add(seriesKey);
-      const p = byPeriod.get(r.periodo) ?? new Map();
-      const cur = p.get(seriesKey) ?? { rol: 0, vol: 0 };
-      cur.rol += r.rol;
-      cur.vol += r.volumeKg;
-      p.set(seriesKey, cur);
-      byPeriod.set(r.periodo, p);
-    }
-    let keys = Array.from(seriesSet);
-    if (dim !== "total") {
-      const totals = new Map<string, number>();
-      for (const p of byPeriod.values()) {
-        for (const [k, v] of p) {
-          totals.set(k, (totals.get(k) ?? 0) + v.vol);
-        }
-      }
-      keys = keys
-        .sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0))
-        .slice(0, 6);
-    }
-    const data = periods.map((per) => {
-      const m = byPeriod.get(per) ?? new Map();
-      const row: Record<string, number | string> = { period: labelOf(per) };
-      for (const k of keys) {
-        const v = m.get(k);
-        row[k] = v && v.vol > 0 ? v.rol / v.vol : 0;
-      }
-      return row;
-    });
-    return { data, keys };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, dim, months]);
-
-  const palette = [
-    "hsl(var(--primary))",
-    "hsl(var(--success))",
-    "hsl(var(--warning))",
-    "hsl(var(--accent))",
-    "hsl(var(--destructive))",
-    "#9b87f5",
-  ];
+  const evolution = useMemo(() => computePriceEvolution(rows, dim), [rows, dim]);
 
   return (
     <GlassCard className="space-y-4">
@@ -1512,38 +1308,7 @@ function EvolutionSection({
       </header>
 
       <div className="h-[340px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-            <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-            <YAxis
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={11}
-              tickFormatter={(v) => fmtRsKg(Number(v))}
-            />
-            <RTooltip
-              contentStyle={{
-                background: "hsl(var(--popover))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-              formatter={(value: number, name: string) => [`${fmtRsKg(value)}/kg`, name]}
-            />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {keys.map((k, i) => (
-              <Line
-                key={k}
-                type="monotone"
-                dataKey={k}
-                stroke={palette[i % palette.length]}
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+        <PrecoEvolucaoVisual data={evolution} variant="tab" />
       </div>
     </GlassCard>
   );

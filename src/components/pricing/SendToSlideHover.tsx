@@ -12,7 +12,10 @@ interface SendToSlideHoverProps {
 }
 
 export function SendToSlideHover({ payload, children, className }: SendToSlideHoverProps) {
-  if (!isSendToSlideEnabledForPage(payload.source.page)) {
+  // Visuais do catálogo (iguais à aba) valem em qualquer aba; os envios
+  // antigos (tradução para outro elemento) seguem a liberação por aba.
+  const enabled = payload.target.blockKind === "tab_visual" || isSendToSlideEnabledForPage(payload.source.page);
+  if (!enabled) {
     return <>{children}</>;
   }
 

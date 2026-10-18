@@ -11,6 +11,7 @@ import { SLIDE_HEX } from "@/lib/slideColors";
 import { resolveTabVisualPeriods } from "@/lib/tabVisualPeriod";
 import { useDeckPricingRows } from "@/hooks/useDeckRows";
 import { getTabVisual } from "@/components/pricing/tabVisuals/registry";
+import { TabVisualSurface } from "@/components/pricing/tabVisuals/TabVisualSurface";
 import { useCrossFilteredRows } from "./SlideFilterContext";
 import { RichTextContent } from "./RichTextContent";
 
@@ -32,7 +33,12 @@ function Message({ text }: { text: string }) {
 export function TabVisualRender({ block, readOnly }: { block: TabVisualBlock; readOnly?: boolean }) {
   const visual = getTabVisual(block.visualId);
   const deckRows = useDeckPricingRows();
-  const periods = useMemo(() => resolveTabVisualPeriods(deckRows, block.period), [deckRows, block.period]);
+  // Visual de histórico (ex.: evolução por canal): sempre o histórico inteiro
+  // até o mês de referência, como na aba.
+  const periods = useMemo(
+    () => (visual?.history ? null : resolveTabVisualPeriods(deckRows, block.period)),
+    [visual, deckRows, block.period],
+  );
   // applyFilters guarda o recorte por linhas+filtros: blocos, miniatura e
   // apresentação do mesmo visual reaproveitam o mesmo recorte.
   const scoped = useMemo(() => applyFilters(deckRows, block.filters ?? {}, periods), [deckRows, block.filters, periods]);
@@ -40,15 +46,16 @@ export function TabVisualRender({ block, readOnly }: { block: TabVisualBlock; re
   const crossActive = cross.applied.length > 0;
   const data = useMemo(() => {
     if (!visual) return null;
-    if (crossActive) return visual.compute(cross.rows, block.params);
+    const ctx = { allRows: deckRows, filters: block.filters ?? {}, periods };
+    if (crossActive) return visual.compute(cross.rows, block.params, ctx);
     return getOrComputeSlideCalc({
       op: "tab-visual",
       blockId: block.id,
       shareAcrossBlocks: true,
       dataSource: "ke30",
       dataSignature: getCachedRowsSignature(deckRows),
-      params: { id: visual.id, version: visual.version, params: block.params, filters: block.filters, periods },
-    }, () => visual.compute(scoped, block.params));
+      params: { id: visual.id, version: visual.version, params: block.params, filters: block.filters, periods, extra: visual.cacheExtra?.() },
+    }, () => visual.compute(scoped, block.params, ctx));
   }, [visual, crossActive, cross.rows, block.params, block.id, block.filters, deckRows, periods, scoped]);
 
   if (!visual) return <Message text="Este visual não existe nesta versão do app." />;
@@ -66,7 +73,11 @@ export function TabVisualRender({ block, readOnly }: { block: TabVisualBlock; re
       <div style={{ flex: 1, minHeight: 0 }}>
         {data == null || visual.isEmpty(data)
           ? <Message text="Sem dados para os filtros e meses deste visual." />
-          : <Visual data={data} variant="slide" />}
+          : (
+            <TabVisualSurface layout={visual.layout} designWidth={visual.designWidth}>
+              <Visual data={data} params={block.params} variant="slide" />
+            </TabVisualSurface>
+          )}
       </div>
       {!readOnly && (
         // Só no editor: de onde veio e se acompanha o mês de referência.
@@ -74,7 +85,8 @@ export function TabVisualRender({ block, readOnly }: { block: TabVisualBlock; re
           data-export-hide="true"
           title={live ? "Acompanha o mês de referência do deck" : "Travado nos meses escolhidos"}
           style={{
-            position: "absolute", top: 0, right: 0,
+            // Logo acima do bloco, para nunca cobrir o conteúdo.
+            position: "absolute", bottom: "100%", right: 0, marginBottom: 4, whiteSpace: "nowrap",
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "2px 8px", borderRadius: 999,
             background: "rgba(255,255,255,0.92)", border: `1px solid ${SLIDE_HEX.grid}`,

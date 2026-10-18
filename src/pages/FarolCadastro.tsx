@@ -17,7 +17,9 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { EmptyState } from "@/components/pricing/EmptyState";
-import { FarolGauge } from "@/components/farol/FarolGauge";
+import { FarolVisual } from "@/components/pricing/tabVisuals/FarolVisual";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -570,23 +572,17 @@ export default function FarolCadastro() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr]">
               {/* Gauge card */}
               <SendToSlideHover
-                payload={{
-                  source: { page: "Farol de Cadastro", visualization: "Velocímetro do Farol" },
-                  target: { blockKind: "omni_farol", blockLabel: "Farol de Positivação" },
-                  config: { skuRef, skuComp, periodoMeses, periodoRef: null, periodoComp: null, showGauge: true, showStats: true },
-                }}
+                payload={tabVisualPayload({
+                  page: "Farol de Cadastro",
+                  visualization: `Farol — ${result.skuComp.skuDesc} nos clientes de ${result.skuRef.skuDesc}`,
+                  visualId: TAB_VISUAL_IDS.farol,
+                  params: { skuRef, skuComp, canal: canalFiltro, categoria: categoriaFiltro, periodoMeses, metric },
+                  filters: {},
+                  selectedPeriods: null,
+                })}
               >
-              <GlassCard
-                glow={result.indicePositivacao >= 0.8 ? "green" : result.indicePositivacao >= 0.5 ? "none" : "red"}
-                className="flex flex-col items-center justify-center px-6 py-8 lg:min-w-[260px]"
-              >
-                <FarolGauge value={result.indicePositivacao} size={220} />
-                <p className="mt-3 max-w-[220px] text-center text-xs text-muted-foreground leading-relaxed">
-                  <span className="font-medium text-foreground">{result.skuComp.skuDesc}</span>
-                  {" "}positivado nos clientes do{" "}
-                  <span className="font-medium text-foreground">{result.skuRef.skuDesc}</span>
-                </p>
-              </GlassCard>
+              {/* Mesmo componente que o slide desenha ao receber este visual. */}
+              <FarolVisual data={result} />
               </SendToSlideHover>
 
               {/* KPI grid */}

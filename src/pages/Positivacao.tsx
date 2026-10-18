@@ -1,20 +1,13 @@
 import { useMemo, useState } from "react";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Download, TrendingUp, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { PositivacaoVisual } from "@/components/pricing/tabVisuals/PositivacaoVisual";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -28,17 +21,6 @@ import {
 } from "@/lib/positivacao";
 import { cn } from "@/lib/utils";
 import { usePricing } from "@/store/pricing";
-
-const PALETTE = [
-  "hsl(var(--primary))",
-  "hsl(var(--accent))",
-  "hsl(var(--success))",
-  "hsl(var(--warning))",
-  "hsl(var(--destructive))",
-  "#22d3ee",
-  "#a78bfa",
-  "#f472b6",
-];
 
 function dimLabel(dim: PositivacaoDim) {
   return POSITIVACAO_DIMS.find((d) => d.key === dim)?.label ?? dim;
@@ -107,11 +89,14 @@ export default function Positivacao() {
         </div>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Positivação", visualization: "Evolutivo de positivação" },
-            target: { blockKind: "omni_positivacao", blockLabel: "Positivação" },
-            config: { chartType: "line", dim: chartDim, topN: 8, dataSource: "ke30" },
-          }}
+          payload={tabVisualPayload({
+            page: "Positivação",
+            visualization: `Evolutivo de positivação por ${dimLabel(chartDim)}`,
+            visualId: TAB_VISUAL_IDS.positivacao,
+            params: { dim: chartDim },
+            filters: {},
+            selectedPeriods: null,
+          })}
         >
         <GlassCard glow="blue">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -135,47 +120,10 @@ export default function Positivacao() {
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={360}>
-            <LineChart data={selectedSeries.chartData} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-              <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-              <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const sorted = [...payload].sort((a, b) => Number(b.value) - Number(a.value));
-                  return (
-                    <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                      <div className="mb-1 font-semibold">{label}</div>
-                      <div className="space-y-0.5">
-                        {sorted.map((p) => (
-                          <div key={String(p.dataKey)} className="flex items-center justify-between gap-4">
-                            <span className="flex items-center gap-1.5 text-muted-foreground">
-                              <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
-                              {String(p.dataKey)}
-                            </span>
-                            <span className="tabular-nums text-foreground">{formatNum(Number(p.value), 0)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              {selectedSeries.chartKeys.map((key, i) => (
-                <Line
-                  key={key}
-                  type="monotone"
-                  dataKey={key}
-                  stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          {/* Mesmo componente que o slide desenha ao receber este visual. */}
+          <div className="h-[360px]">
+            <PositivacaoVisual data={selectedSeries} variant="tab" />
+          </div>
         </GlassCard>
         </SendToSlideHover>
 

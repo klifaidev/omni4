@@ -3,28 +3,23 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { DataTable, type DataTableColumn } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import {
+  InovCanalMixVisual, InovHeroisVisual, InovMaturidadeVisual, InovMargemVisual, InovMixVisual, InovPrecoVisual,
+} from "@/components/pricing/tabVisuals/InovacaoVisuals";
+import {
+  computeChannelMix, computeChannelMixMonthly, computeInnovationHeroes, computeInnovationMargin, computeInnovationMix,
+  computeInnovationPrice, computeMaturity, formatPp, isInnovationRow,
+} from "@/components/pricing/tabVisuals/inovacaoData";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { Badge } from "@/components/ui/badge";
-import { applyFilters, computeKPIs, getKpiComparisonContext, measureOf } from "@/lib/analytics";
+import { applyFilters, computeKPIs } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
-import type { PricingRow } from "@/lib/types";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { Lightbulb, PackageCheck, Percent, Scale, Sparkles } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  LabelList,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 interface InnovationSummaryRow extends Record<string, unknown> {
   classificacao: string;
@@ -34,121 +29,6 @@ interface InnovationSummaryRow extends Record<string, unknown> {
   skus: number;
   mixRol: number;
   mixVolume: number;
-}
-
-interface InnovationMixPoint {
-  periodo: string;
-  label: string;
-  innovationVolumeKg: number;
-  regularVolumeKg: number;
-  innovation: number;
-  regular: number;
-}
-
-interface MarginBridgeStep {
-  label: string;
-  value: number;
-  start: number;
-  end: number;
-  total: boolean;
-  color: string;
-}
-
-interface CohortPoint {
-  monthIndex: number;
-  label: string;
-  [safra: string]: number | string;
-}
-
-interface LegacyPairPoint {
-  periodo: string;
-  label: string;
-  innovationTon: number;
-  legacyTon: number;
-}
-
-interface LegacyPairAnalysis {
-  legado: string;
-  launchLabel: string;
-  innovationVolumeKg: number;
-  substitutionKg: number;
-  incrementalKg: number;
-  substitutionPct: number;
-  incrementalPct: number;
-  legacyBeforeAvgKg: number;
-  legacyAfterAvgKg: number;
-  hasLegacyRows: boolean;
-  classification: "Substituição" | "Incremental" | "Misto";
-  series: LegacyPairPoint[];
-}
-
-interface HeroVillainRow {
-  sku: string;
-  label: string;
-  volumeKg: number;
-  volumeDeltaKg: number;
-  margemPct: number;
-  margemDeltaPp: number;
-  rol: number;
-}
-
-interface ChannelMixRow {
-  canal: string;
-  innovationVolumeKg: number;
-  regularVolumeKg: number;
-  innovationPenetration: number;
-  regularPenetration: number;
-  innovationMix: number;
-}
-
-const PALETTE = [
-  "hsl(var(--primary))",
-  "hsl(var(--muted-foreground))",
-  "hsl(var(--success))",
-  "hsl(var(--warning))",
-  "hsl(var(--destructive))",
-  "hsl(var(--accent))",
-];
-
-function isInnovationRow(row: PricingRow): boolean {
-  return /inova/i.test(row.inovacao ?? "");
-}
-
-function linRegSlope(values: number[]): number {
-  const n = values.length;
-  if (n < 2) return 0;
-  const xs = values.map((_, i) => i);
-  const mx = xs.reduce((sum, value) => sum + value, 0) / n;
-  const my = values.reduce((sum, value) => sum + value, 0) / n;
-  let num = 0;
-  let den = 0;
-  for (let i = 0; i < n; i += 1) {
-    num += (xs[i] - mx) * (values[i] - my);
-    den += (xs[i] - mx) ** 2;
-  }
-  return den === 0 ? 0 : num / den;
-}
-
-function classifyTrend(slope: number): "Crescendo" | "Estável" | "Deteriorando" {
-  if (slope > 0.2) return "Crescendo";
-  if (slope < -0.2) return "Deteriorando";
-  return "Estável";
-}
-
-function monthLabel(row: PricingRow): string {
-  return `${String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}`;
-}
-
-function formatPp(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp`;
-}
-
-function parseLaunchYear(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const match = String(value).match(/\d{4}/);
-  if (!match) return null;
-  const year = Number(match[0]);
-  return Number.isFinite(year) && year >= 2000 && year <= 2099 ? year : null;
 }
 
 function KpiTile({
@@ -184,91 +64,6 @@ function KpiTile({
         </div>
       </div>
     </GlassCard>
-  );
-}
-
-function MarginBridge({ steps }: { steps: MarginBridgeStep[] }) {
-  const values = steps.flatMap((step) => [step.start, step.end, 0]);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pad = Math.max(1, range * 0.16);
-  const yMin = min - pad;
-  const yMax = max + pad;
-  const W = 900;
-  const H = 260;
-  const padL = 56;
-  const padR = 28;
-  const padT = 28;
-  const padB = 58;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const xStep = innerW / steps.length;
-  const barW = xStep * 0.52;
-  const yOf = (value: number) => padT + (1 - (value - yMin) / (yMax - yMin || 1)) * innerH;
-  const zeroY = yOf(0);
-  const ticks = [yMin, yMin + (yMax - yMin) / 2, yMax];
-
-  return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Bridge de margem de inovação">
-        {ticks.map((tick, index) => (
-          <g key={index}>
-            <line
-              x1={padL}
-              x2={W - padR}
-              y1={yOf(tick)}
-              y2={yOf(tick)}
-              stroke="hsl(var(--border))"
-              strokeOpacity={0.32}
-              strokeDasharray={Math.abs(tick) < 0.001 ? "" : "3 4"}
-            />
-            <text x={padL - 8} y={yOf(tick) + 4} textAnchor="end" fontSize="10" fill="hsl(var(--muted-foreground))">
-              {tick.toFixed(1)}%
-            </text>
-          </g>
-        ))}
-
-        {steps.slice(0, -1).map((step, index) => {
-          const next = steps[index + 1];
-          if (next.total) return null;
-          const x1 = padL + index * xStep + xStep / 2 + barW / 2;
-          const x2 = padL + (index + 1) * xStep + xStep / 2 - barW / 2;
-          return (
-            <line
-              key={`connector-${step.label}`}
-              x1={x1}
-              x2={x2}
-              y1={yOf(step.end)}
-              y2={yOf(next.start)}
-              stroke="hsl(var(--muted-foreground))"
-              strokeOpacity={0.38}
-              strokeDasharray="3 3"
-            />
-          );
-        })}
-
-        {steps.map((step, index) => {
-          const x = padL + index * xStep + (xStep - barW) / 2;
-          const top = yOf(Math.max(step.start, step.end));
-          const height = Math.max(3, Math.abs(yOf(step.end) - yOf(step.start)));
-          const rectY = step.total ? Math.min(zeroY, yOf(step.end)) : top;
-          const rectH = step.total ? Math.max(3, Math.abs(yOf(step.end) - zeroY)) : height;
-          const labelY = H - padB + 20;
-          return (
-            <g key={step.label}>
-              <rect x={x} y={rectY} width={barW} height={rectH} rx={5} fill={step.color} opacity={step.total ? 0.92 : 0.82} />
-              <text x={x + barW / 2} y={rectY - 8} textAnchor="middle" fontSize="11" fontWeight={700} fill="hsl(var(--foreground))">
-                {step.total ? `${step.end.toFixed(1)}%` : formatPp(step.value)}
-              </text>
-              <text x={x + barW / 2} y={labelY} textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">
-                {step.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
   );
 }
 
@@ -322,296 +117,29 @@ export default function Inovacao() {
     ].filter((row) => row.rol !== 0 || row.volumeKg !== 0 || row.skus !== 0);
   }, [innovationKpis, regularKpis, totalKpis]);
 
-  const monthlyMix = useMemo<InnovationMixPoint[]>(() => {
-    const byPeriod = new Map<string, {
-      label: string;
-      ano: number;
-      mes: number;
-      innovationVolumeKg: number;
-      regularVolumeKg: number;
-    }>();
+  const innovationBase = useMemo(
+    () => ({ innovationRows, regularRows, totalKpis, innovationKpis, regularKpis }),
+    [innovationRows, regularRows, totalKpis, innovationKpis, regularKpis],
+  );
+  // As contas abaixo são as mesmas que o slide faz (tabVisuals/inovacaoData).
+  const mixData = useMemo(() => computeInnovationMix(filtered), [filtered]);
+  const mixTrend = mixData.trend;
 
-    for (const row of filtered) {
-      const current = byPeriod.get(row.periodo) ?? {
-        label: monthLabel(row),
-        ano: row.ano,
-        mes: row.mes,
-        innovationVolumeKg: 0,
-        regularVolumeKg: 0,
-      };
-      if (isInnovationRow(row)) current.innovationVolumeKg += row.volumeKg;
-      else current.regularVolumeKg += row.volumeKg;
-      byPeriod.set(row.periodo, current);
-    }
+  const maturity = useMemo(() => computeMaturity(rows, filtered, innovationMap), [filtered, innovationMap, rows]);
 
-    return Array.from(byPeriod.entries())
-      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
-      .map(([periodo, value]) => {
-        const totalVolume = value.innovationVolumeKg + value.regularVolumeKg;
-        const innovation = totalVolume > 0 ? (value.innovationVolumeKg / totalVolume) * 100 : 0;
-        return {
-          periodo,
-          label: value.label,
-          innovationVolumeKg: value.innovationVolumeKg,
-          regularVolumeKg: value.regularVolumeKg,
-          innovation,
-          regular: totalVolume > 0 ? (value.regularVolumeKg / totalVolume) * 100 : 0,
-        };
-      });
-  }, [filtered]);
+  const heroesOffenders = useMemo(
+    () => computeInnovationHeroes(rows, filters, selected, innovationBase, metric),
+    [rows, filters, selected, innovationBase, metric],
+  );
 
-  const mixTrend = useMemo(() => {
-    const points = monthlyMix.filter((point) => Number.isFinite(point.innovation));
-    const slope = linRegSlope(points.map((point) => point.innovation));
-    const first = points[0]?.innovation ?? 0;
-    const last = points[points.length - 1]?.innovation ?? 0;
-    return {
-      label: classifyTrend(slope),
-      first,
-      last,
-      deltaPp: last - first,
-      months: points.length,
-    };
-  }, [monthlyMix]);
+  const priceComparison = useMemo(() => computeInnovationPrice(filtered, innovationBase), [filtered, innovationBase]);
 
-  const maturity = useMemo(() => {
-    const firstSeenBySku = new Map<string, { ano: number; mes: number }>();
-    const launchMonthBySku = new Map<string, { ano: number; mes: number; safra: string }>();
+  const channelMix = useMemo(() => computeChannelMix(filtered, innovationKpis.volumeKg), [filtered, innovationKpis.volumeKg]);
 
-    for (const row of rows) {
-      const sku = row.sku?.trim();
-      if (!sku) continue;
-      const current = firstSeenBySku.get(sku);
-      if (!current || row.ano < current.ano || (row.ano === current.ano && row.mes < current.mes)) {
-        firstSeenBySku.set(sku, { ano: row.ano, mes: row.mes });
-      }
-    }
-
-    for (const row of rows) {
-      const sku = row.sku?.trim();
-      if (!sku) continue;
-      const entry = innovationMap[sku];
-      if (!entry || !/inova/i.test(entry.classificacao ?? "")) continue;
-      const launchYear = parseLaunchYear(entry.anoLancamento);
-      if (!launchYear) continue;
-      if (row.ano !== launchYear) continue;
-      const current = launchMonthBySku.get(sku);
-      if (!current || row.mes < current.mes) {
-        launchMonthBySku.set(sku, { ano: launchYear, mes: row.mes, safra: String(launchYear) });
-      }
-    }
-
-    for (const [sku, firstSeen] of firstSeenBySku.entries()) {
-      if (launchMonthBySku.has(sku)) continue;
-      const entry = innovationMap[sku];
-      if (!entry || !/inova/i.test(entry.classificacao ?? "")) continue;
-      const launchYear = parseLaunchYear(entry.anoLancamento);
-      if (!launchYear) continue;
-      launchMonthBySku.set(sku, { ano: firstSeen.ano, mes: firstSeen.mes, safra: String(launchYear) });
-    }
-
-    const acc = new Map<string, Map<number, number>>();
-    for (const row of filtered) {
-      const sku = row.sku?.trim();
-      if (!sku) continue;
-      const launch = launchMonthBySku.get(sku);
-      if (!launch) continue;
-      const monthIndex = (row.ano - launch.ano) * 12 + (row.mes - launch.mes) + 1;
-      if (monthIndex < 1 || monthIndex > 36) continue;
-      const byMonth = acc.get(launch.safra) ?? new Map<number, number>();
-      byMonth.set(monthIndex, (byMonth.get(monthIndex) ?? 0) + row.volumeKg);
-      acc.set(launch.safra, byMonth);
-    }
-
-    const cohorts = Array.from(acc.entries())
-      .map(([safra, byMonth]) => ({
-        safra,
-        total: Array.from(byMonth.values()).reduce((sum, value) => sum + value, 0),
-        months: byMonth.size,
-        byMonth,
-      }))
-      .filter((cohort) => cohort.total > 0)
-      .sort((a, b) => Number(b.safra) - Number(a.safra) || b.total - a.total)
-      .slice(0, 4);
-
-    const maxMonth = Math.max(0, ...cohorts.flatMap((cohort) => Array.from(cohort.byMonth.keys())));
-    const data: CohortPoint[] = Array.from({ length: maxMonth }, (_, index) => {
-      const monthIndex = index + 1;
-      const point: CohortPoint = { monthIndex, label: `M+${monthIndex}` };
-      for (const cohort of cohorts) {
-        if (cohort.byMonth.has(monthIndex)) point[cohort.safra] = cohort.byMonth.get(monthIndex)! / 1000;
-      }
-      return point;
-    });
-
-    return { cohorts, data };
-  }, [filtered, innovationMap, rows]);
-
-  const heroesOffenders = useMemo(() => {
-    const prevCtx = getKpiComparisonContext(rows, filters, selected);
-    const previousInnovationRows = prevCtx ? prevCtx.previousRows.filter(isInnovationRow) : [];
-    const previousBySku = new Map<string, { volumeKg: number; margem: number; rol: number }>();
-
-    for (const row of previousInnovationRows) {
-      const key = row.sku || row.skuDesc || "—";
-      const current = previousBySku.get(key) ?? { volumeKg: 0, margem: 0, rol: 0 };
-      current.volumeKg += row.volumeKg;
-      current.margem += measureOf(row, metric);
-      current.rol += row.rol;
-      previousBySku.set(key, current);
-    }
-
-    const currentBySku = new Map<string, HeroVillainRow>();
-    for (const row of innovationRows) {
-      const key = row.sku || row.skuDesc || "—";
-      const current = currentBySku.get(key) ?? {
-        sku: key,
-        label: row.skuDesc || row.sku || "—",
-        volumeKg: 0,
-        volumeDeltaKg: 0,
-        margemPct: 0,
-        margemDeltaPp: 0,
-        rol: 0,
-      };
-      current.volumeKg += row.volumeKg;
-      current.rol += row.rol;
-      current.margemPct += measureOf(row, metric);
-      currentBySku.set(key, current);
-    }
-
-    const rowsBySku = Array.from(currentBySku.values()).map((item) => {
-      const prev = previousBySku.get(item.sku);
-      const margemAbs = item.margemPct;
-      const currentMarginPct = item.rol > 0 ? margemAbs / item.rol : 0;
-      const prevMarginPct = prev && prev.rol > 0 ? prev.margem / prev.rol : 0;
-      return {
-        ...item,
-        margemPct: currentMarginPct,
-        margemDeltaPp: currentMarginPct - prevMarginPct,
-        volumeDeltaKg: item.volumeKg - (prev?.volumeKg ?? 0),
-      };
-    });
-
-    const minVolumeKg = Math.max(1, innovationKpis.volumeKg * 0.005);
-    const eligible = rowsBySku.filter((item) => item.volumeKg >= minVolumeKg || Math.abs(item.volumeDeltaKg) >= minVolumeKg);
-    return {
-      heroes: [...eligible]
-        .filter((item) => item.volumeDeltaKg > 0 || item.margemDeltaPp > 0)
-        .sort((a, b) => (b.volumeDeltaKg - a.volumeDeltaKg) || (b.margemDeltaPp - a.margemDeltaPp))
-        .slice(0, 5),
-      offenders: [...eligible]
-        .filter((item) => item.volumeDeltaKg < 0 || item.margemDeltaPp < 0)
-        .sort((a, b) => (a.volumeDeltaKg - b.volumeDeltaKg) || (a.margemDeltaPp - b.margemDeltaPp))
-        .slice(0, 5),
-      comparisonLabel: prevCtx?.label ?? "sem período anterior comparável",
-    };
-  }, [filters, innovationKpis.volumeKg, innovationRows, metric, rows, selected]);
-
-  const priceComparison = useMemo(() => {
-    const innovationPrice = innovationKpis.volumeKg > 0 ? innovationKpis.rol / innovationKpis.volumeKg : 0;
-    const regularPrice = regularKpis.volumeKg > 0 ? regularKpis.rol / regularKpis.volumeKg : 0;
-    const delta = innovationPrice - regularPrice;
-    const deltaPct = regularPrice > 0 ? delta / regularPrice : 0;
-
-    // Evolutivo mês a mês (item 4a): preço médio Inovação vs Regular ao
-    // longo do tempo, não só o snapshot do período filtrado.
-    const byPeriod = new Map<string, {
-      label: string; ano: number; mes: number;
-      innovationRol: number; innovationVolumeKg: number;
-      regularRol: number; regularVolumeKg: number;
-    }>();
-    for (const row of filtered) {
-      const current = byPeriod.get(row.periodo) ?? {
-        label: monthLabel(row), ano: row.ano, mes: row.mes,
-        innovationRol: 0, innovationVolumeKg: 0, regularRol: 0, regularVolumeKg: 0,
-      };
-      if (isInnovationRow(row)) { current.innovationRol += row.rol; current.innovationVolumeKg += row.volumeKg; }
-      else { current.regularRol += row.rol; current.regularVolumeKg += row.volumeKg; }
-      byPeriod.set(row.periodo, current);
-    }
-    const monthly = Array.from(byPeriod.entries())
-      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
-      .map(([periodo, value]) => ({
-        periodo,
-        label: value.label,
-        innovationPrice: value.innovationVolumeKg > 0 ? value.innovationRol / value.innovationVolumeKg : null,
-        regularPrice: value.regularVolumeKg > 0 ? value.regularRol / value.regularVolumeKg : null,
-      }));
-
-    return {
-      innovationPrice,
-      regularPrice,
-      delta,
-      deltaPct,
-      monthly,
-    };
-  }, [filtered, innovationKpis, regularKpis]);
-
-  const channelMix = useMemo<ChannelMixRow[]>(() => {
-    const map = new Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>();
-    for (const row of filtered) {
-      const canal = row.canalAjustado || row.canal || "Sem canal";
-      const current = map.get(canal) ?? { innovationVolumeKg: 0, regularVolumeKg: 0 };
-      if (isInnovationRow(row)) current.innovationVolumeKg += row.volumeKg;
-      else current.regularVolumeKg += row.volumeKg;
-      map.set(canal, current);
-    }
-
-    return Array.from(map.entries())
-      .map(([canal, value]) => {
-        const total = value.innovationVolumeKg + value.regularVolumeKg;
-        return {
-          canal,
-          innovationVolumeKg: value.innovationVolumeKg,
-          regularVolumeKg: value.regularVolumeKg,
-          innovationPenetration: total > 0 ? value.innovationVolumeKg / total : 0,
-          regularPenetration: total > 0 ? value.regularVolumeKg / total : 0,
-          innovationMix: innovationKpis.volumeKg > 0 ? value.innovationVolumeKg / innovationKpis.volumeKg : 0,
-        };
-      })
-      .filter((item) => item.innovationVolumeKg > 0 || item.regularVolumeKg > 0)
-      .sort((a, b) => b.innovationVolumeKg - a.innovationVolumeKg)
-      .slice(0, 8);
-  }, [filtered, innovationKpis.volumeKg]);
-
-  // Item 4a: histórico mês a mês (últimos 13 meses) do mix de inovação por
-  // canal — não fica preso ao filtro de período selecionado, senão "últimos
-  // 13 meses" faria pouco sentido se o usuário tivesse filtrado 1 mês só.
-  const channelMixMonthly = useMemo(() => {
-    const history = applyFilters(rows, filters, null);
-    const topCanais = channelMix.map((c) => c.canal);
-    if (topCanais.length === 0) return { canais: [] as string[], data: [] as Record<string, unknown>[] };
-
-    const byPeriod = new Map<string, {
-      label: string; ano: number; mes: number;
-      byCanal: Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>;
-    }>();
-    for (const row of history) {
-      const canal = row.canalAjustado || row.canal || "Sem canal";
-      if (!topCanais.includes(canal)) continue;
-      const period = byPeriod.get(row.periodo) ?? { label: monthLabel(row), ano: row.ano, mes: row.mes, byCanal: new Map() };
-      const current = period.byCanal.get(canal) ?? { innovationVolumeKg: 0, regularVolumeKg: 0 };
-      if (isInnovationRow(row)) current.innovationVolumeKg += row.volumeKg;
-      else current.regularVolumeKg += row.volumeKg;
-      period.byCanal.set(canal, current);
-      byPeriod.set(row.periodo, period);
-    }
-
-    const months = Array.from(byPeriod.entries())
-      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
-      .slice(-13)
-      .map(([periodo, value]) => {
-        const point: Record<string, unknown> = { periodo, label: value.label };
-        for (const canal of topCanais) {
-          const c = value.byCanal.get(canal);
-          const total = c ? c.innovationVolumeKg + c.regularVolumeKg : 0;
-          point[canal] = total > 0 && c ? c.innovationVolumeKg / total : null;
-        }
-        return point;
-      });
-
-    return { canais: topCanais, data: months };
-  }, [rows, filters, channelMix]);
+  // Histórico mês a mês (últimos 13 meses) do mix de inovação por canal —
+  // não fica preso ao filtro de período selecionado.
+  const channelMixMonthly = useMemo(() => computeChannelMixMonthly(rows, filters, channelMix), [rows, filters, channelMix]);
+  const marginData = useMemo(() => computeInnovationMargin(innovationBase, metric), [innovationBase, metric]);
 
   if (rows.length === 0) {
     return (
@@ -662,36 +190,9 @@ export default function Inovacao() {
 
   const volumeMix = totalKpis.volumeKg > 0 ? innovationKpis.volumeKg / totalKpis.volumeKg : 0;
   const rolMix = totalKpis.rol > 0 ? innovationKpis.rol / totalKpis.rol : 0;
-  const marginDiffPp = (innovationKpis.margemPct - regularKpis.margemPct) * 100;
-  const innovationRolShare = totalKpis.rol > 0 ? innovationKpis.rol / totalKpis.rol : 0;
-  const innovationMixEffectPp = innovationRolShare * marginDiffPp;
+  const marginDiffPp = marginData.marginDiffPp;
+  const innovationMixEffectPp = marginData.innovationMixEffectPp;
   const metricLabel = metric === "cm" ? "CM" : "MB";
-  const marginBridgeSteps: MarginBridgeStep[] = [
-    {
-      label: "Regular",
-      value: regularKpis.margemPct * 100,
-      start: 0,
-      end: regularKpis.margemPct * 100,
-      total: true,
-      color: "hsl(var(--muted-foreground))",
-    },
-    {
-      label: "Efeito mix inovação",
-      value: innovationMixEffectPp,
-      start: regularKpis.margemPct * 100,
-      end: regularKpis.margemPct * 100 + innovationMixEffectPp,
-      total: false,
-      color: innovationMixEffectPp >= 0 ? "hsl(var(--success))" : "hsl(var(--destructive))",
-    },
-    {
-      label: "Total",
-      value: totalKpis.margemPct * 100,
-      start: 0,
-      end: totalKpis.margemPct * 100,
-      total: true,
-      color: "hsl(var(--primary))",
-    },
-  ];
 
   return (
     <>
@@ -729,18 +230,14 @@ export default function Inovacao() {
         </div>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Participação mensal de volume" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: {
-              chartType: "stackedColumn",
-              measure: "volume",
-              dimension: "inovacao",
-              filters,
-              selectedPeriods: selected,
-              view: "innovation_volume_mix_monthly",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Participação mensal de volume",
+            visualId: TAB_VISUAL_IDS.inovMix,
+            params: {},
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -763,90 +260,22 @@ export default function Inovacao() {
                 {mixTrend.label}
               </Badge>
             </div>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Mix de inovação saiu de <span className="font-semibold text-foreground">{mixTrend.first.toFixed(1)}%</span> para{" "}
-              <span className="font-semibold text-foreground">{mixTrend.last.toFixed(1)}%</span>
-              {mixTrend.months > 1 && (
-                <>
-                  {" "}no período analisado ({formatPp(mixTrend.deltaPp)}).
-                </>
-              )}
-            </p>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={monthlyMix} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-                <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                <YAxis
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
-                  domain={[0, 100]}
-                />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload?.length) return null;
-                    return (
-                      <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                        <div className="mb-1 font-semibold">{label}</div>
-                        {payload.map((entry) => {
-                          const name = entry.dataKey === "innovation" ? "Inovação" : "Regular";
-                          const volume = entry.dataKey === "innovation"
-                            ? (entry.payload as InnovationMixPoint).innovationVolumeKg
-                            : (entry.payload as InnovationMixPoint).regularVolumeKg;
-                          return (
-                            <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
-                              <span className="flex items-center gap-1.5 text-muted-foreground">
-                                <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
-                                {name}
-                              </span>
-                              <span className="tabular-nums text-foreground">
-                                {Number(entry.value).toFixed(1)}% · {formatTon(volume / 1000)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar name="Inovação" dataKey="innovation" stackId="volumeMix" fill={PALETTE[0]} fillOpacity={0.9}>
-                  <LabelList
-                    dataKey="innovation"
-                    position="inside"
-                    formatter={(v: number) => (v >= 6 ? `${v.toFixed(0)}%` : "")}
-                    fill="hsl(var(--background))"
-                    fontSize={11}
-                    fontWeight={600}
-                  />
-                </Bar>
-                <Bar name="Regular" dataKey="regular" stackId="volumeMix" fill={PALETTE[1]} fillOpacity={0.55}>
-                  <LabelList
-                    dataKey="regular"
-                    position="inside"
-                    formatter={(v: number) => (v >= 6 ? `${v.toFixed(0)}%` : "")}
-                    fill="hsl(var(--background))"
-                    fontSize={11}
-                    fontWeight={600}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {/* Mesmo componente que o slide desenha ao receber este visual. */}
+            <div className="h-[356px]">
+              <InovMixVisual data={mixData} variant="tab" />
+            </div>
           </GlassCard>
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Margem Inovação vs Regular" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: {
-              chartType: "waterfall",
-              measure: metric,
-              dimension: "inovacao",
-              filters,
-              selectedPeriods: selected,
-              view: "innovation_margin_bridge",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Margem Inovação vs Regular",
+            visualId: TAB_VISUAL_IDS.inovMargem,
+            params: { metric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -864,49 +293,19 @@ export default function Inovacao() {
               </Badge>
             </div>
 
-            <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inovação</p>
-                <p className="mt-2 text-2xl font-semibold">{formatPct(innovationKpis.margemPct)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatPct(innovationRolShare)} do ROL filtrado</p>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Regular</p>
-                <p className="mt-2 text-2xl font-semibold">{formatPct(regularKpis.margemPct)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatPct(1 - innovationRolShare)} do ROL filtrado</p>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Prêmio de margem</p>
-                <p className={`mt-2 text-2xl font-semibold ${marginDiffPp >= 0 ? "text-success" : "text-destructive"}`}>
-                  {formatPp(marginDiffPp)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">Diferença Inovação - Regular</p>
-              </div>
-            </div>
-
-            <MarginBridge steps={marginBridgeSteps} />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Leitura: se os SKUs de inovação tivessem a margem da linha Regular, a margem consolidada partiria de{" "}
-              <span className="font-semibold text-foreground">{formatPct(regularKpis.margemPct)}</span>. O mix de inovação adiciona{" "}
-              <span className={innovationMixEffectPp >= 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>{formatPp(innovationMixEffectPp)}</span>{" "}
-              e leva o total para <span className="font-semibold text-foreground">{formatPct(totalKpis.margemPct)}</span>.
-            </p>
+            <InovMargemVisual data={marginData} />
           </GlassCard>
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Curva de maturação por safra" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: {
-              chartType: "line",
-              measure: "volume",
-              dimension: "anoLancamento",
-              filters,
-              selectedPeriods: selected,
-              view: "innovation_cohort_maturity",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Curva de maturação por safra",
+            visualId: TAB_VISUAL_IDS.inovMaturidade,
+            params: {},
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -921,80 +320,21 @@ export default function Inovacao() {
               </Badge>
             </div>
 
-            {maturity.cohorts.length < 2 ? (
-              <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
-                <div>
-                  <p className="text-sm font-medium">Dados insuficientes para comparar safras</p>
-                  <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                    A curva aparece quando pelo menos duas safras de inovação têm volume no recorte atual.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={330}>
-                  <LineChart data={maturity.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-                    <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                      tickFormatter={(value) => formatTon(Number(value))}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        return (
-                          <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                            <div className="mb-1 font-semibold">{label}</div>
-                            {payload.map((entry) => (
-                              <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
-                                  Safra {String(entry.dataKey)}
-                                </span>
-                                <span className="tabular-nums text-foreground">{formatTon(Number(entry.value))}</span>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => `Safra ${value}`} />
-                    {maturity.cohorts.map((cohort, index) => (
-                      <Line
-                        key={cohort.safra}
-                        type="monotone"
-                        name={cohort.safra}
-                        dataKey={cohort.safra}
-                        stroke={PALETTE[index % PALETTE.length]}
-                        strokeWidth={2.5}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                        connectNulls={false}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Cada linha usa o primeiro mês vendido do SKU como M+1. Safras recentes podem parar antes das demais por ainda não terem meses suficientes.
-                </p>
-              </>
-            )}
+            <div className={maturity.cohorts.length < 2 ? undefined : "h-[380px]"}>
+              <InovMaturidadeVisual data={maturity} variant="tab" />
+            </div>
           </GlassCard>
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Heróis e ofensores de inovação" },
-            target: { blockKind: "omni_herois_ofensores", blockLabel: "Heróis e Ofensores" },
-            config: {
-              metric,
-              filters,
-              selectedPeriods: selected,
-              scope: "inovacao",
-              view: "innovation_heroes_offenders",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Heróis e ofensores de inovação",
+            visualId: TAB_VISUAL_IDS.inovHerois,
+            params: { metric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -1007,73 +347,19 @@ export default function Inovacao() {
               <Badge variant="outline">{metricLabel}</Badge>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <div className="rounded-xl border border-success/25 bg-success/5 p-4">
-                <h3 className="mb-3 text-sm font-medium text-success">Heróis</h3>
-                <div className="space-y-2">
-                  {heroesOffenders.heroes.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Sem altas relevantes no recorte.</p>
-                  ) : (
-                    heroesOffenders.heroes.map((item) => (
-                      <div key={item.sku} className="rounded-lg border border-border/50 bg-background/40 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{item.label}</p>
-                            <p className="text-[11px] text-muted-foreground">{item.sku}</p>
-                          </div>
-                          <span className="shrink-0 text-sm font-semibold text-success">{formatTon(item.volumeDeltaKg / 1000)}</span>
-                        </div>
-                        <div className="mt-2 flex justify-between gap-3 text-[11px] text-muted-foreground">
-                          <span>Volume atual {formatTon(item.volumeKg / 1000)}</span>
-                          <span>{formatPp(item.margemDeltaPp * 100)} margem</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
-                <h3 className="mb-3 text-sm font-medium text-destructive">Ofensores</h3>
-                <div className="space-y-2">
-                  {heroesOffenders.offenders.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Sem quedas relevantes no recorte.</p>
-                  ) : (
-                    heroesOffenders.offenders.map((item) => (
-                      <div key={item.sku} className="rounded-lg border border-border/50 bg-background/40 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{item.label}</p>
-                            <p className="text-[11px] text-muted-foreground">{item.sku}</p>
-                          </div>
-                          <span className="shrink-0 text-sm font-semibold text-destructive">{formatTon(item.volumeDeltaKg / 1000)}</span>
-                        </div>
-                        <div className="mt-2 flex justify-between gap-3 text-[11px] text-muted-foreground">
-                          <span>Volume atual {formatTon(item.volumeKg / 1000)}</span>
-                          <span>{formatPp(item.margemDeltaPp * 100)} margem</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
+            <InovHeroisVisual data={heroesOffenders} hideIntro />
           </GlassCard>
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Preço médio Inovação vs Regular" },
-            target: { blockKind: "chart", blockLabel: "Gráfico" },
-            config: {
-              chartType: "line",
-              measure: "precoMedio",
-              dimension: "inovacao",
-              filters,
-              selectedPeriods: selected,
-              view: "innovation_price_comparison",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Preço médio Inovação vs Regular",
+            visualId: TAB_VISUAL_IDS.inovPreco,
+            params: {},
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -1090,61 +376,19 @@ export default function Inovacao() {
               </Badge>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <div className="grid grid-cols-1 gap-3">
-                <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inovação</p>
-                  <p className="mt-2 text-2xl font-semibold">{formatBRL(priceComparison.innovationPrice, { digits: 2 })}/kg</p>
-                </div>
-                <div className="rounded-xl border border-border/50 bg-secondary/30 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Regular</p>
-                  <p className="mt-2 text-2xl font-semibold">{formatBRL(priceComparison.regularPrice, { digits: 2 })}/kg</p>
-                </div>
-              </div>
-
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={priceComparison.monthly} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-                  <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                  <YAxis
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                    tickFormatter={(value) => formatBRL(Number(value), { digits: 2 })}
-                  />
-                  <Tooltip
-                    formatter={(value, name) => [
-                      value == null ? "—" : `${formatBRL(Number(value), { digits: 2 })}/kg`,
-                      name === "innovationPrice" ? "Inovação" : "Regular",
-                    ]}
-                  />
-                  <Legend
-                    wrapperStyle={{ fontSize: 11 }}
-                    formatter={(value) => (value === "innovationPrice" ? "Inovação" : "Regular")}
-                  />
-                  <Line type="monotone" name="innovationPrice" dataKey="innovationPrice" stroke={PALETTE[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
-                  <Line type="monotone" name="regularPrice" dataKey="regularPrice" stroke={PALETTE[1]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground">
-              Diferença relativa: {formatPct(priceComparison.deltaPct)} vs. Regular (média do período filtrado).
-            </p>
+            <InovPrecoVisual data={priceComparison} variant="tab" />
           </GlassCard>
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Inovação", visualization: "Mix de inovação por canal" },
-            target: { blockKind: "omni_canal_mix", blockLabel: "Mix por Canal" },
-            config: {
-              measure: "volume",
-              dimension: "canalAjustado",
-              filters,
-              selectedPeriods: selected,
-              scope: "inovacao",
-              view: "innovation_channel_mix",
-            },
-          }}
+          payload={tabVisualPayload({
+            page: "Inovação",
+            visualization: "Mix de inovação por canal",
+            visualId: TAB_VISUAL_IDS.inovCanalMix,
+            params: {},
+            filters,
+            selectedPeriods: selected,
+          })}
         >
           <GlassCard>
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -1157,50 +401,9 @@ export default function Inovacao() {
               <Badge variant="outline">Top {channelMixMonthly.canais.length}</Badge>
             </div>
 
-            {channelMixMonthly.canais.length === 0 ? (
-              <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-secondary/20 px-6 text-center">
-                <p className="text-sm text-muted-foreground">Sem canais com volume no recorte atual.</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={channelMixMonthly.data} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-                  <CartesianGrid stroke="hsl(var(--border) / 0.35)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                  <YAxis
-                    domain={[0, 1]}
-                    tickFormatter={(value) => `${(Number(value) * 100).toFixed(0)}%`}
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) return null;
-                      return (
-                        <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                          <div className="mb-1 font-semibold">{label}</div>
-                          <div className="space-y-1">
-                            {payload.map((entry) => (
-                              <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: entry.color }} />
-                                  {String(entry.dataKey)}
-                                </span>
-                                <span className="tabular-nums text-foreground">
-                                  {entry.value == null ? "—" : formatPct(Number(entry.value))}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {channelMixMonthly.canais.map((canal, index) => (
-                    <Bar key={canal} name={canal} dataKey={canal} fill={PALETTE[index % PALETTE.length]} radius={[3, 3, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+            <div className={channelMixMonthly.canais.length === 0 ? undefined : "h-[340px]"}>
+              <InovCanalMixVisual data={channelMixMonthly} variant="tab" />
+            </div>
           </GlassCard>
         </SendToSlideHover>
 

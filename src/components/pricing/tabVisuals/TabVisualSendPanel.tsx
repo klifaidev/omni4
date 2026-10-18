@@ -16,6 +16,7 @@ import type { Filters } from "@/lib/types";
 import { useDeckPricingRows } from "@/hooks/useDeckRows";
 import { cn } from "@/lib/utils";
 import type { TabVisualDefinition } from "./registry";
+import { TabVisualSurface } from "./TabVisualSurface";
 
 export function TabVisualSendPanel({
   visual,
@@ -36,10 +37,13 @@ export function TabVisualSendPanel({
   // exatamente o que o slide vai mostrar.
   const deckRows = useDeckPricingRows();
   const data = useMemo(() => {
-    const periods = resolveTabVisualPeriods(deckRows, period);
-    return visual.compute(applyFilters(deckRows, filters, periods), params);
+    const periods = visual.history ? null : resolveTabVisualPeriods(deckRows, period);
+    return visual.compute(applyFilters(deckRows, filters, periods), params, { allRows: deckRows, filters, periods });
   }, [deckRows, filters, params, period, visual]);
-  const range = useMemo(() => tabVisualPeriodRange(deckRows, period), [deckRows, period]);
+  const range = useMemo(
+    () => tabVisualPeriodRange(deckRows, visual.history ? { mode: "live", months: null } : period),
+    [deckRows, period, visual.history],
+  );
   const chips = Object.entries(filters).filter(([, values]) => values && values.length > 0) as Array<[string, string[]]>;
   const Visual = visual.Component;
 
@@ -52,7 +56,11 @@ export function TabVisualSendPanel({
         <div className="h-[230px]">
           {visual.isEmpty(data)
             ? <div className="flex h-full items-center justify-center text-sm text-slate-500">Sem dados para estes filtros e meses.</div>
-            : <Visual data={data} variant="slide" />}
+            : (
+              <TabVisualSurface layout={visual.layout} designWidth={visual.designWidth}>
+                <Visual data={data} params={params} variant="slide" />
+              </TabVisualSurface>
+            )}
         </div>
       </div>
 
@@ -81,33 +89,42 @@ export function TabVisualSendPanel({
           )}
         </div>
 
-        <div>
-          <div className="mb-1.5 font-semibold text-foreground">Meses</div>
-          <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Período no slide">
-            {(["live", "locked"] as const).map((mode) => {
-              const active = period.mode === mode;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => onPeriodChange(options[mode])}
-                  className={cn(
-                    "flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors",
-                    active ? "border-primary bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:bg-secondary/40",
-                  )}
-                >
-                  {mode === "live" ? <Link2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                  {mode === "live" ? "Ao vivo" : "Travado"}
-                </button>
-              );
-            })}
+        {visual.history ? (
+          <div>
+            <div className="mb-1.5 font-semibold text-foreground">Meses</div>
+            <p className="text-muted-foreground">
+              Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck ({range}).
+            </p>
           </div>
-          <p className="mt-1.5 text-muted-foreground">
-            {tabVisualPeriodSummary(period)}. No slide: <span className="font-medium text-foreground">{range}</span>.
-          </p>
-        </div>
+        ) : (
+          <div>
+            <div className="mb-1.5 font-semibold text-foreground">Meses</div>
+            <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Período no slide">
+              {(["live", "locked"] as const).map((mode) => {
+                const active = period.mode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => onPeriodChange(options[mode])}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[12px] font-medium transition-colors",
+                      active ? "border-primary bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:bg-secondary/40",
+                    )}
+                  >
+                    {mode === "live" ? <Link2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    {mode === "live" ? "Ao vivo" : "Travado"}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-muted-foreground">
+              {tabVisualPeriodSummary(period)}. No slide: <span className="font-medium text-foreground">{range}</span>.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

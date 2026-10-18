@@ -2,6 +2,8 @@ import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { PortfolioMatrix, classifyQuadrant, portfolioMedians } from "@/components/pricing/PortfolioMatrix";
 import { AbcPareto, classifyAbc } from "@/components/pricing/AbcPareto";
 import { Badge } from "@/components/ui/badge";
@@ -146,11 +148,14 @@ export default function Abc() {
       <Topbar title="Portfólio de SKUs" subtitle="Matriz estratégica, curva ABC e alertas automáticos" />
       <div className="space-y-6 px-8 py-6">
         <SendToSlideHover
-          payload={{
-            source: { page: "Portfólio de SKUs", visualization: "Matriz de portfólio" },
-            target: { blockKind: "omni_portfolio_matrix", blockLabel: "Matriz de Portfólio" },
-            config: { dim: "skuDesc", metric, filters, selectedPeriods: selected },
-          }}
+          payload={tabVisualPayload({
+            page: "Portfólio de SKUs",
+            visualization: "Matriz de portfólio",
+            visualId: TAB_VISUAL_IDS.abcMatriz,
+            params: { metric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
         <GlassCard glow="blue" className="animate-fade-up">
           <div className="mb-4 flex items-center justify-between">
@@ -164,11 +169,14 @@ export default function Abc() {
         </SendToSlideHover>
 
         <SendToSlideHover
-          payload={{
-            source: { page: "Portfólio de SKUs", visualization: "Curva ABC (Pareto)" },
-            target: { blockKind: "omni_abc_curva", blockLabel: "Curva ABC / Pareto" },
-            config: { dim: "skuDesc", metric, filters, selectedPeriods: selected },
-          }}
+          payload={tabVisualPayload({
+            page: "Portfólio de SKUs",
+            visualization: "Curva ABC (Pareto)",
+            visualId: TAB_VISUAL_IDS.abcCurva,
+            params: { metric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
         <GlassCard className="animate-fade-up animation-delay-150">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

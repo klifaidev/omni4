@@ -13,6 +13,8 @@ interface Props {
    * tem um toggle pra isso). O bloco Omni "Curva ABC" do editor de Slides
    * passa este valor explicitamente a partir de block.showTable. */
   showTable?: boolean;
+  /** Animação de entrada (desligada no slide: miniatura e exportação). */
+  animate?: boolean;
 }
 
 export interface AbcClassifiedRow extends AggRow {
@@ -33,7 +35,7 @@ export function classifyAbc(rows: AggRow[]): AbcClassifiedRow[] {
   });
 }
 
-export function AbcPareto({ rows, showTable = true }: Props) {
+export function AbcPareto({ rows, showTable = true, animate = true }: Props) {
   const classified = useMemo(() => classifyAbc(rows), [rows]);
   const chartData = useMemo(
     () =>
@@ -74,8 +76,8 @@ export function AbcPareto({ rows, showTable = true }: Props) {
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <ReferenceLine yAxisId="right" y={80} stroke="hsl(var(--success))" strokeDasharray="4 4" label={{ value: "80% (A)", fill: "hsl(var(--success))", fontSize: 10, position: "right" }} />
           <ReferenceLine yAxisId="right" y={95} stroke="hsl(var(--warning))" strokeDasharray="4 4" label={{ value: "95% (B)", fill: "hsl(var(--warning))", fontSize: 10, position: "right" }} />
-          <Bar yAxisId="left" dataKey="rol" name="ROL" fill="hsl(var(--primary))" fillOpacity={0.7} />
-          <Line yAxisId="right" type="monotone" dataKey="cumul" name="ROL Acumulado %" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+          <Bar yAxisId="left" dataKey="rol" name="ROL" fill="hsl(var(--primary))" fillOpacity={0.7} isAnimationActive={animate} />
+          <Line yAxisId="right" type="monotone" dataKey="cumul" name="ROL Acumulado %" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} isAnimationActive={animate} />
         </ComposedChart>
       </ResponsiveContainer>
 

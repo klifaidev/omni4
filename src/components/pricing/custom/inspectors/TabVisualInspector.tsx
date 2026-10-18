@@ -31,7 +31,10 @@ export function TabVisualInspector({ block, onChange }: {
   const navigate = useNavigate();
   const visual = getTabVisual(block.visualId);
   const deckRows = useDeckPricingRows();
-  const range = useMemo(() => tabVisualPeriodRange(deckRows, block.period), [deckRows, block.period]);
+  const range = useMemo(
+    () => tabVisualPeriodRange(deckRows, visual?.history ? { mode: "live", months: null } : block.period),
+    [deckRows, block.period, visual?.history],
+  );
 
   if (!visual) {
     return <p className="slides-type-helper">Este visual não existe nesta versão do app.</p>;
@@ -92,31 +95,40 @@ export function TabVisualInspector({ block, onChange }: {
         </Button>
       </div>
 
-      <Section title="Período" defaultOpen>
-        <Segmented<"live" | "locked">
-          value={block.period.mode}
-          onChange={setMode}
-          options={[
-            { value: "live", label: "Ao vivo", icon: <Link2 className="h-3 w-3" />, title: "Acompanha o mês de referência do deck" },
-            { value: "locked", label: "Travado", icon: <Lock className="h-3 w-3" />, title: "Fica nos meses de agora" },
-          ]}
-        />
-        {live && (
-          <Row label="Janela">
-            <SelectField
-              value={windowValue}
-              onChange={(v) => {
-                if (v === "custom") return;
-                onChange({ period: { mode: "live", months: v === "all" ? null : Number(v) } satisfies TabVisualPeriod });
-              }}
-              options={windowOptions}
-            />
-          </Row>
-        )}
-        <p className="slides-type-helper">
-          {tabVisualPeriodSummary(block.period)}. Mostrando agora: <span className="font-medium text-foreground">{range}</span>.
-        </p>
-      </Section>
+      {visual.history ? (
+        <Section title="Período" defaultOpen>
+          <p className="slides-type-helper">
+            Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck. Mostrando agora:{" "}
+            <span className="font-medium text-foreground">{range}</span>.
+          </p>
+        </Section>
+      ) : (
+        <Section title="Período" defaultOpen>
+          <Segmented<"live" | "locked">
+            value={block.period.mode}
+            onChange={setMode}
+            options={[
+              { value: "live", label: "Ao vivo", icon: <Link2 className="h-3 w-3" />, title: "Acompanha o mês de referência do deck" },
+              { value: "locked", label: "Travado", icon: <Lock className="h-3 w-3" />, title: "Fica nos meses de agora" },
+            ]}
+          />
+          {live && (
+            <Row label="Janela">
+              <SelectField
+                value={windowValue}
+                onChange={(v) => {
+                  if (v === "custom") return;
+                  onChange({ period: { mode: "live", months: v === "all" ? null : Number(v) } satisfies TabVisualPeriod });
+                }}
+                options={windowOptions}
+              />
+            </Row>
+          )}
+          <p className="slides-type-helper">
+            {tabVisualPeriodSummary(block.period)}. Mostrando agora: <span className="font-medium text-foreground">{range}</span>.
+          </p>
+        </Section>
+      )}
 
       {visual.params.length > 0 && (
         <Section title="Opções" defaultOpen>

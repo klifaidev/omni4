@@ -1,31 +1,18 @@
 import { useMemo } from "react";
-import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, XAxis, YAxis } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { CustoComposicaoVisual, CustoKgVisual, CustoPressaoVisual } from "@/components/pricing/tabVisuals/CustosVisuals";
+import { buildComposition, compositionTotals, hasCompositionData } from "@/components/pricing/tabVisuals/custosData";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { applyFilters, computeCostEvolution } from "@/lib/analytics";
 import { formatBRL, formatPct, formatTon } from "@/lib/format";
 import { usePricing } from "@/store/pricing";
 import { usePageTitle } from "@/hooks/use-page-title";
-
-const chartConfig = {
-  custoVariavel: { label: "Custo Variável", color: "hsl(var(--warning))" },
-  custoFixo: { label: "Custo Fixo", color: "hsl(var(--accent))" },
-  custoTotal: { label: "Custo Total", color: "hsl(var(--primary))" },
-  custoVariavelPctRol: { label: "CV / ROL", color: "hsl(var(--warning))" },
-  custoFixoPctRol: { label: "CF / ROL", color: "hsl(var(--accent))" },
-  custoTotalPorKg: { label: "Custo Total / Kg", color: "hsl(var(--primary))" },
-  custoVariavelPorKg: { label: "Custo Variável / Kg", color: "hsl(var(--warning))" },
-  custoFixoPorKg: { label: "Custo Fixo / Kg", color: "hsl(var(--accent))" },
-  materiaPrima: { label: "Matéria Prima", color: "hsl(var(--primary))" },
-  embalagem: { label: "Embalagem", color: "hsl(var(--warning))" },
-  mod: { label: "MOD", color: "hsl(var(--accent))" },
-  cif: { label: "CIF", color: "hsl(var(--success))" },
-} as const;
 
 export default function Custos() {
   usePageTitle("Custos");
@@ -44,61 +31,16 @@ export default function Custos() {
   const kpiEvolution = useMemo(() => computeCostEvolution(filtered), [filtered]);
   const evolution = useMemo(() => computeCostEvolution(filteredHistory), [filteredHistory]);
 
-  type CompositionRow = {
-    periodo: string; label: string;
-    materiaPrima: number; embalagem: number; mod: number; cif: number;
-    rol: number;
-    hasMP: boolean; hasEmb: boolean; hasMod: boolean; hasCif: boolean;
-  };
-
-  function buildComposition(source: typeof filtered): CompositionRow[] {
-    const map = new Map<string, CompositionRow>();
-    for (const r of source) {
-      const cur = map.get(r.periodo) ?? {
-        periodo: r.periodo,
-        label: `${String(r.mes).padStart(2, "0")}/${String(r.ano).slice(-2)}`,
-        materiaPrima: 0, embalagem: 0, mod: 0, cif: 0, rol: 0,
-        hasMP: false, hasEmb: false, hasMod: false, hasCif: false,
-      };
-      cur.rol += r.rol;
-      if (r.materiaPrima != null) { cur.materiaPrima += r.materiaPrima; cur.hasMP = true; }
-      if (r.embalagem != null) { cur.embalagem += r.embalagem; cur.hasEmb = true; }
-      if (r.mod != null) { cur.mod += r.mod; cur.hasMod = true; }
-      if (r.cif != null) { cur.cif += r.cif; cur.hasCif = true; }
-      map.set(r.periodo, cur);
-    }
-    return Array.from(map.values()).sort((a, b) => a.periodo.localeCompare(b.periodo));
-  }
-
-  // Composition of variable cost per period (MP, Embalagem, MOD, CIF) — histórico completo, pro gráfico/tabela.
+  // Composição do custo variável — histórico completo, pro gráfico/tabela.
   const composition = useMemo(() => buildComposition(filteredHistory), [filteredHistory]);
   // Mesma composição, mas respeitando o período selecionado — só pros KPIs de resumo.
   const kpiComposition = useMemo(() => buildComposition(filtered), [filtered]);
 
-  const compTotalsFor = (source: CompositionRow[]) => source.reduce(
-    (acc, r) => {
-      acc.materiaPrima += r.materiaPrima;
-      acc.embalagem += r.embalagem;
-      acc.mod += r.mod;
-      acc.cif += r.cif;
-      acc.rol += r.rol;
-      acc.hasMP = acc.hasMP || r.hasMP;
-      acc.hasEmb = acc.hasEmb || r.hasEmb;
-      acc.hasMod = acc.hasMod || r.hasMod;
-      acc.hasCif = acc.hasCif || r.hasCif;
-      return acc;
-    },
-    { materiaPrima: 0, embalagem: 0, mod: 0, cif: 0, rol: 0, hasMP: false, hasEmb: false, hasMod: false, hasCif: false },
-  );
+  const compTotals = useMemo(() => compositionTotals(composition), [composition]);
+  const kpiCompTotals = useMemo(() => compositionTotals(kpiComposition), [kpiComposition]);
+  const compositionData = useMemo(() => ({ composition, totals: compTotals }), [composition, compTotals]);
 
-  const compTotals = useMemo(() => compTotalsFor(composition), [composition]);
-  const kpiCompTotals = useMemo(() => compTotalsFor(kpiComposition), [kpiComposition]);
-
-  const showComposition =
-    (compTotals.hasMP && compTotals.materiaPrima !== 0) ||
-    (compTotals.hasEmb && compTotals.embalagem !== 0) ||
-    (compTotals.hasMod && compTotals.mod !== 0) ||
-    (compTotals.hasCif && compTotals.cif !== 0);
+  const showComposition = hasCompositionData(compTotals);
 
   const totals = useMemo(() => {
     return kpiEvolution.reduce(
@@ -147,86 +89,62 @@ export default function Custos() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <SendToSlideHover
-            payload={{
-              source: { page: "Custos", visualization: "Eficiência por Kg" },
-              target: { blockKind: "omni_custo_evolucao", blockLabel: "Evolução de Custos" },
-              config: { viewMode: "kg", filters, selectedPeriods: selected },
-            }}
+            payload={tabVisualPayload({
+              page: "Custos",
+              visualization: "Eficiência por Kg",
+              visualId: TAB_VISUAL_IDS.custoKg,
+              params: {},
+              filters,
+              selectedPeriods: selected,
+            })}
           >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Eficiência por Kg</h2>
               <p className="text-xs text-muted-foreground">Leitura mensal do custo unitário para separar efeito de diluição e pressão estrutural.</p>
             </header>
-            <ChartContainer config={chartConfig} className="h-[320px] w-full">
-              <ComposedChart data={evolution} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => formatBRL(Number(v), { digits: 2 })} width={96} />
-                <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatBRL(Number(value), { digits: 2 }), chartConfig[String(name) as keyof typeof chartConfig]?.label ?? String(name)]} />} />
-                <Legend />
-                <Line type="monotone" dataKey="custoVariavelPorKg" stroke="var(--color-custoVariavel)" strokeWidth={2.25} dot={false} name="custoVariavel" />
-                <Line type="monotone" dataKey="custoFixoPorKg" stroke="var(--color-custoFixo)" strokeWidth={2.25} dot={false} name="custoFixo" />
-                <Line type="monotone" dataKey="custoTotalPorKg" stroke="var(--color-custoTotalPorKg)" strokeWidth={2.75} dot={false} name="custoTotalPorKg" />
-              </ComposedChart>
-            </ChartContainer>
+            {/* Mesmo componente que o slide desenha ao receber este visual. */}
+            <div className="h-[320px] w-full"><CustoKgVisual data={evolution} variant="tab" /></div>
           </GlassCard>
           </SendToSlideHover>
 
           <SendToSlideHover
-            payload={{
-              source: { page: "Custos", visualization: "Pressão de custo sobre a receita" },
-              target: { blockKind: "omni_custo_pressao", blockLabel: "Pressão de Custo sobre Receita" },
-              config: { showCustoVariavel: true, showCustoFixo: true, filters, selectedPeriods: selected },
-            }}
+            payload={tabVisualPayload({
+              page: "Custos",
+              visualization: "Pressão de custo sobre a receita",
+              visualId: TAB_VISUAL_IDS.custoPressao,
+              params: {},
+              filters,
+              selectedPeriods: selected,
+            })}
           >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Pressão de custo sobre a receita</h2>
               <p className="text-xs text-muted-foreground">Percentual do ROL consumido por custo variável e fixo em cada período.</p>
             </header>
-            <ChartContainer config={chartConfig} className="h-[320px] w-full">
-              <ComposedChart data={evolution} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => formatPct(Number(v), 0)} width={72} />
-                <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatPct(Number(value)), chartConfig[String(name) as keyof typeof chartConfig]?.label ?? String(name)]} />} />
-                <Legend />
-                <ReferenceLine y={0} stroke="hsl(var(--border))" />
-                <Area type="monotone" dataKey="custoVariavelPctRol" stackId="pct" stroke="var(--color-custoVariavelPctRol)" fill="var(--color-custoVariavelPctRol)" fillOpacity={0.35} name="custoVariavelPctRol" />
-                <Area type="monotone" dataKey="custoFixoPctRol" stackId="pct" stroke="var(--color-custoFixoPctRol)" fill="var(--color-custoFixoPctRol)" fillOpacity={0.25} name="custoFixoPctRol" />
-              </ComposedChart>
-            </ChartContainer>
+            <div className="h-[320px] w-full"><CustoPressaoVisual data={evolution} variant="tab" /></div>
           </GlassCard>
           </SendToSlideHover>
         </div>
 
         {showComposition && (
           <SendToSlideHover
-            payload={{
-              source: { page: "Custos", visualization: "Composição do custo variável" },
-              target: { blockKind: "omni_custo_composicao", blockLabel: "Composição de Custos" },
-              config: { viewMode: "abs", filters, selectedPeriods: selected },
-            }}
+            payload={tabVisualPayload({
+              page: "Custos",
+              visualization: "Composição do custo variável",
+              visualId: TAB_VISUAL_IDS.custoComposicao,
+              params: {},
+              filters,
+              selectedPeriods: selected,
+            })}
           >
           <GlassCard>
             <header className="mb-4">
               <h2 className="text-lg font-medium">Composição do custo variável</h2>
               <p className="text-xs text-muted-foreground">Decomposição mensal por componente: Matéria Prima, Embalagem, MOD e CIF.</p>
             </header>
-            <ChartContainer config={chartConfig} className="h-[340px] w-full">
-              <ComposedChart data={composition} margin={{ left: 8, right: 8, top: 12, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={24} />
-                <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => formatBRL(Number(v), { compact: true })} width={88} />
-                <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatBRL(Number(value), { compact: true }), chartConfig[String(name) as keyof typeof chartConfig]?.label ?? String(name)]} />} />
-                <Legend />
-                {compTotals.hasMP && <Bar dataKey="materiaPrima" stackId="comp" fill="var(--color-materiaPrima)" name="materiaPrima" radius={[0, 0, 0, 0]} />}
-                {compTotals.hasEmb && <Bar dataKey="embalagem" stackId="comp" fill="var(--color-embalagem)" name="embalagem" radius={[0, 0, 0, 0]} />}
-                {compTotals.hasMod && <Bar dataKey="mod" stackId="comp" fill="var(--color-mod)" name="mod" radius={[0, 0, 0, 0]} />}
-                {compTotals.hasCif && <Bar dataKey="cif" stackId="comp" fill="var(--color-cif)" name="cif" radius={[4, 4, 0, 0]} />}
-              </ComposedChart>
-            </ChartContainer>
+            <div className="h-[340px] w-full"><CustoComposicaoVisual data={compositionData} variant="tab" /></div>
 
             <div className="mt-6">
               <DataTable

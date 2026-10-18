@@ -6,6 +6,8 @@ import { useMemo } from "react";
 interface Props {
   rows: AggRow[];
   metricLabel: string;
+  /** Animação de entrada (desligada no slide: miniatura e exportação). */
+  animate?: boolean;
 }
 
 function median(arr: number[]): number {
@@ -19,7 +21,7 @@ interface Point {
   x: number; y: number; z: number; key: string; rol: number; margemPct: number; volumeKg: number;
 }
 
-export function PortfolioMatrix({ rows, metricLabel }: Props) {
+export function PortfolioMatrix({ rows, metricLabel, animate = true }: Props) {
   const { points, medX, medY, useLog } = useMemo(() => {
     const pool = rows.filter((r) => r.volumeKg > 0 && r.rol > 0 && isFinite(r.margemPct));
     const vols = pool.map((r) => r.volumeKg);
@@ -93,7 +95,7 @@ export function PortfolioMatrix({ rows, metricLabel }: Props) {
               );
             }}
           />
-          <Scatter data={points} fill="hsl(var(--primary))" fillOpacity={0.55} stroke="hsl(var(--primary))" />
+          <Scatter data={points} fill="hsl(var(--primary))" fillOpacity={0.55} stroke="hsl(var(--primary))" isAnimationActive={animate} />
         </ScatterChart>
       </ResponsiveContainer>
 

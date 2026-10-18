@@ -3,6 +3,10 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { DataTable } from "@/components/pricing/DataTable";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { CanalMixVisual, CanalTrendVisual } from "@/components/pricing/tabVisuals/CanaisVisuals";
+import { canalEvolutionData, computeCanaisSeries, type CanalChartMetric } from "@/components/pricing/tabVisuals/canaisData";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload } from "@/lib/sendToSlide";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePricing } from "@/store/pricing";
@@ -11,41 +15,16 @@ import {
   applyFilters,
   computeCanalTrend,
   getKpiComparisonContext,
-  type CanalTrendPoint,
 } from "@/lib/analytics";
 import { formatBRL, formatPct, formatTon } from "@/lib/format";
 import { useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { ArrowDown, ArrowUp, Crown, Download, Lightbulb, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { exportTableCsv } from "@/lib/exportCsv";
 import { cn } from "@/lib/utils";
 import { usePageTitle } from "@/hooks/use-page-title";
 
-type ChartMetric = "margemPct" | "rol" | "volumeKg";
-
-const PALETTE = [
-  "hsl(var(--primary))",
-  "hsl(var(--accent))",
-  "hsl(var(--success))",
-  "hsl(var(--warning))",
-  "hsl(var(--destructive))",
-  "#a78bfa",
-  "#22d3ee",
-  "#f472b6",
-  "#94a3b8",
-];
+type ChartMetric = CanalChartMetric;
 
 // ---------- helpers ----------
 
@@ -134,73 +113,16 @@ export default function Canais() {
   );
   const prevMap = useMemo(() => new Map(byCanalPrev.map((c) => [c.key, c])), [byCanalPrev]);
 
-  // List of canais (top 8 by ROL; remainder grouped as "Outros")
-  const { topCanais, allMonths, seriesPerCanal, mixData } = useMemo(() => {
-    const canalAggHist = aggregateBy(allHistory, metric, (r) => r.canalAjustado || "Sem canal");
-    const sorted = [...canalAggHist].sort((a, b) => b.rol - a.rol);
-    const top = sorted.slice(0, 8).map((c) => c.key);
-    const others = sorted.slice(8).map((c) => c.key);
-
-    // collect all periods sorted
-    const periodMeta = new Map<string, { ano: number; mes: number; label: string }>();
-    for (const r of allHistory) {
-      if (!periodMeta.has(r.periodo)) {
-        periodMeta.set(r.periodo, {
-          ano: r.ano,
-          mes: r.mes,
-          label: `${String(r.mes).padStart(2, "0")}/${String(r.ano).slice(-2)}`,
-        });
-      }
-    }
-    const months = Array.from(periodMeta.entries())
-      .sort(([, a], [, b]) => a.ano - b.ano || a.mes - b.mes)
-      .map(([periodo, m]) => ({ periodo, label: m.label }));
-
-    // series per canal (top + Outros)
-    const series = new Map<string, Map<string, CanalTrendPoint>>();
-    for (const c of top) {
-      const t = computeCanalTrend(allHistory, c, metric);
-      series.set(c, new Map(t.map((p) => [p.periodo, p])));
-    }
-    if (others.length > 0) {
-      const othersRows = allHistory.filter((r) => others.includes(r.canalAjustado || "Sem canal"));
-      const t = computeCanalTrend(othersRows, null, metric);
-      series.set("Outros", new Map(t.map((p) => [p.periodo, p])));
-    }
-
-    // mix data: for each month, % do ROL por canal (top + Outros)
-    const allCanaisDisplay = others.length > 0 ? [...top, "Outros"] : top;
-    const mix = months.map(({ periodo, label }) => {
-      const totalRol = allCanaisDisplay.reduce(
-        (s, c) => s + (series.get(c)?.get(periodo)?.rol ?? 0),
-        0,
-      );
-      const row: Record<string, number | string> = { label };
-      for (const c of allCanaisDisplay) {
-        const r = series.get(c)?.get(periodo)?.rol ?? 0;
-        row[c] = totalRol > 0 ? (r / totalRol) * 100 : 0;
-      }
-      return row;
-    });
-
-    return { topCanais: allCanaisDisplay, allMonths: months, seriesPerCanal: series, mixData: mix };
-  }, [allHistory, metric]);
-
-  // Build evolution chart data
-  const evolutionData = useMemo(() => {
-    return allMonths.map(({ periodo, label }) => {
-      const row: Record<string, number | string> = { label };
-      for (const c of topCanais) {
-        const p = seriesPerCanal.get(c)?.get(periodo);
-        if (!p) { row[c] = NaN; continue; }
-        row[c] =
-          chartMetric === "margemPct" ? p.margemPct * 100 :
-          chartMetric === "rol" ? p.rol :
-          p.volumeKg;
-      }
-      return row;
-    });
-  }, [allMonths, topCanais, seriesPerCanal, chartMetric]);
+  // Top 8 canais por ROL (demais em "Outros") e a série de cada um no
+  // histórico — a mesma conta que o slide faz (tabVisuals/canaisData).
+  const canaisSeries = useMemo(() => computeCanaisSeries(allHistory, metric), [allHistory, metric]);
+  const { topCanais, mixData } = canaisSeries;
+  const evolutionData = useMemo(() => canalEvolutionData(canaisSeries, chartMetric), [canaisSeries, chartMetric]);
+  const trendVisualData = useMemo(
+    () => ({ topCanais, evolution: evolutionData, chartMetric }),
+    [topCanais, evolutionData, chartMetric],
+  );
+  const mixVisualData = useMemo(() => ({ topCanais, mixData }), [topCanais, mixData]);
 
   // Build the ranking rows with sparkline + slope classification (using selected period as "atual")
   const rankingRows = useMemo<CanalRow[]>(() => {
@@ -388,11 +310,14 @@ export default function Canais() {
 
         {/* ---------- Evolution chart ---------- */}
         <SendToSlideHover
-          payload={{
-            source: { page: "Canais", visualization: "Evolução temporal por canal" },
-            target: { blockKind: "omni_canal_trend", blockLabel: "Tendência Canal" },
-            config: { metric, chartMetric, topN: 8, filters, selectedPeriods: selected },
-          }}
+          payload={tabVisualPayload({
+            page: "Canais",
+            visualization: "Evolução temporal por canal",
+            visualId: TAB_VISUAL_IDS.canalTrend,
+            params: { metric, chartMetric },
+            filters,
+            selectedPeriods: selected,
+          })}
         >
         <GlassCard glow="blue">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -414,62 +339,10 @@ export default function Canais() {
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={340}>
-            <LineChart data={evolutionData} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
-              <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-              <YAxis
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                tickFormatter={(v) =>
-                  chartMetric === "margemPct"
-                    ? `${Number(v).toFixed(0)}%`
-                    : chartMetric === "rol"
-                    ? formatBRL(Number(v), { compact: true })
-                    : formatTon(Number(v))
-                }
-              />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const sorted = [...payload].sort((a, b) => Number(b.value) - Number(a.value));
-                  return (
-                    <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                      <div className="mb-1 font-semibold">{label}</div>
-                      <div className="space-y-0.5">
-                        {sorted.map((p) => (
-                          <div key={String(p.dataKey)} className="flex items-center justify-between gap-4">
-                            <span className="flex items-center gap-1.5 text-muted-foreground">
-                              <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.color }} />
-                              {String(p.dataKey)}
-                            </span>
-                            <span className="tabular-nums text-foreground">
-                              {chartMetric === "margemPct"
-                                ? `${Number(p.value).toFixed(1)}%`
-                                : chartMetric === "rol"
-                                ? formatBRL(Number(p.value), { compact: true })
-                                : formatTon(Number(p.value))}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              {topCanais.map((c, i) => (
-                <Line
-                  key={c}
-                  type="monotone"
-                  dataKey={c}
-                  stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          {/* Mesmo componente que o slide desenha ao receber este visual. */}
+          <div className="h-[340px]">
+            <CanalTrendVisual data={trendVisualData} variant="tab" />
+          </div>
         </GlassCard>
         </SendToSlideHover>
 
@@ -587,48 +460,23 @@ export default function Canais() {
 
         {/* ---------- Mix evolution ---------- */}
         <SendToSlideHover
-          payload={{
-            source: { page: "Canais", visualization: "Análise de mix por canal" },
-            target: { blockKind: "omni_canal_mix", blockLabel: "Mix por Canal" },
-            config: { measure: "rol", dimension: "canalAjustado", topN: 8, filters, selectedPeriods: selected },
-          }}
+          payload={tabVisualPayload({
+            page: "Canais",
+            visualization: "Análise de mix — composição do ROL por canal",
+            visualId: TAB_VISUAL_IDS.canalMix,
+            params: {},
+            filters,
+            selectedPeriods: selected,
+          })}
         >
         <GlassCard>
           <div className="mb-3">
             <h3 className="text-sm font-medium">Análise de mix</h3>
             <p className="text-xs text-muted-foreground">Composição do ROL por canal (% mensal)</p>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={mixData} margin={{ top: 8, right: 24, bottom: 8, left: 8 }} stackOffset="expand">
-              <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
-              <XAxis dataKey="label" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-              <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} domain={[0, 100]} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const sorted = [...payload].sort((a, b) => Number(b.value) - Number(a.value));
-                  return (
-                    <div className="rounded-lg border border-border/60 bg-popover/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-                      <div className="mb-1 font-semibold">{label}</div>
-                      {sorted.map((p) => (
-                        <div key={String(p.dataKey)} className="flex items-center justify-between gap-4">
-                          <span className="flex items-center gap-1.5 text-muted-foreground">
-                            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: p.color }} />
-                            {String(p.dataKey)}
-                          </span>
-                          <span className="tabular-nums text-foreground">{Number(p.value).toFixed(1)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              {topCanais.map((c, i) => (
-                <Bar key={c} dataKey={c} stackId="mix" fill={PALETTE[i % PALETTE.length]} fillOpacity={0.85} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[300px]">
+            <CanalMixVisual data={mixVisualData} variant="tab" />
+          </div>
         </GlassCard>
         </SendToSlideHover>
 

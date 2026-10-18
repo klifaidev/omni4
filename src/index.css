@@ -473,3 +473,22 @@
 [data-style-painter="on"] * {
   cursor: copy !important;
 }
+
+/* ====== Visual da aba no slide ======
+   O mesmo componente da aba, dentro de `.light` (tema claro do app) e com a
+   cor principal da Harald. Sem animações: a miniatura e a exportação
+   fotografam o primeiro quadro. Ver components/pricing/tabVisuals. */
+.tab-visual-slide {
+  --primary: 352 85% 42%;
+  --primary-glow: 352 85% 50%;
+  --ring: 352 85% 42%;
+  color: hsl(var(--foreground));
+  background: transparent;
+  font-family: Inter, system-ui, sans-serif;
+}
+.tab-visual-slide *,
+.tab-visual-slide *::before,
+.tab-visual-slide *::after {
+  animation: none !important;
+  transition: none !important;
+}
