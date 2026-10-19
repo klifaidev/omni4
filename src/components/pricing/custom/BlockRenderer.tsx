@@ -1142,12 +1142,14 @@ function buildTableGapValues(
   measures: PivotMeasure[],
   gapColumns: TableGapColumn[],
 ) {
+  const result = new Map<string, Record<string, number | null>>();
+  // Sem colunas de gap não há o que calcular (e não vale nem tocar nas linhas).
+  if (gapColumns.length === 0) return result;
   const filtered = rows.filter((row) => tableMatchesFilters(row, filters));
   const periods = tablePeriods(filtered);
   const latest = periods[periods.length - 1]?.periodo ?? null;
   const measureById = new Map(measures.map((measure) => [measure.id, measure]));
-  const result = new Map<string, Record<string, number | null>>();
-  if (!latest || gapColumns.length === 0) return result;
+  if (!latest) return result;
 
   for (const gap of gapColumns) {
     const measure = measureById.get(gap.measureId);
@@ -1231,15 +1233,22 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     ignorePeriod: !!b.colDim && /period|mes/i.test(b.colDim),
   });
 
-  const data = useMemo(() => {
+  // Cálculo compartilhado com o painel de propriedades (lib/customTablePivot).
+  const pivot = useMemo(() => {
     const measures = CUSTOM_TABLE_MEASURES.filter((m) => b.measures.includes(m.id));
     if (measures.length === 0) return null;
-    // Cálculo compartilhado com o painel de propriedades (lib/customTablePivot).
-    const { unified, result } = computeCustomTablePivot(sourceRows, b, measures, CUSTOM_TABLE_MEASURES);
+    return { measures, ...computeCustomTablePivot(sourceRows, b, measures, CUSTOM_TABLE_MEASURES) };
+  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.monthFilter]);
+  // Tabela grande demais (ex.: SKU × mês): não é montada — o bloco avisa.
+  const tooLarge = pivot && !pivot.result ? pivot.estimate : null;
+
+  const data = useMemo(() => {
+    if (!pivot || !pivot.result) return null;
+    const { measures, result } = pivot;
     const filters = {};
     const gapColumns = (b.gapColumns ?? []).filter((gap) => measures.some((measure) => measure.id === gap.measureId));
     const gapValues = buildTableGapValues(
-      unified,
+      gapColumns.length > 0 ? pivot.getUnified() : [],
       b.rowDims,
       filters,
       measures,
@@ -1276,7 +1285,7 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
       return (b.sortDirection ?? "desc") === "asc" ? va - vz : vz - va;
     });
     return { result, measures, sortedHeaders, gapColumns, gapValues };
-  }, [sourceRows, b.rowDims, b.colDim, b.measures, b.filters, b.monthFilter, b.gapColumns, b.sortMeasure, b.sortMode, b.sortGapColumnId, b.sortDirection, b.manualRowOrder]);
+  }, [pivot, b.rowDims, b.gapColumns, b.sortMeasure, b.sortMode, b.sortGapColumnId, b.sortDirection, b.manualRowOrder]);
 
   const tableColumnKeys = useMemo(() => {
     if (!data) return [];
@@ -1373,6 +1382,22 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
   };
 
   if (missingData) return <MissingLocalData label={missingData} />;
+  if (tooLarge) {
+    return (
+      <div style={{
+        width: "100%", height: "100%", padding: 16, boxSizing: "border-box", textAlign: "center",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
+        background: SLIDE_HEX.paper, border: `1px dashed ${SLIDE_HEX.slate300}`,
+        color: SLIDE_HEX.slate500, fontFamily: "Calibri", fontSize: 14,
+      }}>
+        <strong style={{ color: SLIDE_HEX.slate700 }}>Tabela grande demais para um slide</strong>
+        <span>
+          {tooLarge.leafRowCount.toLocaleString("pt-BR")} linhas × {Math.max(1, tooLarge.colHeaderCount).toLocaleString("pt-BR")} colunas.
+          Use menos aberturas nas linhas ou nas colunas (ou filtre) para montar a tabela.
+        </span>
+      </div>
+    );
+  }
   if (!data || data.sortedHeaders.length === 0) {
     return (
       <div style={{

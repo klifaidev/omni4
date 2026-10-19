@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { heapStats, sendRendererBreadcrumb, type SlidesCrashBreadcrumb } from "./crashRecovery";
 import { releaseAllSlideWorkerRows, slideWorkerRowsHeld } from "./slideCalcWorkerClient";
 import { clearSlideCalcCache } from "./slideCalcCache";
+import { clearCustomTableCaches } from "./customTablePivot";
 import { disposePivotWorker } from "./pivotWorkerClient";
 import { useSlidesSafety } from "@/store/slidesSafety";
 import { useSlidesFlow } from "@/store/slidesFlow";
@@ -53,6 +54,7 @@ export function releaseRecomputableMemory(): string {
   const workerRows = slideWorkerRowsHeld();
   releaseAllSlideWorkerRows();
   clearSlideCalcCache();
+  clearCustomTableCaches();
   // A Tabela Dinâmica aberta perderia o cálculo em andamento: só fora dela.
   if (!window.location.hash.startsWith("#/detalhe")) disposePivotWorker();
   return workerRows > 0

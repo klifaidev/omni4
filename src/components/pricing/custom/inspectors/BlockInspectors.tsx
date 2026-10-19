@@ -1148,6 +1148,7 @@ function TableBlockEditor({ block, onChange }: {
     // Mesmo cálculo (e cache) do bloco na tela: selecionar a tabela não refaz
     // a tabela dinâmica inteira só para contar linhas.
     const { result } = computeCustomTablePivot(sourceRows, block, measures, CUSTOM_TABLE_MEASURES);
+    if (!result) return { totalRows: 0, rowHeaders: [] as { key: string; label: string }[] };
     return {
       totalRows: result.leafRowHeaders.length,
       rowHeaders: result.leafRowHeaders.map((row) => ({
