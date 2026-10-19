@@ -86,7 +86,7 @@ export function PrecoDecompVisual({ data }: { data: PriceDecompositionResult | n
     <div className="grid gap-4 md:grid-cols-2">
       <EffectCard
         title="Efeito Preço Puro"
-        tooltip="Variação explicada pela mudança de preço real de cada SKU, mantendo o mix constante."
+        tooltip="Variação explicada pela mudança de preço real de cada SKU, mantendo o mix constante. Só entram SKUs com volume relevante (1 t ou mais) nos dois meses — com volume quase zero o preço por kg é ruído (ex.: receita negativa de ajuste) e o efeito vai para o mix. É o mesmo critério do Efeito Preço da Bridge PVM."
         rsPerKg={data.efeitoPrecoRsKg}
         rsTotal={data.efeitoPrecoRs}
         pct={data.pctPreco}

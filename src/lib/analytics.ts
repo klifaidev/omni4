@@ -428,7 +428,7 @@ export interface PVMResult {
  *  o portfólio mudava, varrendo metade dos SKUs pro balde "baixo volume" só
  *  por o portfólio ter poucos produtos grandes), este valor não muda com o
  *  tamanho do portfólio: 1kg é 1kg. */
-const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
+export const MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS = 1;
 
 export interface PvmSkuAgg {
   vol: number;
@@ -1012,12 +1012,19 @@ export function computePriceDecomposition(
     const shareComp = volTotalComp > 0 ? volumeComp / volTotalComp : 0;
     const deltaMixShare = shareComp - shareBase;
 
-    // Price effect: only meaningful when SKU has volume in both periods.
-    const deltaPreco = volumeBase !== 0 && volumeComp !== 0 ? (precoComp - precoBase) : 0;
+    // Price effect: só vale quando o SKU tem volume RELEVANTE nos dois períodos — o mesmo
+    // piso da Bridge PVM. Com volume quase zero o "preço por kg" é ruído (ex.: um SKU com
+    // 0,6 t e receita negativa no mês-base dava -R$ 832/kg e, valorizado em 29 t no mês
+    // seguinte, inflava o efeito preço em +R$ 25 mi). Esses SKUs caem no mix (resíduo).
+    const reliable = Math.abs(volumeBase) >= MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS
+      && Math.abs(volumeComp) >= MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS;
+    const deltaPreco = reliable ? (precoComp - precoBase) : 0;
     const deltaPrecoRs = deltaPreco * volumeComp;
 
-    // Mix effect: uses base price as anchor; for new SKUs (no base), use comp price as proxy.
-    const anchorPrice = volumeBase !== 0 ? precoBase : precoComp;
+    // Mix effect: âncora = preço base; sem base confiável (SKU novo, volume irrelevante ou
+    // preço não positivo) usa o preço do período comparado e, em último caso, o preço médio.
+    const baseUsable = Math.abs(volumeBase) >= MIN_ABSOLUTE_VOLUME_FOR_UNIT_EFFECTS && precoBase > 0;
+    const anchorPrice = baseUsable ? precoBase : (precoComp > 0 ? precoComp : precoMedioBase);
     const efeitoMixI = deltaMixShare * anchorPrice * volTotalComp;
 
     efeitoPrecoRs += deltaPrecoRs;
