@@ -115,7 +115,7 @@ export function SendToSlideDestinationDialog() {
   const close = () => setPayload(null);
 
   const blockOptions = tabVisual && tabPeriod
-    ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version, tabVisualFrame: tabVisual.defaultFrame }
+    ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version, tabVisualFrame: tabVisual.defaultFrame, tabVisualShowTitle: tabVisual.showTitle }
     : rupturaVisual && rupturaPeriod
       ? {
         rupturaVisual: {

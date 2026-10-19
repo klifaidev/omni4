@@ -38,6 +38,13 @@ import {
   computePriceEvolution, computePriceRanking, computePriceResult, defaultPriceParams, resolvePricePeriods,
   type PriceEvolutionData, type PriceRankingData,
 } from "./precoData";
+import { BridgeEffectsStripVisual, BridgeEffectVisual, BridgeRankingVisual } from "./BridgeVisuals";
+import {
+  BRIDGE_EFFECT_INFO, BRIDGE_EFFECT_ORDER, BRIDGE_RANKING_EFFECTS, bridgeMetricOf, bridgeRankingEffectOf,
+  computeBridgeEffects, computeBridgeRanking, computeBridgeScope,
+  type BridgeEffectsData, type BridgeRankingData, type BridgeRankingLevel,
+} from "./bridgeData";
+import { getDeckPricingRows } from "@/hooks/useDeckRows";
 import { CustoComposicaoVisual, CustoKgVisual, CustoPressaoVisual, type CustoComposicaoData } from "./CustosVisuals";
 import { buildComposition, compositionTotals, hasCompositionData } from "./custosData";
 import { CanalMixVisual, CanalTrendVisual, type CanalMixVisualData, type CanalTrendVisualData } from "./CanaisVisuals";
@@ -87,8 +94,12 @@ export interface TabVisualDefinition<D = unknown> {
   /** Mostra sempre o histórico inteiro (até o mês de referência), como na
    *  aba — a escolha de meses não se aplica. */
   history?: boolean;
-  /** Posição/altura inicial do bloco no slide, quando o padrão não serve. */
-  defaultFrame?: { y?: number; h?: number };
+  /** Posição e tamanho iniciais do bloco no slide, quando o padrão não serve. */
+  defaultFrame?: { x?: number; y?: number; w?: number; h?: number };
+  /** Mostrar o título acima do visual ao criar (padrão: sim; os cartões já trazem o próprio rótulo). */
+  showTitle?: boolean;
+  /** Texto próprio para a seção "Meses" quando o visual não usa os meses (ex.: compara dois períodos). */
+  periodNote?: string;
   /** Opções iniciais que dependem dos dados (ex.: os dois meses mais recentes), ao criar pela paleta. */
   initialParams?: (deckRows: PricingRow[]) => Record<string, unknown>;
   Component: ComponentType<{ data: D; params: Record<string, unknown>; variant: TabVisualVariant }>;
@@ -448,6 +459,88 @@ const precoEvolucao: TabVisualDefinition<PriceEvolutionData> = {
   Component: PrecoEvolucaoVisual,
 };
 
+// ---- Bridge PVM ----
+function applyBridgeParamsToTab(params: Record<string, unknown>) {
+  const pricing = usePricing.getState();
+  pricing.setMetric(bridgeMetricOf(params));
+  // Os mesmos períodos que o slide mostra agora (a comparação "ao vivo" anda com o mês de referência).
+  const { base, comp, periodMode } = resolvePricePeriods(params, getDeckPricingRows());
+  if (base && comp) {
+    pricing.setPvmMode(periodMode);
+    pricing.setPvm(base, comp);
+  }
+}
+
+const BRIDGE_BASE = {
+  version: 1,
+  page: "Bridge PVM",
+  route: "/bridge-pvm",
+  history: true,
+  initialParams: defaultPriceParams,
+  periodNote: "Como na aba, o Bridge compara os períodos base e comparação — não os meses do filtro. Eles acompanham o mês de referência do deck, ou ficam fixos nos escolhidos.",
+  applyParamsToTab: applyBridgeParamsToTab,
+};
+
+const BRIDGE_EFFECT_CONTROL: TabVisualParamControl = {
+  key: "effect",
+  label: "Efeito",
+  options: BRIDGE_EFFECT_ORDER.map((id) => ({ value: id, label: BRIDGE_EFFECT_INFO[id].label })),
+};
+
+const BRIDGE_RANKING_CONTROL: TabVisualParamControl = {
+  key: "effect",
+  label: "Efeito",
+  options: BRIDGE_RANKING_EFFECTS.map((e) => ({ value: e.key, label: e.label })),
+};
+
+const bridgeEfeito: TabVisualDefinition<BridgeEffectsData | null> = {
+  ...BRIDGE_BASE,
+  id: "bridge.efeito",
+  title: "Efeito do Bridge PVM",
+  params: [BRIDGE_EFFECT_CONTROL, PRICE_FOLLOW_CONTROL, METRIC_CONTROL],
+  defaultParams: { effect: "volume", follow: "live", metric: "cm" },
+  compute: (_rows, params, ctx) => computeBridgeEffects(computeBridgeScope(params, ctx)),
+  isEmpty: (data) => data == null,
+  layout: "fit",
+  designWidth: 320,
+  defaultFrame: { x: 60, y: 130, w: 340, h: 190 },
+  showTitle: false,
+  Component: BridgeEffectVisual,
+};
+
+const bridgeEfeitos: TabVisualDefinition<BridgeEffectsData | null> = {
+  ...BRIDGE_BASE,
+  id: "bridge.efeitos",
+  title: "Painel de efeitos do Bridge PVM",
+  params: [PRICE_FOLLOW_CONTROL, METRIC_CONTROL],
+  defaultParams: { follow: "live", metric: "cm" },
+  compute: (_rows, params, ctx) => computeBridgeEffects(computeBridgeScope(params, ctx)),
+  isEmpty: (data) => data == null,
+  layout: "fit",
+  designWidth: 1400,
+  defaultFrame: { y: 130, h: 190 },
+  Component: BridgeEffectsStripVisual,
+};
+
+function bridgeRanking(level: BridgeRankingLevel, title: string): TabVisualDefinition<BridgeRankingData | null> {
+  return {
+    ...BRIDGE_BASE,
+    id: `bridge.ranking-${level}`,
+    title,
+    params: [BRIDGE_RANKING_CONTROL, PRICE_FOLLOW_CONTROL, METRIC_CONTROL],
+    defaultParams: { effect: "volumeEffect", follow: "live", metric: "cm" },
+    compute: (_rows, params, ctx) => computeBridgeRanking(computeBridgeScope(params, ctx), level, bridgeRankingEffectOf(params)),
+    isEmpty: (data) => data == null || (data.heroes.length === 0 && data.offenders.length === 0),
+    layout: "fit",
+    designWidth: 820,
+    defaultFrame: { y: 120, h: 470 },
+    Component: BridgeRankingVisual,
+  };
+}
+
+const bridgeRankingCategoria = bridgeRanking("categoria", "Bridge PVM — heróis e ofensores por categoria");
+const bridgeRankingSku = bridgeRanking("sku", "Bridge PVM — heróis e ofensores por SKU");
+
 // ---- Farol de Cadastro ----
 /** SKUs por volume dos 3 meses mais recentes (a mesma lista que a aba oferece). */
 function farolSkuOptions(deckRows: PricingRow[]): Array<{ value: string; label: string; vol: number }> {
@@ -562,6 +655,7 @@ const VISUALS = new Map<string, TabVisualDefinition>(
     evolucaoMensal, sazonalidade, herois, canalTrend, canalMix, custoKg, custoPressao, custoComposicao,
     inovMix, inovMargem, inovMaturidade, inovHerois, inovPreco, inovCanalMix,
     positivacao, precoDecomp, precoRanking, precoEvolucao, ufMapa, farol, abcMatriz, abcCurva,
+    bridgeEfeito, bridgeEfeitos, bridgeRankingCategoria, bridgeRankingSku,
   ].map((visual) => [visual.id, visual as TabVisualDefinition]),
 );
 
@@ -584,8 +678,10 @@ export function newTabVisualBlock(id: string, deckRows: PricingRow[]): TabVisual
     visualVersion: visual.version,
     params: { ...visual.defaultParams, ...visual.initialParams?.(deckRows) },
     title: visual.title,
-    showTitle: true,
+    showTitle: visual.showTitle ?? true,
+    ...(visual.defaultFrame?.x != null ? { x: visual.defaultFrame.x } : null),
     ...(visual.defaultFrame?.y != null ? { y: visual.defaultFrame.y } : null),
+    ...(visual.defaultFrame?.w != null ? { w: visual.defaultFrame.w } : null),
     ...(visual.defaultFrame?.h != null ? { h: visual.defaultFrame.h } : null),
   };
 }
@@ -617,4 +713,8 @@ export const TAB_VISUAL_IDS = {
   farol: farol.id,
   abcMatriz: abcMatriz.id,
   abcCurva: abcCurva.id,
+  bridgeEfeito: bridgeEfeito.id,
+  bridgeEfeitos: bridgeEfeitos.id,
+  bridgeRankingCategoria: bridgeRankingCategoria.id,
+  bridgeRankingSku: bridgeRankingSku.id,
 } as const;

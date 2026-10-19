@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { GlassCard } from "./GlassCard";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
@@ -15,6 +16,8 @@ interface KpiCardProps {
   accent?: "blue" | "green" | "red" | "amber" | "violet";
   className?: string;
   sendToSlide?: SendToSlidePayload;
+  /** Ação discreta no canto do cartão (ex.: SendToSlideIconButton, que aparece ao passar o mouse). */
+  action?: ReactNode;
   /** Roteiro Visual, item 2.3: destaca um KPI como o número âncora da tela
    * (ex. ROL Total na Visão Geral), em vez de todos competirem no mesmo
    * tamanho numa grade uniforme. */
@@ -37,7 +40,7 @@ function formatDeltaPct(d: number): string {
   })}%`;
 }
 
-export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide, size = "default" }: KpiCardProps) {
+export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "none", accent = "blue", className, sendToSlide, action, size = "default" }: KpiCardProps) {
   const hasDelta = typeof delta === "number" && isFinite(delta);
   const dir = hasDelta ? (delta! > 0 ? "up" : delta! < 0 ? "down" : "flat") : null;
   // Roteiro Visual, item 1.3: o valor já chega formatado como string
@@ -54,8 +57,9 @@ export function KpiCard({ label, value, subValue, delta, deltaLabel, glow = "non
       glow={glow}
       hoverable
       surface="raised"
-      className={cn("relative overflow-hidden animate-fade-up", isHero && "h-full flex flex-col justify-center py-8", className)}
+      className={cn("relative overflow-hidden animate-fade-up", action && "group/send-slide", isHero && "h-full flex flex-col justify-center py-8", className)}
     >
+      {action && <div className="absolute right-2 top-2 z-10">{action}</div>}
       <div className="flex flex-col gap-3">
         <span
           className={cn(

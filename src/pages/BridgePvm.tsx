@@ -1,12 +1,20 @@
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
-import { KpiCard } from "@/components/pricing/KpiCard";
+import { BridgeEffectCard, BridgeRankingVisual } from "@/components/pricing/tabVisuals/BridgeVisuals";
+import {
+  BRIDGE_EFFECT_INFO, BRIDGE_RANKING_EFFECTS, computeBridgeEffects, computeBridgeRanking,
+  type BridgeRankingEffect, type BridgeRankingLevel, type BridgeScope,
+} from "@/components/pricing/tabVisuals/bridgeData";
+import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
+import { tabVisualPayload, captureSendToSlide, type SendToSlidePayload } from "@/lib/sendToSlide";
+import { sortedPeriodsOf } from "@/lib/tabVisualPeriod";
+import { getDeckPricingRows } from "@/hooks/useDeckRows";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { EmptyState } from "@/components/pricing/EmptyState";
 import { SendToSlideIconButton } from "@/components/pricing/SendToSlideHover";
 import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
-import { applyFilters, calcPVM, type PVMResult, type PVMSkuDetail } from "@/lib/analytics";
+import { applyFilters, calcPVM, type PVMResult } from "@/lib/analytics";
 import { buildPvmReading as buildSharedPvmReading } from "@/lib/pvmReading";
 import { exportPvmCsv } from "@/lib/exportCsv";
 import { formatBRL } from "@/lib/format";
@@ -15,51 +23,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ArrowRight, BookOpen, Calendar, CalendarDays, Download, Info, Plus, TrendingDown, TrendingUp, X } from "lucide-react";
+import { ArrowRight, BookOpen, Calendar, CalendarDays, Download, Info, Plus, Send, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuickActivityDialog, type QuickActivityPrefill } from "@/components/atividades/QuickActivityDialog";
 import { toast } from "sonner";
 import { usePageTitle } from "@/hooks/use-page-title";
 import type { PricingRow } from "@/lib/types";
-
-const EFFECTS: Array<{
-  key: PvmEffectKey;
-  label: string;
-  subtitle: string;
-}> = [
-  {
-    key: "volumeEffect",
-    label: "Efeito Volume",
-    subtitle: "Impacto da variação de volume sobre a margem.",
-  },
-  {
-    key: "priceEffect",
-    label: "Efeito Preço",
-    subtitle: "Impacto da realização de preço no período comparado.",
-  },
-  {
-    key: "costEffect",
-    label: "Efeito Custo Variável",
-    subtitle: "Ganhos e pressões vindos do custo variável unitário.",
-  },
-  {
-    key: "othersEffect",
-    label: "Mix e Resíduo Comercial",
-    subtitle: "SKUs não comparáveis, baixo volume e resíduo de mix/comercial.",
-  },
-];
-
-type PvmEffectKey = keyof Pick<PVMSkuDetail, "volumeEffect" | "priceEffect" | "costEffect" | "othersEffect">;
-
-type PvmRankingItem = {
-  id: string;
-  name: string;
-  subLabel?: string;
-  volumeEffect: number;
-  priceEffect: number;
-  costEffect: number;
-  othersEffect: number;
-};
 
 export default function BridgePvm() {
   usePageTitle("Bridge PVM");
@@ -133,23 +102,22 @@ export default function BridgePvm() {
     return calcPVM(filtered, metric, pvmBase, pvmComp, pvmMode, labels);
   }, [filtered, metric, pvmBase, pvmComp, pvmMode, months]);
 
-  const skuRankingDetails = useMemo<PvmRankingItem[]>(
-    () => result?.skuDetails.map((item) => ({
-      id: item.sku,
-      name: item.skuDesc?.trim() || item.sku,
-      subLabel: item.skuDesc?.trim() ? item.sku : undefined,
-      volumeEffect: item.volumeEffect,
-      priceEffect: item.priceEffect,
-      costEffect: item.costEffect,
-      othersEffect: item.othersEffect,
-    })) ?? [],
-    [result],
-  );
-
-  const categoryRankingDetails = useMemo<PvmRankingItem[]>(
-    () => result ? buildCategoryRankingDetails(result.skuDetails, filtered, pvmBase, pvmComp, pvmMode) : [],
+  // Tudo que os cartões de efeito e os rankings precisam (e o que vai para o slide).
+  const scope = useMemo<BridgeScope | null>(
+    () => (result && pvmBase && pvmComp ? { result, rows: filtered, base: pvmBase, comp: pvmComp, periodMode: pvmMode } : null),
     [result, filtered, pvmBase, pvmComp, pvmMode],
   );
+  const deckAnchor = sortedPeriodsOf(getDeckPricingRows()).at(-1) ?? null;
+  // A comparação vai "ao vivo": base e comparação andam com o mês de referência do deck.
+  const bridgeSend = (visualId: string, visualization: string, extra: Record<string, unknown> = {}): SendToSlidePayload =>
+    tabVisualPayload({
+      page: "Bridge PVM",
+      visualization,
+      visualId,
+      params: { base: pvmBase, comp: pvmComp, periodMode: pvmMode, anchor: deckAnchor, follow: "live", metric, ...extra },
+      filters,
+      selectedPeriods: null,
+    });
 
   if (rows.length === 0) {
     return (
@@ -256,7 +224,7 @@ export default function BridgePvm() {
 
         {result && (
           <>
-            <EffectKpis result={result} />
+            <EffectKpis scope={scope} send={bridgeSend} />
 
 
             <GlassCard glow="blue" className="group/send-slide">
@@ -324,14 +292,8 @@ export default function BridgePvm() {
                 </p>
               </div>
               <div className="grid gap-4 xl:grid-cols-4">
-                {EFFECTS.map((effect) => (
-                  <EffectRankingCard
-                    key={`categoria-${effect.key}`}
-                    title={effect.label}
-                    subtitle={effect.subtitle}
-                    details={categoryRankingDetails}
-                    effectKey={effect.key}
-                  />
+                {BRIDGE_RANKING_EFFECTS.map((effect) => (
+                  <EffectRankingCard key={`categoria-${effect.key}`} scope={scope} level="categoria" effect={effect.key} send={bridgeSend} />
                 ))}
               </div>
             </section>
@@ -344,14 +306,8 @@ export default function BridgePvm() {
                 </p>
               </div>
               <div className="grid gap-4 xl:grid-cols-4">
-              {EFFECTS.map((effect) => (
-                <EffectRankingCard
-                  key={`sku-${effect.key}`}
-                  title={effect.label}
-                  subtitle={effect.subtitle}
-                  details={skuRankingDetails}
-                  effectKey={effect.key}
-                />
+              {BRIDGE_RANKING_EFFECTS.map((effect) => (
+                <EffectRankingCard key={`sku-${effect.key}`} scope={scope} level="sku" effect={effect.key} send={bridgeSend} />
               ))}
               </div>
             </section>
@@ -401,151 +357,40 @@ function PeriodSelect({
   );
 }
 
+type BridgeSend = (visualId: string, visualization: string, extra?: Record<string, unknown>) => SendToSlidePayload;
+
 function EffectRankingCard({
-  title,
-  subtitle,
-  details,
-  effectKey,
+  scope,
+  level,
+  effect,
+  send,
 }: {
-  title: string;
-  subtitle: string;
-  details: PvmRankingItem[];
-  effectKey: PvmEffectKey;
+  scope: BridgeScope | null;
+  level: BridgeRankingLevel;
+  effect: BridgeRankingEffect;
+  send: BridgeSend;
 }) {
-  const heroes = [...details]
-    .filter((item) => item[effectKey] > 0)
-    .sort((a, b) => b[effectKey] - a[effectKey])
-    .slice(0, 5);
-
-  const offenders = [...details]
-    .filter((item) => item[effectKey] < 0)
-    .sort((a, b) => a[effectKey] - b[effectKey])
-    .slice(0, 5);
-
+  const data = useMemo(() => computeBridgeRanking(scope, level, effect), [scope, level, effect]);
+  if (!data) return null;
+  const by = level === "sku" ? "SKU" : "categoria";
   return (
-    <GlassCard className="space-y-4">
-      <header>
-        <h2 className="text-lg font-medium">{title}</h2>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
+    <GlassCard className="group/send-slide space-y-4">
+      <header className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-medium">{data.title}</h2>
+          <p className="text-xs text-muted-foreground">{data.subtitle}</p>
+        </div>
+        <SendToSlideIconButton
+          payload={send(
+            level === "sku" ? TAB_VISUAL_IDS.bridgeRankingSku : TAB_VISUAL_IDS.bridgeRankingCategoria,
+            `${data.title} — heróis e ofensores por ${by}`,
+            { effect },
+          )}
+        />
       </header>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        <EffectList
-          title="Heróis"
-          icon={TrendingUp}
-          items={heroes}
-          effectKey={effectKey}
-          emptyLabel="Sem impactos positivos relevantes no recorte atual."
-          tone="positive"
-        />
-        <EffectList
-          title="Ofensores"
-          icon={TrendingDown}
-          items={offenders}
-          effectKey={effectKey}
-          emptyLabel="Sem impactos negativos relevantes no recorte atual."
-          tone="negative"
-        />
-      </div>
+      <BridgeRankingVisual data={data} variant="tab" />
     </GlassCard>
   );
-}
-
-function EffectList({
-  title,
-  icon: Icon,
-  items,
-  effectKey,
-  emptyLabel,
-  tone,
-}: {
-  title: string;
-  icon: typeof TrendingUp;
-  items: PvmRankingItem[];
-  effectKey: PvmEffectKey;
-  emptyLabel: string;
-  tone: "positive" | "negative";
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <Icon className={tone === "positive" ? "h-4 w-4 text-primary" : "h-4 w-4 text-destructive"} />
-        {title}
-      </div>
-
-      {items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 px-3 py-4 text-xs text-muted-foreground">
-          {emptyLabel}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {items.map((item, index) => {
-            return (
-            <div
-              key={`${title}-${effectKey}-${item.id}`}
-              className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-secondary/20 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  #{index + 1}
-                </div>
-                <div className="truncate text-sm font-medium text-foreground" title={item.name}>{item.name}</div>
-                {item.subLabel && (
-                  <div className="truncate text-[10px] text-muted-foreground">{item.subLabel}</div>
-                )}
-              </div>
-              <div className={tone === "positive" ? "text-sm font-semibold text-primary" : "text-sm font-semibold text-destructive"}>
-                {formatBRL(item[effectKey], { compact: true })}
-              </div>
-            </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function buildCategoryRankingDetails(
-  details: PVMSkuDetail[],
-  rows: PricingRow[],
-  pvmBase: string | null,
-  pvmComp: string | null,
-  pvmMode: "fy" | "month",
-): PvmRankingItem[] {
-  const categoryBySku = new Map<string, string>();
-  const isComp = (row: PricingRow) => (pvmMode === "fy" ? row.fy : row.periodo) === pvmComp;
-  const isBase = (row: PricingRow) => (pvmMode === "fy" ? row.fy : row.periodo) === pvmBase;
-  const remember = (row: PricingRow) => {
-    const sku = row.sku || row.skuDesc;
-    if (!sku) return;
-    const category = row.categoria?.trim() || "Sem categoria";
-    if (!categoryBySku.has(sku)) categoryBySku.set(sku, category);
-  };
-
-  rows.filter(isComp).forEach(remember);
-  rows.filter(isBase).forEach(remember);
-  rows.forEach(remember);
-
-  const grouped = new Map<string, PvmRankingItem>();
-  details.forEach((item) => {
-    const category = categoryBySku.get(item.sku) ?? "Sem categoria";
-    const current = grouped.get(category) ?? {
-      id: category,
-      name: category,
-      volumeEffect: 0,
-      priceEffect: 0,
-      costEffect: 0,
-      othersEffect: 0,
-    };
-    current.volumeEffect += item.volumeEffect;
-    current.priceEffect += item.priceEffect;
-    current.costEffect += item.costEffect;
-    current.othersEffect += item.othersEffect;
-    grouped.set(category, current);
-  });
-
-  return Array.from(grouped.values());
 }
 
 // ---------- Leitura do resultado ----------
@@ -622,98 +467,58 @@ function PvmReadingItem({
 
 // ---------- KpiCards de efeito com tooltip + % do total ----------
 
-const EFFECT_TOOLTIPS: Record<
-  "volume" | "price" | "cost" | "freight" | "commission" | "others",
-  { label: string; description: string }
-> = {
-  volume: {
-    label: "Δ Volume",
-    description:
-      "Impacto na margem causado pela variação de volume vendido entre os dois períodos. Positivo = vendeu mais; negativo = vendeu menos.",
-  },
-  price: {
-    label: "Δ Preço",
-    description:
-      "Impacto causado pela variação no preço médio de realização (ROL/kg). Positivo = preço médio subiu; negativo = preço médio caiu.",
-  },
-  cost: {
-    label: "Δ Custo Var.",
-    description:
-      "Impacto causado pela variação no custo variável unitário (CV/kg). Positivo = custo caiu (ganho); negativo = custo subiu (pressão).",
-  },
-  freight: {
-    label: "Δ Frete",
-    description:
-      "Variação no custo de frete unitário entre os períodos. Positivo = frete caiu; negativo = frete subiu.",
-  },
-  commission: {
-    label: "Δ Comissão",
-    description:
-      "Variação na comissão comercial unitária. Positivo = comissão caiu; negativo = comissão subiu.",
-  },
-  others: {
-    label: "Δ Outros",
-    description:
-      "Efeitos residuais de mix e outros componentes não capturados nos demais efeitos.",
-  },
-};
-
-function EffectKpis({ result }: { result: PVMResult }) {
-  const order: Array<keyof typeof EFFECT_TOOLTIPS> = [
-    "volume",
-    "price",
-    "cost",
-    "freight",
-    "commission",
-    "others",
-  ];
-  const totalAbs =
-    Math.abs(result.volume) +
-    Math.abs(result.price) +
-    Math.abs(result.cost) +
-    Math.abs(result.freight) +
-    Math.abs(result.commission) +
-    Math.abs(result.others);
+function EffectKpis({ scope, send }: { scope: BridgeScope | null; send: BridgeSend }) {
+  const data = useMemo(() => computeBridgeEffects(scope), [scope]);
+  if (!data) return null;
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {order.map((k, i) => {
-          const value = result[k];
-          const meta = EFFECT_TOOLTIPS[k];
-          const share = totalAbs > 0 ? (Math.abs(value) / totalAbs) * 100 : 0;
-          const delayClass =
-            i === 0 ? "" :
-            i === 1 ? "animation-delay-100" :
-            i === 2 ? "animation-delay-200" :
-            i === 3 ? "animation-delay-300" :
-            i === 4 ? "animation-delay-300" :
-            "animation-delay-300";
-          return (
-            <Tooltip key={k}>
-              <TooltipTrigger asChild>
-                <div className="cursor-help">
-                  <KpiCard
-                    className={delayClass}
-                    label={meta.label}
-                    value={formatBRL(value, { compact: true })}
-                    subValue={`% do total: ${share.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
-                    accent={value >= 0 ? "green" : "red"}
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                <div className="mb-1 flex items-center gap-1 font-medium">
-                  <Info className="h-3 w-3" />
-                  {meta.label}
-                </div>
-                {meta.description}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground">
+            Efeitos da variação · <span className="font-medium text-foreground">{data.baseLabel} → {data.currentLabel}</span>
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => captureSendToSlide(send(TAB_VISUAL_IDS.bridgeEfeitos, `Efeitos do Bridge ${data.baseLabel} → ${data.currentLabel}`))}
+          >
+            <Send className="h-3.5 w-3.5" /> Enviar efeitos para Slide
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          {data.cards.map((card, i) => {
+            const delayClass = i === 0 ? "" : i === 1 ? "animation-delay-100" : i === 2 ? "animation-delay-200" : "animation-delay-300";
+            return (
+              <Tooltip key={card.id}>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help">
+                    <BridgeEffectCard
+                      data={card}
+                      variant="tab"
+                      className={delayClass}
+                      action={(
+                        <SendToSlideIconButton
+                          className="h-6 w-6"
+                          payload={send(TAB_VISUAL_IDS.bridgeEfeito, `${card.label} — ${data.baseLabel} → ${data.currentLabel}`, { effect: card.id })}
+                        />
+                      )}
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <div className="mb-1 flex items-center gap-1 font-medium">
+                    <Info className="h-3 w-3" />
+                    {BRIDGE_EFFECT_INFO[card.id].label}
+                  </div>
+                  {card.description}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
       </div>
     </TooltipProvider>
   );
 }
-

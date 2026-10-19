@@ -99,8 +99,8 @@ export function TabVisualInspector({ block, onChange }: {
       {visual.history ? (
         <Section title="Período" defaultOpen>
           <p className="slides-type-helper">
-            Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck. Mostrando agora:{" "}
-            <span className="font-medium text-foreground">{range}</span>.
+            {visual.periodNote ?? "Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck."}
+            {visual.periodNote ? null : <> Mostrando agora: <span className="font-medium text-foreground">{range}</span>.</>}
           </p>
         </Section>
       ) : (

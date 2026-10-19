@@ -93,7 +93,7 @@ export function TabVisualSendPanel({
           <div>
             <div className="mb-1.5 font-semibold text-foreground">Meses</div>
             <p className="text-muted-foreground">
-              Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck ({range}).
+              {visual.periodNote ?? `Como na aba, este gráfico mostra todo o histórico até o mês de referência do deck (${range}).`}
             </p>
           </div>
         ) : (

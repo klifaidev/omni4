@@ -259,7 +259,9 @@ export interface BuildCustomBlockOptions {
   /** Visual da aba: versão atual no catálogo. */
   tabVisualVersion?: number;
   /** Visual da aba: posição/altura inicial própria do visual. */
-  tabVisualFrame?: { y?: number; h?: number };
+  tabVisualFrame?: { x?: number; y?: number; w?: number; h?: number };
+  /** Visual da aba: mostrar o título do elemento (padrão do visual). */
+  tabVisualShowTitle?: boolean;
   /** Visual da Ruptura: período escolhido no diálogo, versão e posição inicial do visual. */
   rupturaVisual?: {
     period: TabVisualPeriod;
@@ -305,9 +307,12 @@ export function buildCustomBlockFromPayload(
     visual.params = isRecord(payload.config.params) ? { ...payload.config.params } : {};
     visual.filters = filters;
     visual.period = options.tabVisualPeriod ?? { mode: "live", months: null };
+    if (options.tabVisualFrame?.x != null) visual.x = options.tabVisualFrame.x;
     if (options.tabVisualFrame?.y != null) visual.y = options.tabVisualFrame.y;
+    if (options.tabVisualFrame?.w != null) visual.w = options.tabVisualFrame.w;
     if (options.tabVisualFrame?.h != null) visual.h = options.tabVisualFrame.h;
     visual.title = title;
+    if (options.tabVisualShowTitle != null) visual.showTitle = options.tabVisualShowTitle;
     return visual;
   }
 
