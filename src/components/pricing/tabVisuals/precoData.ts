@@ -60,6 +60,18 @@ export function resolvePricePeriods(
   return { base: findPeriod(base), comp: findPeriod(comp), periodMode };
 }
 
+/** Os dois meses mais recentes do deck (base = penúltimo, comparação = último) — o padrão da aba. */
+export function defaultPriceParams(deckRows: PricingRow[]): Record<string, unknown> {
+  const all = sortedPeriodsOf(deckRows);
+  return {
+    base: all.length >= 2 ? all[all.length - 2] : null,
+    comp: all.length >= 1 ? all[all.length - 1] : null,
+    periodMode: "month",
+    anchor: all.at(-1) ?? null,
+    follow: "live",
+  };
+}
+
 export interface PriceRankingData {
   top10: { name: string; fullName: string; value: number }[];
 }

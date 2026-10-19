@@ -93,6 +93,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/customCapacity";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
+import { listTabVisuals, newTabVisualBlock } from "@/components/pricing/tabVisuals/registry";
 import { getCachedRowsSignature } from "@/lib/slideCalcCache";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
@@ -1083,6 +1084,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       });
     }
   }, [canEdit, config.blocks.length]);
+  // Visual do catálogo das abas (o mesmo gráfico da aba) direto no slide.
+  const addTabVisual = useCallback((visualId: string) => {
+    if (!canEdit()) return;
+    const block = newTabVisualBlock(visualId, pricingRows);
+    if (!block) return;
+    const id = insertBlockAction(block);
+    if (id) setSelection([id]);
+  }, [canEdit, pricingRows]);
   const addChart = useCallback((chartType: CustomChartType, preset?: "positivacao") => {
     if (!canEdit()) return;
     const perfEnabled = isSlidePerfEnabled();
@@ -1637,6 +1646,10 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     { id: "story:decision", icon: Target, label: t.storyCards.decision.menuLabel, keywords: "decisao recomendacao dono prazo status", onClick: addDecisionCard },
     { id: "story:risk", icon: Gauge, label: t.storyCards.risk.menuLabel, keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
   ];
+  const tabVisualPalette = useMemo(
+    () => listTabVisuals().map((v) => ({ id: v.id, label: v.title, page: v.page })),
+    [],
+  );
   const paletteActions = [
     ...storytellingPalette,
     ...CHART_PALETTE.map((it) => ({
@@ -1652,6 +1665,13 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       label: it.label,
       keywords: `${it.id} ${it.kind}`,
       onClick: () => addBlock(it.kind),
+    })),
+    ...tabVisualPalette.map((it) => ({
+      id: `tabvisual:${it.id}`,
+      icon: Sparkles,
+      label: it.label,
+      keywords: `${it.id} ${it.page} igual aba visual`,
+      onClick: () => addTabVisual(it.id),
     })),
     ...OMNI_PALETTE.map((it) => ({
       id: `omni:${it.id}`,
@@ -1675,6 +1695,8 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleOmniPalette = OMNI_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.group));
+  const visibleTabVisualPalette = tabVisualPalette.filter((it) => matchesPalette(it.label, it.id, it.page));
+  const tabVisualPages = [...new Set(visibleTabVisualPalette.map((it) => it.page))];
   const chartWarmDataSignature = useMemo(() => [
     slideId,
     getCachedRowsSignature(pricingRows),
@@ -1709,13 +1731,14 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       || visibleChartPalette.length > 0
       || visibleElementPalette.length > 0
       || visibleOmniPalette.length > 0
+      || visibleTabVisualPalette.length > 0
     : activePaletteCategory === "models"
       || activePaletteCategory === "assets"
       || (activePaletteCategory === "favorites" && (favoritePalette.length > 0 || recentPalette.length > 0))
       || (activePaletteCategory === "charts" && visibleChartPalette.length > 0)
       || activePaletteCategory === "elements"
       || (activePaletteCategory === "story" && visibleStorytellingPalette.length > 0)
-      || (activePaletteCategory === "omni" && visibleOmniPalette.length > 0);
+      || (activePaletteCategory === "omni" && (visibleOmniPalette.length > 0 || visibleTabVisualPalette.length > 0));
 
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
@@ -2266,6 +2289,31 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                     favorite={favoritePaletteIds.includes(`element:${it.id}`)}
                     onToggleFavorite={() => togglePaletteFavorite(`element:${it.id}`)}
                   />
+                ))}
+              </PaletteGroup>
+              <Separator className="my-2" />
+            </>
+          )}
+
+          {showPaletteCategory("omni") && visibleTabVisualPalette.length > 0 && (
+            <>
+              <PaletteGroup title="Iguais à aba">
+                {tabVisualPages.map((page) => (
+                  <div key={page}>
+                    <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                      {page}
+                    </div>
+                    {visibleTabVisualPalette.filter((it) => it.page === page).map((it) => (
+                      <PaletteButton
+                        key={it.id}
+                        icon={Sparkles}
+                        label={it.label}
+                        onClick={() => runPaletteAction(`tabvisual:${it.id}`, () => addTabVisual(it.id))}
+                        favorite={favoritePaletteIds.includes(`tabvisual:${it.id}`)}
+                        onToggleFavorite={() => togglePaletteFavorite(`tabvisual:${it.id}`)}
+                      />
+                    ))}
+                  </div>
                 ))}
               </PaletteGroup>
               <Separator className="my-2" />

@@ -133,15 +133,18 @@ export function TabVisualInspector({ block, onChange }: {
 
       {visual.params.length > 0 && (
         <Section title="Opções" defaultOpen>
-          {visual.params.map((control) => (
+          {visual.params.map((control) => {
+            const options = control.optionsFor ? control.optionsFor(deckRows) : control.options;
+            return (
             <Row key={control.key} label={control.label}>
               <SelectField
-                value={String(block.params[control.key] ?? visual.defaultParams[control.key] ?? control.options[0]?.value)}
-                onChange={(v) => onChange({ params: { ...block.params, [control.key]: v } })}
-                options={control.options}
+                value={String(block.params[control.key] ?? visual.defaultParams[control.key] ?? options[0]?.value)}
+                onChange={(v) => onChange({ params: { ...block.params, [control.key]: control.key === "periodoMeses" ? Number(v) : v } })}
+                options={options}
               />
             </Row>
-          ))}
+            );
+          })}
         </Section>
       )}
 

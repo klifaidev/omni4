@@ -8,6 +8,7 @@
 // recebe `data` + `variant`, a conta num `compute(rows, params)`, registrar
 // aqui e trocar o envio da aba por `tabVisualPayload(...)`.
 import type { ComponentType } from "react";
+import { newBlock, type TabVisualBlock } from "@/lib/customSlide";
 import type { Filters, Metric, PricingRow } from "@/lib/types";
 import { usePricing } from "@/store/pricing";
 import { EvolucaoMensalVisual } from "./EvolucaoMensalVisual";
@@ -18,6 +19,7 @@ import { PositivacaoVisual } from "./PositivacaoVisual";
 import { UfMapVisual } from "./UfMapVisuals";
 import { computeUfMap, UF_MAP_POINTS, type UfMapData } from "./ufMapData";
 import { calcFarol, type FarolComparacao } from "@/lib/farol";
+import { sortedPeriodsOf } from "@/lib/tabVisualPeriod";
 import { FarolVisual } from "./FarolVisual";
 import { AbcCurvaVisual, AbcMatrizVisual, type AbcVisualData } from "./AbcVisuals";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
@@ -33,7 +35,7 @@ import {
 import { aggregateBy, applyFilters, computeCostEvolution, type CostEvolutionRow, type PriceDecompositionResult } from "@/lib/analytics";
 import { PrecoDecompVisual, PrecoEvolucaoVisual, PrecoRankingVisual } from "./PrecoVisuals";
 import {
-  computePriceEvolution, computePriceRanking, computePriceResult, resolvePricePeriods,
+  computePriceEvolution, computePriceRanking, computePriceResult, defaultPriceParams, resolvePricePeriods,
   type PriceEvolutionData, type PriceRankingData,
 } from "./precoData";
 import { CustoComposicaoVisual, CustoKgVisual, CustoPressaoVisual, type CustoComposicaoData } from "./CustosVisuals";
@@ -49,6 +51,8 @@ export interface TabVisualParamControl {
   key: string;
   label: string;
   options: Array<{ value: string; label: string }>;
+  /** Opções que dependem dos dados (ex.: os SKUs da base); tem prioridade sobre `options`. */
+  optionsFor?: (deckRows: PricingRow[]) => Array<{ value: string; label: string }>;
 }
 
 /** O que a conta de um visual recebe além das linhas já recortadas. */
@@ -85,6 +89,8 @@ export interface TabVisualDefinition<D = unknown> {
   history?: boolean;
   /** Posição/altura inicial do bloco no slide, quando o padrão não serve. */
   defaultFrame?: { y?: number; h?: number };
+  /** Opções iniciais que dependem dos dados (ex.: os dois meses mais recentes), ao criar pela paleta. */
+  initialParams?: (deckRows: PricingRow[]) => Record<string, unknown>;
   Component: ComponentType<{ data: D; params: Record<string, unknown>; variant: TabVisualVariant }>;
   /** Leva as opções do slide para a aba (Abrir na aba). */
   applyParamsToTab(params: Record<string, unknown>): void;
@@ -399,6 +405,7 @@ const PRECO_BASE = {
 
 const precoDecomp: TabVisualDefinition<PriceDecompositionResult | null> = {
   ...PRECO_BASE,
+  initialParams: defaultPriceParams,
   id: "preco.decomposicao",
   title: "Decomposição de Preço — efeito preço × mix",
   params: [PRICE_FOLLOW_CONTROL],
@@ -412,6 +419,7 @@ const precoDecomp: TabVisualDefinition<PriceDecompositionResult | null> = {
 
 const precoRanking: TabVisualDefinition<PriceRankingData> = {
   ...PRECO_BASE,
+  initialParams: defaultPriceParams,
   id: "preco.ranking-skus",
   title: "Ranking de SKUs por variação de preço",
   params: [
@@ -441,14 +449,40 @@ const precoEvolucao: TabVisualDefinition<PriceEvolutionData> = {
 };
 
 // ---- Farol de Cadastro ----
+/** SKUs por volume dos 3 meses mais recentes (a mesma lista que a aba oferece). */
+function farolSkuOptions(deckRows: PricingRow[]): Array<{ value: string; label: string; vol: number }> {
+  const recent = new Set(sortedPeriodsOf(deckRows).slice(-3));
+  const bySku = new Map<string, { desc: string; vol: number }>();
+  for (const r of deckRows) {
+    if (!r.sku || !recent.has(r.periodo)) continue;
+    const cur = bySku.get(r.sku);
+    if (cur) cur.vol += r.volumeKg;
+    else bySku.set(r.sku, { desc: r.skuDesc ?? r.sku, vol: r.volumeKg });
+  }
+  return [...bySku.entries()]
+    .sort((a, b) => b[1].vol - a[1].vol)
+    .slice(0, 80)
+    .map(([sku, v]) => ({ value: sku, label: `${sku} · ${v.desc}`, vol: v.vol }));
+}
+
 const farol: TabVisualDefinition<FarolComparacao | null> = {
   id: "farol.velocimetro",
   version: 1,
   page: "Farol de Cadastro",
   route: "/farol",
   title: "Velocímetro do Farol",
-  params: [METRIC_CONTROL],
-  defaultParams: { metric: "cm" },
+  params: [
+    { key: "skuRef", label: "SKU de referência", options: [], optionsFor: farolSkuOptions },
+    { key: "skuComp", label: "SKU comparado", options: [], optionsFor: farolSkuOptions },
+    { key: "periodoMeses", label: "Janela", options: [{ value: "3", label: "Últimos 3 meses" }, { value: "6", label: "Últimos 6 meses" }, { value: "12", label: "Últimos 12 meses" }] },
+    METRIC_CONTROL,
+  ],
+  defaultParams: { metric: "cm", periodoMeses: 3 },
+  // Padrão da aba: o SKU de maior volume contra o 3º (ou o 2º).
+  initialParams: (deckRows) => {
+    const skus = farolSkuOptions(deckRows);
+    return { skuRef: skus[0]?.value ?? null, skuComp: (skus[2] ?? skus[1])?.value ?? null };
+  },
   // O Farol tem os próprios filtros (canal, categoria, últimos N meses) e
   // conta a janela a partir do último mês da base — no slide, do deck.
   compute: (_rows, params, ctx) => {
@@ -458,7 +492,7 @@ const farol: TabVisualDefinition<FarolComparacao | null> = {
     return calcFarol(ctx.allRows, skuRef, skuComp, {
       canal: typeof params.canal === "string" ? params.canal : null,
       categoria: typeof params.categoria === "string" ? params.categoria : null,
-      periodoMeses: typeof params.periodoMeses === "number" ? params.periodoMeses : 3,
+      periodoMeses: Number(params.periodoMeses) || 3,
     }, metricOf(params));
   },
   isEmpty: (data) => data == null,
@@ -498,6 +532,7 @@ const abcCurva: TabVisualDefinition<AbcVisualData> = {
 
 const ufMapa: TabVisualDefinition<UfMapData> = {
   ...PRECO_BASE,
+  initialParams: defaultPriceParams,
   id: "preco.mapa-uf",
   title: "Margem por UF — mapa do Brasil",
   params: [
@@ -529,6 +564,31 @@ const VISUALS = new Map<string, TabVisualDefinition>(
     positivacao, precoDecomp, precoRanking, precoEvolucao, ufMapa, farol, abcMatriz, abcCurva,
   ].map((visual) => [visual.id, visual as TabVisualDefinition]),
 );
+
+/** Todos os visuais do catálogo, na ordem de registro. */
+export function listTabVisuals(): TabVisualDefinition[] {
+  return [...VISUALS.values()];
+}
+
+/**
+ * Um visual novo para inserir direto no slide (pela paleta do editor): opções
+ * padrão da aba, ao vivo com todo o histórico até o mês de referência.
+ */
+export function newTabVisualBlock(id: string, deckRows: PricingRow[]): TabVisualBlock | null {
+  const visual = VISUALS.get(id);
+  if (!visual) return null;
+  const block = newBlock("tab_visual", 0) as TabVisualBlock;
+  return {
+    ...block,
+    visualId: visual.id,
+    visualVersion: visual.version,
+    params: { ...visual.defaultParams, ...visual.initialParams?.(deckRows) },
+    title: visual.title,
+    showTitle: true,
+    ...(visual.defaultFrame?.y != null ? { y: visual.defaultFrame.y } : null),
+    ...(visual.defaultFrame?.h != null ? { h: visual.defaultFrame.h } : null),
+  };
+}
 
 export function getTabVisual(id: string): TabVisualDefinition | undefined {
   return VISUALS.get(id);
