@@ -15,6 +15,8 @@ import { computeEvolucaoMensal, type EvolucaoMensalPoint } from "./evolucaoMensa
 import { HeroisVisual } from "./HeroisVisual";
 import { buildPositivacaoSeries, POSITIVACAO_DIMS, type PositivacaoDim, type PositivacaoSeries } from "@/lib/positivacao";
 import { PositivacaoVisual } from "./PositivacaoVisual";
+import { UfMapVisual } from "./UfMapVisuals";
+import { computeUfMap, UF_MAP_POINTS, type UfMapData } from "./ufMapData";
 import { calcFarol, type FarolComparacao } from "@/lib/farol";
 import { FarolVisual } from "./FarolVisual";
 import { AbcCurvaVisual, AbcMatrizVisual, type AbcVisualData } from "./AbcVisuals";
@@ -81,6 +83,8 @@ export interface TabVisualDefinition<D = unknown> {
   /** Mostra sempre o histórico inteiro (até o mês de referência), como na
    *  aba — a escolha de meses não se aplica. */
   history?: boolean;
+  /** Posição/altura inicial do bloco no slide, quando o padrão não serve. */
+  defaultFrame?: { y?: number; h?: number };
   Component: ComponentType<{ data: D; params: Record<string, unknown>; variant: TabVisualVariant }>;
   /** Leva as opções do slide para a aba (Abrir na aba). */
   applyParamsToTab(params: Record<string, unknown>): void;
@@ -367,6 +371,10 @@ const positivacao: TabVisualDefinition<PositivacaoSeries> = {
 };
 
 // ---- Análise de Preço ----
+const UF_FOCUS_OPTIONS = [...UF_MAP_POINTS]
+  .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
+  .map((point) => ({ value: point.uf, label: `${point.label} (${point.uf})` }));
+
 const PRICE_FOLLOW_CONTROL: TabVisualParamControl = {
   key: "follow",
   label: "Base × comparação",
@@ -488,11 +496,37 @@ const abcCurva: TabVisualDefinition<AbcVisualData> = {
   Component: AbcCurvaVisual,
 };
 
+const ufMapa: TabVisualDefinition<UfMapData> = {
+  ...PRECO_BASE,
+  id: "preco.mapa-uf",
+  title: "Margem por UF — mapa do Brasil",
+  params: [
+    PRICE_FOLLOW_CONTROL,
+    {
+      key: "uf",
+      label: "UF em foco",
+      options: [{ value: "none", label: "Nenhuma (só o ranking)" }, ...UF_FOCUS_OPTIONS],
+    },
+  ],
+  defaultParams: { follow: "live", uf: "none" },
+  // A cor é a CM % do período de COMPARAÇÃO; base serve à variação de preço.
+  compute: (_rows, params, ctx) => {
+    const { base, comp, periodMode } = resolvePricePeriods(params, ctx.allRows);
+    return computeUfMap(applyFilters(ctx.allRows, ctx.filters, null), base, comp, periodMode);
+  },
+  isEmpty: (data) => data.active.length === 0,
+  layout: "fit",
+  designWidth: 1000,
+  // Mapa + ranking pedem mais altura que o bloco padrão (470 px).
+  defaultFrame: { y: 110, h: 520 },
+  Component: UfMapVisual,
+};
+
 const VISUALS = new Map<string, TabVisualDefinition>(
   [
     evolucaoMensal, sazonalidade, herois, canalTrend, canalMix, custoKg, custoPressao, custoComposicao,
     inovMix, inovMargem, inovMaturidade, inovHerois, inovPreco, inovCanalMix,
-    positivacao, precoDecomp, precoRanking, precoEvolucao, farol, abcMatriz, abcCurva,
+    positivacao, precoDecomp, precoRanking, precoEvolucao, ufMapa, farol, abcMatriz, abcCurva,
   ].map((visual) => [visual.id, visual as TabVisualDefinition]),
 );
 
@@ -519,6 +553,7 @@ export const TAB_VISUAL_IDS = {
   precoDecomp: precoDecomp.id,
   precoRanking: precoRanking.id,
   precoEvolucao: precoEvolucao.id,
+  ufMapa: ufMapa.id,
   farol: farol.id,
   abcMatriz: abcMatriz.id,
   abcCurva: abcCurva.id,

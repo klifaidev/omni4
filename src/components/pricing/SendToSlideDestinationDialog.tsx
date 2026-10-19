@@ -98,7 +98,7 @@ export function SendToSlideDestinationDialog() {
   const close = () => setPayload(null);
 
   const blockOptions = tabVisual && tabPeriod
-    ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version }
+    ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version, tabVisualFrame: tabVisual.defaultFrame }
     : {};
 
   const confirm = () => {

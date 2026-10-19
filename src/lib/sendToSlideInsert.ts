@@ -245,6 +245,8 @@ export interface BuildCustomBlockOptions {
   tabVisualPeriod?: TabVisualPeriod;
   /** Visual da aba: versão atual no catálogo. */
   tabVisualVersion?: number;
+  /** Visual da aba: posição/altura inicial própria do visual. */
+  tabVisualFrame?: { y?: number; h?: number };
 }
 
 export function buildCustomBlockFromPayload(
@@ -269,6 +271,8 @@ export function buildCustomBlockFromPayload(
     visual.params = isRecord(payload.config.params) ? { ...payload.config.params } : {};
     visual.filters = filters;
     visual.period = options.tabVisualPeriod ?? { mode: "live", months: null };
+    if (options.tabVisualFrame?.y != null) visual.y = options.tabVisualFrame.y;
+    if (options.tabVisualFrame?.h != null) visual.h = options.tabVisualFrame.h;
     visual.title = title;
     return visual;
   }
