@@ -3,6 +3,7 @@
 // para 13.33" x 7.5" do LAYOUT_WIDE do PPT — basta dividir por 100).
 
 import type { Filters } from "./types";
+import type { RupturaFilters } from "./ruptura/metrics";
 import { SLIDE_DEFAULT_FONT_FAMILY } from "./slideBrandKit";
 import type {
   MonthRangeSelection,
@@ -48,7 +49,10 @@ export type CustomBlockKind =
   | "omni_abc_bars"
   // Visual da aba — o MESMO componente que a aba desenha (ver
   // components/pricing/tabVisuals), não uma tradução para outro elemento.
-  | "tab_visual";
+  | "tab_visual"
+  // Visual da aba Ruptura — mesmo componente da aba, lendo a base de ruptura
+  // (components/ruptura/visuals).
+  | "ruptura_visual";
 
 export type BlockEnterAnimation = "none" | "fade" | "slide-up" | "pop";
 
@@ -800,10 +804,28 @@ export interface TabVisualBlock extends BaseBlock {
   showTitle: boolean;
 }
 
+/**
+ * Visual enviado da aba Ruptura. Mesma ideia do TabVisualBlock, mas lê a base
+ * de ruptura (não as linhas do KE30): guarda só a receita — qual visual,
+ * opções, filtros da ruptura e período (meses "AAAA-MM" da própria base).
+ */
+export interface RupturaVisualBlock extends BaseBlock {
+  kind: "ruptura_visual";
+  /** Id no catálogo da Ruptura (ex.: "ruptura.mapa"). */
+  visualId: string;
+  visualVersion: number;
+  params: Record<string, unknown>;
+  /** Filtros da ruptura (marca, categoria, rede, estado…). */
+  filters: RupturaFilters;
+  period: TabVisualPeriod;
+  title: string;
+  showTitle: boolean;
+}
+
 export type CustomBlock =
   | TitleBlock | TextBlock | KpiBlock | ImageBlock
   | ShapeBlock | BridgeBlock | TableBlock | ChartBlock | TopSkuBlock | DreBlock
-  | OmniBlock | TabVisualBlock;
+  | OmniBlock | TabVisualBlock | RupturaVisualBlock;
 
 export interface CustomSlideConfig {
   blocks: CustomBlock[];
@@ -956,6 +978,12 @@ export function newBlock(kind: CustomBlockKind, zTop: number): CustomBlock {
         period: { mode: "live", months: null },
         title: "", showTitle: true,
       } as TabVisualBlock;
+    case "ruptura_visual":
+      return { id, kind, z, x: 60, y: 130, w: 1213, h: 470,
+        visualId: "", visualVersion: 1, params: {}, filters: {},
+        period: { mode: "live", months: null },
+        title: "", showTitle: true,
+      } as RupturaVisualBlock;
     // --- Omni Analytics ---
     case "omni_evolucao_mensal":
       return { id, kind, z, x: 60, y: 160, w: 1200, h: 400,
@@ -1210,6 +1238,7 @@ export const BLOCK_LABELS: Record<CustomBlockKind, string> = {
   omni_portfolio_matrix: "Matriz de Portfólio",
   omni_abc_bars: "Barras ABC",
   tab_visual: "Visual da aba",
+  ruptura_visual: "Visual da Ruptura",
 };
 
 // ---------------------------------------------------------------------------

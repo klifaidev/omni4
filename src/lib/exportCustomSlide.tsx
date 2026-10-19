@@ -13,6 +13,7 @@ import { PPT_COLORS } from "./slideColors";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { SlideFilterProvider } from "@/components/pricing/custom/SlideFilterContext";
 import { waitForCaptureReady } from "./exportCaptureReady";
+import { configNeedsRuptura, ensureRupturaLoaded } from "@/components/ruptura/visuals/useRupturaModel";
 
 const SLIDE_W_IN = 13.33;
 const SLIDE_H_IN = 7.5;
@@ -161,6 +162,8 @@ async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvas
 }
 
 async function renderSlideAsImage(config: CustomSlideConfig, slideId?: string): Promise<string> {
+  // A base de ruptura abre sob demanda: sem esperar, o visual sairia "carregando" na foto.
+  if (configNeedsRuptura(config)) await ensureRupturaLoaded();
   const exportConfig = await prepareConfigForExport(config);
   const hostScale = fitCanvasScale(CANVAS_W, CANVAS_H);
   const host = document.createElement("div");

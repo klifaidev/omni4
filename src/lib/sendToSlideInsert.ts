@@ -7,6 +7,7 @@ import {
   type DreBlock,
   type KpiMeasureId,
   type OmniBaseBlock,
+  type RupturaVisualBlock,
   type TableBlock,
   type TabVisualBlock,
   type TabVisualPeriod,
@@ -19,6 +20,8 @@ import {
   type RelativePeriodPreset,
 } from "@/lib/relativePeriods";
 import type { Filters, FilterKey } from "@/lib/types";
+import { RUPTURA_DIMS } from "@/lib/ruptura/types";
+import type { RupturaFilters } from "@/lib/ruptura/metrics";
 import type { BridgePvmSlideConfig, BudgetEvoSlideConfig, SlideItem } from "@/lib/slidesFlow";
 import type { SendToSlidePayload, SendToSlideTargetKind } from "@/lib/sendToSlide";
 import { SLIDE_FILTER_KEYS, SLIDE_TABLE_MEASURE_IDS } from "@/lib/pivotToSlide";
@@ -84,6 +87,16 @@ function asFilters(value: unknown): Filters {
   for (const key of FILTER_KEYS) {
     const values = asStringArray(value[key]);
     if (values) filters[key] = values;
+  }
+  return filters;
+}
+
+function asRupturaFilters(value: unknown): RupturaFilters {
+  if (!isRecord(value)) return {};
+  const filters: RupturaFilters = {};
+  for (const dim of RUPTURA_DIMS) {
+    const values = asStringArray(value[dim]);
+    if (values) filters[dim] = values;
   }
   return filters;
 }
@@ -247,6 +260,13 @@ export interface BuildCustomBlockOptions {
   tabVisualVersion?: number;
   /** Visual da aba: posição/altura inicial própria do visual. */
   tabVisualFrame?: { y?: number; h?: number };
+  /** Visual da Ruptura: período escolhido no diálogo, versão e posição inicial do visual. */
+  rupturaVisual?: {
+    period: TabVisualPeriod;
+    version: number;
+    frame: { x: number; y: number; w: number; h: number };
+    showTitle: boolean;
+  };
 }
 
 export function buildCustomBlockFromPayload(
@@ -263,6 +283,20 @@ export function buildCustomBlockFromPayload(
   const title = payload.source.visualization;
 
   if ("title" in block) block.title = title;
+
+  if (block.kind === "ruptura_visual") {
+    const visual = block as RupturaVisualBlock;
+    visual.visualId = asString(payload.config.visualId) ?? "";
+    visual.visualVersion = options.rupturaVisual?.version ?? 1;
+    visual.params = isRecord(payload.config.params) ? { ...payload.config.params } : {};
+    visual.filters = asRupturaFilters(payload.config.filters);
+    visual.period = options.rupturaVisual?.period ?? { mode: "live", months: null };
+    if (options.rupturaVisual) {
+      Object.assign(visual, options.rupturaVisual.frame, { showTitle: options.rupturaVisual.showTitle });
+    }
+    visual.title = title;
+    return visual;
+  }
 
   if (block.kind === "tab_visual") {
     const visual = block as TabVisualBlock;

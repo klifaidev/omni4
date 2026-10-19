@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { captureSendToSlide, type SendToSlidePayload } from "@/lib/sendToSlide";
 import { isSendToSlideEnabledForPage } from "@/lib/sendToSlideRollout";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,8 @@ interface SendToSlideHoverProps {
 export function SendToSlideHover({ payload, children, className }: SendToSlideHoverProps) {
   // Visuais do catálogo (iguais à aba) valem em qualquer aba; os envios
   // antigos (tradução para outro elemento) seguem a liberação por aba.
-  const enabled = payload.target.blockKind === "tab_visual" || isSendToSlideEnabledForPage(payload.source.page);
+  const enabled = payload.target.blockKind === "tab_visual" || payload.target.blockKind === "ruptura_visual"
+    || isSendToSlideEnabledForPage(payload.source.page);
   if (!enabled) {
     return <>{children}</>;
   }
@@ -37,5 +39,39 @@ export function SendToSlideHover({ payload, children, className }: SendToSlideHo
         Enviar para Slide
       </Button>
     </div>
+  );
+}
+
+/**
+ * Botão discreto de "Enviar para Slide" para cartões cujo canto já tem
+ * controles (filtros, alternância de métrica): fica no cabeçalho, aparece ao
+ * passar o mouse ou focar o cartão (que precisa da classe `group/send-slide`)
+ * e nunca cobre nada.
+ */
+export function SendToSlideIconButton({ payload, className }: { payload: SendToSlidePayload; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={`Enviar para Slide: ${payload.source.visualization}`}
+          className={cn(
+            "h-8 w-8 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-foreground",
+            "focus-visible:opacity-100 group-hover/send-slide:opacity-100 group-focus-within/send-slide:opacity-100",
+            className,
+          )}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            captureSendToSlide(payload);
+          }}
+        >
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="text-xs">Enviar para Slide</TooltipContent>
+    </Tooltip>
   );
 }

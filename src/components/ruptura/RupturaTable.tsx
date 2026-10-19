@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, Download, Search, Table2 } from "lucide-react";
 import { GlassCard } from "@/components/pricing/GlassCard";
+import { SendToSlideIconButton } from "@/components/pricing/SendToSlideHover";
+import type { SendToSlidePayload } from "@/lib/sendToSlide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -68,6 +70,8 @@ interface RupturaTableProps<T extends RupturaGroupRow> {
   expandable?: (row: T) => boolean;
   emptyMessage?: string;
   className?: string;
+  /** Monta o envio para o slide; recebe o formato que a tabela mostra agora. */
+  sendToSlide?: (mode: "table" | "bars") => SendToSlidePayload;
 }
 
 export function RupturaTable<T extends RupturaGroupRow>({
@@ -85,6 +89,7 @@ export function RupturaTable<T extends RupturaGroupRow>({
   expandable,
   emptyMessage = "Sem ocorrências no recorte.",
   className,
+  sendToSlide,
 }: RupturaTableProps<T>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
@@ -138,7 +143,7 @@ export function RupturaTable<T extends RupturaGroupRow>({
   const shown = columns.filter((c) => !c.exportOnly);
 
   return (
-    <GlassCard className={cn("flex min-w-0 flex-col gap-3 p-5", className)}>
+    <GlassCard className={cn("group/send-slide flex min-w-0 flex-col gap-3 p-5", className)}>
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-medium">{title}</h2>
@@ -167,6 +172,7 @@ export function RupturaTable<T extends RupturaGroupRow>({
               <Download className="h-3.5 w-3.5" /> Exportar
             </Button>
           )}
+          {sendToSlide && <SendToSlideIconButton payload={sendToSlide(mode)} />}
         </div>
       </header>
 

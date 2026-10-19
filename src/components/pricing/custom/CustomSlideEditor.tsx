@@ -94,6 +94,7 @@ import { resolveTableFit, tableHeightWithExtraRows, type FitInfo } from "@/lib/c
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
 import { warmSpeculativeChartPaletteData } from "@/lib/slideDeckPreparation";
 import { listTabVisuals, newTabVisualBlock } from "@/components/pricing/tabVisuals/registry";
+import { listRupturaVisuals, newRupturaVisualBlock } from "@/components/ruptura/visuals/registry";
 import { getCachedRowsSignature } from "@/lib/slideCalcCache";
 import { computePivot, type PivotConfig } from "@/lib/pivot";
 import { buildUnifiedRows } from "@/lib/pivotData";
@@ -1063,7 +1064,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   // Visual do catálogo das abas (o mesmo gráfico da aba) direto no slide.
   const addTabVisual = useCallback((visualId: string) => {
     if (!canEdit()) return;
-    const block = newTabVisualBlock(visualId, pricingRows);
+    const block = visualId.startsWith("ruptura.") ? newRupturaVisualBlock(visualId, 0) : newTabVisualBlock(visualId, pricingRows);
     if (!block) return;
     const id = insertBlockAction(block);
     if (id) setSelection([id]);
@@ -1623,7 +1624,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     { id: "story:risk", icon: Gauge, label: t.storyCards.risk.menuLabel, keywords: "risco oportunidade priorizacao impacto", onClick: addRiskOpportunityCard },
   ];
   const tabVisualPalette = useMemo(
-    () => listTabVisuals().map((v) => ({ id: v.id, label: v.title, page: v.page })),
+    () => [...listTabVisuals(), ...listRupturaVisuals()].map((v) => ({ id: v.id, label: v.title, page: v.page })),
     [],
   );
   const paletteActions = [

@@ -25,6 +25,11 @@ import { defaultTabVisualPeriod, sortedPeriodsOf, tabVisualPeriodOptions } from 
 import type { Filters } from "@/lib/types";
 import { getTabVisual } from "@/components/pricing/tabVisuals/registry";
 import { TabVisualSendPanel } from "@/components/pricing/tabVisuals/TabVisualSendPanel";
+import { getRupturaVisual } from "@/components/ruptura/visuals/registry";
+import { RupturaSendPanel } from "@/components/ruptura/visuals/RupturaSendPanel";
+import { rupturaPeriodOptions } from "@/lib/rupturaVisualPeriod";
+import type { RupturaFilters, RupturaPeriod } from "@/lib/ruptura/metrics";
+import { useRuptura } from "@/store/ruptura";
 import type { SlideItem } from "@/lib/slidesFlow";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +68,18 @@ export function SendToSlideDestinationDialog() {
   }, [tabVisual, pricingRows, tabSelected, deckRows]);
   const tabPeriod = tabPeriodChoice ?? tabPeriods?.fallback ?? null;
 
+  // Visual da Ruptura: os meses vêm da própria base de ruptura, contados a partir do mês de referência do deck.
+  const rupturaModel = useRuptura((s) => s.model);
+  const reference = useSlidesFlow((s) => s.referencePeriod);
+  const rupturaVisual = payload?.target.blockKind === "ruptura_visual" ? getRupturaVisual(String(payload.config.visualId ?? "")) : undefined;
+  const rupturaSelected = (payload?.config.selectedPeriod ?? null) as RupturaPeriod | null;
+  const rupturaPeriods = useMemo(() => {
+    if (!rupturaVisual || !rupturaModel) return null;
+    const options = rupturaPeriodOptions(rupturaModel, rupturaSelected, reference);
+    return { options, fallback: options.live };
+  }, [rupturaVisual, rupturaModel, rupturaSelected, reference]);
+  const rupturaPeriod = tabPeriodChoice ?? rupturaPeriods?.fallback ?? null;
+
   const recentSlideId = selectedId ?? items.find((item) => item.kind === "custom")?.id ?? null;
   useEffect(() => {
     const latest = getLatestSendToSlidePayload();
@@ -99,7 +116,16 @@ export function SendToSlideDestinationDialog() {
 
   const blockOptions = tabVisual && tabPeriod
     ? { tabVisualPeriod: tabPeriod, tabVisualVersion: tabVisual.version, tabVisualFrame: tabVisual.defaultFrame }
-    : {};
+    : rupturaVisual && rupturaPeriod
+      ? {
+        rupturaVisual: {
+          period: rupturaPeriod,
+          version: rupturaVisual.version,
+          frame: rupturaVisual.frame,
+          showTitle: rupturaVisual.showTitle ?? true,
+        },
+      }
+      : {};
 
   const confirm = () => {
     const state = useSlidesFlow.getState();
@@ -118,7 +144,7 @@ export function SendToSlideDestinationDialog() {
           let blocks = item.config.blocks;
           // Slide novo com um visual da aba: o nome do visual vira o título do
           // slide (em vez de "Título do slide" + o mesmo nome repetido no bloco).
-          if (block.kind === "tab_visual" && blocks.some((b) => b.kind === "title")) {
+          if ((block.kind === "tab_visual" || block.kind === "ruptura_visual") && blocks.some((b) => b.kind === "title")) {
             blocks = blocks.map((b) => (b.kind === "title" ? { ...b, text: payload.source.visualization } : b));
             block.showTitle = false;
           }
@@ -165,7 +191,7 @@ export function SendToSlideDestinationDialog() {
         <DialogHeader>
           <DialogTitle>Enviar para Slide</DialogTitle>
           <DialogDescription>
-            {tabVisual
+            {tabVisual || rupturaVisual
               ? <>Escolha onde inserir "{payload.source.visualization}". Vai o mesmo gráfico da aba, com os dados vivos — não uma imagem.</>
               : <>Escolha onde inserir "{payload.source.visualization}". O app vai levar a configuração da visualização, não uma imagem.</>}
           </DialogDescription>
@@ -182,6 +208,25 @@ export function SendToSlideDestinationDialog() {
           />
         )}
 
+        {rupturaVisual && (
+          rupturaModel && rupturaPeriod && rupturaPeriods ? (
+            <RupturaSendPanel
+              visual={rupturaVisual}
+              model={rupturaModel}
+              reference={reference}
+              params={(payload.config.params as Record<string, unknown> | undefined) ?? {}}
+              filters={(payload.config.filters as RupturaFilters | undefined) ?? {}}
+              period={rupturaPeriod}
+              options={rupturaPeriods.options}
+              onPeriodChange={setTabPeriodChoice}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+              A base de ruptura não está carregada neste momento.
+            </div>
+          )
+        )}
+
         {payload.notes && payload.notes.length > 0 && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
             <div className="mb-1 flex items-center gap-1.5 font-semibold">
@@ -194,7 +239,11 @@ export function SendToSlideDestinationDialog() {
           </div>
         )}
 
-        <div className="max-h-[64vh] overflow-y-auto pr-1">
+        {/* Com a prévia do visual em cima, a lista de slides cede altura para o diálogo caber na janela. */}
+        <div className={cn(
+          "overflow-y-auto pr-1",
+          tabVisual || rupturaVisual ? "max-h-[min(64vh,calc(100vh-560px))] min-h-[150px]" : "max-h-[64vh]",
+        )}>
           <button
             type="button"
             onClick={() => setDestination("new")}

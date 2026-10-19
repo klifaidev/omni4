@@ -5,8 +5,24 @@ import { groupBy, groupByKey, type CellPredicate, type RupturaGroupRow } from "@
 import type { RupturaDim, RupturaModel } from "@/lib/ruptura/types";
 import { cn } from "@/lib/utils";
 import { useRuptura } from "@/store/ruptura";
+import { rupturaVisualPayload } from "@/lib/sendToSlide";
+import { RUPTURA_VISUAL_IDS } from "./visuals/registry";
+import type { RupturaRankingDim } from "./visuals/data";
 import { metricColumns, RupturaTable, type RupturaColumn } from "./RupturaTable";
 import type { RupturaView } from "./useRupturaView";
+
+/** Envio de um ranking para o slide: as 10 maiores linhas, no formato que a tabela mostra. */
+function useRankingSend(view: RupturaView, dim: RupturaRankingDim, title: string) {
+  const filters = useRuptura((s) => s.filters);
+  return (mode: "table" | "bars") =>
+    rupturaVisualPayload({
+      visualization: title,
+      visualId: RUPTURA_VISUAL_IDS.ranking(dim),
+      params: { top: "10", view: mode },
+      filters,
+      period: view.period,
+    });
+}
 
 function useToggle(dim: RupturaDim) {
   const filters = useRuptura((s) => s.filters);
@@ -41,6 +57,7 @@ export function CategoryRanking({ view }: { view: RupturaView }) {
   const { model, predicate, withRate } = view;
   const rows = useMemo(() => groupBy(model, predicate, "categoria", withRate), [model, predicate, withRate]);
   const sel = useToggle("categoria");
+  const sendToSlide = useRankingSend(view, "categoria", "Ruptura por categoria");
   const columns = useMemo<RupturaColumn<RupturaGroupRow>[]>(
     () => [labelColumn("Categoria"), countColumn("skusAffected", "SKUs af."), ...metricColumns({ withRate })],
     [withRate],
@@ -52,6 +69,7 @@ export function CategoryRanking({ view }: { view: RupturaView }) {
       columns={columns}
       bars
       exportName="ruptura_categorias"
+      sendToSlide={sendToSlide}
       onRowClick={(r) => sel.toggle(r.label)}
       isSelected={(r) => sel.isSelected(r.label)}
     />
@@ -66,6 +84,7 @@ export function ChannelRanking({ view }: { view: RupturaView }) {
   const { model, predicate, withRate } = view;
   const rows = useMemo(() => groupBy(model, predicate, "canal", withRate), [model, predicate, withRate]);
   const sel = useToggle("canal");
+  const sendToSlide = useRankingSend(view, "canal", "Ruptura por canal");
   const columns = useMemo<RupturaColumn<RupturaGroupRow>[]>(
     () => [
       labelColumn("Canal"),
@@ -81,6 +100,7 @@ export function ChannelRanking({ view }: { view: RupturaView }) {
       rows={rows}
       columns={columns}
       exportName="ruptura_canais"
+      sendToSlide={sendToSlide}
       onRowClick={(r) => sel.toggle(r.label)}
       isSelected={(r) => sel.isSelected(r.label)}
       renderExpanded={(r) => <ChannelRedes model={model} predicate={predicate} withRate={withRate} total={view.totals.occurrences} canal={r.key} />}
@@ -119,6 +139,7 @@ export function HierarchyRanking({ view }: { view: RupturaView }) {
   const { model, predicate, withRate } = view;
   const rows = useMemo(() => groupBy(model, predicate, "rede", withRate), [model, predicate, withRate]);
   const sel = useToggle("rede");
+  const sendToSlide = useRankingSend(view, "rede", "Ruptura por rede");
   const columns = useMemo<RupturaColumn<RupturaGroupRow>[]>(
     () => [
       labelColumn("Rede"),
@@ -137,6 +158,7 @@ export function HierarchyRanking({ view }: { view: RupturaView }) {
       searchable
       pageSize={12}
       exportName="ruptura_redes"
+      sendToSlide={sendToSlide}
       onRowClick={(r) => sel.toggle(r.label)}
       isSelected={(r) => sel.isSelected(r.label)}
       renderExpanded={(r) => <RedeChildren model={model} predicate={predicate} withRate={withRate} total={view.totals.occurrences} rede={r.key} />}
@@ -279,6 +301,7 @@ type SkuRow = RupturaGroupRow & { marca: string; categoria: string; linha: strin
 export function SkuRanking({ view }: { view: RupturaView }) {
   const { model, predicate, withRate } = view;
   const sel = useToggle("sku");
+  const sendToSlide = useRankingSend(view, "sku", "Ruptura por SKU");
   const rows = useMemo<SkuRow[]>(
     () =>
       groupBy(model, predicate, "sku", withRate).map((r) => ({
@@ -313,6 +336,7 @@ export function SkuRanking({ view }: { view: RupturaView }) {
       searchable
       pageSize={15}
       exportName="ruptura_skus"
+      sendToSlide={sendToSlide}
       onRowClick={(r) => sel.toggle(r.label)}
       isSelected={(r) => sel.isSelected(r.label)}
     />

@@ -12,11 +12,14 @@ import { CANVAS_W, CANVAS_H } from "@/lib/customSlide";
 import { ScaledPreview } from "@/components/pricing/SlidePreview";
 import { CustomCanvasReadOnly } from "@/components/pricing/custom/PresentationMode";
 import { waitForCaptureReady } from "@/lib/exportCaptureReady";
+import { configNeedsRuptura, ensureRupturaLoaded } from "@/components/ruptura/visuals/useRupturaModel";
 
 const SLIDE_W = 1333;
 const SLIDE_H = 750;
 
 async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> {
+  // A base de ruptura abre sob demanda: sem esperar, o visual sairia "carregando" na foto.
+  if (item.kind === "custom" && configNeedsRuptura(item.config)) await ensureRupturaLoaded();
   // Off-screen host
   const host = document.createElement("div");
   host.style.position = "fixed";

@@ -4,21 +4,13 @@ import {
   compileFilter,
   previousPeriod,
   rateAvailable,
-  type CellPredicate,
-  type RupturaMetrics,
   type RupturaPeriod,
 } from "@/lib/ruptura/metrics";
 import type { RupturaModel } from "@/lib/ruptura/types";
+import type { RupturaView } from "@/lib/ruptura/view";
 import { useRuptura } from "@/store/ruptura";
 
-export interface RupturaView {
-  model: RupturaModel;
-  period: RupturaPeriod;
-  predicate: CellPredicate;
-  withRate: boolean;
-  totals: RupturaMetrics;
-  previous: { period: RupturaPeriod; totals: RupturaMetrics } | null;
-}
+export type { RupturaView };
 
 /** Recorte atual (filtros + período) compartilhado por todos os blocos da aba. */
 export function useRupturaView(model: RupturaModel): RupturaView {

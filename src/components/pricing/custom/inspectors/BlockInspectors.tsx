@@ -49,6 +49,7 @@ import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { BlockFilters } from "../BlockFilters";
 import { TabVisualInspector } from "./TabVisualInspector";
+import { RupturaVisualInspector } from "./RupturaVisualInspector";
 import { LegacyOmniBanner } from "./LegacyOmniBanner";
 import { ShapeInspector } from "../ShapeInspector";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "../DraftInput";
@@ -79,7 +80,7 @@ import {
   type OmniHeroisOfensoresBlock, type OmniCanalTrendBlock, type OmniCanalMixBlock, type OmniCustoEvolucaoBlock,
   type OmniCustoComposicaoBlock, type OmniCustoPressaoBlock, type OmniPositivacaoBlock, type OmniUfMapBlock,
   type OmniPriceDecompBlock, type OmniBridgePvmBlock, type OmniFarolBlock, type OmniAbcCurvaBlock,
-  type OmniBaseBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock, type TabVisualBlock, type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
+  type OmniBaseBlock, type OmniPortfolioMatrixBlock, type OmniAbcBarsBlock, type TabVisualBlock, type RupturaVisualBlock, type OmniMetric, type OmniDim, type OmniHeroesVariant, type OmniAbcSortBy,
   resolveEffectiveBlock,
 } from "@/lib/customSlide";
 import { newId } from "@/lib/slidesFlow";
@@ -552,6 +553,8 @@ function BlockSpecificEditorBody({ block, onChange, styleFocusRequest }: {
       return <OmniDimMetricInspector block={block as OmniPortfolioMatrixBlock} onChange={onChange as (p: Partial<OmniPortfolioMatrixBlock>) => void} label={t.omni.defaultTitles.portfolioMatrix} />;
     case "omni_abc_bars":
       return <OmniHeroisInspector block={block as OmniAbcBarsBlock} onChange={onChange as (p: Partial<OmniAbcBarsBlock>) => void} />;
+    case "ruptura_visual":
+      return <RupturaVisualInspector block={block as RupturaVisualBlock} onChange={onChange as (p: Partial<RupturaVisualBlock>) => void} />;
     case "tab_visual":
       return <FilteredInspector
         block={block}

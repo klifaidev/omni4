@@ -1,5 +1,6 @@
 import type { CustomBlockKind } from "@/lib/customSlide";
 import type { Filters } from "@/lib/types";
+import type { RupturaFilters, RupturaPeriod } from "@/lib/ruptura/metrics";
 
 export type SendToSlideTargetKind = CustomBlockKind | "slide:budget_evo" | "slide:bridge_pvm";
 
@@ -39,6 +40,30 @@ export function tabVisualPayload(input: {
       params: input.params,
       filters: input.filters,
       selectedPeriods: input.selectedPeriods,
+    },
+  };
+}
+
+/**
+ * Envio de um visual da aba Ruptura: o slide recebe o mesmo componente da aba,
+ * com as opções, os filtros da ruptura e os meses que a pessoa está vendo.
+ */
+export function rupturaVisualPayload(input: {
+  visualization: string;
+  visualId: string;
+  params: Record<string, unknown>;
+  filters: RupturaFilters;
+  /** Intervalo de meses da aba (índices da base); `null` = a base inteira. */
+  period: RupturaPeriod | null;
+}): SendToSlidePayload {
+  return {
+    source: { page: "Ruptura", visualization: input.visualization },
+    target: { blockKind: "ruptura_visual", blockLabel: "Igual à aba" },
+    config: {
+      visualId: input.visualId,
+      params: input.params,
+      filters: input.filters,
+      selectedPeriod: input.period,
     },
   };
 }

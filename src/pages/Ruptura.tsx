@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { FileSpreadsheet, Loader2, PackageX, RefreshCw, Trash2, Upload } from "lucide-react";
+import { FileSpreadsheet, Loader2, PackageX, RefreshCw, Send, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Topbar } from "@/components/pricing/Topbar";
 import { GlassCard } from "@/components/pricing/GlassCard";
@@ -14,6 +14,8 @@ import { RupturaPending } from "@/components/ruptura/RupturaPending";
 import { useRupturaView } from "@/components/ruptura/useRupturaView";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { formatNum } from "@/lib/format";
+import { captureSendToSlide, rupturaVisualPayload } from "@/lib/sendToSlide";
+import { RUPTURA_VISUAL_IDS } from "@/components/ruptura/visuals/registry";
 import type { RupturaModel } from "@/lib/ruptura/types";
 import { useRuptura } from "@/store/ruptura";
 
@@ -143,6 +145,7 @@ function EmptyRuptura({ onPick, input }: { onPick: () => void; input: React.Reac
 
 function Dashboard({ model }: { model: RupturaModel }) {
   const view = useRupturaView(model);
+  const filters = useRuptura((s) => s.filters);
   const status = useRuptura((s) => s.status);
   const progress = useRuptura((s) => s.progress);
 
@@ -155,10 +158,28 @@ function Dashboard({ model }: { model: RupturaModel }) {
       )}
       <RupturaFilterBar model={model} />
       <div className="space-y-2">
-        <p className="text-[11px] text-muted-foreground">
-          Recorte: <span className="font-medium text-foreground">{periodLabel(model, view.period)}</span> ·{" "}
-          <span className="tabular-nums">{formatNum(view.totals.evaluations)}</span> avaliações
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground">
+            Recorte: <span className="font-medium text-foreground">{periodLabel(model, view.period)}</span> ·{" "}
+            <span className="tabular-nums">{formatNum(view.totals.evaluations)}</span> avaliações
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              captureSendToSlide(rupturaVisualPayload({
+                visualization: "Painel de indicadores de ruptura",
+                visualId: RUPTURA_VISUAL_IDS.kpis,
+                params: {},
+                filters,
+                period: view.period,
+              }))
+            }
+          >
+            <Send className="h-3.5 w-3.5" /> Enviar indicadores para Slide
+          </Button>
+        </div>
         <RupturaKpis view={view} />
         <RupturaQualityStrip model={model} />
       </div>
