@@ -90,11 +90,13 @@ export interface CanalMixVisualData {
   mixData: Record<string, number | string>[];
 }
 
+// Os dados já são % do mês (somam 100): com stackOffset="expand" as barras eram
+// normalizadas para 0–1 e o eixo ia de 0 a 100 — ficavam com 1 px de altura.
 export function CanalMixVisual({ data, variant }: { data: CanalMixVisualData; variant: TabVisualVariant }) {
   const animate = variant === "tab";
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data.mixData} margin={{ top: 8, right: 24, bottom: 8, left: 8 }} stackOffset="expand">
+      <BarChart data={data.mixData} margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
         <CartesianGrid stroke="hsl(var(--border) / 0.4)" strokeDasharray="3 3" />
         <XAxis dataKey="label" tick={axisStyle(variant)} />
         <YAxis tick={axisStyle(variant)} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} domain={[0, 100]} />
