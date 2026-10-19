@@ -2309,7 +2309,7 @@ function PvmBridgePicker({
           )}
           {comparisonMode === "ytd-vs-ytd" && (
             <div className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-muted-foreground">
-              {t.waterfall.ytdVsYtdHint}
+              {block.dataSource === "ke30" ? t.waterfall.ytdVsYtdKe30Hint : t.waterfall.ytdVsYtdHint}
             </div>
           )}
           {comparisonMode === "bench" && (

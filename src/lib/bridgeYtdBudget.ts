@@ -1,8 +1,9 @@
 import type { BudgetRow } from "./budget";
 import type { Filters, Metric, PricingRow } from "./types";
-import { applyFilters, computePvmEffects, type PvmSkuAgg, type PVMResult } from "./analytics";
+import { applyFilters, calcPVM, computePvmEffects, type PvmSkuAgg, type PVMResult } from "./analytics";
 import { monthLabel } from "./format";
 import { fiscalMonthIndex, fiscalYearStartYear } from "./fiscalYear";
+import { ytdBasePeriodo, ytdEligibleMonths, ytdSplit } from "./pvmYtd";
 
 export interface BridgeYtdBudgetResult {
   result: PVMResult;
@@ -237,5 +238,30 @@ export function computeBridgeYtdVsYtd(
     fy: ytd.fy,
     periods: ytd.periods,
     latestPeriodLabel: ytd.latestLabel,
+  };
+}
+
+/**
+ * "YTD vs YTD" com o Real do KE30 — o MESMO cálculo da aba Bridge PVM no modo YTD
+ * (calcPVM "ytd": Frete e Comissão abertos): acumulado do ano fiscal (abril) até o
+ * mês mais recente que tem o mesmo mês no ano anterior, contra aquela janela.
+ * Diferente de computeBridgeYtdVsYtd, que lê o Real da Superbase/Budget.
+ */
+export function computeKe30YtdBridge(rows: PricingRow[], filters: Filters, metric: Metric): BridgeYtdBudgetResult | null {
+  const filtered = applyFilters(rows, filters, null);
+  const months = [...new Map(filtered.map((r) => [r.periodo, { periodo: r.periodo, mes: r.mes, ano: r.ano }])).values()]
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+  const through = ytdEligibleMonths(months).at(-1);
+  if (!through) return null;
+  const split = ytdSplit(filtered, through.periodo);
+  if (!split) return null;
+  const result = calcPVM(filtered, metric, ytdBasePeriodo(through.periodo) ?? through.periodo, through.periodo, "ytd");
+  return {
+    result,
+    baseRows: split.baseRows,
+    compRows: split.compRows,
+    fy: split.summary.compFy,
+    periods: [...new Set(split.compRows.map((r) => r.periodo))],
+    latestPeriodLabel: monthLabel(through.mes, through.ano),
   };
 }

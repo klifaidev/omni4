@@ -261,6 +261,7 @@ export const ptBR = {
             },
             ytdBudgetHint: "Real acumulado do FY atual contra o Budget dos mesmos meses realizados.",
             ytdVsYtdHint: "Real acumulado do FY atual contra o Real dos mesmos meses do FY anterior.",
+            ytdVsYtdKe30Hint: "Mesmo YTD da aba Bridge PVM: Real do KE30 acumulado do ano fiscal (abril) até o mês mais recente com par no ano anterior, contra a mesma janela do ano fiscal anterior.",
             benchNoData: "Bench: sem dados suficientes",
             benchLabel: "Bench:",
             periodOptions: { month: "Mês", fy: "Ano fiscal" },

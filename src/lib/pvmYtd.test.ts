@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calcPVM } from "./analytics";
+import { computeKe30YtdBridge } from "./bridgeYtdBudget";
 import { ytdBasePeriodo, ytdEligibleMonths, ytdSplit } from "./pvmYtd";
 import type { PricingRow } from "./types";
 
@@ -96,5 +97,18 @@ describe("Bridge PVM em YTD (ano fiscal começa em abril)", () => {
     const r = calcPVM(dataset(), "cm", "001.2025", "001.2026", "ytd");
     expect(r.current).toBe(0);
     expect(r.skuDetails).toEqual([]);
+  });
+
+  it("gráfico KE30 'YTD vs YTD' dá o mesmo resultado da aba (Frete e Comissão abertos)", () => {
+    const rows = dataset();
+    const chart = computeKe30YtdBridge(rows, {}, "cm")!;
+    const tab = calcPVM(rows, "cm", "009.2025", "009.2026", "ytd");
+    expect(chart.result.base).toBeCloseTo(tab.base, 6);
+    expect(chart.result.current).toBeCloseTo(tab.current, 6);
+    expect(chart.result.volume).toBeCloseTo(tab.volume, 6);
+    expect(chart.result.commercialCostsCollapsed).toBeFalsy();
+    expect(chart.result.baseLabel).toBe("YTD FY25/26");
+    expect(chart.latestPeriodLabel).toBe("Set/26");
+    expect(computeKe30YtdBridge([], {}, "cm")).toBeNull();
   });
 });

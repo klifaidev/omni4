@@ -15,7 +15,7 @@ import type { ChartBlock, KpiMeasureId } from "@/lib/customSlide";
 import { CHART_TYPE_LABELS, KPI_MEASURES, isMeasureAvailable } from "@/lib/customSlide";
 import type { PricingRow } from "@/lib/types";
 import { applyFilters, calcPVM } from "@/lib/analytics";
-import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
+import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd, computeKe30YtdBridge } from "@/lib/bridgeYtdBudget";
 import { dataSourceLabel } from "@/lib/slideDataSourceTheme";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideDesignTokens";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
@@ -2727,6 +2727,10 @@ function WaterfallChart({
     : "effects";
   const topN = pvmCfg.topN ?? 6;
   const comparisonMode = pvmCfg.comparisonMode ?? "prev-month";
+  // "YTD vs YTD" num gráfico da base KE30 lê o MESMO Real que a aba Bridge PVM (calcPVM em modo "ytd":
+  // Frete/Comissão abertos). Só os gráficos das bases Budget/Superbase usam a Bridge estilo Budget.
+  const ytdOnKe30 = comparisonMode === "ytd-vs-ytd" && block.dataSource === "ke30";
+  const usesBudgetYtd = comparisonMode === "ytd-budget" || (comparisonMode === "ytd-vs-ytd" && !ytdOnKe30);
   // PVM mode â€” decomposiÃ§Ã£o igual Ã  aba Bridge (com auto-default de base/comp)
   const pvmItems = useMemo(() => {
     if (wfMode !== "pvm") return null;
@@ -2735,7 +2739,7 @@ function WaterfallChart({
       slideId: cacheSlideId,
       blockId: block.id,
       dataSource: block.dataSource,
-      dataSignature: comparisonMode === "ytd-budget" || comparisonMode === "ytd-vs-ytd" ? budgetSignature : dsRowsSignature,
+      dataSignature: usesBudgetYtd ? budgetSignature : dsRowsSignature,
       params: {
         filters: block.filters,
         metric,
@@ -2748,9 +2752,11 @@ function WaterfallChart({
     }, () => {
     const ytdBudget = comparisonMode === "ytd-budget"
       ? computeBridgeYtdRealVsBudget(budget, block.filters, metric)
-      : comparisonMode === "ytd-vs-ytd"
-        ? computeBridgeYtdVsYtd(budget, block.filters, metric)
-        : null;
+      : ytdOnKe30
+        ? computeKe30YtdBridge(dsRows, block.filters, metric)
+        : comparisonMode === "ytd-vs-ytd"
+          ? computeBridgeYtdVsYtd(budget, block.filters, metric)
+          : null;
     const filtered = ytdBudget ? [...ytdBudget.baseRows, ...ytdBudget.compRows] : applyFilters(dsRows, block.filters, null);
     if (filtered.length === 0) return [];
 
@@ -2880,7 +2886,7 @@ function WaterfallChart({
       return items;
     } catch { return []; }
     });
-  }, [wfMode, pvmCfg, comparisonMode, decomposition, topN, budget, budgetSignature, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
+  }, [wfMode, pvmCfg, comparisonMode, ytdOnKe30, usesBudgetYtd, decomposition, topN, budget, budgetSignature, dsRows, dsRowsSignature, block.filters, block.id, block.dataSource, metric, effectiveMeasure, cacheSlideId]);
 
   // Smart column / fallback (modo manual)
   const cols = style.waterfall.columns;
