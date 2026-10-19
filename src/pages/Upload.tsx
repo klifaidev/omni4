@@ -210,6 +210,7 @@ export default function Upload() {
   const setParsingStart = usePricing((s) => s.setParsingStart);
   const setParsingEnd = usePricing((s) => s.setParsingEnd);
   const setInovacaoDepara = useInovacaoDepara((s) => s.setDepara);
+  const clearInovacaoDepara = useInovacaoDepara((s) => s.clearDepara);
 
   const realFreshness = useMemo(() => getFreshness(months), [months]);
   const rupturaModel = useRuptura((s) => s.model);
@@ -335,17 +336,56 @@ export default function Upload() {
     autoLoad();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Remover um arquivo (ou a base inteira) apaga DOS DOIS lados: da sessão e do
+  // disco. Antes, a lixeira das listas "Arquivos Real/Budget" só tirava da
+  // memória — o arquivo salvo ficava no computador e a base voltava ao reabrir
+  // o app. Se o disco falhar, a sessão não é mexida (a pessoa vê que ainda está lá).
   const handleDeleteBase = useCallback(
     async (tipo: TipoBase, nomeArquivo?: string) => {
-      await basesLocais.deletarBase(tipo, nomeArquivo);
-      if (tipo === "personalizado" && (!nomeArquivo || nomeArquivo === CUSTOM_TABLES_FILE)) {
+      setDeletePending(null);
+      const diskOk = basesLocais.isElectron ? await basesLocais.deletarBase(tipo, nomeArquivo) : true;
+      if (!diskOk) {
+        toast.error("Não foi possível apagar o arquivo salvo neste computador.", {
+          description: "Nada foi removido do app. Feche outros programas que usem o arquivo e tente de novo.",
+        });
+        await refreshInfoSalvas();
+        return;
+      }
+      if (tipo === "ke30") {
+        if (nomeArquivo) removeFile(nomeArquivo);
+        else clearAll();
+      } else if (tipo === "budget") {
+        if (nomeArquivo) removeBudgetFile(nomeArquivo);
+        else clearBudget();
+      } else if (tipo === "ruptura") {
+        // Sem arquivos: a base some. Com arquivos restantes: reabre o que sobrou.
+        useRuptura.setState({ model: null, status: "idle", progress: null, error: null, savedFileName: null, filters: {}, period: null });
+        void useRuptura.getState().loadSaved();
+      } else if (tipo === "deparaInovacao") {
+        clearInovacaoDepara();
+      } else if (tipo === "personalizado" && (!nomeArquivo || nomeArquivo === CUSTOM_TABLES_FILE)) {
         setCustomTables([]);
       }
-      toast.success(nomeArquivo ? `Arquivo "${nomeArquivo}" removido.` : "Base local removida.");
-      setDeletePending(null);
+      toast.success(nomeArquivo ? `Arquivo "${nomeArquivo}" removido do app e do computador.` : "Base removida do app e do computador.");
       await refreshInfoSalvas();
     },
-    [basesLocais.deletarBase, refreshInfoSalvas, setCustomTables],
+    [basesLocais.isElectron, basesLocais.deletarBase, refreshInfoSalvas, setCustomTables, removeFile, clearAll, removeBudgetFile, clearBudget, clearInovacaoDepara],
+  );
+
+  /** Lixeira de um arquivo carregado / "Limpar tudo": confirma (apaga o salvo) no app instalado. */
+  const requestRemoveLoaded = useCallback(
+    (tipo: "ke30" | "budget", nomeArquivo?: string) => {
+      if (basesLocais.isElectron) {
+        setDeletePending({ tipo, nomeArquivo });
+        return;
+      }
+      if (tipo === "ke30") {
+        if (nomeArquivo) removeFile(nomeArquivo);
+        else clearAll();
+      } else if (nomeArquivo) removeBudgetFile(nomeArquivo);
+      else clearBudget();
+    },
+    [basesLocais.isElectron, removeFile, clearAll, removeBudgetFile, clearBudget],
   );
 
   const openCustomTable = useCallback((table?: CustomTable) => {
@@ -658,7 +698,7 @@ export default function Upload() {
                 <FileSpreadsheet className="mr-2 inline h-4 w-4" /> Arquivos Real
               </h3>
               {files.length > 0 && (
-                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={clearAll}>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => requestRemoveLoaded("ke30")}>
                   Limpar tudo
                 </Button>
               )}
@@ -675,7 +715,7 @@ export default function Upload() {
                         {f.rowCount.toLocaleString("pt-BR")} linhas · {f.months.length} mês(es)
                       </div>
                     </div>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeFile(f.name)}>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => requestRemoveLoaded("ke30", f.name)} aria-label={`Remover ${f.name}`}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </li>
@@ -690,7 +730,7 @@ export default function Upload() {
                 <FileSpreadsheet className="mr-2 inline h-4 w-4" /> Arquivos Budget
               </h3>
               {budgetFiles.length > 0 && (
-                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={clearBudget}>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => requestRemoveLoaded("budget")}>
                   Limpar tudo
                 </Button>
               )}
@@ -707,7 +747,7 @@ export default function Upload() {
                         {f.rowCount.toLocaleString("pt-BR")} linhas · {f.months.length} mês(es)
                       </div>
                     </div>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeBudgetFile(f.name)}>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => requestRemoveLoaded("budget", f.name)} aria-label={`Remover ${f.name}`}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </li>
@@ -801,12 +841,15 @@ export default function Upload() {
       <AlertDialog open={deletePending !== null} onOpenChange={(open) => { if (!open) setDeletePending(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover arquivo salvo?</AlertDialogTitle>
+            <AlertDialogTitle>{deletePending?.nomeArquivo ? "Remover arquivo?" : "Remover a base inteira?"}</AlertDialogTitle>
             <AlertDialogDescription>
               {deletePending?.nomeArquivo
                 ? <>Remover o arquivo <span className="font-medium">"{deletePending.nomeArquivo}"</span> da base {TIPO_LABELS[deletePending.tipo]}?</>
-                : <>Remover a base {deletePending ? TIPO_LABELS[deletePending.tipo] : ""} salva localmente?</>}
-              {" "}Os dados desta sessão não serão afetados.
+                : <>Remover toda a base {deletePending ? TIPO_LABELS[deletePending.tipo] : ""}?</>}
+              {" "}{deletePending?.nomeArquivo
+                ? "Ele sai do app e o arquivo salvo neste computador é apagado"
+                : "Os dados saem do app e os arquivos salvos neste computador são apagados"}{" "}
+              — não dá para desfazer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
