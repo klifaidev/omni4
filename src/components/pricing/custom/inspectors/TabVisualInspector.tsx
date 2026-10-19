@@ -20,6 +20,7 @@ import { usePricing } from "@/store/pricing";
 import { getTabVisual } from "@/components/pricing/tabVisuals/registry";
 import { flushPendingEditorEmit } from "../editorStore";
 import { DraftInput } from "../DraftInput";
+import { ConvertToEditable } from "./ConvertToEditable";
 import { Row, Section, Segmented, SelectField, ToggleField } from "../chart/Inspector";
 
 const WINDOW_CHOICES = [1, 3, 6, 12, 24];
@@ -149,6 +150,10 @@ export function TabVisualInspector({ block, onChange }: {
         {block.showTitle && (
           <DraftInput value={block.title} onCommit={(v) => onChange({ title: v })} placeholder={visual.title} />
         )}
+      </Section>
+
+      <Section title="Formatação livre">
+        <ConvertToEditable block={block} />
       </Section>
     </div>
   );

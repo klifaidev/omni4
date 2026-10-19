@@ -34,6 +34,7 @@ import { computeGroupResizePatches } from "./blockTransform";
 export type EditorActionLabel =
   | "Adicionar bloco"
   | "Excluir bloco"
+  | "Converter em elemento editável"
   | "Excluir blocos"
   | "Mover bloco"
   | "Mover blocos"
@@ -351,6 +352,25 @@ export function addChartBlockAction(chartType: CustomChartType): string | null {
 
 export function deleteBlockAction(id: string) {
   mutate("Excluir bloco", (c) => ({ ...c, blocks: c.blocks.filter((b) => b.id !== id) }));
+}
+
+/**
+ * Troca um bloco por outro no mesmo lugar (mesma posição, tamanho, camada e
+ * grupo) em UM passo de desfazer, e seleciona o novo. Usado pelo "Converter
+ * em elemento editável" de um visual da aba.
+ */
+export function replaceBlockAction(id: string, next: CustomBlock, label: EditorActionLabel): string | null {
+  const cur = baseStore.getState().config;
+  const old = cur?.blocks.find((b) => b.id === id);
+  if (!cur || !old) return null;
+  const replacement = {
+    ...next,
+    x: old.x, y: old.y, w: old.w, h: old.h, z: old.z,
+    ...(old.groupId ? { groupId: old.groupId } : null),
+  } as CustomBlock;
+  mutate(label, (c) => ({ ...c, blocks: c.blocks.map((b) => (b.id === id ? replacement : b)) }));
+  baseStore.setState({ selectedIds: [replacement.id], groupEditMemberId: null });
+  return replacement.id;
 }
 
 export function duplicateBlockAction(id: string): string | null {
