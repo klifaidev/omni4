@@ -4,6 +4,7 @@ const SEND_TO_SLIDE_ROLLOUT_PAGES = new Set([
   "Análise de Preço",
   "Inovação",
   "Tabela Dinâmica",
+  "Bridge PVM",
 ]);
 
 export function isSendToSlideEnabledForPage(page: string): boolean {

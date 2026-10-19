@@ -6,6 +6,7 @@ describe("SendToSlideHover rollout", () => {
     expect(isSendToSlideEnabledForPage("Visão Geral")).toBe(true);
     expect(isSendToSlideEnabledForPage("Positivação")).toBe(true);
     expect(isSendToSlideEnabledForPage("Análise de Preço")).toBe(true);
+    expect(isSendToSlideEnabledForPage("Bridge PVM")).toBe(true);
   });
 
   it("keeps the remaining pages hidden until the next rollout", () => {

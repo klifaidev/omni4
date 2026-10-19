@@ -12,12 +12,17 @@ interface SendToSlideHoverProps {
   className?: string;
 }
 
-export function SendToSlideHover({ payload, children, className }: SendToSlideHoverProps) {
-  // Visuais do catálogo (iguais à aba) valem em qualquer aba; os envios
-  // antigos (tradução para outro elemento) seguem a liberação por aba.
-  const enabled = payload.target.blockKind === "tab_visual" || payload.target.blockKind === "ruptura_visual"
+/**
+ * Visuais do catálogo (iguais à aba) valem em qualquer aba; os envios antigos
+ * (tradução para outro elemento) seguem a liberação por aba.
+ */
+function isSendEnabled(payload: SendToSlidePayload): boolean {
+  return payload.target.blockKind === "tab_visual" || payload.target.blockKind === "ruptura_visual"
     || isSendToSlideEnabledForPage(payload.source.page);
-  if (!enabled) {
+}
+
+export function SendToSlideHover({ payload, children, className }: SendToSlideHoverProps) {
+  if (!isSendEnabled(payload)) {
     return <>{children}</>;
   }
 
@@ -49,6 +54,7 @@ export function SendToSlideHover({ payload, children, className }: SendToSlideHo
  * e nunca cobre nada.
  */
 export function SendToSlideIconButton({ payload, className }: { payload: SendToSlidePayload; className?: string }) {
+  if (!isSendEnabled(payload)) return null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>

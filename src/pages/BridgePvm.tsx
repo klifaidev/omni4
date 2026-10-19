@@ -3,7 +3,7 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { EmptyState } from "@/components/pricing/EmptyState";
-import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
+import { SendToSlideIconButton } from "@/components/pricing/SendToSlideHover";
 import { usePricing } from "@/store/pricing";
 import { useFyList, useMonthsInfo } from "@/store/selectors";
 import { applyFilters, calcPVM, type PVMResult, type PVMSkuDetail } from "@/lib/analytics";
@@ -259,14 +259,7 @@ export default function BridgePvm() {
             <EffectKpis result={result} />
 
 
-            <SendToSlideHover
-              payload={{
-                source: { page: "Bridge PVM", visualization: `Bridge ${result.baseLabel} → ${result.currentLabel}` },
-                target: { blockKind: "omni_bridge_pvm", blockLabel: "Bridge PVM" },
-                config: { metric, filters, selectedPeriods, base: pvmBase, comp: pvmComp, periodMode: pvmMode },
-              }}
-            >
-            <GlassCard glow="blue">
+            <GlassCard glow="blue" className="group/send-slide">
               <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-medium">
@@ -276,6 +269,7 @@ export default function BridgePvm() {
                     Variação total: {formatBRL(result.current - result.base, { compact: true })}
                   </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -307,10 +301,18 @@ export default function BridgePvm() {
                   <Download className="h-4 w-4" />
                   Exportar CSV (auditoria)
                 </Button>
+                {/* Vai para um slide Bridge PVM do deck: mesma comparação e filtros, gráfico e PPTX editáveis. */}
+                <SendToSlideIconButton
+                  payload={{
+                    source: { page: "Bridge PVM", visualization: `Bridge ${result.baseLabel} → ${result.currentLabel}` },
+                    target: { blockKind: "slide:bridge_pvm", blockLabel: "Bridge PVM" },
+                    config: { metric, filters, selectedPeriods, base: pvmBase, comp: pvmComp, periodMode: pvmMode },
+                  }}
+                />
+                </div>
               </header>
               <Waterfall data={result} labelAngle={-35} />
             </GlassCard>
-            </SendToSlideHover>
 
             <PvmReadingCard result={result} />
 
