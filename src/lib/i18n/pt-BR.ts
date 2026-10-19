@@ -1258,7 +1258,7 @@ export const ptBR = {
           },
         },
         paletteRail: {
-          categories: { favoritos: "Favoritos", modelos: "Modelos", graficos: "Gráficos", elementos: "Elementos", story: "Story", omni: "Omni", assets: "Assets" },
+          categories: { favoritos: "Favoritos", modelos: "Modelos", graficos: "Gráficos", elementos: "Elementos", story: "Story", omni: "Abas", assets: "Assets" },
           openCategoryAria: (label: string) => `Abrir categoria ${label}`,
           blocksHeader: "Blocos",
           closeAria: "Fechar painel de blocos",

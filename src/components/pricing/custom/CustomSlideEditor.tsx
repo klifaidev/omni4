@@ -235,7 +235,7 @@ import { PresentationMode } from "./PresentationMode";
 import { InlineTextEditor, InlineTextToolbar } from "./InlineTextEditor";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "./DraftInput";
 import { AssetLibrary } from "./AssetLibrary";
-import { Pencil, Images, HelpCircle, Keyboard, TrendingUp, Gauge, Zap, Activity, PanelTop, Sparkles, Target, ListChecks } from "lucide-react";
+import { Pencil, Images, HelpCircle, Keyboard, Gauge, Sparkles, Target, ListChecks } from "lucide-react";
 import { BlockRotationHandle, TRANSFORM_BLEED, useBlockTransform } from "./blockTransform";
 import {
   SLIDE_BRAND_STYLES,
@@ -411,32 +411,8 @@ const ELEMENT_PALETTE: { id: string; kind: CustomBlockKind; label: string; icon:
   { id: "dre",    kind: "dre",    label: t.elementPalette.dre,     icon: TableIcon },
 ];
 
-// Group 3 ? Omni Analytics
-type OmniPaletteEntry = { id: string; kind: CustomBlockKind; label: string; icon: Icon; group: string };
-const OMNI_PALETTE: OmniPaletteEntry[] = [
-  // Visão Geral
-  { id: "omni_evolucao_mensal",      kind: "omni_evolucao_mensal",      label: t.omniPalette.evolucaoMensal,      icon: TrendingUp,        group: t.omniGroups.visaoGeral },
-  { id: "omni_positivacao",          kind: "omni_positivacao",          label: t.omniPalette.positivacao,         icon: LineChartIcon,     group: t.omniGroups.visaoGeral },
-  { id: "omni_heatmap_sazonalidade", kind: "omni_heatmap_sazonalidade", label: t.omniPalette.heatmapSazonalidade, icon: Grid3x3,           group: t.omniGroups.visaoGeral },
-  { id: "omni_herois_ofensores",     kind: "omni_herois_ofensores",     label: t.omniPalette.heroisOfensores,     icon: Zap,               group: t.omniGroups.visaoGeral },
-  // Canais
-  { id: "omni_canal_trend",          kind: "omni_canal_trend",          label: t.omniPalette.canalTrend,          icon: Activity,          group: t.omniGroups.canais },
-  { id: "omni_canal_mix",            kind: "omni_canal_mix",            label: t.omniPalette.canalMix,            icon: LayersIcon,        group: t.omniGroups.canais },
-  // Custos
-  { id: "omni_custo_evolucao",       kind: "omni_custo_evolucao",       label: t.omniPalette.custoEvolucao,       icon: BarChart2,         group: t.omniGroups.custos },
-  { id: "omni_custo_composicao",     kind: "omni_custo_composicao",     label: t.omniPalette.custoComposicao,     icon: BarChart3,         group: t.omniGroups.custos },
-  { id: "omni_custo_pressao",        kind: "omni_custo_pressao",        label: t.omniPalette.custoPressao,        icon: Activity,          group: t.omniGroups.custos },
-  // Preço / Bridge
-  { id: "omni_price_decomp",         kind: "omni_price_decomp",         label: t.omniPalette.priceDecomp,         icon: PanelTop,          group: t.omniGroups.preco },
-  { id: "omni_uf_map",               kind: "omni_uf_map",               label: t.omniPalette.ufMap,               icon: Network,           group: t.omniGroups.preco },
-  { id: "omni_bridge_pvm",           kind: "omni_bridge_pvm",           label: t.omniPalette.bridgePvm,           icon: GitBranch,         group: t.omniGroups.preco },
-  // ABC / Farol
-  { id: "omni_farol",                kind: "omni_farol",                label: t.omniPalette.farol,               icon: Gauge,             group: t.omniGroups.abcFarol },
-  { id: "omni_abc_curva",            kind: "omni_abc_curva",            label: t.omniPalette.abcCurva,            icon: Network,           group: t.omniGroups.abcFarol },
-  { id: "omni_portfolio_matrix",     kind: "omni_portfolio_matrix",     label: t.omniPalette.portfolioMatrix,     icon: ScatterIcon,       group: t.omniGroups.abcFarol },
-  { id: "omni_abc_bars",             kind: "omni_abc_bars",             label: t.omniPalette.abcBars,             icon: BarChartHorizontal, group: t.omniGroups.abcFarol },
-];
-const OMNI_GROUPS = [t.omniGroups.visaoGeral, t.omniGroups.canais, t.omniGroups.custos, t.omniGroups.preco, t.omniGroups.abcFarol] as const;
+// Group 3 — visuais das abas (catálogo em components/pricing/tabVisuals). Os elementos
+// "Omni Analytics" antigos saíram da paleta; os que já estão nos decks seguem funcionando.
 
 interface Props {
   /** ID estável do slide ? usado para registrar o canvas no exporter */
@@ -1673,13 +1649,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       keywords: `${it.id} ${it.page} igual aba visual`,
       onClick: () => addTabVisual(it.id),
     })),
-    ...OMNI_PALETTE.map((it) => ({
-      id: `omni:${it.id}`,
-      icon: it.icon,
-      label: it.label,
-      keywords: `${it.id} ${it.kind} ${it.group}`,
-      onClick: () => addBlock(it.kind),
-    })),
   ];
   const recentPalette = isPaletteSearching
     ? []
@@ -1694,7 +1663,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
   const visibleStorytellingPalette = storytellingPalette.filter((it) => matchesPalette(it.label, it.keywords));
   const visibleChartPalette = CHART_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
   const visibleElementPalette = ELEMENT_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.kind));
-  const visibleOmniPalette = OMNI_PALETTE.filter((it) => matchesPalette(it.label, it.id, it.group));
   const visibleTabVisualPalette = tabVisualPalette.filter((it) => matchesPalette(it.label, it.id, it.page));
   const tabVisualPages = [...new Set(visibleTabVisualPalette.map((it) => it.page))];
   const chartWarmDataSignature = useMemo(() => [
@@ -1730,7 +1698,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
     ? visibleStorytellingPalette.length > 0
       || visibleChartPalette.length > 0
       || visibleElementPalette.length > 0
-      || visibleOmniPalette.length > 0
       || visibleTabVisualPalette.length > 0
     : activePaletteCategory === "models"
       || activePaletteCategory === "assets"
@@ -1738,7 +1705,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
       || (activePaletteCategory === "charts" && visibleChartPalette.length > 0)
       || activePaletteCategory === "elements"
       || (activePaletteCategory === "story" && visibleStorytellingPalette.length > 0)
-      || (activePaletteCategory === "omni" && (visibleOmniPalette.length > 0 || visibleTabVisualPalette.length > 0));
+      || (activePaletteCategory === "omni" && visibleTabVisualPalette.length > 0);
 
   // Helpers for clipboard + alignment shortcuts.
   const copySelectionToClipboard = useCallback((cut: boolean) => {
@@ -2320,34 +2287,6 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
             </>
           )}
 
-          {showPaletteCategory("omni") && visibleOmniPalette.length > 0 && (
-            <>
-              <PaletteGroup title={t.paletteRail.groupOmni}>
-                {OMNI_GROUPS.map((group) => {
-                  const groupItems = visibleOmniPalette.filter((it) => it.group === group);
-                  if (groupItems.length === 0) return null;
-                  return (
-                    <div key={group}>
-                      <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                        {group}
-                      </div>
-                      {groupItems.map((it) => (
-                        <PaletteButton
-                          key={it.id}
-                          icon={it.icon}
-                          label={it.label}
-                          onClick={() => runPaletteAction(`omni:${it.id}`, () => addBlock(it.kind))}
-                          favorite={favoritePaletteIds.includes(`omni:${it.id}`)}
-                          onToggleFavorite={() => togglePaletteFavorite(`omni:${it.id}`)}
-                        />
-                      ))}
-                    </div>
-                  );
-                })}
-              </PaletteGroup>
-              <Separator className="my-2" />
-            </>
-          )}
           {showPaletteCategory("models") && !isPaletteSearching && (
             <>
               <div className="px-2">

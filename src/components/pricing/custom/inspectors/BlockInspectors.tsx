@@ -49,6 +49,7 @@ import { Section, Row, ToggleField, NumberStepper, ColorField, Segmented, Slider
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { BlockFilters } from "../BlockFilters";
 import { TabVisualInspector } from "./TabVisualInspector";
+import { LegacyOmniBanner } from "./LegacyOmniBanner";
 import { ShapeInspector } from "../ShapeInspector";
 import { DraftInput, DraftNumberInput, DraftTextarea } from "../DraftInput";
 import { ChartInspector } from "../chart/ChartInspector";
@@ -339,7 +340,23 @@ export function BlockAppearanceControls({ block, onChange }: {
   );
 }
 
-export function BlockSpecificEditor({ block, onChange, styleFocusRequest }: {
+export function BlockSpecificEditor(props: {
+  block: CustomBlock;
+  onChange: (p: Partial<CustomBlock>) => void;
+  styleFocusRequest?: number;
+}) {
+  // Elementos Omni foram aposentados da paleta: os que já estão nos decks
+  // continuam editáveis aqui, com a oferta de trocar pelo visual da aba.
+  const legacy = props.block.kind.startsWith("omni_");
+  return (
+    <>
+      {legacy && <LegacyOmniBanner block={props.block} />}
+      <BlockSpecificEditorBody {...props} />
+    </>
+  );
+}
+
+function BlockSpecificEditorBody({ block, onChange, styleFocusRequest }: {
   block: CustomBlock;
   onChange: (p: Partial<CustomBlock>) => void;
   styleFocusRequest?: number;
