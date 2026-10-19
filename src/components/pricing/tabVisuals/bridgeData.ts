@@ -4,6 +4,7 @@
 import { applyFilters, calcPVM, type PVMResult, type PVMSkuDetail } from "@/lib/analytics";
 import { parsePeriodo } from "@/lib/deckPeriod";
 import { monthLabel } from "@/lib/format";
+import { ytdBasePeriodo, ytdSplit } from "@/lib/pvmYtd";
 import type { Metric, PricingRow } from "@/lib/types";
 import type { TabVisualContext } from "./registry";
 import { resolvePricePeriods } from "./precoData";
@@ -103,7 +104,8 @@ export interface BridgeScope {
   rows: PricingRow[];
   base: string;
   comp: string;
-  periodMode: "fy" | "month";
+  /** "ytd": `comp` é o mês até onde o ano fiscal (abril) acumula; `base` é o mesmo mês um ano antes. */
+  periodMode: "fy" | "month" | "ytd";
 }
 
 /** Metric das opções do visual. */
@@ -116,9 +118,15 @@ export function bridgeMetricOf(params: Record<string, unknown>): Metric {
  * comparação não estão definidas (ou são iguais), como na aba.
  */
 export function computeBridgeScope(params: Record<string, unknown>, ctx: TabVisualContext): BridgeScope | null {
-  const { base, comp, periodMode } = resolvePricePeriods(params, ctx.allRows);
+  // YTD: o mês "até" anda com o mês de referência como qualquer mês; o lado base é derivado dele.
+  const isYtd = params.periodMode === "ytd";
+  const resolved = resolvePricePeriods(isYtd ? { ...params, periodMode: "month" } : params, ctx.allRows);
+  const comp = resolved.comp;
+  const base = isYtd && comp ? ytdBasePeriodo(comp) : resolved.base;
+  const periodMode: BridgeScope["periodMode"] = isYtd ? "ytd" : resolved.periodMode;
   if (!base || !comp || base === comp) return null;
   const rows = applyFilters(ctx.allRows, ctx.filters, null);
+  if (isYtd && !ytdSplit(rows, comp)) return null;
   const labels = periodMode === "month" ? { base: periodLabel(base), comp: periodLabel(comp) } : undefined;
   return { result: calcPVM(rows, bridgeMetricOf(params), base, comp, periodMode, labels), rows, base, comp, periodMode };
 }
@@ -157,11 +165,14 @@ export function categoryRankingItems(
   rows: PricingRow[],
   base: string | null,
   comp: string | null,
-  mode: "fy" | "month",
+  mode: "fy" | "month" | "ytd",
 ): BridgeRankingItem[] {
   const categoryBySku = new Map<string, string>();
-  const isComp = (row: PricingRow) => (mode === "fy" ? row.fy : row.periodo) === comp;
-  const isBase = (row: PricingRow) => (mode === "fy" ? row.fy : row.periodo) === base;
+  const split = mode === "ytd" && comp ? ytdSplit(rows, comp) : null;
+  const compSet = split ? new Set(split.compRows) : null;
+  const baseSet = split ? new Set(split.baseRows) : null;
+  const isComp = (row: PricingRow) => (compSet ? compSet.has(row) : (mode === "fy" ? row.fy : row.periodo) === comp);
+  const isBase = (row: PricingRow) => (baseSet ? baseSet.has(row) : (mode === "fy" ? row.fy : row.periodo) === base);
   const remember = (row: PricingRow) => {
     const sku = row.sku || row.skuDesc;
     if (!sku) return;

@@ -8,6 +8,7 @@ import {
 import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
 import { tabVisualPayload, captureSendToSlide, type SendToSlidePayload } from "@/lib/sendToSlide";
 import { sortedPeriodsOf } from "@/lib/tabVisualPeriod";
+import { ytdBasePeriodo, ytdEligibleMonths, ytdSplit } from "@/lib/pvmYtd";
 import { getDeckPricingRows } from "@/hooks/useDeckRows";
 import { Waterfall } from "@/components/pricing/Waterfall";
 import { EmptyState } from "@/components/pricing/EmptyState";
@@ -23,7 +24,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ArrowRight, BookOpen, Calendar, CalendarDays, Download, Info, Plus, Send, X } from "lucide-react";
+import { ArrowRight, BookOpen, Calendar, CalendarDays, CalendarRange, Download, Info, Plus, Send, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuickActivityDialog, type QuickActivityPrefill } from "@/components/atividades/QuickActivityDialog";
 import { toast } from "sonner";
@@ -45,17 +46,24 @@ export default function BridgePvm() {
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
   const [showFilterNote, setShowFilterNote] = useState(true);
   const [exportingPpt, setExportingPpt] = useState(false);
-  const lastAutoPvmPairRef = useRef<{ mode: "fy" | "month"; base: string; comp: string } | null>(null);
+  const lastAutoPvmPairRef = useRef<{ mode: "fy" | "month" | "ytd"; base: string; comp: string } | null>(null);
 
+  // YTD: o "até" só pode ser um mês cujo mesmo mês existe no ano anterior.
   const options = useMemo(
     () =>
       pvmMode === "fy"
         ? fyList.map((fy) => ({ value: fy, label: fy }))
-        : months.map((m) => ({ value: m.periodo, label: m.label })),
+        : (pvmMode === "ytd" ? ytdEligibleMonths(months) : months).map((m) => ({ value: m.periodo, label: m.label })),
     [pvmMode, fyList, months],
   );
 
   const defaultPvmPair = useMemo(() => {
+    if (pvmMode === "ytd") {
+      // Acumulado até o mês mais recente que tem o par no ano anterior.
+      const latest = options[options.length - 1]?.value;
+      const prev = latest ? ytdBasePeriodo(latest) : null;
+      return latest && prev ? { mode: pvmMode, base: prev, comp: latest } : null;
+    }
     if (options.length < 2) return null;
     const baseIndex = pvmMode === "month" ? options.length - 2 : 0;
     return {
@@ -71,7 +79,8 @@ export default function BridgePvm() {
   useEffect(() => {
     if (!defaultPvmPair) return;
     const values = new Set(options.map((o) => o.value));
-    const baseOk = pvmBase && values.has(pvmBase);
+    // No YTD só o mês "até" é escolhido; o de base (mesmo mês, um ano antes) é derivado.
+    const baseOk = pvmMode === "ytd" ? !!pvmBase : pvmBase && values.has(pvmBase);
     const compOk = pvmComp && values.has(pvmComp);
     const previousAutoPair = lastAutoPvmPairRef.current;
     const isCurrentAutoPair =
@@ -90,8 +99,15 @@ export default function BridgePvm() {
 
   const filtered = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
 
+  // Resumo da janela YTD (anos fiscais e meses somados) para explicar a comparação.
+  const ytdSummary = useMemo(
+    () => (pvmMode === "ytd" && pvmComp ? ytdSplit(filtered, pvmComp)?.summary ?? null : null),
+    [pvmMode, pvmComp, filtered],
+  );
+
   const result = useMemo(() => {
     if (!pvmBase || !pvmComp || pvmBase === pvmComp) return null;
+    if (pvmMode === "ytd" && !ytdSummary) return null;
     const labels =
       pvmMode === "month"
         ? {
@@ -100,7 +116,7 @@ export default function BridgePvm() {
           }
         : undefined;
     return calcPVM(filtered, metric, pvmBase, pvmComp, pvmMode, labels);
-  }, [filtered, metric, pvmBase, pvmComp, pvmMode, months]);
+  }, [filtered, metric, pvmBase, pvmComp, pvmMode, months, ytdSummary]);
 
   // Tudo que os cartões de efeito e os rankings precisam (e o que vai para o slide).
   const scope = useMemo<BridgeScope | null>(
@@ -134,7 +150,9 @@ export default function BridgePvm() {
   }
 
   const notEnough =
-    (pvmMode === "fy" && fyList.length < 2) || (pvmMode === "month" && months.length < 2);
+    (pvmMode === "fy" && fyList.length < 2)
+    || (pvmMode === "month" && months.length < 2)
+    || (pvmMode === "ytd" && options.length < 1);
 
   return (
     <>
@@ -149,7 +167,7 @@ export default function BridgePvm() {
               <ToggleGroup
                 type="single"
                 value={pvmMode}
-                onValueChange={(v) => v && setPvmMode(v as "fy" | "month")}
+                onValueChange={(v) => v && setPvmMode(v as "fy" | "month" | "ytd")}
                 className="mt-1.5 inline-flex rounded-full border border-border/50 bg-secondary/30 p-1"
               >
                 <ToggleGroupItem
@@ -158,6 +176,14 @@ export default function BridgePvm() {
                 >
                   <CalendarDays className="h-3.5 w-3.5" />
                   Ano Fiscal
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="ytd"
+                  className="h-8 gap-1.5 rounded-full px-4 text-xs data-[state=on]:bg-primary/20 data-[state=on]:text-primary data-[state=on]:shadow-sm"
+                  title="Acumulado do ano fiscal (começa em abril) contra o mesmo período do ano anterior"
+                >
+                  <CalendarRange className="h-3.5 w-3.5" />
+                  YTD
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="month"
@@ -174,8 +200,40 @@ export default function BridgePvm() {
             <p className="text-sm text-muted-foreground">
               {pvmMode === "fy"
                 ? `Carregue ao menos dois anos fiscais. Você tem: ${fyList.join(", ") || "—"}`
-                : `Carregue ao menos dois meses para comparar.`}
+                : pvmMode === "ytd"
+                  ? "Para o YTD é preciso o mesmo mês em dois anos fiscais (o ano fiscal começa em abril). Carregue ao menos um mês que já exista no ano anterior."
+                  : `Carregue ao menos dois meses para comparar.`}
             </p>
+          ) : pvmMode === "ytd" ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-end gap-3">
+                <PeriodSelect
+                  label="Acumulado até"
+                  tooltip="O ano fiscal começa em abril: o YTD soma de abril até o mês escolhido e compara com a mesma janela do ano fiscal anterior. Independente dos filtros de mês do Topbar."
+                  value={pvmComp}
+                  onChange={(v) => setPvm(ytdBasePeriodo(v), v)}
+                  options={options}
+                />
+                {ytdSummary && (
+                  <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/40 bg-secondary/20 px-4 py-1.5 text-xs">
+                    <span className="text-muted-foreground">
+                      {ytdSummary.baseFy} <span className="text-foreground/80">· {ytdSummary.baseRange}</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-primary/60" />
+                    <span className="font-medium text-foreground">
+                      {ytdSummary.compFy} <span className="font-normal text-foreground/80">· {ytdSummary.compRange}</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+              {ytdSummary && (ytdSummary.hasGaps || ytdSummary.startsLate) && (
+                <p className="text-xs text-warning">
+                  {ytdSummary.startsLate
+                    ? `Um dos anos não tem dados desde abril: o acumulado compara só ${ytdSummary.compRange} com ${ytdSummary.baseRange}.`
+                    : "Algum mês dessa janela não existe nos dois anos: ele fica de fora dos dois lados, para a comparação continuar justa."}
+                </p>
+              )}
+            </div>
           ) : (
             <div className="flex flex-wrap items-end gap-3">
               <PeriodSelect
@@ -207,9 +265,9 @@ export default function BridgePvm() {
           <Alert className="relative border-primary/30 bg-primary/5 text-foreground">
             <Info className="h-4 w-4 text-primary" />
             <AlertDescription className="pr-8 text-sm">
-              Os filtros de período do Topbar não afetam o Bridge PVM. A comparação usa exclusivamente os
-              períodos "Base" e "Comparação" selecionados acima. Os demais filtros (Marca, Canal etc.)
-              continuam sendo aplicados.
+              Os filtros de período do Topbar não afetam o Bridge PVM. A comparação usa exclusivamente{" "}
+              {pvmMode === "ytd" ? 'o mês "Acumulado até" selecionado acima' : 'os períodos "Base" e "Comparação" selecionados acima'}.
+              Os demais filtros (Marca, Canal etc.) continuam sendo aplicados.
             </AlertDescription>
             <button
               type="button"

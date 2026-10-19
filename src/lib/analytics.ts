@@ -1,3 +1,4 @@
+import { ytdSplit } from "./pvmYtd";
 import type { Filters, Metric, PricingRow } from "./types";
 import type { BudgetRow } from "./budget";
 
@@ -652,14 +653,30 @@ export function calcPVMFromRows(
   };
 }
 
+/**
+ * Bridge PVM entre dois períodos.
+ * - "month": `base` e `comp` são meses ("008.2026");
+ * - "fy": são anos fiscais ("FY25/26");
+ * - "ytd": `comp` é o mês até onde o ano fiscal (que começa em abril) acumula e
+ *   o lado base é a MESMA janela do ano fiscal anterior — `base` não é usado
+ *   (os rótulos vêm da própria janela: "YTD FY25/26" → "YTD FY26/27").
+ */
 export function calcPVM(
   rows: PricingRow[],
   metric: Metric,
   base: string,
   comp: string,
-  mode: "fy" | "month" = "fy",
+  mode: "fy" | "month" | "ytd" = "fy",
   labels?: { base?: string; comp?: string },
 ): PVMResult {
+  if (mode === "ytd") {
+    const split = ytdSplit(rows, comp);
+    if (!split) return calcPVMFromRows([], [], metric, { base: labels?.base ?? "YTD", comp: labels?.comp ?? "YTD" });
+    return calcPVMFromRows(split.baseRows, split.compRows, metric, {
+      base: labels?.base ?? split.baseLabel,
+      comp: labels?.comp ?? split.compLabel,
+    });
+  }
   const keyOf = (r: PricingRow) => (mode === "fy" ? r.fy : r.periodo);
   return calcPVMFromRows(
     rows.filter((r) => keyOf(r) === base),

@@ -231,7 +231,7 @@ export function buildNativeSlideConfigFromPayload(
       label: payload.source.visualization || item.label,
       config: {
         ...item.config,
-        mode: comparePeriod.periodMode,
+        mode: asString(payload.config.periodMode) === "ytd" ? "ytd" : comparePeriod.periodMode,
         base: comparePeriod.base,
         comp: comparePeriod.comp,
         filters,

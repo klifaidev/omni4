@@ -15,7 +15,8 @@ interface PricingState {
   selectedPeriods: string[] | null; // null = all
   missing: MissingMappings;         // valores ausentes nos De Paras
   // PVM
-  pvmMode: "fy" | "month";
+  /** "ytd": acumulado do ano fiscal (abril) até `pvmComp` contra a mesma janela do ano anterior. */
+  pvmMode: "fy" | "month" | "ytd";
   pvmBase: string | null;
   pvmComp: string | null;
   parsing: boolean;
@@ -48,7 +49,7 @@ interface PricingState {
   setSkuFields: (fieldsBySku: Record<string, Partial<Record<SkuField, string | undefined>>>) => void;
 
   setPvm: (base: string | null, comp: string | null) => void;
-  setPvmMode: (mode: "fy" | "month") => void;
+  setPvmMode: (mode: "fy" | "month" | "ytd") => void;
 }
 
 const EMPTY_MISSING: MissingMappings = { skus: [], canais: [], regioes: [], ufs: [] };

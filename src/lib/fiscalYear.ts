@@ -7,6 +7,11 @@ export function fiscalYearStartYear(month: number, year: number): number {
   return month >= 4 ? year : year - 1;
 }
 
+/** Índice do mês dentro do ano fiscal (abril=1 ... março=12). */
+export function fiscalMonthIndex(month: number): number {
+  return month >= 4 ? month - 3 : month + 9;
+}
+
 export function isInFiscalYearStart(row: FiscalMonthLike, fiscalYearStart: number): boolean {
   return fiscalYearStartYear(row.mes, row.ano) === fiscalYearStart;
 }

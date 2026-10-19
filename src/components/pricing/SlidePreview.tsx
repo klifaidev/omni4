@@ -538,7 +538,7 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
   const pvm = useMemo(() => {
     if (!ready.ok) return null;
     const isYtdMode = item.config.mode === "ytd_budget" || item.config.mode === "ytd_vs_ytd";
-    if (!isYtdMode && (!item.config.base || !item.config.comp)) return null;
+    if (!isYtdMode && (!item.config.comp || (item.config.mode !== "ytd" && !item.config.base))) return null;
     return getOrComputeSlideCalc({
       op: "preview-bridge-pvm",
       slideId: item.id,
@@ -566,7 +566,7 @@ function BridgePvmPreview({ item }: { item: Extract<SlideItem, { kind: "bridge_p
             })(),
           }
         : undefined;
-      try { return calcPVM(filtered, metric, item.config.base, item.config.comp, item.config.mode, labels); }
+      try { return calcPVM(filtered, metric, item.config.base ?? item.config.comp ?? "", item.config.comp ?? "", item.config.mode, labels); }
       catch { return null; }
     });
   }, [budgetRows, budgetSignature, pricingRows, pricingSignature, metric, item.id, item.config, ready.ok]);

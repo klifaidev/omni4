@@ -81,6 +81,7 @@ import {
   SLIDE_CATALOG, defaultItem, isItemReady, metaOf, slideDisplayName,
   type SlideItem, type SlideKind,
 } from "@/lib/slidesFlow";
+import { ytdBasePeriodo, ytdEligibleMonths } from "@/lib/pvmYtd";
 import { smartDefaults } from "@/lib/slidesSmartDefaults";
 import { warmSlideChartData } from "@/lib/slideDeckPreparation";
 import { guardSlideReadOnly } from "@/lib/slidesReadOnly";
@@ -458,6 +459,8 @@ function BridgePvmConfigPanel({
   const months = useMonthsInfo();
   const cfg = item.config;
 
+  // YTD: o "até" só pode ser um mês cujo mesmo mês existe um ano antes.
+  const ytdMonths = ytdEligibleMonths(months);
   const options = cfg.mode === "fy"
     ? fyList.map((f) => ({ value: f, label: f }))
     : months.map((m) => ({ value: m.periodo, label: m.label }));
@@ -469,12 +472,18 @@ function BridgePvmConfigPanel({
         <Select
           disabled={readOnly}
           value={cfg.mode}
-          onValueChange={(v) => onChange({ ...item, config: { ...cfg, mode: v as "fy" | "month" | "ytd_budget" | "ytd_vs_ytd", base: null, comp: null } })}
+          onValueChange={(v) => {
+            const mode = v as "fy" | "month" | "ytd" | "ytd_budget" | "ytd_vs_ytd";
+            // YTD já abre no mês mais recente que tem par no ano anterior.
+            const latest = mode === "ytd" ? ytdMonths[ytdMonths.length - 1]?.periodo ?? null : null;
+            onChange({ ...item, config: { ...cfg, mode, base: latest ? ytdBasePeriodo(latest) : null, comp: latest } });
+          }}
         >
           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="month">{t.bridgePvmPanel.modeOptions.month}</SelectItem>
             <SelectItem value="fy">{t.bridgePvmPanel.modeOptions.fy}</SelectItem>
+            <SelectItem value="ytd">{t.bridgePvmPanel.modeOptions.ytd}</SelectItem>
             <SelectItem value="ytd_budget">{t.bridgePvmPanel.modeOptions.ytdBudget}</SelectItem>
             <SelectItem value="ytd_vs_ytd">{t.bridgePvmPanel.modeOptions.ytdVsYtd}</SelectItem>
           </SelectContent>
@@ -484,6 +493,25 @@ function BridgePvmConfigPanel({
       {cfg.mode === "ytd_budget" || cfg.mode === "ytd_vs_ytd" ? (
         <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
           {cfg.mode === "ytd_budget" ? t.bridgePvmPanel.ytdBudgetHint : t.bridgePvmPanel.ytdVsYtdHint}
+        </div>
+      ) : cfg.mode === "ytd" ? (
+        <div className="space-y-2">
+          <div className="space-y-1.5">
+            <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t.bridgePvmPanel.ytdThrough}</Label>
+            <Select
+              disabled={readOnly}
+              value={cfg.comp ?? undefined}
+              onValueChange={(v) => onChange({ ...item, config: { ...cfg, base: ytdBasePeriodo(v), comp: v } })}
+            >
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t.bridgePvmPanel.choosePlaceholder} /></SelectTrigger>
+              <SelectContent>
+                {ytdMonths.map((m) => <SelectItem key={m.periodo} value={m.periodo}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            {t.bridgePvmPanel.ytdHint}
+          </div>
         </div>
       ) : (
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">

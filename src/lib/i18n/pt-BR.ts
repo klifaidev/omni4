@@ -1520,9 +1520,11 @@ export const ptBR = {
       bridgePvmPanel: {
         mode: "Modo",
         modeOptions: {
-          month: "Mês a mês", fy: "Ano fiscal", ytdBudget: "YTD Real vs Budget",
-          ytdVsYtd: "YTD vs YTD (ano anterior)",
+          month: "Mês a mês", fy: "Ano fiscal", ytd: "YTD até um mês (Real)", ytdBudget: "YTD Real vs Budget",
+          ytdVsYtd: "YTD vs YTD (Superbase)",
         },
+        ytdHint: "Compara o acumulado do ano fiscal (começa em abril) até o mês escolhido contra a mesma janela do ano fiscal anterior, com o Real do KE30 — igual ao YTD da aba Bridge PVM.",
+        ytdThrough: "Acumulado até",
         ytdBudgetHint: "Compara o Real acumulado do ano fiscal atual contra o Budget dos mesmos meses realizados.",
         ytdVsYtdHint: "Compara o Real acumulado do ano fiscal atual contra o Real dos mesmos meses do ano fiscal anterior (ano fiscal abril–março).",
         base: "Base",

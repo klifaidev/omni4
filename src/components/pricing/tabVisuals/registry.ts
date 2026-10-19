@@ -45,6 +45,7 @@ import {
   type BridgeEffectsData, type BridgeRankingData, type BridgeRankingLevel,
 } from "./bridgeData";
 import { getDeckPricingRows } from "@/hooks/useDeckRows";
+import { ytdBasePeriodo } from "@/lib/pvmYtd";
 import { CustoComposicaoVisual, CustoKgVisual, CustoPressaoVisual, type CustoComposicaoData } from "./CustosVisuals";
 import { buildComposition, compositionTotals, hasCompositionData } from "./custosData";
 import { CanalMixVisual, CanalTrendVisual, type CanalMixVisualData, type CanalTrendVisualData } from "./CanaisVisuals";
@@ -464,10 +465,12 @@ function applyBridgeParamsToTab(params: Record<string, unknown>) {
   const pricing = usePricing.getState();
   pricing.setMetric(bridgeMetricOf(params));
   // Os mesmos períodos que o slide mostra agora (a comparação "ao vivo" anda com o mês de referência).
-  const { base, comp, periodMode } = resolvePricePeriods(params, getDeckPricingRows());
-  if (base && comp) {
-    pricing.setPvmMode(periodMode);
-    pricing.setPvm(base, comp);
+  const isYtd = params.periodMode === "ytd";
+  const resolved = resolvePricePeriods(isYtd ? { ...params, periodMode: "month" } : params, getDeckPricingRows());
+  const base = isYtd && resolved.comp ? ytdBasePeriodo(resolved.comp) : resolved.base;
+  if (base && resolved.comp) {
+    pricing.setPvmMode(isYtd ? "ytd" : resolved.periodMode);
+    pricing.setPvm(base, resolved.comp);
   }
 }
 

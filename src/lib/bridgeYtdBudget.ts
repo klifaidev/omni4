@@ -2,7 +2,7 @@ import type { BudgetRow } from "./budget";
 import type { Filters, Metric, PricingRow } from "./types";
 import { applyFilters, computePvmEffects, type PvmSkuAgg, type PVMResult } from "./analytics";
 import { monthLabel } from "./format";
-import { fiscalYearStartYear } from "./fiscalYear";
+import { fiscalMonthIndex, fiscalYearStartYear } from "./fiscalYear";
 
 export interface BridgeYtdBudgetResult {
   result: PVMResult;
@@ -183,13 +183,6 @@ export function computeBridgeYtdRealVsBudget(
     periods: ytd.periods,
     latestPeriodLabel: ytd.latestLabel,
   };
-}
-
-/** Índice do mês dentro do ano fiscal (abril=1 ... março=12) — usado para
- *  achar a mesma janela de meses no ano fiscal anterior numa comparação
- *  YTD vs YTD (ano fiscal abril–março). */
-function fiscalMonthIndex(mes: number): number {
-  return mes >= 4 ? mes - 3 : mes + 9;
 }
 
 function fyLabelFromStartYear(fyStartYear: number): string {

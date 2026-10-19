@@ -113,3 +113,51 @@ describe("catálogo: visuais do Bridge PVM", () => {
     expect([strip.y, strip.h]).toEqual([130, 190]);
   });
 });
+
+describe("Bridge PVM em YTD no catálogo", () => {
+  function fyRow(mes: number, ano: number, sku: string, volumeKg: number): PricingRow {
+    const start = mes >= 4 ? ano : ano - 1;
+    return {
+      ...row(`${String(mes).padStart(3, "0")}.${ano}`, sku, "BARRA", volumeKg, 10, 6),
+      fy: `FY${String(start).slice(-2)}/${String(start + 1).slice(-2)}`,
+    };
+  }
+  const YTD_ROWS = [4, 5, 6, 7, 8, 9].flatMap((mes) => [
+    fyRow(mes, 2025, "A", 100), fyRow(mes, 2025, "B", 50),
+    fyRow(mes, 2026, "A", 130), fyRow(mes, 2026, "B", 40),
+  ]);
+  const ytdCtx = { allRows: YTD_ROWS, filters: {}, periods: null };
+
+  it("compara o acumulado do ano fiscal (abril) com o mesmo período do ano anterior", () => {
+    const scope = computeBridgeScope({ periodMode: "ytd", comp: "009.2026", follow: "fixed", metric: "cm" }, ytdCtx)!;
+    expect(scope.periodMode).toBe("ytd");
+    expect(scope.base).toBe("009.2025");
+    expect(scope.result.baseLabel).toBe("YTD FY25/26");
+    expect(scope.result.currentLabel).toBe("YTD FY26/27");
+    const r = scope.result;
+    expect(r.base + r.volume + r.price + r.cost + r.freight + r.commission + r.others).toBeCloseTo(r.current, 4);
+    // Seis meses acumulados de cada lado.
+    expect(r.current).toBeCloseTo(YTD_ROWS.filter((x) => x.fy === "FY26/27").reduce((sum, x) => sum + x.contribMarginal, 0), 4);
+  });
+
+  it("ao vivo, o mês do acumulado anda com o mês de referência do deck", () => {
+    const scope = computeBridgeScope(
+      { periodMode: "ytd", comp: "008.2026", anchor: "008.2026", follow: "live", metric: "cm" },
+      ytdCtx,
+    )!;
+    // O deck agora vai até 009.2026: o "até" avança um mês.
+    expect(scope.comp).toBe("009.2026");
+  });
+
+  it("sem o mesmo mês no ano anterior não há Bridge YTD", () => {
+    expect(computeBridgeScope({ periodMode: "ytd", comp: "003.2026", follow: "fixed" }, ytdCtx)).toBeNull();
+  });
+
+  it("os rankings por categoria e SKU usam as janelas do YTD", () => {
+    const scope = computeBridgeScope({ periodMode: "ytd", comp: "009.2026", follow: "fixed", metric: "cm" }, ytdCtx)!;
+    const rk = computeBridgeRanking(scope, "sku", "volumeEffect")!;
+    expect(rk.heroes[0].id).toBe("A");
+    expect(rk.offenders[0].id).toBe("B");
+    expect(computeBridgeRanking(scope, "categoria", "volumeEffect")!.heroes.length + computeBridgeRanking(scope, "categoria", "volumeEffect")!.offenders.length).toBeGreaterThan(0);
+  });
+});

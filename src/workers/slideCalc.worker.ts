@@ -36,7 +36,7 @@ type PvmRequest = {
   metric: "cm" | "mb";
   base: string;
   comp: string;
-  mode: "month" | "fy";
+  mode: "month" | "fy" | "ytd";
   labels?: { base: string; comp: string };
 };
 

@@ -287,7 +287,7 @@ export function calcPvmAsync(params: {
   metric: "cm" | "mb";
   base: string;
   comp: string;
-  mode: "month" | "fy";
+  mode: "month" | "fy" | "ytd";
   labels?: { base: string; comp: string };
 }): Promise<PVMResult> {
   const rowsKey = params.cache.dataSignature ?? getCachedRowsSignature(params.rows);

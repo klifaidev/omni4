@@ -41,7 +41,8 @@ export interface BaseSlideItem {
 }
 
 export interface BridgePvmSlideConfig {
-  mode: "fy" | "month" | "ytd_budget" | "ytd_vs_ytd";
+  /** "ytd": acumulado do ano fiscal (abril) até `comp` contra a mesma janela do ano anterior, com o Real do KE30 (`base` é o mesmo mês um ano antes). */
+  mode: "fy" | "month" | "ytd" | "ytd_budget" | "ytd_vs_ytd";
   base: string | null;
   comp: string | null;
   /** Filtros específicos deste slide (não afetam outros slides) */
@@ -237,7 +238,7 @@ function itemToFlowBuilder(item: SlideItem, ctx: BuildContext): SlideFlowItem {
             await addBridgePvmSlides(pptx, ytd.result, [...ytd.baseRows, ...ytd.compRows], { onlyOverview: true, wrapLabels: cfg.wrapLabels });
             return;
           }
-          if (!cfg.base || !cfg.comp || cfg.base === cfg.comp) {
+          if (!cfg.comp || (cfg.mode !== "ytd" && (!cfg.base || cfg.base === cfg.comp))) {
             throw new Error(`Bridge PVM "${item.label}": selecione períodos base e comparação distintos.`);
           }
           const filtered = applyFilters(ctx.pricingRows, cfg.filters, null);
@@ -248,7 +249,7 @@ function itemToFlowBuilder(item: SlideItem, ctx: BuildContext): SlideFlowItem {
                 comp: labelOfPeriod(filtered, cfg.comp),
               }
             : undefined;
-          const result = calcPVM(filtered, ctx.metric, cfg.base, cfg.comp, cfg.mode, labels);
+          const result = calcPVM(filtered, ctx.metric, cfg.base ?? cfg.comp, cfg.comp, cfg.mode, labels);
           const { addBridgePvmSlides } = await import("./exportPpt");
           await addBridgePvmSlides(pptx, result, filtered, { onlyOverview: true, wrapLabels: cfg.wrapLabels });
         },
@@ -403,6 +404,9 @@ export function isItemReady(item: SlideItem): { ok: boolean; reason?: string } {
       if (item.config.mode === "ytd_vs_ytd") {
         if (useBudget.getState().rows.length === 0) return { ok: false, reason: "Carregue a Superbase com Real antes de usar YTD vs YTD." };
         return { ok: true };
+      }
+      if (item.config.mode === "ytd") {
+        return item.config.comp ? { ok: true } : { ok: false, reason: "Escolha o mês do acumulado (YTD)." };
       }
       if (!item.config.base || !item.config.comp) return { ok: false, reason: "Defina período base e comparação." };
       if (item.config.base === item.config.comp) return { ok: false, reason: "Base e comparação devem ser diferentes." };
