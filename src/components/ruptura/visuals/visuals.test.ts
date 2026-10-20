@@ -7,7 +7,9 @@ import {
   rupturaPeriodOptions,
   rupturaPeriodRange,
 } from "@/lib/rupturaVisualPeriod";
-import { computeRupturaEvolution, computeRupturaKpis, computeRupturaMap, computeRupturaRanking } from "./data";
+import {
+  computeRupturaEvolution, computeRupturaKpis, computeRupturaMap, computeRupturaRanking, RUPTURA_EVO_METRICS, RUPTURA_MAP_METRICS,
+} from "./data";
 import { computeRupturaVisual, getRupturaVisual, listRupturaVisuals, newRupturaVisualBlock } from "./registry";
 
 const HEADER = [
@@ -178,5 +180,14 @@ describe("catálogo da Ruptura", () => {
     const rank = newRupturaVisualBlock("ruptura.ranking-sku", 0);
     expect(rank.showTitle).toBe(true);
     expect(rank.title).toBe("Ruptura por SKU");
+  });
+
+  it("a métrica de ruptura se chama GINI nos cartões e nos seletores (nome usado na empresa)", () => {
+    const rate = computeRupturaKpis(makeRupturaView(m, {}, { from: 3, to: 3 })).find((c) => c.id === "rate")!;
+    expect(rate.label).toBe("GINI de ruptura");
+    expect(RUPTURA_EVO_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
+    expect(RUPTURA_MAP_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
+    const text = JSON.stringify([RUPTURA_EVO_METRICS, RUPTURA_MAP_METRICS, rate.label, rate.help]);
+    expect(text).not.toMatch(/[Tt]axa/);
   });
 });

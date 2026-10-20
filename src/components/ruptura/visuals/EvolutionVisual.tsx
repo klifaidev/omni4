@@ -81,7 +81,7 @@ export function RupturaEvolutionVisual({
                         <span className="text-muted-foreground">Ocorrências</span><span className="text-right">{formatNum(p.occurrences)}</span>
                         <span className="text-muted-foreground">Lojas afetadas</span><span className="text-right">{formatNum(p.storesAffected)}</span>
                         <span className="text-muted-foreground">SKUs afetados</span><span className="text-right">{formatNum(p.skusAffected)}</span>
-                        <span className="text-muted-foreground">Taxa</span><span className="text-right">{p.rate === null ? "indisponível" : formatPct(p.rate)}</span>
+                        <span className="text-muted-foreground">GINI</span><span className="text-right">{p.rate === null ? "indisponível" : formatPct(p.rate)}</span>
                         <span className="text-muted-foreground">Lojas com registro</span><span className="text-right">{formatNum(p.storesSurveyed)}</span>
                         <span className="text-muted-foreground">Pesquisas brutas</span><span className="text-right">{formatNum(p.rawEvaluations)}</span>
                       </div>

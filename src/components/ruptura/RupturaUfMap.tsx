@@ -110,7 +110,7 @@ export function RupturaUfMap({ view }: { view: RupturaView }) {
                 <dt className="text-muted-foreground">Lojas com registro</dt><dd className="text-right">{formatNum(hovered.storesSurveyed)}</dd>
                 <dt className="text-muted-foreground">Lojas afetadas</dt><dd className="text-right">{formatNum(hovered.storesAffected)}</dd>
                 <dt className="text-muted-foreground">Ocorrências</dt><dd className="text-right">{formatNum(hovered.occurrences)}</dd>
-                <dt className="text-muted-foreground">Taxa</dt><dd className="text-right">{hovered.rate === null ? "indisponível" : formatPct(hovered.rate)}</dd>
+                <dt className="text-muted-foreground">GINI</dt><dd className="text-right">{hovered.rate === null ? "indisponível" : formatPct(hovered.rate)}</dd>
                 <dt className="text-muted-foreground">Receita / margem potencial</dt><dd className="text-right">indisponível</dd>
               </dl>
             ) : (

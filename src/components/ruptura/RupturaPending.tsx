@@ -3,7 +3,7 @@ import { GlassCard } from "@/components/pricing/GlassCard";
 
 const ITEMS: Array<{ title: string; needs: string; why: string }> = [
   {
-    title: "Taxa de ruptura e cobertura de lojas",
+    title: "GINI de ruptura e cobertura de lojas",
     needs: "Respostas “Não” na base · universo de lojas elegíveis",
     why: "Sem os “Não”, só aparecem lojas com ruptura: não há denominador. Cobertura também exige saber quantas lojas deveriam ser pesquisadas.",
   },
@@ -19,8 +19,8 @@ const ITEMS: Array<{ title: string; needs: string; why: string }> = [
   },
   {
     title: "Matriz de priorização, simulador e ações recomendadas",
-    needs: "Taxa de ruptura + margem potencial + causa provável",
-    why: "Os quadrantes cruzam taxa e margem; o simulador aplica % sobre a margem potencial; as ações dependem da causa.",
+    needs: "GINI de ruptura + margem potencial + causa provável",
+    why: "Os quadrantes cruzam GINI e margem; o simulador aplica % sobre a margem potencial; as ações dependem da causa.",
   },
 ];
 
