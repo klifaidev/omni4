@@ -78,7 +78,7 @@ const str = (v: unknown, fallback: string) => (typeof v === "string" ? v : fallb
 // ── Indicadores ──────────────────────────────────────────────────────────
 
 const KPI_LABELS: Record<RupturaKpiId, string> = {
-  rate: "GINI de ruptura",
+  rate: "Ruptura",
   storesAffected: "Lojas com ruptura",
   occurrences: "Ocorrências",
   skusAffected: "SKUs afetados",

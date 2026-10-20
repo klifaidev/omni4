@@ -184,7 +184,7 @@ describe("catálogo da Ruptura", () => {
 
   it("a métrica de ruptura se chama GINI nos cartões e nos seletores (nome usado na empresa)", () => {
     const rate = computeRupturaKpis(makeRupturaView(m, {}, { from: 3, to: 3 })).find((c) => c.id === "rate")!;
-    expect(rate.label).toBe("GINI de ruptura");
+    expect(rate.label).toBe("Ruptura");
     expect(RUPTURA_EVO_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
     expect(RUPTURA_MAP_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
     const text = JSON.stringify([RUPTURA_EVO_METRICS, RUPTURA_MAP_METRICS, rate.label, rate.help]);

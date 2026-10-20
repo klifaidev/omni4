@@ -57,7 +57,7 @@ export function computeRupturaKpis(view: RupturaView): RupturaKpiData[] {
   return [
     {
       id: "rate",
-      label: "GINI de ruptura",
+      label: "Ruptura",
       value: totals.rate === null ? "Indisponível" : formatPct(totals.rate),
       unavailable: totals.rate === null,
       sub: totals.rate === null
