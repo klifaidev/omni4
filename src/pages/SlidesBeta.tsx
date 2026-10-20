@@ -2315,6 +2315,7 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
   const readyAll = items.filter((i) => !i.hidden).every((i) => isItemReady(i).ok);
   const {
     exporting,
+    progress: exportProgress,
     fileName,
     setFileName,
     handleExport,
@@ -3129,8 +3130,24 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
                     {exporting ? t.page.esteira.loadingExporting : importApplying ? t.page.esteira.loadingImporting : t.page.esteira.loadingTemplate}
                   </div>
                   <div className="slides-type-helper">
-                    {exporting ? t.page.esteira.loadingExportingHint : t.page.esteira.loadingDefaultHint}
+                    {exporting && exportProgress && exportProgress.total > 0
+                      ? t.page.esteira.loadingExportingProgress(Math.min(exportProgress.done + 1, exportProgress.total), exportProgress.total)
+                      : exporting ? t.page.esteira.loadingExportingHint : t.page.esteira.loadingDefaultHint}
                   </div>
+                  {exporting && exportProgress && exportProgress.total > 0 && (
+                    <div
+                      className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={exportProgress.total}
+                      aria-valuenow={exportProgress.done}
+                    >
+                      <div
+                        className="h-full rounded-full bg-primary transition-[width] duration-300"
+                        style={{ width: `${Math.round((exportProgress.done / exportProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -3201,8 +3218,13 @@ export default function SlidesBeta({ onMinimize, isStandby = false }: SlidesBeta
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">{t.page.exportConfirm.slides}</span>
-              <span className="font-medium">{items.length}</span>
+              <span className="font-medium">{items.filter((i) => !i.hidden).length}</span>
             </div>
+            {items.some((i) => i.hidden) && (
+              <p className="text-xs text-muted-foreground">
+                {t.page.exportConfirm.hiddenSkipped(items.filter((i) => i.hidden).length)}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setExportConfirm(null)}>{t.common.cancelar}</Button>

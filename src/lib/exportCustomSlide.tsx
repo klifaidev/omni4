@@ -6,7 +6,7 @@ import type PptxGenJS from "pptxgenjs";
 import React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import html2canvas from "html2canvas";
+import { captureSlideCanvas, captureSlideCanvasLegacy } from "./slideCapture";
 import { CANVAS_W, CANVAS_H, type CustomSlideConfig } from "./customSlide";
 import { fitCanvasScale } from "./canvasFit";
 import { PPT_COLORS } from "./slideColors";
@@ -30,12 +30,6 @@ const EXPORT_CAPTURE_CSS = `
   .recharts-surface * {
     animation: none !important;
     transition: none !important;
-  }
-  table, thead, tbody, tr, th, td {
-    vertical-align: middle !important;
-  }
-  th, td {
-    line-height: 1.15 !important;
   }
 `;
 
@@ -144,21 +138,7 @@ function canvasLooksBlank(canvas: HTMLCanvasElement): boolean {
 }
 
 async function captureHost(host: HTMLElement, scale: number): Promise<HTMLCanvasElement> {
-  return html2canvas(host, {
-    scale,
-    useCORS: true,
-    backgroundColor: "#FFFFFF",
-    width: host.offsetWidth,
-    height: host.offsetHeight,
-    windowWidth: host.offsetWidth,
-    windowHeight: host.offsetHeight,
-    logging: false,
-    ignoreElements: (el) => {
-      if (!(el instanceof HTMLElement)) return false;
-      return el.dataset.exportHide === "true"
-        || el.dataset.html2canvasIgnore === "true";
-    },
-  });
+  return (await captureSlideCanvas(host, scale)).canvas;
 }
 
 async function renderSlideAsImage(config: CustomSlideConfig, slideId?: string): Promise<string> {
@@ -197,7 +177,11 @@ async function renderSlideAsImage(config: CustomSlideConfig, slideId?: string): 
 
     let canvas = await captureHost(host, EXPORT_SCALE);
     if (exportConfig.blocks.length > 0 && canvasLooksBlank(canvas)) {
-      console.warn("[customSlide export] captura principal vazia; usando fallback legado.");
+      console.warn("[customSlide export] captura principal vazia; tentando o html2canvas.");
+      canvas = await captureSlideCanvasLegacy(host, EXPORT_SCALE);
+    }
+    if (exportConfig.blocks.length > 0 && canvasLooksBlank(canvas)) {
+      console.warn("[customSlide export] captura ainda vazia; usando fallback legado.");
       canvas = await renderLegacyCanvas(exportConfig, slideId);
     }
 

@@ -26,6 +26,9 @@ export function useSlideExport({
   metric: Metric;
 }) {
   const [exporting, setExporting] = useState(false);
+  // Progresso real: só os slides que vão para o arquivo (os ocultos nem são desenhados).
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const onProgress = useCallback((done: number, total: number) => setProgress({ done, total }), []);
   const [fileName, setFileName] = useState("apresentacao-pricing.pptx");
 
   // Slides marcados como ocultos na esteira não entram em nenhum export —
@@ -43,23 +46,25 @@ export function useSlideExport({
 
   const handleExportPdf = useCallback(async () => {
     if (!canExport()) return;
+    setProgress(null);
     setExporting(true);
     try {
       // jspdf (~470KB) só baixa quando o usuário clica em exportar PDF —
       // import estático aqui fazia essa biblioteca cair no caminho de
       // carregamento da página Slides inteira, mesmo pra quem nunca exporta.
       const { exportToPdf } = await import("@/lib/exportPdf");
-      await exportToPdf(visibleItems, normalizeExportFileName(fileName, "pdf"));
+      await exportToPdf(visibleItems, normalizeExportFileName(fileName, "pdf"), onProgress);
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Falha ao gerar PDF.");
     } finally {
       setExporting(false);
     }
-  }, [canExport, fileName, visibleItems]);
+  }, [canExport, fileName, visibleItems, onProgress]);
 
   const handleExport = useCallback(async () => {
     if (!canExport()) return;
+    setProgress(null);
     setExporting(true);
     try {
       // Grupos da esteira viram seções do PowerPoint.
@@ -75,7 +80,7 @@ export function useSlideExport({
       // quando o usuário realmente exporta.
       const { exportSlideFlow } = await import("@/lib/exportPpt");
       const { failedSlides } = await exportSlideFlow(
-        flow, normalizeExportFileName(fileName, "pptx"), bridgeIdx >= 0 ? bridgeIdx + 1 : undefined,
+        flow, normalizeExportFileName(fileName, "pptx"), bridgeIdx >= 0 ? bridgeIdx + 1 : undefined, onProgress,
       );
       if (failedSlides.length > 0) {
         toast.warning(
@@ -90,10 +95,11 @@ export function useSlideExport({
     } finally {
       setExporting(false);
     }
-  }, [budgetRows, canExport, fileName, visibleItems, metric, pricingRows]);
+  }, [budgetRows, canExport, fileName, visibleItems, metric, pricingRows, onProgress]);
 
   return {
     exporting,
+    progress: exporting ? progress : null,
     fileName,
     setFileName,
     handleExport,

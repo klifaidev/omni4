@@ -1441,7 +1441,10 @@ export function planPptSections(items: ReadonlyArray<{ section?: string }>): Arr
   return plan;
 }
 
-export async function buildFlowItems(pptx: PptxGenJS, items: SlideFlowItem[]): Promise<string[]> {
+/** Progresso da exportação: `done` slides prontos de `total` (só os que vão para o arquivo). */
+export type ExportProgress = (done: number, total: number) => void;
+
+export async function buildFlowItems(pptx: PptxGenJS, items: SlideFlowItem[], onProgress?: ExportProgress): Promise<string[]> {
   const created: PptxGenJS.Slide[] = [];
   const addSlide = pptx.addSlide.bind(pptx);
   // Seção atual: todo slide criado enquanto ela vale entra nela.
@@ -1472,6 +1475,7 @@ export async function buildFlowItems(pptx: PptxGenJS, items: SlideFlowItem[]): P
     if (result === false) failedSlides.push(items[i].label ?? `Slide ${i + 1}`);
     const notes = items[i].notes?.trim();
     if (notes && created[firstNew]) created[firstNew].addNotes(notes);
+    onProgress?.(i + 1, items.length);
   }
   return failedSlides;
 }
@@ -1480,6 +1484,7 @@ export async function exportSlideFlow(
   items: SlideFlowItem[],
   fileName = "apresentacao.pptx",
   bridgeSlideIndex?: number,
+  onProgress?: ExportProgress,
 ): Promise<ExportSlideFlowResult> {
   if (items.length === 0) throw new Error("Nenhum slide no fluxo.");
   await getHaraldFooterDataUri();
@@ -1490,7 +1495,8 @@ export async function exportSlideFlow(
   pptx.title = "Apresentação Pricing Analytics";
   pptx.theme = { headFontFace: "Calibri", bodyFontFace: "Calibri" };
 
-  const failedSlides = await buildFlowItems(pptx, items);
+  onProgress?.(0, items.length);
+  const failedSlides = await buildFlowItems(pptx, items, onProgress);
 
   const rawBlob = (await pptx.write({ outputType: "blob" })) as Blob;
   const grouped = await groupBridgeElements(rawBlob, bridgeSlideIndex ?? 1);

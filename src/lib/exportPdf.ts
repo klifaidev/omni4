@@ -2,7 +2,7 @@
 // a landscape PDF using jsPDF. Uses the existing SlidePreview / CustomCanvasReadOnly
 // renderers so the output matches what the user sees in the editor.
 
-import html2canvas from "html2canvas";
+import { captureSlideCanvas } from "@/lib/slideCapture";
 import { jsPDF } from "jspdf";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -67,17 +67,8 @@ async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> 
     // em branco como se fosse sucesso.
     await waitForCaptureReady(host, 350);
 
-    const canvas = await html2canvas(host, {
-      scale: 3,
-      useCORS: true,
-      backgroundColor: "#FFFFFF",
-      width: SLIDE_W,
-      height: SLIDE_H,
-      windowWidth: SLIDE_W,
-      windowHeight: SLIDE_H,
-      logging: false,
-    });
-    return canvas;
+    // Mesma "foto" do PowerPoint: o próprio navegador desenha o slide (ver slideCapture.ts).
+    return (await captureSlideCanvas(host, 3)).canvas;
   } finally {
     setTimeout(() => {
       try { root.unmount(); } catch { /* noop */ }
@@ -86,7 +77,11 @@ async function renderSlideToCanvas(item: SlideItem): Promise<HTMLCanvasElement> 
   }
 }
 
-export async function exportToPdf(slideItems: SlideItem[], fileName: string): Promise<void> {
+export async function exportToPdf(
+  slideItems: SlideItem[],
+  fileName: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
   if (slideItems.length === 0) return;
 
   const safeName = fileName.replace(/\.(pptx?|pdf)$/i, "") + ".pdf";
@@ -101,6 +96,7 @@ export async function exportToPdf(slideItems: SlideItem[], fileName: string): Pr
   toast.loading(`Gerando slide 1 de ${slideItems.length}...`, { id: progressId });
 
   let failures = 0;
+  onProgress?.(0, slideItems.length);
 
   for (let i = 0; i < slideItems.length; i++) {
     toast.loading(`Gerando slide ${i + 1} de ${slideItems.length}...`, { id: progressId });
@@ -116,6 +112,7 @@ export async function exportToPdf(slideItems: SlideItem[], fileName: string): Pr
       pdf.setFontSize(14);
       pdf.text(`Slide ${i + 1} ignorado — falha na captura.`, pageW / 2, pageH / 2, { align: "center" });
     }
+    onProgress?.(i + 1, slideItems.length);
   }
 
   pdf.save(safeName);

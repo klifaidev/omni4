@@ -1739,6 +1739,7 @@ export const ptBR = {
           loadingImporting: "Inserindo slides no deck",
           loadingTemplate: "Aplicando template",
           loadingExportingHint: "Renderizando os slides e gerando o arquivo.",
+          loadingExportingProgress: (current: number, total: number) => `Renderizando o slide ${current} de ${total}…`,
           loadingDefaultHint: "Organizando os slides e atualizando a esteira.",
         },
         inspectorAside: {
@@ -1754,6 +1755,7 @@ export const ptBR = {
           file: "Arquivo",
           format: "Formato",
           slides: "Slides",
+          hiddenSkipped: (n: number) => `${n} slide${n > 1 ? "s" : ""} oculto${n > 1 ? "s" : ""} não ${n > 1 ? "entram" : "entra"} no arquivo e não ${n > 1 ? "são renderizados" : "é renderizado"}.`,
           confirmButton: "Confirmar exportação",
         },
         importDialog: {

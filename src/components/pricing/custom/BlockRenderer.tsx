@@ -222,40 +222,6 @@ const textAlignToJustify: Record<string, React.CSSProperties["justifyContent"]> 
   right: "flex-end",
 };
 
-function exportCellStyle(style: React.CSSProperties): React.CSSProperties {
-  return {
-    ...style,
-    padding: 0,
-    lineHeight: 1,
-    verticalAlign: "middle",
-  };
-}
-
-function exportCellContent(
-  content: React.ReactNode,
-  opts: { padding: React.CSSProperties["padding"]; align?: React.CSSProperties["textAlign"]; wrap?: boolean },
-) {
-  const align = String(opts.align ?? "center");
-  return (
-    <div style={{
-      minHeight: "100%",
-      height: "100%",
-      boxSizing: "border-box",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: textAlignToJustify[align] ?? "center",
-      padding: opts.padding,
-      lineHeight: 1.15,
-      textAlign: opts.align,
-      whiteSpace: opts.wrap ? "normal" : "nowrap",
-      overflow: "hidden",
-      overflowWrap: opts.wrap ? "anywhere" : undefined,
-      wordBreak: opts.wrap ? "break-word" : undefined,
-    }}>
-      {content}
-    </div>
-  );
-}
 
 function pricingDimValue(row: PricingRow, dim: string): string {
   const value = (row as unknown as Record<string, unknown>)[dim];
@@ -584,7 +550,8 @@ function SimpleLayoutRender({
         padding: node.style.padding,
         backgroundColor: node.style.backgroundColor,
         borderRadius: node.style.borderRadius,
-        overflow: readOnly ? "visible" : "hidden",
+        // Igual ao editor em qualquer lugar (apresentação, miniatura, PDF, PowerPoint).
+        overflow: "hidden",
         visibility: isEditing ? "hidden" : "visible",
       }}>
         <RichTextContent text={node.text} />
@@ -744,73 +711,6 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
   const isTransparent = cardBg === "transparent";
   const valueSize = b.valueSize;
   if (missingData) return <MissingLocalData label={missingData} />;
-  if (readOnly) {
-    const fill = isTransparent ? "transparent" : `#${cardBg}`;
-    const stroke = isTransparent ? "transparent" : SLIDE_HEX.grid;
-    const footerText = b.source === "dynamic"
-      ? `${measureLabel ?? ""}${periodDescriptor ? ` · ${periodDescriptor}` : ""}`
-      : "";
-    return (
-      <svg width="100%" height="100%" viewBox={`0 0 ${b.w} ${b.h}`} preserveAspectRatio="none" style={{ display: "block", overflow: "visible" }}>
-        <rect x={0.5} y={0.5} width={Math.max(1, b.w - 1)} height={Math.max(1, b.h - 1)} rx={isTransparent ? 0 : 12} fill={fill} stroke={stroke} />
-        <text
-          x={12}
-          y={comparisonText ? Math.max(18, b.h * 0.2) : Math.max(20, b.h * 0.28)}
-          dominantBaseline="middle"
-          alignmentBaseline="middle"
-          textAnchor="start"
-          fontFamily="Calibri, Arial, sans-serif"
-          fontSize={14}
-          letterSpacing={1}
-          fill={SLIDE_HEX.slate500}
-        >
-          {labelText.toUpperCase()}
-        </text>
-        {comparisonText && (
-          <text
-            x={12}
-            y={b.h * 0.45 + valueSize * 0.5 + 12}
-            dominantBaseline="middle"
-            alignmentBaseline="middle"
-            textAnchor="start"
-            fontFamily="Calibri, Arial, sans-serif"
-            fontSize={12}
-            fontWeight={600}
-            fill={comparisonColor}
-          >
-            {comparisonText}
-          </text>
-        )}
-        <text
-          x={12}
-          y={comparisonText ? b.h * 0.45 : b.h / 2 + 6}
-          dominantBaseline="middle"
-          alignmentBaseline="middle"
-          textAnchor="start"
-          fontFamily="Calibri, Arial, sans-serif"
-          fontSize={valueSize}
-          fontWeight={700}
-          fill={`#${b.color}`}
-        >
-          {value}
-        </text>
-        {footerText && (
-          <text
-            x={12}
-            y={Math.max(16, b.h - 18)}
-            dominantBaseline="middle"
-            alignmentBaseline="middle"
-            textAnchor="start"
-            fontFamily="Calibri, Arial, sans-serif"
-            fontSize={11}
-            fill={SLIDE_HEX.slate400}
-          >
-            {footerText}
-          </text>
-        )}
-      </svg>
-    );
-  }
   return (
     <div style={{
       width: "100%", height: "100%",
@@ -826,12 +726,10 @@ function KpiRender({ block: b, readOnly }: { block: KpiBlock; readOnly?: boolean
       </div>
       <div style={{
         fontSize: valueSize, fontWeight: 700, color: `#${b.color}`,
-        marginTop: 4, lineHeight: readOnly ? 1.18 : 1.05,
+        marginTop: 4, lineHeight: 1.05,
         whiteSpace: "nowrap",
-        overflow: readOnly ? "visible" : "hidden",
-        textOverflow: readOnly ? undefined : "ellipsis",
-        paddingBlock: readOnly ? 2 : 0,
-        minHeight: readOnly ? Math.ceil(valueSize * 1.18) : undefined,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
       }}>
         {value}
       </div>
@@ -1516,20 +1414,9 @@ function TableRender({ block: b, readOnly, onPatch }: { block: TableBlock; readO
     style: React.CSSProperties,
     key?: React.Key,
   ) => {
-    if (!readOnly) {
-      return tag === "th"
-        ? <th key={key} style={style}>{content}</th>
-        : <td key={key} style={style}>{content}</td>;
-    }
-    const inner = exportCellContent(content, {
-      padding: style.padding,
-      align: style.textAlign,
-      wrap: style.whiteSpace === "normal" || style.whiteSpace === "pre-wrap",
-    });
-    const cellStyle = exportCellStyle(style);
     return tag === "th"
-      ? <th key={key} style={cellStyle}>{inner}</th>
-      : <td key={key} style={cellStyle}>{inner}</td>;
+      ? <th key={key} style={style}>{content}</th>
+      : <td key={key} style={style}>{content}</td>;
   };
 
   const getValueFor = (rhKey: string, colKey: string, mId: string): number => {
