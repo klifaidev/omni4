@@ -69,7 +69,7 @@ export function RupturaQualityStrip({ model }: { model: RupturaModel }) {
   const lastDay = q.lastDate ? Number(q.lastDate.slice(8, 10)) : null;
   const partial = lastKey && lastDay !== null && q.lastDate?.startsWith(lastKey) && lastDay < lastDayOfMonth(lastKey);
   const warnings: string[] = [];
-  if (q.nao === 0) warnings.push("Sem respostas “Não”: GINI de ruptura e lojas pesquisadas sem ruptura ficam de fora.");
+  if (q.nao === 0) warnings.push("Sem respostas “Não”: taxa de ruptura e lojas pesquisadas sem ruptura ficam de fora.");
   if (partial) warnings.push(`${monthKeyLabel(lastKey)} vai só até ${q.lastDate!.slice(8, 10)}/${q.lastDate!.slice(5, 7)} — mês parcial.`);
   if (q.invalidResult > 0) warnings.push(`${formatNum(q.invalidResult)} linhas com resposta vazia ou inválida foram descartadas (não contam como presença).`);
   if (q.missingKey > 0) warnings.push(`${formatNum(q.missingKey)} linhas sem SKU, PDV ou data foram descartadas.`);

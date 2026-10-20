@@ -27,7 +27,7 @@ export interface RupturaColumn<T> {
 
 /** Colunas numéricas comuns a todos os rankings. */
 export function metricColumns<T extends RupturaGroupRow>(opts: { withRate: boolean; storesLabel?: string }): RupturaColumn<T>[] {
-  // Sem respostas "Não" o GINI seria "—" em todas as linhas: a coluna sai.
+  // Sem respostas "Não" a taxa seria "—" em todas as linhas: a coluna sai.
   const cols: RupturaColumn<T>[] = [
     {
       key: "storesAffected", label: opts.storesLabel ?? "Lojas afetadas", align: "right",
@@ -38,7 +38,7 @@ export function metricColumns<T extends RupturaGroupRow>(opts: { withRate: boole
       render: (r) => formatNum(r.occurrences), sortValue: (r) => r.occurrences, exportValue: (r) => r.occurrences,
     },
     {
-      key: "rate", label: "GINI", align: "right", title: opts.withRate ? "Ocorrências ÷ avaliações" : "Disponível quando a base trouxer respostas “Não”",
+      key: "rate", label: "Taxa", align: "right", title: opts.withRate ? "Ocorrências ÷ avaliações" : "Disponível quando a base trouxer respostas “Não”",
       render: (r) => (r.rate === null ? <span className="text-muted-foreground">—</span> : formatPct(r.rate)),
       sortValue: (r) => r.rate, exportValue: (r) => (r.rate === null ? null : r.rate),
     },

@@ -69,7 +69,7 @@ export function computeRupturaKpis(view: RupturaView): RupturaKpiData[] {
         "Avaliações com ruptura ÷ avaliações válidas (Sim + Não), contando uma avaliação por loja × SKU × mês — a última pesquisa do mês."
         + (withRate
           ? ""
-          : " Esta base só traz respostas “Sim”: sem os “Não”, o denominador teria só rupturas e o GINI daria 100%. Por isso ela fica indisponível até a base completa chegar."),
+          : " Esta base só traz respostas “Sim”: sem os “Não”, o denominador teria só rupturas e a taxa daria 100%. Por isso ela fica indisponível até a base completa chegar."),
     },
     {
       id: "storesAffected",
@@ -124,7 +124,7 @@ export const RUPTURA_EVO_METRICS: Array<{ id: RupturaEvoMetric; label: string }>
   { id: "occurrences", label: "Ocorrências" },
   { id: "storesAffected", label: "Lojas afetadas" },
   { id: "skusAffected", label: "SKUs afetados" },
-  { id: "rate", label: "GINI" },
+  { id: "rate", label: "Taxa" },
 ];
 
 export interface RupturaEvoPoint extends RupturaMonthPoint {
@@ -133,7 +133,7 @@ export interface RupturaEvoPoint extends RupturaMonthPoint {
 }
 
 export interface RupturaEvolutionData {
-  /** Métrica mostrada (o GINI cai para ocorrências quando não há respostas “Não”). */
+  /** Métrica mostrada (a taxa cai para ocorrências quando não há respostas “Não”). */
   metric: RupturaEvoMetric;
   points: RupturaEvoPoint[];
   withRate: boolean;
@@ -178,7 +178,7 @@ export type RupturaMapMetric = "occurrences" | "storesAffected" | "rate";
 export const RUPTURA_MAP_METRICS: Array<{ id: RupturaMapMetric; label: string }> = [
   { id: "occurrences", label: "Ocorrências" },
   { id: "storesAffected", label: "Lojas afetadas" },
-  { id: "rate", label: "GINI" },
+  { id: "rate", label: "Taxa" },
 ];
 
 export interface RupturaMapData {

@@ -182,12 +182,12 @@ describe("catálogo da Ruptura", () => {
     expect(rank.title).toBe("Ruptura por SKU");
   });
 
-  it("a métrica de ruptura se chama GINI nos cartões e nos seletores (nome usado na empresa)", () => {
+  it("a métrica se chama Taxa nos seletores e o primeiro cartão é só Ruptura", () => {
     const rate = computeRupturaKpis(makeRupturaView(m, {}, { from: 3, to: 3 })).find((c) => c.id === "rate")!;
     expect(rate.label).toBe("Ruptura");
-    expect(RUPTURA_EVO_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
-    expect(RUPTURA_MAP_METRICS.find((m) => m.id === "rate")!.label).toBe("GINI");
+    expect(RUPTURA_EVO_METRICS.find((m) => m.id === "rate")!.label).toBe("Taxa");
+    expect(RUPTURA_MAP_METRICS.find((m) => m.id === "rate")!.label).toBe("Taxa");
     const text = JSON.stringify([RUPTURA_EVO_METRICS, RUPTURA_MAP_METRICS, rate.label, rate.help]);
-    expect(text).not.toMatch(/[Tt]axa/);
+    expect(text).not.toMatch(/GINI/i);
   });
 });

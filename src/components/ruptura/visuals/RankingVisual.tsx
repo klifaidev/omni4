@@ -56,7 +56,7 @@ export function RupturaRankingVisual({
               <th scope="col" className="py-2 pr-3 text-left font-semibold uppercase tracking-wider">{nameLabel}</th>
               <th scope="col" className="px-3 py-2 text-left font-semibold uppercase tracking-wider">Ocorrências</th>
               <th scope="col" className="px-3 py-2 text-right font-semibold uppercase tracking-wider">Lojas</th>
-              {data.withRate && <th scope="col" className="px-3 py-2 text-right font-semibold uppercase tracking-wider">GINI</th>}
+              {data.withRate && <th scope="col" className="px-3 py-2 text-right font-semibold uppercase tracking-wider">Taxa</th>}
               <th scope="col" className="py-2 pl-3 text-right font-semibold uppercase tracking-wider">Part.</th>
             </tr>
           </thead>
