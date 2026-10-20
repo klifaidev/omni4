@@ -1,11 +1,61 @@
+import type { CSSProperties } from "react";
 import type { BlockDataSource, CustomBlock, CustomSlideConfig } from "./customSlide";
 import type { PricingRow } from "./types";
 
-export type SlideSourceFooterMode = "auto" | "manual";
+/** "off": a fonte fica desativada neste slide (não aparece na tela, na apresentação nem nos exports). */
+export type SlideSourceFooterMode = "auto" | "manual" | "off";
 
 export interface SlideSourceFooterConfig {
   mode?: SlideSourceFooterMode;
   manualText?: string;
+  /** Modo a retomar quando a fonte for reativada depois de desativada. */
+  resume?: "auto" | "manual";
+}
+
+/**
+ * Camadas do slide. A fonte fica SEMPRE acima de tudo: dos elementos (z do
+ * bloco), da faixa da Harald e das camadas de edição. Os dois renderizadores
+ * (editor e leitura/exportação) usam estes números — não duplicar.
+ */
+export const SLIDE_HARALD_FOOTER_Z_INDEX = 99999;
+export const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
+
+export function isSourceFooterOff(config: Pick<CustomSlideConfig, "sourceFooter">): boolean {
+  return config.sourceFooter?.mode === "off";
+}
+
+/** Config ao desativar/reativar a fonte, preservando o texto manual e o modo anterior. */
+export function toggleSourceFooter(
+  current: SlideSourceFooterConfig | undefined,
+  on: boolean,
+): SlideSourceFooterConfig {
+  const manualText = current?.manualText;
+  if (!on) {
+    const resume = current?.mode === "manual" ? "manual" : current?.resume ?? "auto";
+    return { mode: "off", resume, ...(manualText != null ? { manualText } : null) };
+  }
+  const mode = current?.mode === "off" ? current.resume ?? "auto" : current?.mode ?? "auto";
+  return { mode, ...(manualText != null ? { manualText } : null) };
+}
+
+/** Posição, camada e tipografia da fonte — igual no editor e na leitura/exportação. */
+export function sourceFooterBoxStyle(showHaraldFooter: boolean): CSSProperties {
+  return {
+    position: "absolute",
+    left: 40,
+    bottom: showHaraldFooter ? 13 : 18,
+    maxWidth: 720,
+    zIndex: SLIDE_SOURCE_FOOTER_Z_INDEX,
+    color: showHaraldFooter ? "#FFFFFF" : "#64748B",
+    fontFamily: "Calibri, sans-serif",
+    fontSize: 11,
+    fontStyle: "italic",
+    fontWeight: 700,
+    lineHeight: 1.1,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
 }
 
 export type SourceRowsByDataSource = Record<BlockDataSource, readonly PricingRow[]>;
@@ -70,6 +120,7 @@ export function getSourceFooterText(
   config: CustomSlideConfig,
   rowsBySource: SourceRowsByDataSource,
 ): string {
+  if (isSourceFooterOff(config)) return "";
   if (config.sourceFooter?.mode === "manual") return config.sourceFooter.manualText?.trim() ?? "";
   return buildAutomaticSourceFooterText(config, rowsBySource);
 }

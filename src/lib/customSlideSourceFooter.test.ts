@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CustomSlideConfig } from "./customSlide";
-import { buildAutomaticSourceFooterText, getSourceFooterText, type SourceRowsByDataSource } from "./customSlideSourceFooter";
+import {
+  buildAutomaticSourceFooterText,
+  getSourceFooterText,
+  isSourceFooterOff,
+  SLIDE_HARALD_FOOTER_Z_INDEX,
+  SLIDE_SOURCE_FOOTER_Z_INDEX,
+  sourceFooterBoxStyle,
+  toggleSourceFooter,
+  type SourceRowsByDataSource,
+} from "./customSlideSourceFooter";
 import type { PricingRow } from "./types";
 
 const baseRows = [
@@ -111,5 +120,44 @@ describe("customSlideSourceFooter", () => {
     };
 
     expect(getSourceFooterText(config, rowsBySource())).toBe("Fonte validada pelo time comercial");
+  });
+
+  it("fonte desativada não gera texto em nenhum modo (nem na tela, nem na exportação)", () => {
+    const base: CustomSlideConfig = {
+      background: "FFFFFF",
+      showHaraldFooter: true,
+      blocks: [{ id: "k", kind: "kpi", dataSource: "ke30" } as never],
+    };
+    expect(getSourceFooterText(base, rowsBySource())).toBe("Fonte: KE30");
+    const off = { ...base, sourceFooter: { mode: "off" as const } };
+    expect(isSourceFooterOff(off)).toBe(true);
+    expect(getSourceFooterText(off, rowsBySource())).toBe("");
+    const offManual = { ...base, sourceFooter: { mode: "off" as const, resume: "manual" as const, manualText: "Meu texto" } };
+    expect(getSourceFooterText(offManual, rowsBySource())).toBe("");
+  });
+
+  it("desativar e reativar preserva o modo e o texto manual", () => {
+    // Automático → off → automático
+    const off = toggleSourceFooter(undefined, false);
+    expect(off).toEqual({ mode: "off", resume: "auto" });
+    expect(toggleSourceFooter(off, true)).toEqual({ mode: "auto" });
+    // Manual → off → manual, com o texto
+    const manual = { mode: "manual" as const, manualText: "Fonte: KE30 - Abr/25 a Mar/26" };
+    const manualOff = toggleSourceFooter(manual, false);
+    expect(manualOff).toEqual({ mode: "off", resume: "manual", manualText: "Fonte: KE30 - Abr/25 a Mar/26" });
+    expect(toggleSourceFooter(manualOff, true)).toEqual(manual);
+    // Ligar quando já está ligada não muda nada.
+    expect(toggleSourceFooter(manual, true)).toEqual(manual);
+  });
+
+  it("a fonte fica SEMPRE acima da faixa da Harald e de qualquer elemento", () => {
+    expect(SLIDE_SOURCE_FOOTER_Z_INDEX).toBeGreaterThan(SLIDE_HARALD_FOOTER_Z_INDEX);
+    // A camada de edição mais alta do editor (texto em edição) é 9.999.999.
+    expect(SLIDE_SOURCE_FOOTER_Z_INDEX).toBeGreaterThan(9_999_999);
+    expect(sourceFooterBoxStyle(true).zIndex).toBe(SLIDE_SOURCE_FOOTER_Z_INDEX);
+    expect(sourceFooterBoxStyle(false).zIndex).toBe(SLIDE_SOURCE_FOOTER_Z_INDEX);
+    // Sobre a faixa o texto é branco; sem faixa, cinza.
+    expect(sourceFooterBoxStyle(true).color).toBe("#FFFFFF");
+    expect(sourceFooterBoxStyle(false).color).toBe("#64748B");
   });
 });

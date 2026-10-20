@@ -110,6 +110,10 @@ import {
 import { SLIDE_HEX, SLIDE_PPT_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import {
   getSourceFooterText,
+  isSourceFooterOff,
+  SLIDE_HARALD_FOOTER_Z_INDEX,
+  sourceFooterBoxStyle,
+  toggleSourceFooter,
   type SourceRowsByDataSource,
 } from "@/lib/customSlideSourceFooter";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
@@ -123,12 +127,13 @@ function SlideSourceFooterEditor({
   rowsBySource: SourceRowsByDataSource;
   readOnly: boolean;
 }) {
+  const off = isSourceFooterOff(config);
   const text = getSourceFooterText(config, rowsBySource);
-  if (!text && config.sourceFooter?.mode !== "manual") return null;
+  if (off && readOnly) return null;
+  if (!off && !text && config.sourceFooter?.mode !== "manual") return null;
 
-  const mode = config.sourceFooter?.mode ?? "auto";
+  const mode = off ? (config.sourceFooter?.resume ?? "auto") : (config.sourceFooter?.mode ?? "auto");
   const manualText = config.sourceFooter?.manualText ?? "";
-  const footerColor = config.showHaraldFooter ? SLIDE_HEX.white : SLIDE_HEX.slate500;
 
   return (
     <Popover>
@@ -138,31 +143,21 @@ function SlideSourceFooterEditor({
           disabled={readOnly}
           title={readOnly ? text : t.sourceFooter.editTitle}
           aria-label={t.sourceFooter.ariaLabel}
+          // Desativada: só um lembrete discreto no editor (nunca entra na apresentação nem nos exports).
+          data-export-hide={off ? "true" : undefined}
           style={{
-            position: "absolute",
-            left: 40,
-            bottom: config.showHaraldFooter ? 13 : 18,
-            maxWidth: 720,
-            zIndex: SLIDE_SOURCE_FOOTER_Z_INDEX,
+            ...sourceFooterBoxStyle(config.showHaraldFooter),
             border: 0,
             background: "transparent",
             padding: 0,
             margin: 0,
-            color: footerColor,
-            fontFamily: "Calibri, sans-serif",
-            fontSize: 11,
-            fontStyle: "italic",
-            fontWeight: 700,
-            lineHeight: 1.1,
             textAlign: "left",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
             cursor: readOnly ? "default" : "pointer",
             pointerEvents: readOnly ? "none" : "auto",
+            ...(off ? { opacity: 0.55, textDecoration: "line-through", fontWeight: 500 } : null),
           }}
         >
-          {text || t.sourceFooter.prefix}
+          {off ? t.sourceFooter.offLabel : (text || t.sourceFooter.prefix)}
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-80 space-y-3">
@@ -171,13 +166,25 @@ function SlideSourceFooterEditor({
           <p className="text-xs text-muted-foreground">{t.sourceFooter.popoverHint}</p>
         </div>
         <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
+          <span className="text-xs font-medium">{t.sourceFooter.show}</span>
+          <Switch
+            checked={!off}
+            aria-label={t.sourceFooter.show}
+            onCheckedChange={(checked) => setSourceFooterAction(toggleSourceFooter(config.sourceFooter, checked))}
+          />
+        </div>
+        {off ? (
+          <p className="text-xs text-muted-foreground">{t.sourceFooter.offHint}</p>
+        ) : (
+          <>
+        <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
           <span className="text-xs font-medium">{t.sourceFooter.auto}</span>
           <Switch
             checked={mode === "auto"}
             onCheckedChange={(checked) => {
               setSourceFooterAction(checked
-                ? { mode: "auto" }
-                : { mode: "manual", manualText: text });
+                ? { mode: "auto", manualText: config.sourceFooter?.manualText }
+                : { mode: "manual", manualText: config.sourceFooter?.manualText || text });
             }}
           />
         </div>
@@ -194,6 +201,8 @@ function SlideSourceFooterEditor({
           <div className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
             {text || t.sourceFooter.noneDetected}
           </div>
+        )}
+          </>
         )}
       </PopoverContent>
     </Popover>
@@ -351,7 +360,6 @@ let crossSlideClipboard: CustomBlock | null = null;
 type Icon = React.ComponentType<{ className?: string }>;
 const PALETTE_RECENTS_KEY = "omni4.customSlide.paletteRecents";
 const PALETTE_FAVORITES_KEY = "omni4.customSlide.paletteFavorites";
-const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
 const SPECULATIVE_CHART_WARM_MAX = 10;
 type PaletteCategory = "favorites" | "models" | "charts" | "elements" | "story" | "omni" | "assets";
 type PalettePanelSide = "right" | "left";
@@ -2303,6 +2311,15 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   onCheckedChange={(v) => { if (canEdit()) setShowHaraldFooterAction(v); }}
                 />
               </div>
+              <div className="mt-2 flex items-center justify-between px-2 text-[11px]">
+                <span className="text-muted-foreground" title={t.paletteRail.sourceFooterHint}>{t.paletteRail.sourceFooter}</span>
+                <Switch
+                  checked={!isSourceFooterOff(config)}
+                  disabled={readOnly}
+                  aria-label={t.paletteRail.sourceFooter}
+                  onCheckedChange={(v) => { if (canEdit()) setSourceFooterAction(toggleSourceFooter(config.sourceFooter, v)); }}
+                />
+              </div>
               <div className="mt-2 px-2">
                 <Button type="button" size="sm" variant="outline" className="h-7 w-full text-[11px]"
                   disabled={readOnly} title={t.paletteRail.applyLookToAllHint}
@@ -3066,7 +3083,7 @@ export const CustomSlideEditor = memo(function CustomSlideEditor({
                   style={{
                     position: "absolute", left: 0, bottom: 0,
                     width: CANVAS_W, height: FOOTER_H,
-                    pointerEvents: "none", zIndex: 99999,
+                    pointerEvents: "none", zIndex: SLIDE_HARALD_FOOTER_Z_INDEX,
                   }}
                 />
               )}

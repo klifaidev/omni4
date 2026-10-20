@@ -27,10 +27,11 @@ import haraldFooterPng from "@/assets/harald-footer-bar.png";
 import { fitCanvasScale } from "@/lib/canvasFit";
 import { SLIDE_HEX, SLIDE_RGBA } from "@/lib/slideColors";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { getSourceFooterText, type SourceRowsByDataSource } from "@/lib/customSlideSourceFooter";
+import {
+  getSourceFooterText, SLIDE_HARALD_FOOTER_Z_INDEX, sourceFooterBoxStyle, type SourceRowsByDataSource,
+} from "@/lib/customSlideSourceFooter";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
 
-const SLIDE_SOURCE_FOOTER_Z_INDEX = 2147483647;
 /** Depois da transição mais longa (350ms): o aquecimento não disputa o quadro da animação. */
 const WARM_NEIGHBORS_DELAY_MS = 450;
 type LayerRole = "current" | "exit" | "warm";
@@ -558,25 +559,7 @@ function SlideSourceFooterReadOnly({ config }: { config: CustomSlideConfig }) {
   const text = getSourceFooterText(config, rowsBySource);
   if (!text) return null;
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: 40,
-        bottom: config.showHaraldFooter ? 13 : 18,
-        maxWidth: 720,
-        zIndex: SLIDE_SOURCE_FOOTER_Z_INDEX,
-        pointerEvents: "none",
-        color: config.showHaraldFooter ? SLIDE_HEX.white : SLIDE_HEX.slate500,
-        fontFamily: "Calibri, sans-serif",
-        fontSize: 11,
-        fontStyle: "italic",
-        fontWeight: 700,
-        lineHeight: 1.1,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-    >
+    <div style={{ ...sourceFooterBoxStyle(config.showHaraldFooter), pointerEvents: "none" }}>
       {text}
     </div>
   );
@@ -646,7 +629,7 @@ export function CustomCanvasReadOnly({
           style={{
             position: "absolute", left: 0, bottom: 0,
             width: CANVAS_W, height: FOOTER_H,
-            pointerEvents: "none", zIndex: 99999,
+            pointerEvents: "none", zIndex: SLIDE_HARALD_FOOTER_Z_INDEX,
           }}
         />
       )}
