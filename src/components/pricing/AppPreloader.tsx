@@ -31,37 +31,62 @@ function startupUpdateApi(): StartupElectronApi | null {
   return api?.checkForUpdates ? api : null;
 }
 
+type StartupUpdateResult = "none" | "error" | "installing";
+
+/** Quanto a entrada espera pela resposta do servidor de atualização depois que
+ *  as bases já carregaram. Medido nos logs do app: a resposta típica chega em
+ *  0,3 s (p95 1,6 s); sem rede, levava até 25 s com a tela parada. */
+const UPDATE_GRACE_MS = 1500;
+
+interface StartupUpdateCheck {
+  result: Promise<StartupUpdateResult>;
+  /** Uma versão nova foi anunciada (vai baixar e reiniciar o app). */
+  found: () => boolean;
+  /** Desliga os ouvintes da entrada: a partir daqui, o aviso dentro do app
+   *  (UpdateNotification) é quem cuida de uma atualização que chegar depois —
+   *  sem reiniciar sozinho no meio do trabalho. */
+  cancel: () => void;
+}
+
+/**
+ * Verificação de atualização da entrada. `onProgress` recebe `true` em
+ * `takesOver` quando o progresso é da atualização em si (encontrada, baixando,
+ * pronta) e deve aparecer no lugar do carregamento das bases.
+ */
 function checkStartupUpdate(
-  onProgress: (progress: BasesPreloadProgress) => void,
-): Promise<"none" | "error" | "installing"> {
+  onProgress: (progress: BasesPreloadProgress, takesOver: boolean) => void,
+): StartupUpdateCheck {
   const api = startupUpdateApi();
-  if (!api) return Promise.resolve("none");
+  if (!api) return { result: Promise.resolve("none"), found: () => false, cancel: () => undefined };
 
   onProgress({
     status: "loading",
     percent: 2,
     label: "Verificando atualizações",
-    detail: "Antes de carregar as bases, vamos confirmar se existe uma versão nova.",
+    detail: "Confirmando se existe uma versão nova enquanto as bases carregam.",
     loaded: [],
     failed: [],
-  });
+  }, false);
 
-  return new Promise((resolve) => {
-    let settled = false;
-    let updateFound = false;
-    let lastPercent = 2;
-    const cleanups: Unsubscribe[] = [];
+  let settled = false;
+  let updateFound = false;
+  let lastPercent = 2;
+  const cleanups: Unsubscribe[] = [];
+  let resolveResult: (result: StartupUpdateResult) => void = () => undefined;
 
-    const cleanup = () => {
-      while (cleanups.length) cleanups.pop()?.();
-    };
+  const cleanup = () => {
+    while (cleanups.length) cleanups.pop()?.();
+  };
 
-    const finish = (result: "none" | "error" | "installing") => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
+  const finish = (result: StartupUpdateResult) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    resolveResult(result);
+  };
+
+  const result = new Promise<StartupUpdateResult>((resolve) => {
+    resolveResult = resolve;
 
     cleanups.push(api.onUpdateStatus?.((status) => {
       onProgress({
@@ -71,7 +96,7 @@ function checkStartupUpdate(
         detail: status,
         loaded: [],
         failed: [],
-      });
+      }, updateFound);
     }) ?? (() => undefined));
 
     cleanups.push(api.onUpdateAvailable?.((version) => {
@@ -81,10 +106,10 @@ function checkStartupUpdate(
         status: "loading",
         percent: lastPercent,
         label: `Atualização ${version} encontrada`,
-        detail: "Baixando a nova versão antes de carregar as bases.",
+        detail: "Baixando a nova versão. O app será reiniciado para aplicá-la.",
         loaded: [],
         failed: [],
-      });
+      }, true);
     }) ?? (() => undefined));
 
     cleanups.push(api.onUpdateProgress?.((percent) => {
@@ -97,7 +122,7 @@ function checkStartupUpdate(
         detail: `${lastPercent}% concluído. O app será reiniciado para aplicar a versão nova.`,
         loaded: [],
         failed: [],
-      });
+      }, true);
     }) ?? (() => undefined));
 
     cleanups.push(api.onUpdateDownloaded?.((version) => {
@@ -106,55 +131,52 @@ function checkStartupUpdate(
         status: "loading",
         percent: 100,
         label: `Atualização ${version} pronta`,
-        detail: "Reiniciando para aplicar a atualização. Depois disso, as bases serão carregadas na nova versão.",
+        detail: "Reiniciando para aplicar a atualização.",
         loaded: [],
         failed: [],
-      });
+      }, true);
       window.setTimeout(() => {
+        if (settled) return;
         api.installUpdate?.();
         finish("installing");
       }, 650);
     }) ?? (() => undefined));
 
     cleanups.push(api.onUpdateNotAvailable?.(() => {
-      onProgress({
-        status: "done",
-        percent: 100,
-        label: "Aplicativo atualizado",
-        detail: "Nenhuma atualização pendente. Iniciando carregamento das bases.",
-        loaded: [],
-        failed: [],
-      });
-      window.setTimeout(() => finish("none"), 250);
+      finish("none");
     }) ?? (() => undefined));
 
     cleanups.push(api.onUpdateError?.((message) => {
-      onProgress({
-        status: "error",
-        percent: Math.max(lastPercent, 100),
-        label: "Não foi possível verificar atualização",
-        detail: message || "O app continuará abrindo com a versão atual.",
-        loaded: [],
-        failed: ["Atualização"],
-      });
-      window.setTimeout(() => finish("error"), 650);
+      if (updateFound) {
+        onProgress({
+          status: "error",
+          percent: 100,
+          label: "Não foi possível baixar a atualização",
+          detail: message || "O app continuará abrindo com a versão atual.",
+          loaded: [],
+          failed: ["Atualização"],
+        }, true);
+      }
+      finish("error");
     }) ?? (() => undefined));
 
     window.setTimeout(() => {
       if (settled || updateFound) return;
-      onProgress({
-        status: "error",
-        percent: 100,
-        label: "Verificação de atualização demorou demais",
-        detail: "O app continuará abrindo com a versão atual.",
-        loaded: [],
-        failed: ["Atualização"],
-      });
-      window.setTimeout(() => finish("error"), 650);
+      finish("error");
     }, 25_000);
 
     api.checkForUpdates?.();
   });
+
+  return {
+    result,
+    found: () => updateFound,
+    cancel: () => finish("none"),
+  };
+}
+
+function waitMs(ms: number): Promise<"pending"> {
+  return new Promise((resolve) => window.setTimeout(() => resolve("pending"), ms));
 }
 
 export function AppPreloader({ children }: { children: React.ReactNode }) {
@@ -165,21 +187,33 @@ export function AppPreloader({ children }: { children: React.ReactNode }) {
     let alive = true;
 
     async function start() {
-      const updateResult = await checkStartupUpdate((next) => {
+      // Atualização e bases em paralelo. Antes, as bases só começavam depois
+      // da resposta do servidor de atualização (0,3 a 1,6 s normalmente; até
+      // 25 s sem rede, segundo os logs do app). Uma versão nova encontrada
+      // durante a entrada continua sendo baixada e aplicada antes de liberar
+      // o app — só não segura mais o carregamento das bases.
+      let updateTakesOver = false;
+      let basesReported = false;
+      const update = checkStartupUpdate((next, takesOver) => {
         if (!alive) return;
-        setProgress(next);
+        if (takesOver) updateTakesOver = true;
+        if (takesOver || !basesReported) setProgress(next);
       });
-
-      if (!alive || updateResult === "installing") return;
 
       void preloadSlidesRoute().catch(() => undefined);
 
       await preloadSavedBases((next) => {
         if (!alive) return;
-        setProgress(next);
+        basesReported = true;
+        if (!updateTakesOver) setProgress(next);
       });
 
       if (!alive) return;
+      const outcome = update.found()
+        ? await update.result
+        : await Promise.race([update.result, waitMs(UPDATE_GRACE_MS)]);
+      if (!alive || outcome === "installing") return;
+      update.cancel();
       setProgress((current) => ({ ...current, percent: 100 }));
       window.setTimeout(() => {
         if (alive) setReady(true);

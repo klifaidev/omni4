@@ -101,25 +101,59 @@ function trimSlideCalcCache(): void {
   for (let i = 0; i < removeCount; i += 1) cache.delete(entries[i].key);
 }
 
+const SIGNATURE_FIELDS = [
+  "periodo",
+  "fy",
+  "sku",
+  "skuDesc",
+  "canal",
+  "canalAjustado",
+  "volumeKg",
+  "rol",
+  "margemBruta",
+  "contribMarginal",
+] as const;
+const COLON = 58; // ":"
+
+/**
+ * Assinatura de um conjunto de linhas (chave de cache dos cálculos).
+ *
+ * Mesmo valor de sempre — por linha, FNV-1a do texto "periodo:fy:sku:…"
+ * (campos vazios viram ""), depois a soma dos caracteres do hash em base 36 —
+ * mas calculado campo a campo e dígito a dígito, sem montar esses textos:
+ * antes eram 3 textos e um array por linha (~1 s com 1,4 milhão de linhas, na
+ * abertura dos Slides).
+ */
 export function slideDataSignature(rows: readonly unknown[]): string {
   rowsSignatureComputeCount += 1;
   let hash = 2166136261;
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i] as Record<string, unknown> | undefined;
     if (!row) continue;
-    const sample = [
-      row.periodo,
-      row.fy,
-      row.sku,
-      row.skuDesc,
-      row.canal,
-      row.canalAjustado,
-      row.volumeKg,
-      row.rol,
-      row.margemBruta,
-      row.contribMarginal,
-    ].join(":");
-    hash ^= hashString(sample).split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    let rowHash = 2166136261;
+    for (let f = 0; f < SIGNATURE_FIELDS.length; f += 1) {
+      if (f > 0) {
+        rowHash ^= COLON;
+        rowHash = Math.imul(rowHash, 16777619);
+      }
+      const value = row[SIGNATURE_FIELDS[f]];
+      if (value === undefined || value === null) continue;
+      const text = typeof value === "string" ? value : String(value);
+      for (let k = 0; k < text.length; k += 1) {
+        rowHash ^= text.charCodeAt(k);
+        rowHash = Math.imul(rowHash, 16777619);
+      }
+    }
+    // Soma dos códigos dos dígitos de (rowHash >>> 0).toString(36).
+    let rest = rowHash >>> 0;
+    let digitSum = 0;
+    if (rest === 0) digitSum = 48;
+    while (rest > 0) {
+      const digit = rest % 36;
+      digitSum += digit < 10 ? 48 + digit : 87 + digit;
+      rest = Math.floor(rest / 36);
+    }
+    hash ^= digitSum;
     hash = Math.imul(hash, 16777619);
   }
   return `${rows.length}:${(hash >>> 0).toString(36)}`;

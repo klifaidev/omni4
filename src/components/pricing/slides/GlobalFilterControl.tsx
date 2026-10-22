@@ -14,7 +14,7 @@ import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { usePricing } from "@/store/pricing";
 import { useSlidesFlow } from "@/store/slidesFlow";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
-import { getDeParaBySku } from "@/lib/depara";
+import { hasDeParaSku } from "@/lib/depara";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import { strings } from "@/lib/i18n";
 import { toast } from "sonner";
@@ -50,7 +50,7 @@ export function GlobalFilterControl() {
   const activeCount = Object.values(globalFilters).reduce((acc, v) => acc + (v?.length ?? 0), 0);
 
   const baseRows = useMemo(
-    () => applyFilters(pricing, {}, null).filter((r) => getDeParaBySku(r.sku)),
+    () => applyFilters(pricing, {}, null).filter((r) => hasDeParaSku(r.sku)),
     [pricing],
   );
   const filterOptionsByKey = useMemo(() => {

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
 import { budgetRowsAsPricingFiltered } from "@/lib/budgetAdapter";
-import { getDeParaBySku } from "@/lib/depara";
+import { hasDeParaSku } from "@/lib/depara";
 import type { Filters, FilterKey, PricingRow } from "@/lib/types";
 import type { BlockDataSource } from "@/lib/customSlide";
 import { useDeckBudgetRows, useDeckPricingRows } from "@/hooks/useDeckRows";
@@ -40,7 +40,7 @@ export function BlockFilters({
     if (dataSource === "personalizado") return [];
     if (dataSource === "budget") return budgetRowsAsPricingFiltered(budget, "budget");
     if (dataSource === "budget_real") return budgetRowsAsPricingFiltered(budget, "real");
-    return applyFilters(pricing, {}, null).filter((r) => getDeParaBySku(r.sku));
+    return applyFilters(pricing, {}, null).filter((r) => hasDeParaSku(r.sku));
   }, [dataSource, pricing, budget]);
   const filterOptionsByKey = useMemo(() => {
     const fields = [...SKU_FIELDS, ...COMERCIAL_FIELDS];

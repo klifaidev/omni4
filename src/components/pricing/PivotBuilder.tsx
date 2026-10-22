@@ -61,7 +61,7 @@ import {
   type PivotRowHeader,
   type PivotSizeEstimate,
 } from "@/lib/pivot";
-import { computePivotGuardedAsync, createEmptyPivotResult, disposePivotWorker } from "@/lib/pivotWorkerClient";
+import { computePivotGuardedAsync, createEmptyPivotResult, retainPivotWorker } from "@/lib/pivotWorkerClient";
 import type { Filters, PricingRow } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { buildPivotSlideTable } from "@/lib/pivotToSlide";
@@ -836,11 +836,7 @@ export function PivotBuilder({
     applyLayout(target);
   }, [mode, applyLayout]);
 
-  useEffect(() => {
-    return () => {
-      disposePivotWorker();
-    };
-  }, []);
+  useEffect(() => retainPivotWorker(), []);
 
   const calcFields = usePivotLayoutStore((s) => s.calcFields);
   const measureCatalog = useMemo(() => catalogFor(mode, calcFields), [mode, calcFields]);

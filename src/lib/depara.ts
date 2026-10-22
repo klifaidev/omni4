@@ -68,6 +68,18 @@ export function getDeParaBySku(sku: string | undefined | null): DeParaEntry | nu
   return { ...EMPTY_ENTRY, ...(base ?? {}), ...(override ?? {}) };
 }
 
+/**
+ * O SKU está no De Para (padrão ou correção)? Mesmo critério de
+ * `getDeParaBySku(sku) !== null`, sem montar o objeto — para filtrar a base
+ * inteira (milhões de linhas) sem alocar uma entrada por linha.
+ */
+export function hasDeParaSku(sku: string | undefined | null): boolean {
+  if (!sku) return false;
+  const key = String(sku).trim();
+  if (!key) return false;
+  return !!(RAW[key] || runtimeOverrides[key]);
+}
+
 export const DEPARA_SIZE = Object.keys(RAW).length;
 
 /** Campos obrigatórios para considerar um SKU 100% mapeado no De Para. */

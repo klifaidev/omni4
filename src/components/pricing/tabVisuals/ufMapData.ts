@@ -1,7 +1,7 @@
 // Dados do "Margem por UF" da Análise de Preço, usados pela aba e pelo slide.
 // A cor de cada estado é a contribuição marginal % do período de comparação.
 import brMapRaw from "@/assets/br.svg?raw";
-import { getUfFromRegiao } from "@/lib/deparaComercial";
+import { getUfFromRegiao, getComercialDeParaVersion } from "@/lib/deparaComercial";
 import type { PricingRow } from "@/lib/types";
 
 export type UfMapPoint = {
@@ -81,8 +81,27 @@ function normalizeUf(value: string | undefined | null): string | null {
   return null;
 }
 
+// Memória por par (uf, região): a normalização de texto por linha custava
+// ~2 s numa base de 1,5 milhão de linhas, mas os pares distintos são poucos.
+const ROW_UF_CACHE_MAX = 20_000;
+const rowUfCache = new Map<string, string | null>();
+let rowUfCacheVersion = -1;
+
 export function getRowUf(row: { uf?: string; regiao?: string }): string | null {
-  return normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+  // O último recurso (UF pela região) vem do De/Para Comercial, que pode ser
+  // corrigido com o app aberto: a memória recomeça quando ele muda.
+  const version = getComercialDeParaVersion();
+  if (version !== rowUfCacheVersion) {
+    rowUfCache.clear();
+    rowUfCacheVersion = version;
+  }
+  const key = `${row.uf ?? ""}\u0001${row.regiao ?? ""}`;
+  const cached = rowUfCache.get(key);
+  if (cached !== undefined) return cached;
+  const uf = normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+  if (rowUfCache.size >= ROW_UF_CACHE_MAX) rowUfCache.clear();
+  rowUfCache.set(key, uf);
+  return uf;
 }
 
 function decodeSvgText(value: string): string {
@@ -178,9 +197,15 @@ export function computeUfMap(
   const baseByUf = new Map<string, { rol: number; volumeKg: number }>();
   if (comp) {
     for (const row of rows) {
+      // Só as linhas dos dois períodos comparados interessam: o período é
+      // checado antes de resolver a UF (antes, a UF era resolvida para toda a
+      // base). Mesmo resultado.
+      const inComp = matches(row.periodo, row.fy, comp);
+      const inBase = matches(row.periodo, row.fy, base);
+      if (!inComp && !inBase) continue;
       const uf = getRowUf(row);
       if (!uf) continue;
-      if (matches(row.periodo, row.fy, comp)) {
+      if (inComp) {
         const cur = compByUf.get(uf) ?? { rol: 0, volumeKg: 0, contribMarginal: 0, filterValues: new Set<string>() };
         cur.rol += row.rol;
         cur.volumeKg += row.volumeKg;
@@ -188,7 +213,7 @@ export function computeUfMap(
         if (row.uf) cur.filterValues.add(row.uf);
         compByUf.set(uf, cur);
       }
-      if (matches(row.periodo, row.fy, base)) {
+      if (inBase) {
         const cur = baseByUf.get(uf) ?? { rol: 0, volumeKg: 0 };
         cur.rol += row.rol;
         cur.volumeKg += row.volumeKg;

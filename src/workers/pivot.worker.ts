@@ -1,5 +1,6 @@
 import { computePivotGuarded, type PivotConfig, type PivotLimits, type PivotMeasure } from "@/lib/pivot";
 import { compileFormula } from "@/lib/pivotFormula";
+import { createRowsReceiver, isRowsRegisterMessage, type RowsRegisterMessage } from "@/lib/rowsTransport";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -24,6 +25,8 @@ type PivotWorkerReleaseRequest = {
 };
 
 const rowsByKey = new Map<string, Record<string, unknown>[]>();
+// Linhas chegam em partes (ensureRows no cliente) e viram objetos aqui.
+const receiver = createRowsReceiver<Record<string, unknown>>(rowsByKey);
 
 function rowsFor(request: PivotWorkerRequest): Record<string, unknown>[] {
   if (request.rows) rowsByKey.set(request.rowsKey, request.rows);
@@ -102,11 +105,16 @@ function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
   };
 }
 
-self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseRequest>) => {
+self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseRequest | RowsRegisterMessage>) => {
   const request = event.data;
+  if (isRowsRegisterMessage(request)) {
+    receiver.handle(request);
+    return;
+  }
   if ("type" in request && request.type === "releaseRows") {
     if (request.rowsKey) rowsByKey.delete(request.rowsKey);
     else rowsByKey.clear();
+    receiver.release(request.rowsKey);
     return;
   }
 

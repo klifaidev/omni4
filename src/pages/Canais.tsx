@@ -11,10 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePricing } from "@/store/pricing";
 import {
-  aggregateBy,
   applyFilters,
   computeCanalTrend,
   getKpiComparisonContext,
+  aggregateByNamed,
 } from "@/lib/analytics";
 import { formatBRL, formatPct, formatTon } from "@/lib/format";
 import { useMemo, useState } from "react";
@@ -101,14 +101,14 @@ export default function Canais() {
   const allHistory = useMemo(() => applyFilters(rows, filters, null), [rows, filters]);
 
   const byCanal = useMemo(
-    () => aggregateBy(filtered, metric, (r) => r.canalAjustado || "Sem canal"),
+    () => aggregateByNamed(filtered, metric, "canalAjustado"),
     [filtered, metric],
   );
 
   // Previous period (vs. selected) for KPI deltas
   const prevCtx = useMemo(() => getKpiComparisonContext(rows, filters, selected), [rows, filters, selected]);
   const byCanalPrev = useMemo(
-    () => (prevCtx ? aggregateBy(prevCtx.previousRows, metric, (r) => r.canalAjustado || "Sem canal") : []),
+    () => (prevCtx ? aggregateByNamed(prevCtx.previousRows, metric, "canalAjustado") : []),
     [prevCtx, metric],
   );
   const prevMap = useMemo(() => new Map(byCanalPrev.map((c) => [c.key, c])), [byCanalPrev]);

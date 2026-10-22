@@ -19,11 +19,11 @@ import { toast } from "sonner";
 import { exportTableCsv } from "@/lib/exportCsv";
 import { usePricing } from "@/store/pricing";
 import {
-  aggregateBy,
   applyFilters,
   computeKPIs,
   computeKPIComparison,
   getKpiComparisonContext,
+  aggregateByNamed,
 } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
 import { useMemo, useState } from "react";
@@ -106,17 +106,17 @@ export default function VisaoGeral() {
   const monthlyTrend = useMemo(() => computeEvolucaoMensal(filtered, { metric }), [filtered, metric]);
 
   const bySku = useMemo(
-    () => aggregateBy(filtered, metric, (r) => r.skuDesc || r.sku || "—"),
+    () => aggregateByNamed(filtered, metric, "skuDesc"),
     [filtered, metric],
   );
 
   const byPerf = useMemo(
     () =>
-      aggregateBy(filtered, metric, (r) => {
-        if (perfBy === "categoria") return r.categoria || "Sem categoria";
-        if (perfBy === "subcategoria") return r.subcategoria || "Sem subcategoria";
-        return r.skuDesc || r.sku || "—";
-      }),
+      aggregateByNamed(
+        filtered,
+        metric,
+        perfBy === "categoria" ? "categoria" : perfBy === "subcategoria" ? "subcategoria" : "skuDesc",
+      ),
     [filtered, metric, perfBy],
   );
 

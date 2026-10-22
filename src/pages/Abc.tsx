@@ -8,7 +8,7 @@ import { PortfolioMatrix, classifyQuadrant, portfolioMedians } from "@/component
 import { AbcPareto, classifyAbc } from "@/components/pricing/AbcPareto";
 import { Badge } from "@/components/ui/badge";
 import { usePricing } from "@/store/pricing";
-import { aggregateBy, applyFilters, getKpiComparisonContext } from "@/lib/analytics";
+import { applyFilters, getKpiComparisonContext, aggregateByNamed } from "@/lib/analytics";
 import { formatBRL, formatPct } from "@/lib/format";
 import { useMemo } from "react";
 import { AlertTriangle, Download, TrendingDown, TrendingUp, Trash2 } from "lucide-react";
@@ -38,11 +38,11 @@ export default function Abc() {
   const selected = usePricing((s) => s.selectedPeriods);
 
   const filtered = useMemo(() => applyFilters(rows, filters, selected), [rows, filters, selected]);
-  const bySku = useMemo(() => aggregateBy(filtered, metric, (r) => r.skuDesc || r.sku || "—"), [filtered, metric]);
+  const bySku = useMemo(() => aggregateByNamed(filtered, metric, "skuDesc"), [filtered, metric]);
 
   const previousCtx = useMemo(() => getKpiComparisonContext(rows, filters, selected), [rows, filters, selected]);
   const bySkuPrev = useMemo(
-    () => (previousCtx ? aggregateBy(previousCtx.previousRows, metric, (r) => r.skuDesc || r.sku || "—") : []),
+    () => (previousCtx ? aggregateByNamed(previousCtx.previousRows, metric, "skuDesc") : []),
     [previousCtx, metric],
   );
   const prevMap = useMemo(() => {

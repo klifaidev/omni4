@@ -1,9 +1,10 @@
+import { useMemo } from "react";
 import { usePricing } from "@/store/pricing";
 import { uniqueValues, applyFilters } from "@/lib/analytics";
 import type { FilterKey, PricingRow } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X, Package, Briefcase, Sparkles } from "lucide-react";
-import { getDeParaBySku } from "@/lib/depara";
+import { hasDeParaSku } from "@/lib/depara";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 
 // Filtros de SKU — atributos do produto vindos do De Para IA.
@@ -42,8 +43,11 @@ export function FilterGrid() {
 
   // Considera apenas linhas cujo SKU está no De Para — assim os valores
   // exibidos em cada filtro vêm exclusivamente da planilha De Para IA.
-  const baseRows = applyFilters(rows, {}, selected).filter((r) =>
-    getDeParaBySku(r.sku),
+  // Memorizado (antes refeito a cada render, varrendo a base inteira) e sem
+  // montar uma entrada do De Para por linha.
+  const baseRows = useMemo(
+    () => applyFilters(rows, {}, selected).filter((r) => hasDeParaSku(r.sku)),
+    [rows, selected],
   );
 
   const hasAny = Object.values(filters).some((v) => v && v.length);

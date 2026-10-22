@@ -27,10 +27,12 @@ export interface ElectronBasesAPI {
   salvar: (tipo: string, nomeArquivo: string, conteudoBase64: string) => Promise<{ ok: boolean; erro?: string }>;
   carregar: (tipo: string) => Promise<{ ok: boolean; arquivos?: ArquivoBaseSalvo[]; motivo?: string; erro?: string }>;
   carregarArquivo?: (tipo: string, nomeArquivo: string) => Promise<{ ok: boolean; arquivo?: ArquivoBaseSalvo; motivo?: string; erro?: string }>;
-  carregarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; payload?: unknown; motivo?: string; erro?: string }>;
+  /** `payloadText`: o payload em JSON, sem montar no processo principal (formato atual). `payload`: formato antigo, já montado. */
+  carregarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; payloadText?: string; payload?: unknown; motivo?: string; erro?: string }>;
   salvarProcessado?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, payload: unknown) => Promise<{ ok: boolean; erro?: string }>;
   carregarProcessadoManifesto?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number) => Promise<{ ok: boolean; hit?: boolean; manifest?: unknown; motivo?: string; erro?: string }>;
-  carregarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number) => Promise<{ ok: boolean; rows?: unknown[]; erro?: string }>;
+  /** `rowsText`: as linhas do bloco em JSON (formato atual). `rows`: formato antigo, já montado. */
+  carregarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number) => Promise<{ ok: boolean; rowsText?: string; rows?: unknown[]; erro?: string }>;
   iniciarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, version: number, header: unknown, totalRows: number, chunkSize: number) => Promise<{ ok: boolean; erro?: string }>;
   salvarProcessadoChunk?: (tipo: string, nomeArquivo: string, cacheKind: string, index: number, rows: unknown[]) => Promise<{ ok: boolean; erro?: string }>;
   finalizarProcessadoEmChunks?: (tipo: string, nomeArquivo: string, cacheKind: string, chunks: number) => Promise<{ ok: boolean; erro?: string }>;

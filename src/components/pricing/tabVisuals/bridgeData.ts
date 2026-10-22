@@ -173,16 +173,25 @@ export function categoryRankingItems(
   const baseSet = split ? new Set(split.baseRows) : null;
   const isComp = (row: PricingRow) => (compSet ? compSet.has(row) : (mode === "fy" ? row.fy : row.periodo) === comp);
   const isBase = (row: PricingRow) => (baseSet ? baseSet.has(row) : (mode === "fy" ? row.fy : row.periodo) === base);
-  const remember = (row: PricingRow) => {
-    const sku = row.sku || row.skuDesc;
-    if (!sku) return;
-    const category = row.categoria?.trim() || "Sem categoria";
-    if (!categoryBySku.has(sku)) categoryBySku.set(sku, category);
+  // Categoria de cada SKU: a primeira vista no período de comparação; senão,
+  // na base; senão, em qualquer linha. Uma varredura só (antes eram três, com
+  // dois arrays filtrados da base inteira) — mesma prioridade, mesmo resultado.
+  const fromComp = new Map<string, string>();
+  const fromBase = new Map<string, string>();
+  const fromAny = new Map<string, string>();
+  const remember = (target: Map<string, string>, sku: string, row: PricingRow) => {
+    if (!target.has(sku)) target.set(sku, row.categoria?.trim() || "Sem categoria");
   };
-
-  rows.filter(isComp).forEach(remember);
-  rows.filter(isBase).forEach(remember);
-  rows.forEach(remember);
+  for (const row of rows) {
+    const sku = row.sku || row.skuDesc;
+    if (!sku) continue;
+    if (isComp(row)) remember(fromComp, sku, row);
+    if (isBase(row)) remember(fromBase, sku, row);
+    remember(fromAny, sku, row);
+  }
+  for (const [sku, category] of fromAny) {
+    categoryBySku.set(sku, fromComp.get(sku) ?? fromBase.get(sku) ?? category);
+  }
 
   const grouped = new Map<string, BridgeRankingItem>();
   details.forEach((item) => {

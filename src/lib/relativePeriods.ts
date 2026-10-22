@@ -1,5 +1,6 @@
 import { monthLabel } from "./format";
 import type { PricingRow } from "./types";
+import { memoizeByRows } from "./derivedCache";
 
 export type PeriodSelectionMode = "fixed" | "relative";
 
@@ -81,7 +82,21 @@ export function relativePeriodLabel(preset: RelativePeriodPreset | undefined): s
     ?? "Mês mais recente - 1";
 }
 
+/**
+ * Meses (e anos fiscais, abaixo) de uma base, em ordem. Memorizados por base
+ * (lib/derivedCache): cada bloco de DRE/KPI dos slides com período relativo
+ * ("mês mais recente − 1") varria a base inteira de novo (~1,3 s somados na
+ * abertura dos Slides com as bases reais). Compartilhados: não alterar.
+ */
 export function getSortedMonthPeriods(rows: readonly PricingRow[]) {
+  return sortedMonthPeriodsMemo(rows);
+}
+
+export function getSortedFiscalYears(rows: readonly PricingRow[]) {
+  return sortedFiscalYearsMemo(rows);
+}
+
+const sortedMonthPeriodsMemo = memoizeByRows((rows: readonly PricingRow[]) => {
   const map = new Map<string, { value: string; label: string; mes: number; ano: number }>();
   for (const r of rows) {
     if (!r.periodo) continue;
@@ -95,12 +110,13 @@ export function getSortedMonthPeriods(rows: readonly PricingRow[]) {
     }
   }
   return Array.from(map.values()).sort((a, b) => a.ano - b.ano || a.mes - b.mes);
-}
+});
 
-export function getSortedFiscalYears(rows: readonly PricingRow[]) {
-  return Array.from(new Set(rows.map((r) => r.fy).filter(Boolean)))
-    .sort((a, b) => fyRank(a) - fyRank(b) || a.localeCompare(b));
-}
+const sortedFiscalYearsMemo = memoizeByRows((rows: readonly PricingRow[]) => {
+  const set = new Set<string>();
+  for (const r of rows) if (r.fy) set.add(r.fy);
+  return Array.from(set).sort((a, b) => fyRank(a) - fyRank(b) || a.localeCompare(b));
+});
 
 export function resolveRelativePeriod(
   rows: readonly PricingRow[],

@@ -61,7 +61,10 @@ export function CommandPalette({ open, onOpenChange }: Props) {
   const clearBudget = useBudget((s) => s.clearBudget);
   const addBudget = useBudget((s) => s.addBudget);
 
+  // Só com a paleta aberta: fechada, ela varria a base inteira na abertura do
+  // app e a cada base carregada, sem ninguém olhando.
   const { skus, canais, marcas } = useMemo(() => {
+    if (!open) return { skus: [] as string[], canais: [] as string[], marcas: [] as string[] };
     const sk = new Set<string>();
     const ca = new Set<string>();
     const ma = new Set<string>();
@@ -75,7 +78,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       canais: Array.from(ca).sort(),
       marcas: Array.from(ma).sort(),
     };
-  }, [rows]);
+  }, [open, rows]);
 
   const run = (fn: () => void) => {
     fn();

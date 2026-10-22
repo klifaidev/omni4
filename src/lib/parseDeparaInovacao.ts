@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import { normHeader, parseDecimal } from "./format";
 import type { InovacaoEntry } from "./deparaInovacao";
 
@@ -37,6 +36,9 @@ function normalizeSku(raw: unknown): string {
 
 export async function parseInovacaoDeparaFile(file: File): Promise<ParsedInovacaoDepara> {
   const warnings: string[] = [];
+  // Sob demanda: a biblioteca de planilhas (~940 KB) ficava no pacote de
+  // abertura do app só por causa deste import, mesmo sem nenhum Excel aberto.
+  const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const sheetName = wb.SheetNames.find((name) => normHeader(name).includes("inov")) ?? wb.SheetNames[0];

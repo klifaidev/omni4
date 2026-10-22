@@ -1,4 +1,5 @@
 import { ytdSplit } from "./pvmYtd";
+import { memoizeByRows } from "./derivedCache";
 import type { Filters, Metric, PricingRow } from "./types";
 import type { BudgetRow } from "./budget";
 
@@ -63,11 +64,22 @@ export function applyFiltersUncached(
   });
 }
 
+function hasActiveFilters(filters: Filters, selectedPeriods: string[] | null): boolean {
+  if (selectedPeriods && selectedPeriods.length) return true;
+  for (const values of Object.values(filters)) if (values && values.length) return true;
+  return false;
+}
+
 export function applyFilters(
   rows: PricingRow[],
   filters: Filters,
   selectedPeriods: string[] | null,
 ): PricingRow[] {
+  // Sem filtro nem período escolhido, o resultado é a própria base: devolve o
+  // mesmo array (sem copiar milhões de referências, e com a mesma identidade
+  // para as memórias de cálculo). Era também o caso que o cache abaixo nunca
+  // guardava em bases acima de 1,2 milhão de linhas — refeito a cada chamada.
+  if (!hasActiveFilters(filters, selectedPeriods)) return rows;
   const key = buildApplyFiltersCacheKey(filters, selectedPeriods);
   let rowsCache = applyFiltersCache.get(rows);
   if (!rowsCache) {
@@ -168,24 +180,48 @@ export function computeKPIComparison(
  * Determine the comparison context (previous-period rows + label) for KPI deltas.
  * Returns null when no comparable previous period exists in the data.
  */
-export function getKpiComparisonContext(
-  rows: PricingRow[],
-  filters: Filters,
-  selectedPeriods: string[] | null,
-): { previousRows: PricingRow[]; label: string } | null {
+/** Meses (em ordem cronológica) e anos fiscais de uma base — uma varredura
+ *  só por base, reaproveitada por todas as telas. */
+const periodIndexOf = memoizeByRows((rows: PricingRow[]) => {
   // Sort periods chronologically by (ano, mes), not lexicographically — "001.2026"
   // would otherwise sort before "012.2025" and break January's previous-month lookup.
   const periodMeta = new Map<string, { ano: number; mes: number; fy: string }>();
+  const fySet = new Set<string>();
   for (const r of rows) {
     if (!periodMeta.has(r.periodo)) {
       periodMeta.set(r.periodo, { ano: r.ano, mes: r.mes, fy: r.fy });
     }
+    fySet.add(r.fy);
   }
   const allPeriods = Array.from(periodMeta.keys()).sort((a, b) => {
     const ma = periodMeta.get(a)!;
     const mb = periodMeta.get(b)!;
     return ma.ano - mb.ano || ma.mes - mb.mes;
   });
+  return { periodMeta, allPeriods, allFys: Array.from(fySet).sort() };
+});
+
+/** Meses presentes numa base (memorizado). Compartilhado: não alterar. */
+export function presentPeriodsOf(rows: PricingRow[]): ReadonlySet<string> {
+  return presentPeriodsMemo(rows);
+}
+
+const presentPeriodsMemo = memoizeByRows((rows: PricingRow[]) => new Set(periodIndexOf(rows).periodMeta.keys()));
+
+/** Linhas com `campo === valor` (memorizado por base): o mesmo subconjunto
+ *  reaproveitado entre visitas, e com a mesma identidade para as memórias
+ *  seguintes. Compartilhado: não alterar. */
+export const rowsWhere = memoizeByRows(
+  (rows: PricingRow[], field: "periodo" | "fy", value: string | null) => rows.filter((r) => r[field] === value),
+  8,
+);
+
+export function getKpiComparisonContext(
+  rows: PricingRow[],
+  filters: Filters,
+  selectedPeriods: string[] | null,
+): { previousRows: PricingRow[]; label: string } | null {
+  const { periodMeta, allPeriods, allFys } = periodIndexOf(rows);
   if (allPeriods.length < 2) return null;
 
   const fyOf = (p: string): string | undefined => periodMeta.get(p)?.fy;
@@ -204,7 +240,6 @@ export function getKpiComparisonContext(
       : allPeriods;
     const fys = Array.from(new Set(activePeriods.map(fyOf).filter(Boolean))) as string[];
     if (fys.length !== 1) return null;
-    const allFys = Array.from(new Set(rows.map((r) => r.fy))).sort();
     const fyIdx = allFys.indexOf(fys[0]);
     if (fyIdx <= 0) return null;
     const prevFy = allFys[fyIdx - 1];
@@ -258,6 +293,28 @@ export function aggregateBy(
     .sort((a, b) => b.rol - a.rol);
 }
 
+/** Agrupamentos usados por várias telas, com nome — assim dá para memorizar
+ *  (uma função escrita na hora não serve de chave: duas iguais no texto
+ *  podem capturar variáveis diferentes). */
+const NAMED_AGG_KEYS = {
+  skuDesc: (r: PricingRow) => r.skuDesc || r.sku || "—",
+  canalAjustado: (r: PricingRow) => r.canalAjustado || "Sem canal",
+  categoria: (r: PricingRow) => r.categoria || "Sem categoria",
+  subcategoria: (r: PricingRow) => r.subcategoria || "Sem subcategoria",
+} as const;
+
+export type NamedAggKey = keyof typeof NAMED_AGG_KEYS;
+
+/**
+ * `aggregateBy` com um agrupamento nomeado, memorizado por base (lib/
+ * derivedCache). Portfólio, Canais, Visão Geral e os slides refaziam o mesmo
+ * agrupamento da base inteira a cada visita. Compartilhado: não alterar.
+ */
+export const aggregateByNamed = memoizeByRows(
+  (rows: PricingRow[], metric: Metric, key: NamedAggKey): AggRow[] => aggregateBy(rows, metric, NAMED_AGG_KEYS[key]),
+  8,
+);
+
 export interface CostEvolutionRow {
   periodo: string;
   label: string;
@@ -276,7 +333,10 @@ export interface CostEvolutionRow {
   custoTotalPorKg: number;
 }
 
-export function computeCostEvolution(rows: PricingRow[]): CostEvolutionRow[] {
+/** Evolução de custos por mês. Memorizado por base (lib/derivedCache): refeito a cada visita à tela; o resultado é compartilhado, não alterar. */
+export const computeCostEvolution = memoizeByRows(computeCostEvolutionUncached, 4);
+
+function computeCostEvolutionUncached(rows: PricingRow[]): CostEvolutionRow[] {
   const map = new Map<string, CostEvolutionRow>();
   for (const r of rows) {
     const cur = map.get(r.periodo) ?? {
@@ -335,33 +395,66 @@ export interface CanalTrendPoint {
  * Monthly time series for a single canal (canalAjustado).
  * If `canal` is null/undefined, aggregates ALL rows.
  */
+const ALL_CANAIS = "\u0000todos";
+
+/** Série mensal de TODOS os canais (e do total) numa varredura só, por base e
+ *  métrica. Antes, cada chamada de computeCanalTrend varria a base inteira —
+ *  e a aba Canais chamava uma vez por canal, três vezes (~2,9 s com 1,5 milhão
+ *  de linhas). As somas seguem a ordem das linhas, como antes: mesmos números. */
+const canalTrendIndex = memoizeByRows((rows: PricingRow[], metric: Metric) => {
+  const byKey = new Map<string, Map<string, CanalTrendPoint>>();
+  const bucket = (key: string, r: PricingRow) => {
+    let periods = byKey.get(key);
+    if (!periods) {
+      periods = new Map();
+      byKey.set(key, periods);
+    }
+    let cur = periods.get(r.periodo);
+    if (!cur) {
+      cur = {
+        periodo: r.periodo,
+        label: `${String(r.mes).padStart(2, "0")}/${String(r.ano).slice(-2)}`,
+        ano: r.ano,
+        mes: r.mes,
+        rol: 0,
+        margem: 0,
+        margemPct: 0,
+        volumeKg: 0,
+      };
+      periods.set(r.periodo, cur);
+    }
+    cur.rol += r.rol;
+    cur.margem += measureOf(r, metric);
+    cur.volumeKg += r.volumeKg;
+  };
+  for (const r of rows) {
+    bucket(r.canalAjustado || "Sem canal", r);
+    bucket(ALL_CANAIS, r);
+  }
+  const out = new Map<string, CanalTrendPoint[]>();
+  for (const [key, periods] of byKey) {
+    out.set(
+      key,
+      Array.from(periods.values())
+        .map((p) => ({ ...p, margemPct: p.rol > 0 ? p.margem / p.rol : 0 }))
+        .sort((a, b) => a.ano - b.ano || a.mes - b.mes),
+    );
+  }
+  return out;
+}, 4);
+
+/**
+ * Monthly time series for a single canal (canalAjustado).
+ * If `canal` is null/undefined, aggregates ALL rows.
+ * Os pontos são compartilhados entre chamadas: não alterar.
+ */
 export function computeCanalTrend(
   rows: PricingRow[],
   canal: string | null,
   metric: Metric,
 ): CanalTrendPoint[] {
-  const map = new Map<string, CanalTrendPoint>();
-  for (const r of rows) {
-    const c = r.canalAjustado || "Sem canal";
-    if (canal != null && c !== canal) continue;
-    const cur = map.get(r.periodo) ?? {
-      periodo: r.periodo,
-      label: `${String(r.mes).padStart(2, "0")}/${String(r.ano).slice(-2)}`,
-      ano: r.ano,
-      mes: r.mes,
-      rol: 0,
-      margem: 0,
-      margemPct: 0,
-      volumeKg: 0,
-    };
-    cur.rol += r.rol;
-    cur.margem += measureOf(r, metric);
-    cur.volumeKg += r.volumeKg;
-    map.set(r.periodo, cur);
-  }
-  return Array.from(map.values())
-    .map((p) => ({ ...p, margemPct: p.rol > 0 ? p.margem / p.rol : 0 }))
-    .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
+  const series = canalTrendIndex(rows, metric).get(canal == null ? ALL_CANAIS : canal);
+  return series ? series.slice() : [];
 }
 
 export interface PVMSkuDetail {
@@ -669,6 +762,32 @@ export function calcPVM(
   mode: "fy" | "month" | "ytd" = "fy",
   labels?: { base?: string; comp?: string },
 ): PVMResult {
+  // Memorizado por base + parâmetros (rótulos pelo conteúdo): Bridge, Mix e
+  // slides refaziam a Bridge inteira a cada visita. Compartilhado: não alterar.
+  return calcPVMMemo(rows, metric, base, comp, mode, labels?.base, labels?.comp);
+}
+
+const calcPVMMemo = memoizeByRows(
+  (
+    rows: PricingRow[],
+    metric: Metric,
+    base: string,
+    comp: string,
+    mode: "fy" | "month" | "ytd",
+    baseLabel: string | undefined,
+    compLabel: string | undefined,
+  ) => calcPVMUncached(rows, metric, base, comp, mode, baseLabel === undefined && compLabel === undefined ? undefined : { base: baseLabel, comp: compLabel }),
+  8,
+);
+
+function calcPVMUncached(
+  rows: PricingRow[],
+  metric: Metric,
+  base: string,
+  comp: string,
+  mode: "fy" | "month" | "ytd",
+  labels?: { base?: string; comp?: string },
+): PVMResult {
   if (mode === "ytd") {
     const split = ytdSplit(rows, comp);
     if (!split) return calcPVMFromRows([], [], metric, { base: labels?.base ?? "YTD", comp: labels?.comp ?? "YTD" });
@@ -686,7 +805,14 @@ export function calcPVM(
   );
 }
 
+/** Valores distintos de um campo. Memorizado por base (lib/derivedCache): refeito a cada visita à tela; o resultado é compartilhado, não alterar. */
 export function uniqueValues<K extends keyof PricingRow>(rows: PricingRow[], key: K): string[] {
+  return uniqueValuesMemo(rows, key);
+}
+
+const uniqueValuesMemo = memoizeByRows(uniqueValuesUncached, 40);
+
+function uniqueValuesUncached(rows: PricingRow[], key: keyof PricingRow): string[] {
   const set = new Set<string>();
   for (const r of rows) {
     const v = r[key];
@@ -713,7 +839,12 @@ function median(arr: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-export function generateAlerts(
+/** Alertas da Início — memorizados por base (com 1,5 milhão de linhas, ~0,7 s
+ *  por cálculo, refeito a cada volta à Início). O resultado é compartilhado:
+ *  não alterar. */
+export const generateAlerts = memoizeByRows(generateAlertsUncached, 4);
+
+function generateAlertsUncached(
   rows: PricingRow[],
   budgetRows: BudgetRow[],
   metric: Metric,
@@ -959,6 +1090,35 @@ export interface PriceDecompositionResult {
 }
 
 export function computePriceDecomposition(
+  rows: PricingRow[],
+  baseKey: string,
+  compKey: string,
+  periodMode: "month" | "fy",
+  labels?: { base: string; comp: string },
+): PriceDecompositionResult | null {
+  // Memorizado como calcPVM (Preço, Mix e slides). Compartilhado: não alterar.
+  return priceDecompositionMemo(rows, baseKey, compKey, periodMode, labels?.base, labels?.comp);
+}
+
+const priceDecompositionMemo = memoizeByRows(
+  (
+    rows: PricingRow[],
+    baseKey: string,
+    compKey: string,
+    periodMode: "month" | "fy",
+    baseLabel: string | undefined,
+    compLabel: string | undefined,
+  ) => computePriceDecompositionUncached(
+    rows,
+    baseKey,
+    compKey,
+    periodMode,
+    baseLabel === undefined && compLabel === undefined ? undefined : { base: baseLabel ?? "", comp: compLabel ?? "" },
+  ),
+  8,
+);
+
+function computePriceDecompositionUncached(
   rows: PricingRow[],
   baseKey: string,
   compKey: string,

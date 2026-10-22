@@ -58,10 +58,13 @@ export function GlobalSearch({ open, onOpenChange }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [open, onOpenChange]);
 
-  // Base do período/filtros atuais para mostrar números contextuais
+  // Base do período/filtros atuais para mostrar números contextuais. Só com a
+  // busca aberta: fechada (quase sempre), ela agregava 4 vezes a base inteira
+  // a cada troca de período — ~0,5 s com 1,5 milhão de linhas, na abertura do
+  // app e em cada clique de mês, sem ninguém olhando.
   const periodRows = useMemo(
-    () => applyFilters(rows, {}, selected),
-    [rows, selected],
+    () => (open ? applyFilters(rows, {}, selected) : []),
+    [open, rows, selected],
   );
 
   const hits = useMemo<Hit[]>(() => {

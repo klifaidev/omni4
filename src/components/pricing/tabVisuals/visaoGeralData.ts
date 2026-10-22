@@ -1,6 +1,7 @@
 // Dados dos visuais da Visão Geral usados pela aba e pelo slide.
-import { aggregateBy, type AggRow } from "@/lib/analytics";
+import { type AggRow, aggregateByNamed } from "@/lib/analytics";
 import type { Metric, PricingRow } from "@/lib/types";
+import { memoizeByRows } from "@/lib/derivedCache";
 
 // FY vai de abril a março.
 export const FY_MONTH_ORDER = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
@@ -16,7 +17,10 @@ export interface SazonalidadeData {
 }
 
 /** Margem % por mês × ano fiscal, com o melhor e o pior mês na média. */
-export function computeSazonalidade(rows: PricingRow[], metric: Metric): SazonalidadeData {
+/** Sazonalidade (margem por mês × ano fiscal). Memorizado por base (lib/derivedCache): refeito a cada visita à tela; o resultado é compartilhado, não alterar. */
+export const computeSazonalidade = memoizeByRows(computeSazonalidadeUncached, 4);
+
+function computeSazonalidadeUncached(rows: PricingRow[], metric: Metric): SazonalidadeData {
   const acc = new Map<string, Map<number, { margem: number; rol: number }>>();
   const fySet = new Set<string>();
   const fyNumMap = new Map<string, number>();
@@ -81,7 +85,7 @@ export interface HeroisData {
 }
 
 export function computeHerois(rows: PricingRow[], metric: Metric): HeroisData {
-  const bySku = aggregateBy(rows, metric, (r) => r.skuDesc || r.sku || "—");
+  const bySku = aggregateByNamed(rows, metric, "skuDesc");
   let rol = 0;
   for (const r of rows) rol += r.rol;
   return { bySku, minRolForPct: rol * 0.01 };

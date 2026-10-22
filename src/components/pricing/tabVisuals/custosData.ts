@@ -2,6 +2,7 @@
 // da aba mostram o HISTÓRICO (só filtros de dimensão) — o mês escolhido vale
 // só para os KPIs do topo.
 import type { PricingRow } from "@/lib/types";
+import { memoizeByRows } from "@/lib/derivedCache";
 
 export type CompositionRow = {
   periodo: string;
@@ -32,7 +33,10 @@ export interface CompositionTotals {
 }
 
 /** Composição do custo variável por mês (Matéria Prima, Embalagem, MOD, CIF). */
-export function buildComposition(source: PricingRow[]): CompositionRow[] {
+/** Composição de custos por mês. Memorizado por base (lib/derivedCache): refeito a cada visita à tela; o resultado é compartilhado, não alterar. */
+export const buildComposition = memoizeByRows(buildCompositionUncached, 4);
+
+function buildCompositionUncached(source: PricingRow[]): CompositionRow[] {
   const map = new Map<string, CompositionRow>();
   for (const r of source) {
     const cur = map.get(r.periodo) ?? {

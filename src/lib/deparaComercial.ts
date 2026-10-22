@@ -27,14 +27,27 @@ const OVERRIDES_STORAGE_KEY = "omni4.depara.comercialOverrides.v1";
 type Overrides = Record<ComercialMapId, Record<string, string>>;
 
 // Normaliza chave: lowercase, sem acentos, espaços colapsados.
+//
+// Memorizada: é chamada para canal, região e UF de cada linha (milhões numa
+// base real), mas os textos distintos são poucos. Sem a memória, só esta
+// função levava ~1,8 s de cada abertura do app (perfil com as bases reais).
+const NORM_CACHE_MAX = 50_000;
+const normCache = new Map<string, string>();
+
 export function normComercialKey(s: string | undefined | null): string {
   if (!s) return "";
-  return String(s)
+  const raw = String(s);
+  const cached = normCache.get(raw);
+  if (cached !== undefined) return cached;
+  const key = raw
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+  if (normCache.size >= NORM_CACHE_MAX) normCache.clear();
+  normCache.set(raw, key);
+  return key;
 }
 
 const norm = normComercialKey;
@@ -90,7 +103,15 @@ function buildCanalIdentity(): Map<string, string> {
   return idx;
 }
 
+// Muda a cada correção do De/Para Comercial: quem guarda resultados derivados
+// dele (UF por região no mapa, por exemplo) sabe quando recalcular.
+let comercialVersion = 0;
+export function getComercialDeParaVersion(): number {
+  return comercialVersion;
+}
+
 function persist() {
+  comercialVersion += 1;
   indexes = buildIndexes();
   canalAjustadoIdentity = buildCanalIdentity();
   if (typeof window === "undefined") return;

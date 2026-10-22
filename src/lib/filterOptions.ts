@@ -1,4 +1,5 @@
 import type { FilterKey, Filters, PricingRow } from "./types";
+import { memoizeByRows } from "./derivedCache";
 
 export type FilterOption = { value: string; label: string };
 
@@ -48,7 +49,38 @@ function sortedOptions(key: FilterKey, options: Map<string, string> | undefined)
   });
 }
 
+/**
+ * Opções de cada dimensão de filtro (e as linhas que passam) — memorizado por
+ * base + filtros + períodos + dimensões, pelo conteúdo. A Mix e a tela Filtros
+ * refaziam esta varredura completa a cada visita (~1,3 s com 1,5 milhão de
+ * linhas). O resultado é compartilhado: não alterar.
+ */
 export function computeAvailableOptionsPerDimension(
+  rows: PricingRow[],
+  filters: Filters,
+  selectedPeriods: string[] | null,
+  dimensionKeys: FilterKey[],
+): FilterOptionsSummary {
+  return availableOptionsMemo(
+    rows,
+    JSON.stringify(filters),
+    JSON.stringify(selectedPeriods ?? null),
+    JSON.stringify(dimensionKeys),
+  );
+}
+
+const availableOptionsMemo = memoizeByRows(
+  (rows: PricingRow[], filtersJson: string, periodsJson: string, dimensionsJson: string) =>
+    computeAvailableOptionsUncached(
+      rows,
+      JSON.parse(filtersJson) as Filters,
+      JSON.parse(periodsJson) as string[] | null,
+      JSON.parse(dimensionsJson) as FilterKey[],
+    ),
+  6,
+);
+
+function computeAvailableOptionsUncached(
   rows: PricingRow[],
   filters: Filters,
   selectedPeriods: string[] | null,

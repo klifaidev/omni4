@@ -32,7 +32,7 @@ import {
   type ChannelMixMonthlyData, type InnovationHeroesData, type InnovationMarginData, type InnovationMixData,
   type InnovationPriceData, type MaturityData,
 } from "./inovacaoData";
-import { aggregateBy, applyFilters, computeCostEvolution, type CostEvolutionRow, type PriceDecompositionResult } from "@/lib/analytics";
+import { applyFilters, computeCostEvolution, type CostEvolutionRow, type PriceDecompositionResult, aggregateByNamed } from "@/lib/analytics";
 import { PrecoDecompVisual, PrecoEvolucaoVisual, PrecoRankingVisual } from "./PrecoVisuals";
 import {
   computePriceEvolution, computePriceRanking, computePriceResult, defaultPriceParams, resolvePricePeriods,
@@ -609,7 +609,7 @@ const abcMatriz: TabVisualDefinition<AbcVisualData> = {
   params: [METRIC_CONTROL],
   defaultParams: { metric: "cm" },
   compute: (rows, params) => ({
-    bySku: aggregateBy(rows, metricOf(params), (r) => r.skuDesc || r.sku || "—"),
+    bySku: aggregateByNamed(rows, metricOf(params), "skuDesc"),
     metricLabel: metricOf(params) === "cm" ? "CM" : "MB",
   }),
   isEmpty: (data) => data.bySku.length === 0,

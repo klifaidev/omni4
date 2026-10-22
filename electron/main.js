@@ -3,6 +3,7 @@ const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
+const { splitProcessedEnvelope } = require("./processedCacheText");
 const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 const AUTO_UPDATE_ENABLED = true;
@@ -521,15 +522,17 @@ ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheK
     if (!signature) return { ok: true, hit: false, motivo: "arquivo_ausente" };
     const cachePath = getProcessedCachePath(tipo, nomeArquivo, cacheKind);
     if (!fs.existsSync(cachePath)) return { ok: true, hit: false, motivo: "cache_ausente" };
-    const envelope = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-    const cacheSignature = envelope?.signature;
+    // Leitura assíncrona e só do cabeçalho: o payload vai como texto para a
+    // tela (ver processedCacheText.js). O main não fica travado montando
+    // dezenas de MB de objetos, e o IPC não clona objeto por objeto.
+    const envelope = splitProcessedEnvelope(await fs.promises.readFile(cachePath, "utf8"));
+    const header = envelope?.header;
     const valid =
-      envelope?.version === version &&
-      envelope?.cacheKind === cacheKind &&
-      isSignatureMatch(cacheSignature, signature) &&
-      envelope?.payload;
+      header?.version === version &&
+      header?.cacheKind === cacheKind &&
+      isSignatureMatch(header?.signature, signature);
     if (!valid) return { ok: true, hit: false, motivo: "cache_invalido" };
-    return { ok: true, hit: true, payload: envelope.payload };
+    return { ok: true, hit: true, payloadText: envelope.payloadText };
   } catch (err) {
     log.warn("Cache processado invalido, sera reprocessado:", tipo, nomeArquivo, err.message);
     return { ok: true, hit: false, motivo: "cache_corrompido" };
@@ -569,7 +572,8 @@ ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo
     const chunkDir = getProcessedChunkDir(tipo, nomeArquivo, cacheKind);
     const chunkPath = path.join(chunkDir, "chunks", `chunk-${String(index).padStart(5, "0")}.json`);
     if (!fs.existsSync(chunkPath)) return { ok: false, erro: "chunk_ausente" };
-    return { ok: true, rows: JSON.parse(fs.readFileSync(chunkPath, "utf8")) };
+    // Mesmo motivo do bases:processed-load: texto em vez de objetos.
+    return { ok: true, rowsText: await fs.promises.readFile(chunkPath, "utf8") };
   } catch (err) {
     log.warn("Erro ao carregar chunk de cache processado:", tipo, nomeArquivo, err.message);
     return { ok: false, erro: err.message };

@@ -1,8 +1,9 @@
 // Dados dos visuais da aba Canais (evolução e mix), usados pela aba e pelo
 // slide. Os dois leem o HISTÓRICO inteiro (só filtros de dimensão), como a
 // aba sempre fez — o mês escolhido não muda estes gráficos.
-import { aggregateBy, computeCanalTrend, type CanalTrendPoint } from "@/lib/analytics";
+import { computeCanalTrend, type CanalTrendPoint, aggregateByNamed } from "@/lib/analytics";
 import type { Metric, PricingRow } from "@/lib/types";
+import { memoizeByRows } from "@/lib/derivedCache";
 
 export type CanalChartMetric = "margemPct" | "rol" | "volumeKg";
 
@@ -27,8 +28,13 @@ export interface CanaisSeries {
   mixData: Record<string, number | string>[];
 }
 
-export function computeCanaisSeries(allHistory: PricingRow[], metric: Metric): CanaisSeries {
-  const canalAggHist = aggregateBy(allHistory, metric, (r) => r.canalAjustado || "Sem canal");
+/** Séries por canal de toda a história — memorizadas por base (~0,35 s com
+ *  1,5 milhão de linhas, refeitas a cada visita à aba Canais e a cada slide).
+ *  O resultado é compartilhado: não alterar. */
+export const computeCanaisSeries = memoizeByRows(computeCanaisSeriesUncached, 4);
+
+function computeCanaisSeriesUncached(allHistory: PricingRow[], metric: Metric): CanaisSeries {
+  const canalAggHist = aggregateByNamed(allHistory, metric, "canalAjustado");
   const sorted = [...canalAggHist].sort((a, b) => b.rol - a.rol);
   const top = sorted.slice(0, 8).map((c) => c.key);
   const others = sorted.slice(8).map((c) => c.key);

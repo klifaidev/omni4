@@ -2,7 +2,6 @@
 // Estrutura esperada (Excel): colunas CANAL, Sku, data, VOLUME, RECEITA, CM, CPV.
 // Categoria/marca/faixa de peso/formato são puxados do De Para por SKU
 // (mantém alinhamento com a base atual).
-import * as XLSX from "xlsx";
 import { getDeParaBySku } from "./depara";
 import { getInovacao, getLegado } from "./deparaInovacao";
 import { getCanalAjustado } from "./deparaComercial";
@@ -82,6 +81,9 @@ function dataToPeriod(raw: unknown): ReturnType<typeof parsePeriod> | null {
 }
 
 export async function parseBudgetFile(file: File): Promise<ParsedBudget> {
+  // Sob demanda: a biblioteca de planilhas (~940 KB) ficava no pacote de
+  // abertura do app só por causa deste import, mesmo sem nenhum Excel aberto.
+  const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
 

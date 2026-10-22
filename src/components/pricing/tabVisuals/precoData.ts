@@ -6,6 +6,7 @@ import { parsePeriodo, shiftPeriodo } from "@/lib/deckPeriod";
 import { monthLabel } from "@/lib/format";
 import { sortedPeriodsOf } from "@/lib/tabVisualPeriod";
 import type { PricingRow } from "@/lib/types";
+import { memoizeByRows } from "@/lib/derivedCache";
 
 export type PricePeriodMode = "month" | "fy";
 export type PriceRankingMetric = "preco" | "mix" | "total";
@@ -95,7 +96,10 @@ export interface PriceEvolutionData {
 }
 
 /** Preço médio (ROL / volume) por mês, total ou top 6 marcas/canais por volume. */
-export function computePriceEvolution(rows: PricingRow[], dim: PriceEvolDim): PriceEvolutionData {
+/** Evolução de preço por dimensão. Memorizado por base (lib/derivedCache): refeito a cada visita à tela; o resultado é compartilhado, não alterar. */
+export const computePriceEvolution = memoizeByRows(computePriceEvolutionUncached, 6);
+
+function computePriceEvolutionUncached(rows: PricingRow[], dim: PriceEvolDim): PriceEvolutionData {
   // Ordem cronológica (antes era alfabética: "001.2026" vinha antes de "010.2025").
   const periods = Array.from(new Set(rows.map((r) => r.periodo)))
     .sort((a, b) => (monthIndex(a) ?? 0) - (monthIndex(b) ?? 0) || a.localeCompare(b));

@@ -12,7 +12,7 @@ import { SendToSlideHover } from "@/components/pricing/SendToSlideHover";
 import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { Topbar } from "@/components/pricing/Topbar";
 import { applyFilters, uniqueValues } from "@/lib/analytics";
-import { getDeParaBySku } from "@/lib/depara";
+import { hasDeParaSku } from "@/lib/depara";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
 import { useMonthsInfo } from "@/store/selectors";
@@ -101,7 +101,7 @@ export default function Dre() {
     [budgetRowsAll, filters],
   );
   const filterBaseRows = useMemo(
-    () => applyFilters(rows, {}, selectedPeriods).filter((r) => getDeParaBySku(r.sku)),
+    () => applyFilters(rows, {}, selectedPeriods).filter((r) => hasDeParaSku(r.sku)),
     [rows, selectedPeriods],
   );
   const activeFiltersCount = useMemo(

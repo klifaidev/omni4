@@ -6,6 +6,7 @@ import {
   type PivotMeasure,
   type PivotResult,
 } from "@/lib/pivot";
+import { uploadRowsInParts } from "@/lib/rowsTransport";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -48,6 +49,8 @@ const pending = new Map<number, Pending>();
 const rowsKeys = new WeakMap<Record<string, unknown>[], string>();
 const registeredRows = new Set<string>();
 let activeRowsKey: string | null = null;
+/** Envios de linhas em andamento: o cálculo espera o conjunto chegar inteiro. */
+const uploads = new Map<string, Promise<void>>();
 
 export function createEmptyPivotResult(): PivotResult {
   return {
@@ -120,6 +123,7 @@ function getWorker(): Worker | null {
       worker?.terminate();
       worker = null;
       registeredRows.clear();
+      uploads.clear();
     };
     return worker;
   } catch {
@@ -128,23 +132,47 @@ function getWorker(): Worker | null {
   }
 }
 
-function postToWorker(
+/**
+ * Garante que o worker tem as linhas. Antes iam junto do primeiro pedido, num
+ * postMessage só: com as bases reais (~1,5 milhão de linhas unificadas), a
+ * tela parava ~3,4 s ao abrir a Tabela Dinâmica — e de novo a cada volta,
+ * porque o worker é encerrado ao sair da tela (libera ~1 GB). Agora vão em
+ * partes no formato de colunas (lib/rowsTransport.ts), sem parar a tela.
+ */
+function ensureRows(instance: Worker, rowsKey: string, rows: Record<string, unknown>[]): Promise<void> {
+  if (rowsPayload(rowsKey, rows) !== undefined) {
+    const upload = uploadRowsInParts(instance, rowsKey, rows, () => worker === instance);
+    uploads.set(rowsKey, upload);
+    const clear = () => {
+      if (uploads.get(rowsKey) === upload) uploads.delete(rowsKey);
+    };
+    upload.then(clear, () => {
+      clear();
+      registeredRows.delete(rowsKey);
+    });
+    return upload;
+  }
+  return uploads.get(rowsKey) ?? Promise.resolve();
+}
+
+async function postToWorker(
   rows: Record<string, unknown>[],
   config: PivotConfig,
   limits: PivotLimits,
 ): Promise<GuardedPivotResult> {
   const instance = getWorker();
-  if (!instance) return Promise.reject(new Error("Worker indisponível."));
+  if (!instance) throw new Error("Worker indisponível.");
   const rowsKey = getRowsKey(rows);
   if (activeRowsKey && activeRowsKey !== rowsKey) releasePivotRows(activeRowsKey);
   activeRowsKey = rowsKey;
+  await ensureRows(instance, rowsKey, rows);
+  if (worker !== instance) throw new Error("Worker reiniciado.");
   const id = ++requestId;
   return new Promise<GuardedPivotResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
     instance.postMessage({
       id,
       rowsKey,
-      rows: rowsPayload(rowsKey, rows),
       config: toWorkerConfig(config),
       limits,
     });
@@ -152,8 +180,13 @@ function postToWorker(
 }
 
 export function releasePivotRows(rowsKey?: string): void {
-  if (rowsKey) registeredRows.delete(rowsKey);
-  else registeredRows.clear();
+  if (rowsKey) {
+    registeredRows.delete(rowsKey);
+    uploads.delete(rowsKey);
+  } else {
+    registeredRows.clear();
+    uploads.clear();
+  }
   if (rowsKey && activeRowsKey === rowsKey) activeRowsKey = null;
   if (!rowsKey) activeRowsKey = null;
   try {
@@ -201,6 +234,25 @@ function runJob(job: QueuedJob): void {
     });
 }
 
+/**
+ * Uma Tabela Dinâmica na tela segura o worker; ele só é encerrado quando a
+ * última sai. Na troca de página, a animação mantém a página anterior por um
+ * instante — e ela já renderiza a rota nova: duas instâncias ao mesmo tempo.
+ * Antes, a que saía encerrava o worker e cancelava o cálculo da que ficava
+ * (a tabela ficava com 0 linhas na volta à aba).
+ */
+let pivotHolders = 0;
+export function retainPivotWorker(): () => void {
+  pivotHolders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    pivotHolders = Math.max(0, pivotHolders - 1);
+    if (pivotHolders === 0) disposePivotWorker();
+  };
+}
+
 export function disposePivotWorker(): void {
   const error = abortError("Calculo da tabela dinamica cancelado porque a pagina foi fechada.");
   queuedJob?.reject(error);
@@ -208,6 +260,7 @@ export function disposePivotWorker(): void {
   pending.forEach((entry) => entry.reject(error));
   pending.clear();
   registeredRows.clear();
+  uploads.clear();
   activeRowsKey = null;
   worker?.terminate();
   worker = null;

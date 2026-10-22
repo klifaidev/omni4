@@ -66,7 +66,7 @@ import { calcPvmAsync } from "@/lib/slideCalcWorkerClient";
 import { resolveMonthRangeSelection, resolvePeriodColumns, resolvePeriodValue, relativePeriodLabel } from "@/lib/relativePeriods";
 import { buildPositivacaoSeries } from "@/lib/positivacao";
 import { computeBridgeYtdRealVsBudget, computeBridgeYtdVsYtd } from "@/lib/bridgeYtdBudget";
-import { getUfFromRegiao } from "@/lib/deparaComercial";
+import { getUfFromRegiao, getComercialDeParaVersion } from "@/lib/deparaComercial";
 import { buildSimpleBlockLayout, type CustomSlideLayoutNode } from "@/lib/customSlideLayout";
 import brMapRaw from "@/assets/br.svg?raw";
 import { strings } from "@/lib/i18n";
@@ -2508,8 +2508,23 @@ function normalizeUf(value: string | undefined | null): string | null {
   return brCode ?? null;
 }
 
+// Memória por par (uf, região), recomeçando quando o De/Para Comercial muda
+// (mesmo motivo de getRowUf em tabVisuals/ufMapData.ts).
+const rowUfCache = new Map<string, string | null>();
+let rowUfCacheVersion = -1;
+
 function rowUf(row: PricingRow): string | null {
-  return normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+  const version = getComercialDeParaVersion();
+  if (version !== rowUfCacheVersion || rowUfCache.size >= 20_000) {
+    rowUfCache.clear();
+    rowUfCacheVersion = version;
+  }
+  const key = `${row.uf ?? ""}\u0001${row.regiao ?? ""}`;
+  const cached = rowUfCache.get(key);
+  if (cached !== undefined) return cached;
+  const uf = normalizeUf(row.uf) ?? normalizeUf(row.regiao) ?? normalizeUf(getUfFromRegiao(row.regiao));
+  rowUfCache.set(key, uf);
+  return uf;
 }
 
 function omniRowValue(row: PricingRow, metric: OmniMetric): number {

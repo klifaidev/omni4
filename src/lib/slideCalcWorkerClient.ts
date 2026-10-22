@@ -3,6 +3,7 @@ import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import type { KpiMeasureId, KpiPeriodMode } from "@/lib/customSlide";
 import type { Filters, PricingRow } from "@/lib/types";
 import { markSlidePerf, measureSlidePerf, recordSlidePerfEvent } from "@/lib/slidesPerfCounters";
+import { uploadRowsInParts } from "@/lib/rowsTransport";
 import {
   getCachedRowsSignature,
   getSlideCalcCacheValue,
@@ -51,6 +52,37 @@ let requestId = 0;
 const pending = new Map<number, Pending<unknown>>();
 /** Conjuntos de linhas no worker, do menos ao mais recentemente usado. */
 const registeredRows = new Map<string, number>();
+/** Envios de linhas em andamento (um por conjunto): quem pede um cálculo espera. */
+const uploads = new Map<string, Promise<void>>();
+
+/**
+ * Entrega um conjunto de linhas ao worker em partes, no formato de colunas
+ * (lib/rowsTransport.ts). Antes, o conjunto inteiro ia num postMessage só: a
+ * tela parava enquanto o navegador clonava ~1,4 milhão de objetos (até 6 s
+ * seguidos na abertura dos Slides, com as bases reais).
+ */
+function uploadRows(rowsKey: string, rows: PricingRow[]): Promise<void> {
+  const instance = getWorker();
+  if (!instance) return Promise.reject(new Error("Worker indisponivel."));
+  return uploadRowsInParts(instance, rowsKey, rows, () => worker === instance);
+}
+
+/** Garante que o worker tem o conjunto (envia se preciso; espera envio em curso). */
+function ensureRowsInWorker(rowsKey: string, rows: PricingRow[]): Promise<void> {
+  if (rowsPayload(rowsKey, rows) !== undefined) {
+    const upload = uploadRows(rowsKey, rows);
+    uploads.set(rowsKey, upload);
+    const clear = () => {
+      if (uploads.get(rowsKey) === upload) uploads.delete(rowsKey);
+    };
+    upload.then(clear, () => {
+      clear();
+      registeredRows.delete(rowsKey);
+    });
+    return upload;
+  }
+  return uploads.get(rowsKey) ?? Promise.resolve();
+}
 
 function getWorker(): Worker | null {
   if (typeof Worker === "undefined") return null;
@@ -72,6 +104,7 @@ function getWorker(): Worker | null {
       worker?.terminate();
       worker = null;
       registeredRows.clear();
+      uploads.clear();
     };
     return worker;
   } catch {
@@ -130,6 +163,7 @@ export function slideWorkerRowsHeld(): number {
  * precisarem; o resultado já calculado continua no cache da tela.
  */
 export function releaseAllSlideWorkerRows(): void {
+  uploads.clear();
   if (worker) {
     pending.forEach((entry) => entry.reject(new Error("Worker reiniciado para liberar memória.")));
     pending.clear();
@@ -148,6 +182,7 @@ export function registerRowsForTest(rowsKey: string, count: number): boolean {
 }
 export function resetSlideWorkerForTest(): void {
   registeredRows.clear();
+  uploads.clear();
 }
 
 async function computeWithWorker<T>(
@@ -183,12 +218,14 @@ async function computeWithWorker<T>(
   try {
     let result: T;
     try {
-      result = await postToWorker<T>(buildPayload(rowsPayload(rowsKey, rows)));
+      await ensureRowsInWorker(rowsKey, rows);
+      result = await postToWorker<T>(buildPayload(undefined));
     } catch (error) {
       // O worker pode ter liberado (ou perdido, ao reiniciar) a cópia: reenvia uma vez.
       if (!(error instanceof Error) || !/not registered/i.test(error.message)) throw error;
       registeredRows.delete(rowsKey);
-      result = await postToWorker<T>(buildPayload(rowsPayload(rowsKey, rows)));
+      await ensureRowsInWorker(rowsKey, rows);
+      result = await postToWorker<T>(buildPayload(undefined));
     }
     measureSlidePerf("slides.calc.workerClient", startMark, undefined, {
       op: cacheInput.op,

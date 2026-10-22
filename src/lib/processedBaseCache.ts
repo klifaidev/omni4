@@ -178,6 +178,16 @@ function internProcessedPayload<T extends ProcessedPayload>(
   return payload;
 }
 
+/** JSON vindo do processo principal como texto; inválido = sem cache. */
+function parseCacheText(text: unknown): unknown {
+  if (typeof text !== "string" || !text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
@@ -190,8 +200,11 @@ export async function loadProcessedBase<T extends ProcessedPayload>(
   const api = window.electronAPI?.bases;
   if (!api?.carregarProcessado) return null;
   const result = await api.carregarProcessado(tipo, nomeArquivo, cacheKind, PROCESSED_BASE_CACHE_VERSION);
-  if (result.ok && result.hit && hasParsedShape(result.payload)) {
-    return internProcessedPayload(result.payload as T, cacheKind);
+  if (result.ok && result.hit) {
+    // Formato atual: texto (um JSON.parse aqui sai bem mais barato que o IPC
+    // clonar os objetos). Formato antigo: objeto já montado.
+    const payload = result.payloadText !== undefined ? parseCacheText(result.payloadText) : result.payload;
+    if (hasParsedShape(payload)) return internProcessedPayload(payload as T, cacheKind);
   }
 
   const canLoadChunks = api.carregarProcessadoManifesto && api.carregarProcessadoChunk;
@@ -203,9 +216,10 @@ export async function loadProcessedBase<T extends ProcessedPayload>(
   const intern = createStringInterner();
   for (let index = 0; index < meta.manifest.chunks; index++) {
     const chunk = await api.carregarProcessadoChunk(tipo, nomeArquivo, cacheKind, index);
-    if (!chunk.ok || !Array.isArray(chunk.rows)) return null;
-    internProcessedRows(chunk.rows, cacheKind, intern);
-    rows.push(...chunk.rows);
+    const chunkRows = chunk.ok ? (chunk.rowsText !== undefined ? parseCacheText(chunk.rowsText) : chunk.rows) : undefined;
+    if (!Array.isArray(chunkRows)) return null;
+    internProcessedRows(chunkRows, cacheKind, intern);
+    for (const row of chunkRows) rows.push(row);
     await yieldToBrowser();
   }
   if (rows.length !== meta.manifest.totalRows) return null;

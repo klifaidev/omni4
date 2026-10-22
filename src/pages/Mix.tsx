@@ -30,7 +30,10 @@ import {
   computePriceDecomposition,
   type PriceDecompositionResult,
   type PVMSkuDetail,
+  presentPeriodsOf,
+  rowsWhere,
 } from "@/lib/analytics";
+import { memoizeByRows } from "@/lib/derivedCache";
 import { computeAvailableOptionsPerDimension } from "@/lib/filterOptions";
 import { buildMixReading, getSkuMixEffect, type MixReadingDriver } from "@/lib/pvmReading";
 import { formatBRL, formatNum } from "@/lib/format";
@@ -175,7 +178,7 @@ export default function Mix() {
   }, [basePeriod, compPeriod, filteredRows, months, periodMode]);
 
   const comparisonRows = useMemo(
-    () => filteredRows.filter((row) => (periodMode === "fy" ? row.fy : row.periodo) === compPeriod),
+    () => rowsWhere(filteredRows, periodMode === "fy" ? "fy" : "periodo", compPeriod),
     [compPeriod, filteredRows, periodMode],
   );
 
@@ -270,7 +273,7 @@ export default function Mix() {
     return months.find((month) => month.periodo === compPeriod)?.fy ?? null;
   }, [compPeriod, months, periodMode]);
   const evolutionRows = useMemo(
-    () => filteredRows.filter((row) => row.fy === evolutionFy),
+    () => rowsWhere(filteredRows, "fy", evolutionFy),
     [evolutionFy, filteredRows],
   );
   const skuEvolutionOptions = useMemo(() => buildSkuOptions(evolutionRows), [evolutionRows]);
@@ -1624,7 +1627,7 @@ function buildDimensionDrivers(
   return Array.from(grouped, ([label, value]) => ({ label, value }));
 }
 
-function buildSkuOptions(rows: PricingRow[]): { value: string; label: string }[] {
+function buildSkuOptionsUncached(rows: PricingRow[]): { value: string; label: string }[] {
   const options = new Map<string, string>();
   for (const row of rows) {
     const sku = row.sku?.trim();
@@ -1637,7 +1640,7 @@ function buildSkuOptions(rows: PricingRow[]): { value: string; label: string }[]
   );
 }
 
-function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
+function buildSkuStatsBySkuUncached(rows: PricingRow[]): Map<string, SkuMixStats> {
   const map = new Map<string, SkuMixStats>();
   for (const row of rows) {
     const sku = row.sku?.trim();
@@ -1667,7 +1670,7 @@ function buildSkuStatsBySku(rows: PricingRow[]): Map<string, SkuMixStats> {
   return map;
 }
 
-function buildMixConcentration(rows: PricingRow[]): MixConcentration {
+function buildMixConcentrationUncached(rows: PricingRow[]): MixConcentration {
   const marginBySku = new Map<string, number>();
   for (const row of rows) {
     const sku = row.sku?.trim() || row.skuDesc?.trim();
@@ -1711,12 +1714,12 @@ function buildMixConcentration(rows: PricingRow[]): MixConcentration {
   };
 }
 
-function buildMixRiskAlerts(
+function buildMixRiskAlertsUncached(
   rows: PricingRow[],
   months: { periodo: string; label: string; fy: string; ano: number; mes: number }[],
 ): MixRiskAlert[] {
   const monthList = months
-    .filter((month) => rows.some((row) => row.periodo === month.periodo))
+    .filter((month) => presentPeriodsOf(rows).has(month.periodo))
     .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
   if (monthList.length < 4) return [];
 
@@ -1826,7 +1829,7 @@ function buildTransferBars(
   };
 }
 
-function buildEvolutionData(
+function buildEvolutionDataUncached(
   rows: PricingRow[],
   months: { periodo: string; label: string; fy: string; ano: number; mes: number }[],
   dimension: EvolutionDimension,
@@ -1834,7 +1837,7 @@ function buildEvolutionData(
   lens: MixLens = "margin",
 ): EvolutionData {
   const monthList = months
-    .filter((month) => rows.some((row) => row.periodo === month.periodo))
+    .filter((month) => presentPeriodsOf(rows).has(month.periodo))
     .sort((a, b) => a.ano - b.ano || a.mes - b.mes);
   if (monthList.length === 0) return { series: [], points: [] };
 
@@ -1905,3 +1908,11 @@ function hasConsistentShareDrop(values: number[]): boolean {
   const recent = material.slice(-4);
   return recent.every((value, index) => index === 0 || value < recent[index - 1]);
 }
+
+// Cálculos da tela memorizados por base (lib/derivedCache): voltar à Mix não
+// refaz tudo. Os resultados são compartilhados: não alterar.
+const buildSkuOptions = memoizeByRows(buildSkuOptionsUncached, 4);
+const buildSkuStatsBySku = memoizeByRows(buildSkuStatsBySkuUncached, 4);
+const buildMixConcentration = memoizeByRows(buildMixConcentrationUncached, 4);
+const buildMixRiskAlerts = memoizeByRows(buildMixRiskAlertsUncached, 4);
+const buildEvolutionData = memoizeByRows(buildEvolutionDataUncached, 8);

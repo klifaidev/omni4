@@ -2,6 +2,7 @@ import { applyFilters, calcPVM } from "@/lib/analytics";
 import { computeChartSeries, computeTopRanking } from "@/lib/customKpi";
 import type { Filters, PricingRow } from "@/lib/types";
 import type { KpiMeasureId, KpiPeriodMode } from "@/lib/customSlide";
+import { createRowsReceiver, isRowsRegisterMessage, type RowsRegisterMessage } from "@/lib/rowsTransport";
 
 type ChartSeriesRequest = {
   id: number;
@@ -53,14 +54,24 @@ function rowsFor(request: WorkerRequest): PricingRow[] {
 
 type ReleaseRequest = { type: "release"; rowsKey: string } | { type: "releaseAll" };
 
-self.onmessage = (event: MessageEvent<WorkerRequest | ReleaseRequest>) => {
+// Linhas chegam em partes (ver uploadRows no cliente) e viram objetos aqui,
+// fora da thread da tela.
+const receiver = createRowsReceiver<PricingRow>(rowsByKey);
+
+self.onmessage = (event: MessageEvent<WorkerRequest | ReleaseRequest | RowsRegisterMessage>) => {
   // A tela libera cópias que não usa mais (teto de memória do worker).
   if (event.data.type === "release") {
     rowsByKey.delete(event.data.rowsKey);
+    receiver.release(event.data.rowsKey);
     return;
   }
   if (event.data.type === "releaseAll") {
     rowsByKey.clear();
+    receiver.release();
+    return;
+  }
+  if (isRowsRegisterMessage(event.data)) {
+    receiver.handle(event.data);
     return;
   }
   const request = event.data;

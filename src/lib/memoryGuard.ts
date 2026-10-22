@@ -12,6 +12,8 @@ import { releaseAllSlideWorkerRows, slideWorkerRowsHeld } from "./slideCalcWorke
 import { clearSlideCalcCache } from "./slideCalcCache";
 import { clearCustomTableCaches } from "./customTablePivot";
 import { disposePivotWorker } from "./pivotWorkerClient";
+import { clearDerivedCaches } from "./derivedCache";
+import { clearApplyFiltersCache } from "./analytics";
 import { useSlidesSafety } from "@/store/slidesSafety";
 import { useSlidesFlow } from "@/store/slidesFlow";
 
@@ -55,6 +57,8 @@ export function releaseRecomputableMemory(): string {
   releaseAllSlideWorkerRows();
   clearSlideCalcCache();
   clearCustomTableCaches();
+  clearDerivedCaches();
+  clearApplyFiltersCache();
   // A Tabela Dinâmica aberta perderia o cálculo em andamento: só fora dela.
   if (!window.location.hash.startsWith("#/detalhe")) disposePivotWorker();
   return workerRows > 0

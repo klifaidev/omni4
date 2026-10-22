@@ -4,6 +4,7 @@ import type { MonthInfo } from "@/lib/types";
 import type { BudgetRow } from "@/lib/budget";
 import { formatBRL, formatNum, formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { memoizeByRows } from "@/lib/derivedCache";
 import { usePricing } from "@/store/pricing";
 import {
   Tooltip,
@@ -50,14 +51,53 @@ export interface PeriodAgg {
   mb: number; // gross margin = rol - cogs (positive = good)
 }
 
-export function aggregate(rs: PricingRow[]): PeriodAgg {
-  const a: PeriodAgg = {
+function emptyAgg(): PeriodAgg {
+  return {
     volume: 0, rol: 0, cogs: 0,
     custoVariavel: 0, custoFixo: 0,
     materiaPrima: 0, embalagem: 0, mod: 0, cif: 0,
     hasMP: false, hasEmb: false, hasMod: false, hasCif: false,
     frete: 0, comissao: 0, cm: 0, mb: 0,
   };
+}
+
+function addRow(a: PeriodAgg, r: PricingRow): void {
+  a.volume += r.volumeKg;
+  a.rol += r.rol;
+  a.cogs += r.cogs;
+  a.custoVariavel += r.custoVariavel ?? 0;
+  a.custoFixo += r.custoFixo ?? 0;
+  a.frete += r.frete ?? 0;
+  a.comissao += r.comissao ?? 0;
+  a.cm += r.contribMarginal;
+  if (r.materiaPrima != null) { a.materiaPrima += r.materiaPrima; a.hasMP = true; }
+  if (r.embalagem != null) { a.embalagem += r.embalagem; a.hasEmb = true; }
+  if (r.mod != null) { a.mod += r.mod; a.hasMod = true; }
+  if (r.cif != null) { a.cif += r.cif; a.hasCif = true; }
+}
+
+/**
+ * Agregado de cada mês numa varredura só, na ordem das linhas (as mesmas somas
+ * de `aggregate` sobre as linhas do mês). Memorizado por base: o DRE mensal
+ * filtrava a base inteira uma vez por coluna e de novo para as anomalias
+ * (~2 s com 1,5 milhão de linhas). Os agregados são compartilhados: não alterar.
+ */
+export const aggregateByPeriod = memoizeByRows((rs: PricingRow[]): Map<string, PeriodAgg> => {
+  const out = new Map<string, PeriodAgg>();
+  for (const r of rs) {
+    let a = out.get(r.periodo);
+    if (!a) {
+      a = emptyAgg();
+      out.set(r.periodo, a);
+    }
+    addRow(a, r);
+  }
+  for (const a of out.values()) a.mb = a.rol - a.cogs;
+  return out;
+}, 2);
+
+export function aggregate(rs: PricingRow[]): PeriodAgg {
+  const a = emptyAgg();
   for (const r of rs) {
     a.volume += r.volumeKg;
     a.rol += r.rol;
@@ -246,10 +286,10 @@ export function DreTable({ rows, months, mode = "month", budgetRows = [], allRow
       }
     } else {
       let lastKey: string | null = null;
+      const byPeriod = aggregateByPeriod(rows);
       for (const m of filteredMonths) {
-        const rs = rows.filter((r) => r.periodo === m.periodo);
         cols.push({ key: m.periodo, label: m.label, sublabel: m.fy });
-        map.set(m.periodo, aggregate(rs));
+        map.set(m.periodo, byPeriod.get(m.periodo) ?? aggregate([]));
         prev.set(m.periodo, lastKey);
         const bAgg = budgetByPeriod.get(m.periodo);
         if (bAgg) bud.set(m.periodo, bAgg);
@@ -265,13 +305,7 @@ export function DreTable({ rows, months, mode = "month", budgetRows = [], allRow
     const thresholds = new Map<string, { mean: number; threshold: number }>();
     const source = allRows && allRows.length ? allRows : rows;
     if (!source.length) return thresholds;
-    const grouped = new Map<string, PricingRow[]>();
-    for (const r of source) {
-      const arr = grouped.get(r.periodo) ?? [];
-      arr.push(r);
-      grouped.set(r.periodo, arr);
-    }
-    const aggs = Array.from(grouped.values()).map(aggregate);
+    const aggs = Array.from(aggregateByPeriod(source).values());
     for (const line of LINES) {
       if (!line.anomaly) continue;
       const vals = aggs.map((a) => line.get(a)).filter((v): v is number => v != null && isFinite(v));
