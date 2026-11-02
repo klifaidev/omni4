@@ -77,6 +77,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     remover: (key) => ipcRenderer.invoke("slidesFlow:remove", { key }),
     ultimoBackup: (key) => ipcRenderer.invoke("slidesFlow:latest-backup", { key }),
   },
+  // Atividades — armazenamento em arquivo com backups (mesma forma da esteira)
+  kanban: {
+    ler: (key) => ipcRenderer.invoke("kanban:read", { key }),
+    salvar: (key, value) => ipcRenderer.invoke("kanban:write", { key, value }),
+    remover: (key) => ipcRenderer.invoke("kanban:remove", { key }),
+    ultimoBackup: (key) => ipcRenderer.invoke("kanban:latest-backup", { key }),
+  },
   // Utilitarios
   isElectron: true,
 });

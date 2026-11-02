@@ -1,5 +1,27 @@
-// Kanban — tipos e persistência local
-import { toast } from "sonner";
+// Kanban — tipos e regras. A persistência (arquivo no disco + backups, ou
+// localStorage no navegador) mora em ./kanbanStorage.ts.
+import {
+  getKanbanSaveInfo,
+  getKanbanSaveStatus,
+  hydrateKanban,
+  parseKanbanState,
+  persistKanbanState,
+  readKanbanRaw,
+  retryKanbanSave,
+  serializeKanbanForExport,
+  subscribeKanbanSaveStatus,
+  type KanbanSaveStatus,
+} from "./kanbanStorage";
+
+export {
+  getKanbanSaveInfo,
+  getKanbanSaveStatus,
+  hydrateKanban,
+  retryKanbanSave,
+  serializeKanbanForExport,
+  subscribeKanbanSaveStatus,
+  type KanbanSaveStatus,
+};
 
 export type Priority = "low" | "med" | "high";
 
@@ -69,54 +91,6 @@ export interface KanbanState {
   cards: Record<string, KanbanCard>;
 }
 
-const STORAGE_KEY = "harald.kanban.v1";
-
-// ---------------------------------------------------------------------------
-// Status de gravação — antes, uma falha ao gravar no localStorage (cota
-// cheia, modo privado, etc.) era engolida em silêncio: a sessão continuava
-// normal na tela, mas nada novo era salvo. Foi a causa raiz do incidente
-// crítico da esteira de Slides (v1.9.337); aqui usamos a mesma prevenção,
-// só que sem precisar do arquivo do Electron (o volume de dados é pequeno).
-// ---------------------------------------------------------------------------
-export type KanbanSaveStatus = "ok" | "error";
-let saveStatus: KanbanSaveStatus = "ok";
-const saveStatusListeners = new Set<(s: KanbanSaveStatus) => void>();
-
-export function getKanbanSaveStatus(): KanbanSaveStatus {
-  return saveStatus;
-}
-
-/** Devolve uma função para cancelar a inscrição. */
-export function subscribeKanbanSaveStatus(cb: (s: KanbanSaveStatus) => void): () => void {
-  saveStatusListeners.add(cb);
-  return () => saveStatusListeners.delete(cb);
-}
-
-function setSaveStatus(next: KanbanSaveStatus) {
-  if (next === saveStatus) return;
-  saveStatus = next;
-  saveStatusListeners.forEach((cb) => cb(next));
-}
-
-/** Único ponto que grava o estado das atividades no localStorage. */
-function writeStorage(state: KanbanState): boolean {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    setSaveStatus("ok");
-    return true;
-  } catch (err) {
-    console.error("[kanban] falha ao salvar atividades:", err);
-    if (saveStatus === "ok") {
-      toast.error("Não foi possível salvar as atividades", {
-        description: "As mudanças desta sessão podem se perder ao fechar o app. Tente liberar espaço no navegador ou salvar de novo em instantes.",
-        duration: 10000,
-      });
-    }
-    setSaveStatus("error");
-    return false;
-  }
-}
-
 export const PRIORITY_LABEL: Record<Priority, string> = {
   low: "Baixa",
   med: "Média",
@@ -158,17 +132,9 @@ export function newId(prefix = "k") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** Leitura pura do estado persistido — nunca escreve no localStorage. */
+/** Leitura pura do estado persistido — nunca grava (a manutenção é à parte). */
 export function loadState(): KanbanState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw) as KanbanState;
-    if (!parsed.columns || !parsed.cards) return defaultState();
-    return parsed;
-  } catch {
-    return defaultState();
-  }
+  return parseKanbanState(readKanbanRaw()) ?? defaultState();
 }
 
 /**
@@ -261,7 +227,7 @@ function generateRecurring(state: KanbanState): KanbanState {
     col.id === firstCol.id ? { ...col, cardIds: [...newIds, ...col.cardIds] } : col,
   );
   const next = { cards: newCards, columns };
-  writeStorage(next);
+  persistKanbanState(next);
   return next;
 }
 
@@ -340,7 +306,7 @@ function seedTop3(state: KanbanState): KanbanState {
 
 
 export function saveState(state: KanbanState) {
-  writeStorage(state);
+  persistKanbanState(state);
 }
 
 export function initials(name?: string) {

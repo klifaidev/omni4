@@ -15,11 +15,13 @@ import {
   defaultState,
   dueStatus,
   formatDueShort,
-  getKanbanSaveStatus,
+  getKanbanSaveInfo,
   initials,
   loadStateWithMaintenance,
   newId,
+  retryKanbanSave,
   saveState,
+  serializeKanbanForExport,
   subscribeKanbanSaveStatus,
 } from "@/lib/kanban";
 import {
@@ -112,6 +114,9 @@ import {
   Search,
   BarChart3,
   Repeat2,
+  CheckCheck,
+  Loader2,
+  Download,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -139,6 +144,44 @@ type PendingDelete =
   | { kind: "card"; id: string; title: string }
   | { kind: "column"; id: string; title: string; cardCount: number };
 
+/** Indicador do estado real da gravação (o mesmo critério da esteira de Slides). */
+function SaveStatusBadge({ status, mode }: { status: KanbanSaveStatus; mode: "disk" | "browser" }) {
+  const label =
+    status === "saving" ? "Salvando..."
+    : status === "error" ? "Erro ao salvar"
+    : mode === "disk" ? "Salvo no computador"
+    : "Salvo no navegador";
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium",
+        status === "error"
+          ? "border-destructive/35 bg-destructive/10 text-destructive"
+          : "border-success/35 bg-success/10 text-success",
+      )}
+    >
+      {status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}
+      {/* Abaixo de xl só o ícone; erro de salvamento sempre mostra o texto. */}
+      <span className={status === "error" ? undefined : "hidden xl:inline"}>{label}</span>
+    </span>
+  );
+}
+
+/** Baixa uma cópia das atividades (JSON) — escape quando não dá para gravar. */
+function downloadKanbanCopy(state: KanbanState) {
+  const blob = new Blob([serializeKanbanForExport(state)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `atividades-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /* ---------------------------------------------------------------- */
 /* PAGE                                                              */
 /* ---------------------------------------------------------------- */
@@ -162,8 +205,13 @@ export default function Atividades() {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const [saveStatus, setSaveStatusState] = useState<KanbanSaveStatus>(() => getKanbanSaveStatus());
-  useEffect(() => subscribeKanbanSaveStatus(setSaveStatusState), []);
+  const [saveInfo, setSaveInfo] = useState(() => getKanbanSaveInfo());
+  useEffect(() => {
+    const sync = () => setSaveInfo(getKanbanSaveInfo());
+    sync();
+    return subscribeKanbanSaveStatus(sync);
+  }, []);
+  const saveStatus = saveInfo.status;
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       const v = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -528,6 +576,7 @@ export default function Atividades() {
                 {doneCards} concluída{doneCards === 1 ? "" : "s"}
               </span>
             </div>
+            <SaveStatusBadge status={saveStatus} mode={saveInfo.mode} />
             <ViewToggle mode={viewMode} onChange={setViewMode} />
             <button
               type="button"
@@ -626,22 +675,44 @@ export default function Atividades() {
           )}
         </div>
 
-        {/* Aviso persistente: gravação local falhando (cota do navegador
-            cheia, modo privado, etc.) — sem isso, uma falha ficava
-            invisível e as mudanças se perdiam ao fechar o app. */}
+        {/* Aviso persistente: a gravação está falhando (disco/cota cheia, arquivo
+            ilegível...) — sem isso a falha ficava invisível e as mudanças se
+            perdiam ao fechar o app. Quando a leitura do que já estava salvo
+            falhou, nada é gravado (para não apagar) e o aviso explica. */}
         {saveStatus === "error" && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-destructive/30 bg-destructive/10 px-8 py-2">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              Não foi possível salvar as atividades neste navegador. Suas mudanças podem se perder ao fechar o app.
+            <span className="flex items-start gap-1.5 text-xs font-medium text-destructive">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {saveInfo.blocked
+                  ? saveInfo.error
+                  : saveInfo.mode === "disk"
+                    ? "Não foi possível salvar as atividades no disco. Suas mudanças podem se perder ao fechar o app."
+                    : "Não foi possível salvar as atividades neste navegador. Suas mudanças podem se perder ao fechar o app."}
+                {!saveInfo.blocked && saveInfo.error && (
+                  <span className="block font-normal opacity-80">Detalhe: {saveInfo.error}</span>
+                )}
+              </span>
             </span>
-            <button
-              type="button"
-              onClick={() => saveState(state)}
-              className="rounded-full border border-destructive/40 px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/15"
-            >
-              Tentar salvar de novo
-            </button>
+            <span className="flex items-center gap-2">
+              {!saveInfo.blocked && (
+                <button
+                  type="button"
+                  onClick={() => retryKanbanSave(state)}
+                  className="rounded-full border border-destructive/40 px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/15"
+                >
+                  Tentar salvar de novo
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => downloadKanbanCopy(state)}
+                className="inline-flex items-center gap-1 rounded-full border border-destructive/40 px-2.5 py-1 text-[11px] font-medium text-destructive transition-colors hover:bg-destructive/15"
+              >
+                <Download className="h-3 w-3" />
+                Baixar uma cópia
+              </button>
+            </span>
           </div>
         )}
 

@@ -29,6 +29,7 @@ interface Window {
     };
     bases?: import("./hooks/use-bases-locais").ElectronBasesAPI;
     slidesFlow?: import("./store/slidesFlow").ElectronSlidesFlowAPI;
+    kanban?: import("./lib/kanbanStorage").ElectronKanbanAPI;
     isElectron?: boolean;
   };
 }

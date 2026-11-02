@@ -4,6 +4,7 @@ const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
 const { splitProcessedEnvelope } = require("./processedCacheText");
+const { createFileStore } = require("./fileStore");
 const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 const AUTO_UPDATE_ENABLED = true;
@@ -859,6 +860,30 @@ ipcMain.handle("slidesFlow:latest-backup", async (event, { key }) => {
     return { ok: false, erro: err.message };
   }
 });
+
+// Atividades (harald.kanban.v1): mesmo tipo de proteção da esteira — arquivo no
+// disco (sem a cota do localStorage), escrita atômica com fsync, backups em
+// rodízio e um instantâneo por dia. A lógica mora em ./fileStore.js (testada).
+// Só a chave exata abaixo é aceita: nada vindo da tela escolhe o nome do arquivo.
+const KANBAN_KEYS = new Set(["harald.kanban.v1"]);
+const kanbanStore = createFileStore({
+  fs,
+  path,
+  getDir: () => path.join(app.getPath("userData"), "kanban"),
+  backupCount: 6,
+  backupMinIntervalMs: 2 * 60 * 1000,
+  dailyKeep: 14,
+  log,
+});
+
+ipcMain.handle("kanban:read", async (event, { key } = {}) =>
+  KANBAN_KEYS.has(key) ? kanbanStore.read(key) : { ok: false, erro: "parametro_invalido" });
+ipcMain.handle("kanban:write", async (event, { key, value } = {}) =>
+  KANBAN_KEYS.has(key) ? kanbanStore.write(key, value) : { ok: false, erro: "parametro_invalido" });
+ipcMain.handle("kanban:remove", async (event, { key } = {}) =>
+  KANBAN_KEYS.has(key) ? kanbanStore.remove(key) : { ok: false, erro: "parametro_invalido" });
+ipcMain.handle("kanban:latest-backup", async (event, { key } = {}) =>
+  KANBAN_KEYS.has(key) ? kanbanStore.latestBackup(key) : { ok: false, erro: "parametro_invalido" });
 
 app.whenReady().then(createWindow);
 
