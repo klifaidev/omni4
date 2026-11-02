@@ -33,6 +33,7 @@ import {
   PackageX,
   Radar,
   Search,
+  Settings2,
   SlidersHorizontal,
   Sparkles,
   Star,
@@ -74,6 +75,7 @@ const workItems = [
   { to: "/atividades", label: "Atividades", icon: KanbanSquare },
   { to: "/positivacao", label: "Positivação", icon: UserCheck },
   { to: "/slides", label: "Slides", icon: Presentation },
+  { to: "/ajustes", label: "Ajustes", icon: Settings2 },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];
 
 export function Sidebar() {

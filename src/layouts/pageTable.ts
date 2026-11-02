@@ -48,6 +48,7 @@ export const PAGES: PageEntry[] = [
   page("/ruptura", "Ruptura", () => import("@/pages/Ruptura.tsx")),
   page("/alertas", "Alertas", () => import("@/pages/Alertas.tsx")),
   page("/atividades", "Atividades", () => import("@/pages/Atividades.tsx")),
+  page("/ajustes", "Ajustes", () => import("@/pages/Ajustes.tsx")),
   // Tabela Dinâmica: guardada oculta, seguraria uma cópia de cada linha da base
   // (cerca de 1 GB medido com 1,4 milhão de linhas). Continua montando ao abrir.
   page("/detalhe", "Tabela Dinâmica", () => import("@/pages/Detalhe.tsx"), { keep: false }),

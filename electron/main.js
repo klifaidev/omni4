@@ -1,13 +1,13 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const { autoUpdater } = require("electron-updater");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
+const updatePackage = require("./updatePackage");
 const { splitProcessedEnvelope } = require("./processedCacheText");
 const { createFileStore } = require("./fileStore");
 const { pathToFileURL } = require("url");
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
-const AUTO_UPDATE_ENABLED = true;
 
 // Configurar electron-log
 log.transports.file.resolvePath = () => {
@@ -18,10 +18,6 @@ log.info("=== OMNI4 INICIADO ===");
 log.info("=== APP INICIADO. Versão:", app.getVersion(), "===");
 log.info("=== isPackaged:", app.isPackaged, "===");
 log.info("=== isDev:", isDev, "===");
-
-// Configurar autoUpdater logger
-autoUpdater.logger = log;
-autoUpdater.logger.transports.file.level = "info";
 
 let mainWindow;
 
@@ -184,81 +180,104 @@ function createWindow() {
   });
 }
 
-// Auto-update
-function checkForUpdates() {
-  if (!AUTO_UPDATE_ENABLED) {
-    log.info("=== AUTO-UPDATE TEMPORARIAMENTE DESATIVADO ===");
-    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
-    return;
+// Atualização por arquivo. O app não procura versão em nenhum servidor: quem
+// atualiza arrasta um pacote assinado na aba Ajustes (ver ./updatePackage.js).
+// O caminho do instalador nunca vem do renderer: só o que foi conferido aqui é executado.
+let preparedUpdate = null;
+let preparingUpdate = false;
+
+function getPendingUpdateDir() {
+  return path.join(app.getPath("userData"), "update-pending");
+}
+
+function discardPreparedUpdate() {
+  preparedUpdate = null;
+  fs.rmSync(getPendingUpdateDir(), { recursive: true, force: true });
+}
+
+async function prepareUpdate(event, filePath) {
+  if (typeof filePath !== "string" || path.extname(filePath).toLowerCase() !== updatePackage.EXTENSION) {
+    return { ok: false, erro: "nao_e_pacote", currentVersion: app.getVersion() };
   }
+  if (preparingUpdate) return { ok: false, erro: "ocupado", currentVersion: app.getVersion() };
+  preparingUpdate = true;
   try {
-    log.info("=== INICIANDO CHECK FOR UPDATES ===");
-    log.info("Versão atual:", app.getVersion());
-
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-
-    autoUpdater.setFeedURL({
-      provider: "github",
-      owner: "klifaidev",
-      repo: "omni4",
-      releaseType: "release",
+    discardPreparedUpdate();
+    const currentVersion = app.getVersion();
+    const inspected = updatePackage.inspectPackage(filePath, {
+      publicKeyPem: fs.readFileSync(path.join(__dirname, "update-public-key.pem"), "utf8"),
+      currentVersion,
     });
+    log.info("Pacote de atualização:", path.basename(filePath), inspected.ok ? inspected.manifest.version : inspected.erro);
+    if (!inspected.ok) return { ...inspected, currentVersion };
 
-    log.info("Feed URL configurado para klifaidev/omni4");
-    autoUpdater.checkForUpdatesAndNotify();
+    const { version, sha512 } = inspected.manifest;
+    fs.mkdirSync(getPendingUpdateDir(), { recursive: true });
+    const installerPath = path.join(getPendingUpdateDir(), `OMNI4-Setup-${version}.exe`);
+    let lastPercent = -1;
+    const extracted = await updatePackage.extractInstaller(filePath, inspected, installerPath, (fraction) => {
+      const percent = Math.floor(fraction * 100);
+      if (percent === lastPercent || event.sender.isDestroyed()) return;
+      lastPercent = percent;
+      event.sender.send("update-file:progress", percent);
+    });
+    if (!extracted.ok) {
+      log.error("Pacote de atualização recusado na extração:", extracted.erro);
+      return { ...extracted, currentVersion };
+    }
+    preparedUpdate = { installerPath, version, sha512 };
+    return { ok: true, version, currentVersion };
   } catch (err) {
-    log.error("=== ERRO NO CHECK FOR UPDATES:", err.message, "===");
-    if (mainWindow) if (mainWindow) mainWindow.webContents.send("update-error", err.message);
+    log.error("Erro ao preparar atualização:", err.message);
+    return { ok: false, erro: "nao_lido", currentVersion: app.getVersion() };
+  } finally {
+    preparingUpdate = false;
   }
 }
 
-autoUpdater.on("checking-for-update", () => {
-  log.info("=== VERIFICANDO ATUALIZAÇÕES ===");
-  if (mainWindow) mainWindow.webContents.send("update-status", "Verificando atualizações...");
+ipcMain.handle("update-file:info", () => ({ version: app.getVersion() }));
+ipcMain.handle("update-file:prepare", (event, { filePath } = {}) => prepareUpdate(event, filePath));
+ipcMain.handle("update-file:choose", async (event) => {
+  const options = {
+    title: "Escolher arquivo de atualização",
+    properties: ["openFile"],
+    filters: [{ name: "Atualização do OMNI4", extensions: [updatePackage.EXTENSION.slice(1)] }],
+  };
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePaths } = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+  if (canceled || !filePaths[0]) return { ok: false, erro: "cancelado" };
+  return prepareUpdate(event, filePaths[0]);
 });
-
-autoUpdater.on("update-available", (info) => {
-  log.info("=== ATUALIZAÇÃO DISPONÍVEL:", info.version, "===");
-  if (mainWindow) mainWindow.webContents.send("update-available", info.version);
+ipcMain.handle("update-file:discard", () => {
+  discardPreparedUpdate();
+  return { ok: true };
 });
-
-autoUpdater.on("update-not-available", (info) => {
-  log.info("=== SEM ATUALIZAÇÃO. Versão atual:", info.version, "===");
-  if (mainWindow) mainWindow.webContents.send("update-not-available", info.version);
-});
-
-autoUpdater.on("download-progress", (progress) => {
-  if (mainWindow) mainWindow.webContents.send("update-progress", Math.round(progress.percent));
-});
-
-autoUpdater.on("update-downloaded", (info) => {
-  log.info("Atualização baixada:", info.version);
-  if (mainWindow) mainWindow.webContents.send("update-downloaded", info.version);
-});
-
-autoUpdater.on("error", (err) => {
-  log.error("=== ERRO NO AUTO-UPDATE:", err.message, "===");
-  if (mainWindow) mainWindow.webContents.send("update-error", err.message);
-});
-
-// IPC: instalar atualização ao comando do usuário
-ipcMain.on("install-update", () => {
-  if (!AUTO_UPDATE_ENABLED) {
-    log.info("Install update ignorado: auto-update temporariamente desativado.");
-    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
-    return;
+ipcMain.handle("update-file:install", async () => {
+  if (!preparedUpdate) return { ok: false, erro: "nao_preparado" };
+  const { installerPath, version, sha512 } = preparedUpdate;
+  try {
+    // Confere de novo: o arquivo pode ter sido trocado enquanto a tela esperava a confirmação.
+    if ((await updatePackage.hashFile(installerPath)) !== sha512) {
+      discardPreparedUpdate();
+      return { ok: false, erro: "integridade" };
+    }
+    // Mesmos argumentos que o atualizador automático usava: janela de progresso
+    // do instalador e o app reabre sozinho no fim.
+    await new Promise((resolve, reject) => {
+      const child = spawn(installerPath, ["--updated", "--force-run"], { detached: true, stdio: "ignore" });
+      child.once("error", reject);
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    });
+  } catch (err) {
+    log.error("Instalador não iniciou:", err.code, err.message);
+    return { ok: false, erro: "instalador_bloqueado" };
   }
-  autoUpdater.quitAndInstall(false, true);
-});
-
-// IPC: verificar atualização manualmente
-ipcMain.on("check-for-updates", () => {
-  if (!isDev) {
-    checkForUpdates();
-  } else {
-    if (mainWindow) mainWindow.webContents.send("update-not-available", app.getVersion());
-  }
+  log.info("=== INSTALANDO VERSÃO", version, "===");
+  setImmediate(() => app.quit());
+  return { ok: true };
 });
 
 ipcMain.on("renderer:error", (event, payload = {}) => {
@@ -885,7 +904,12 @@ ipcMain.handle("kanban:remove", async (event, { key } = {}) =>
 ipcMain.handle("kanban:latest-backup", async (event, { key } = {}) =>
   KANBAN_KEYS.has(key) ? kanbanStore.latestBackup(key) : { ok: false, erro: "parametro_invalido" });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // O instalador da atualização anterior já cumpriu o papel, mas ainda pode estar
+  // terminando de sair quando reabre o app: daí as novas tentativas.
+  fs.rm(getPendingUpdateDir(), { recursive: true, force: true, maxRetries: 10, retryDelay: 1000 }, () => undefined);
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -898,7 +922,9 @@ app.on("activate", () => {
 // Segurança: bloquear navegação para URLs externas
 app.on("web-contents-created", (event, contents) => {
   contents.on("will-navigate", (event, url) => {
-    if (!url.startsWith("file://") && !url.startsWith("http://localhost")) {
+    // Arquivo solto fora de uma área de arrastar também navega: sairia do app.
+    const isAppPage = url.split("#")[0].toLowerCase() === getAppEntryUrl().toLowerCase();
+    if (!isAppPage && !url.startsWith("http://localhost")) {
       event.preventDefault();
     }
   });

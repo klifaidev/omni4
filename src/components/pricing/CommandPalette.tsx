@@ -47,6 +47,7 @@ const NAV_ITEMS: { path: string; label: string }[] = [
   { path: "/slides", label: "Slides" },
   { path: "/atividades", label: "Atividades" },
   { path: "/upload", label: "Bases" },
+  { path: "/ajustes", label: "Ajustes" },
 ];
 
 export function CommandPalette({ open, onOpenChange }: Props) {

@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "electron": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\"",
     "electron:build": "npm run build && electron-builder build --win --publish never",
-    "electron:publish": "npm run build && electron-builder build --win --publish always",
+    "update:key": "node scripts/update-key.js",
+    "update:pack": "node scripts/pack-update.js",
     "release:patch": "node scripts/bump-version.js patch",
     "release:minor": "node scripts/bump-version.js minor",
     "release:major": "node scripts/bump-version.js major"
@@ -61,7 +62,6 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "electron-log": "^5.4.4",
-    "electron-updater": "^6.8.9",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^13.0.0",
     "html-to-image": "^1.11.13",
@@ -153,10 +153,6 @@
       ],
       "language": "1046"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "klifaidev",
-      "repo": "omni4"
-    }
+    "publish": null
   }
 }

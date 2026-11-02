@@ -10,6 +10,7 @@ import {
   Network,
   Presentation,
   Radar,
+  Settings2,
   SlidersHorizontal,
   Sparkles,
   TableProperties,
@@ -40,10 +41,11 @@ export const PAGE_LABELS: Record<string, PageMeta> = {
   "/slides": { label: "Slides", icon: Presentation },
   "/atividades": { label: "Atividades", icon: KanbanSquare },
   "/alertas": { label: "Central de alertas", icon: BellRing },
+  "/ajustes": { label: "Ajustes", icon: Settings2 },
   "/filtros": { label: "Filtros", icon: SlidersHorizontal },
   "/positivacao": { label: "Positivação", icon: UserCheck },
   "/farol": { label: "Farol de Cadastro", icon: Radar },
 };
 
 // Páginas não registradas no histórico de análises
-export const NON_HISTORY_PATHS = new Set<string>(["/upload", "/atividades", "/alertas", "/filtros", "/farol"]);
+export const NON_HISTORY_PATHS = new Set<string>(["/upload", "/atividades", "/alertas", "/filtros", "/farol", "/ajustes"]);

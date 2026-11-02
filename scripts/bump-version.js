@@ -18,15 +18,16 @@ else newVersion = `${major}.${minor}.${patch + 1}`;
 const oldVersion = pkg.version;
 pkg.version = newVersion;
 fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+execSync("npm install --package-lock-only --ignore-scripts", { stdio: "inherit" });
 
 console.log(`Versão atualizada: ${oldVersion} → ${newVersion}`);
 console.log("Criando commit e tag...");
 
-execSync("git add package.json");
+execSync("git add package.json package-lock.json");
 execSync(`git commit -m "chore: release v${newVersion}"`);
 execSync(`git tag v${newVersion}`);
 execSync("git push");
 execSync("git push --tags");
 
-console.log(`\nTag v${newVersion} criada e publicada!`);
-console.log("O GitHub Actions vai iniciar o build automaticamente.");
+console.log(`\nTag v${newVersion} criada e publicada. Gerando o pacote de atualização...`);
+execSync("node scripts/pack-update.js", { stdio: "inherit" });

@@ -1,65 +1,53 @@
 # Como publicar uma nova versão do OMNI4
 
+O app não procura atualização em nenhum servidor. A versão nova é gerada neste
+computador e enviada por Teams ou pasta da empresa; cada pessoa arrasta o arquivo
+na aba **Ajustes**.
+
 ## Pré-requisitos
-1. Ter o repositório no GitHub com o workflow configurado
-2. Criar um Personal Access Token no GitHub com permissão de "repo"
-3. Adicionar o token como secret `GH_TOKEN` no repositório GitHub
-   (Settings → Secrets and variables → Actions → New repository secret)
-4. Atualizar `owner` e `repo` em:
-   - `package.json` → campo `build.publish`
-   - `electron/app-update.yml`
+- A chave privada de assinatura em `%USERPROFILE%\.omni4\chave-atualizacao.pem`
+  (criada uma vez com `npm run update:key`). **Guarde uma cópia em lugar seguro.**
+  A chave pública correspondente é `electron/update-public-key.pem`, que vai dentro do app.
 
-## Publicar atualização
+## Gerar uma versão
+Sobe o número, faz commit e tag, compila e gera o pacote:
 
-Patch (correção de bug, ex: 1.0.0 → 1.0.1):
 ```
-npm run release:patch
+npm run release:patch    (correção, ex: 1.0.0 → 1.0.1)
+npm run release:minor    (novidade, ex: 1.0.0 → 1.1.0)
+npm run release:major    (mudança grande, ex: 1.0.0 → 2.0.0)
 ```
 
-Minor (nova funcionalidade, ex: 1.0.0 → 1.1.0):
-```
-npm run release:minor
-```
+Para gerar o pacote de novo sem mudar a versão: `npm run update:pack`
+(ou `npm run update:pack -- --skip-build` para aproveitar o instalador já compilado).
 
-Major (mudança grande, ex: 1.0.0 → 2.0.0):
+## O que sai em `release/`
 ```
-npm run release:major
-```
-
-## O que acontece automaticamente
-1. O script atualiza a versão no `package.json`
-2. Cria um commit e uma tag Git (ex: `v1.0.1`)
-3. Faz push para o GitHub
-4. O GitHub Actions detecta a tag e inicia o build (`windows-latest`)
-5. Em ~5 minutos, o instalador `.exe` é publicado no GitHub Releases
-6. Os apps instalados verificam a atualização na próxima abertura
-7. O usuário vê a notificação de update e clica "Reiniciar e atualizar"
-
-## Verificar o status do build
-Acessar: `github.com/SEU_USUARIO/SEU_REPO/actions`
-
-## Estrutura de arquivos gerados no GitHub Release
-```
-OMNI4 Pricing Analytics Setup X.Y.Z.exe       ← instalador
-OMNI4 Pricing Analytics Setup X.Y.Z.exe.blockmap
-latest.yml                                      ← usado pelo auto-updater
+OMNI4-Atualizacao-X.Y.Z.omni4update        ← o que todos recebem e arrastam em Ajustes
+OMNI4-Pricing-Analytics-Setup-X.Y.Z.exe    ← instalador comum (primeira instalação)
 ```
 
-## Assinatura de código (Authenticode) — recomendado, ainda não configurado
+O primeiro build em um computador baixa ferramentas do electron-builder do GitHub;
+depois ficam em cache. Em uma rede que bloqueia o GitHub, gere a versão em outra rede.
 
-Hoje o instalador **não é assinado digitalmente**. O auto-updater confere a
-integridade do download (hash SHA-512 do `latest.yml`, gerado no mesmo
-release), mas isso não comprova identidade do publicador — apenas protege
-contra download corrompido/incompleto. Sem assinatura, o Windows SmartScreen
-não atribui o instalador a nenhum editor verificado, e não há nenhuma camada
-independente do próprio pipeline de release/GitHub para confirmar que um
-`.exe` publicado é legítimo. Como as atualizações são baixadas e instaladas
-automaticamente (`autoDownload: true`), comprometer o pipeline de release
-(token do GitHub Actions, credencial de um mantenedor, ou o runner de CI)
-seria suficiente para distribuir código malicioso para todas as instalações.
+## O que o app confere antes de instalar
+1. É um pacote do OMNI4 com a assinatura Ed25519 da chave acima.
+2. A versão é mais nova que a instalada (voltar de versão é recusado).
+3. O SHA-512 do instalador bate com o que foi assinado, de novo logo antes de executar.
 
-Para habilitar a assinatura quando houver um certificado de assinatura de
-código (Authenticode, `.pfx`/`.p12`):
-1. Codificar o certificado em base64: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("certificado.pfx"))` (PowerShell) e salvar o resultado como o secret `CSC_LINK` no repositório GitHub (Settings → Secrets and variables → Actions).
-2. Salvar a senha do certificado como o secret `CSC_KEY_PASSWORD`.
-3. Nenhuma mudança de código é necessária além disso — `.github/workflows/release.yml` já repassa esses dois secrets para o `electron-builder`, que assina automaticamente assim que ambos existirem.
+Bases, esteira, atividades e preferências ficam em `%APPDATA%`, fora da pasta do
+programa, e o instalador não mexe nelas.
+
+## Se a chave privada se perder
+Os apps instalados vão recusar pacotes assinados com outra chave. Crie uma chave nova,
+gere a versão e peça a todos que rodem **uma vez** o instalador `.exe`, que substitui o
+app sem apagar os dados. A partir daí, valem os pacotes da chave nova.
+
+## Assinatura de código (Authenticode) — ainda não configurado
+O instalador não tem assinatura de código do Windows. A assinatura do pacote prova ao
+**app** quem publicou, mas não muda o que o **Windows** vê: SmartScreen ou políticas da
+TI (AppLocker, WDAC) podem bloquear o instalador. O app avisa quando isso acontece.
+
+Para assinar quando houver um certificado (`.pfx`/`.p12`), defina antes do build as
+variáveis `CSC_LINK` (caminho do certificado) e `CSC_KEY_PASSWORD` (senha). O
+electron-builder assina sozinho, sem mudança de código.

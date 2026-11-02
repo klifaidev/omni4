@@ -1,5 +1,4 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { UpdateNotification } from "@/components/UpdateNotification";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PanelRightOpen, Presentation, X } from "lucide-react";
@@ -407,7 +406,6 @@ export default function AppShell() {
           <SendToSlideDestinationDialog />
         </Suspense>
       )}
-      <UpdateNotification />
     </div>
   );
 }

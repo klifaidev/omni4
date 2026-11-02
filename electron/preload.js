@@ -1,39 +1,19 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Auto-update
-  onUpdateStatus: (callback) => {
-    const handler = (_, status) => callback(status);
-    ipcRenderer.on("update-status", handler);
-    return () => ipcRenderer.removeListener("update-status", handler);
+  // Atualização por arquivo
+  updates: {
+    info: () => ipcRenderer.invoke("update-file:info"),
+    prepare: (file) => ipcRenderer.invoke("update-file:prepare", { filePath: webUtils.getPathForFile(file) }),
+    choose: () => ipcRenderer.invoke("update-file:choose"),
+    discard: () => ipcRenderer.invoke("update-file:discard"),
+    install: () => ipcRenderer.invoke("update-file:install"),
+    onProgress: (callback) => {
+      const handler = (_, percent) => callback(percent);
+      ipcRenderer.on("update-file:progress", handler);
+      return () => ipcRenderer.removeListener("update-file:progress", handler);
+    },
   },
-  onUpdateAvailable: (callback) => {
-    const handler = (_, version) => callback(version);
-    ipcRenderer.on("update-available", handler);
-    return () => ipcRenderer.removeListener("update-available", handler);
-  },
-  onUpdateProgress: (callback) => {
-    const handler = (_, percent) => callback(percent);
-    ipcRenderer.on("update-progress", handler);
-    return () => ipcRenderer.removeListener("update-progress", handler);
-  },
-  onUpdateDownloaded: (callback) => {
-    const handler = (_, version) => callback(version);
-    ipcRenderer.on("update-downloaded", handler);
-    return () => ipcRenderer.removeListener("update-downloaded", handler);
-  },
-  onUpdateNotAvailable: (callback) => {
-    const handler = (_, version) => callback(version);
-    ipcRenderer.on("update-not-available", handler);
-    return () => ipcRenderer.removeListener("update-not-available", handler);
-  },
-  onUpdateError: (callback) => {
-    const handler = (_, message) => callback(message);
-    ipcRenderer.on("update-error", handler);
-    return () => ipcRenderer.removeListener("update-error", handler);
-  },
-  installUpdate: () => ipcRenderer.send("install-update"),
-  checkForUpdates: () => ipcRenderer.send("check-for-updates"),
   reportRendererError: (payload) => ipcRenderer.send("renderer:error", payload),
   // Recuperação de crash
   app: {
