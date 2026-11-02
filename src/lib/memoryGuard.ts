@@ -25,9 +25,9 @@ export const MEMORY_HIGH = 0.7;
 export const MEMORY_CRITICAL = 0.85;
 const CHECK_INTERVAL_MS = 4000;
 /**
- * Leituras seguidas acima de "alta" antes de agir. A leitura inclui lixo ainda não
- * coletado: com as abas se atualizando por trás, ela passa de 3 GB e cai para 1 GB
- * sozinha (medido com 709 MB realmente em uso). Só o que persiste é falta de memória.
+ * Leituras seguidas antes de agir. A leitura inclui lixo ainda não coletado: com as
+ * abas se atualizando por trás, ela sobe bem acima do que está em uso (709 MB) e cai
+ * sozinha. Só o que persiste é falta de memória.
  */
 const HIGH_READINGS_TO_ACT = 2;
 const TOAST_COOLDOWN_MS = 2 * 60 * 1000;
@@ -45,10 +45,9 @@ let lastLevel: MemoryLevel = "ok";
 let lastToastAt = 0;
 let highReadings = 0;
 
-/** Decide se uma leitura "alta" já persistiu o bastante; "crítica" age na hora. */
+/** Decide se a leitura acima do normal já persistiu o bastante. */
 export function shouldActOnLevel(level: MemoryLevel, consecutiveHigh: number): boolean {
-  if (level === "critical") return true;
-  return level === "high" && consecutiveHigh >= HIGH_READINGS_TO_ACT;
+  return level !== "ok" && consecutiveHigh >= HIGH_READINGS_TO_ACT;
 }
 
 /** Rastro dos Slides para o log do Electron (vale também para ações pesadas). */

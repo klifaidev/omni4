@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createRowsReceiver, isRowsRegisterMessage, packedTransferList, packRows, unpackRows, uploadRowsInParts, UPLOAD_PART_ROWS } from "./rowsTransport";
+import { createPackedRowsStore, createRowsReceiver, isRowsRegisterMessage, packedTransferList, packRows, unpackRows, uploadRowsInParts, UPLOAD_PART_ROWS } from "./rowsTransport";
 import { generateDemoData } from "./demoData";
 import { budgetRowsAsPricing } from "./budgetAdapter";
+import { computePivot, pivotRowFields, type PivotConfig } from "./pivot";
 
 const noYield = () => Promise.resolve();
 
@@ -125,4 +126,76 @@ describe("protocolo de envio em partes (tela → worker)", () => {
     expect(w.store.has("x")).toBe(false);
     w.receiver.release("x");
   });
+});
+
+describe("colunas guardadas no worker (createPackedRowsStore)", () => {
+  async function deliver(rows: object[]) {
+    const store = createPackedRowsStore();
+    await uploadRowsInParts({
+      postMessage(message: unknown, transfer?: Transferable[]) {
+        const delivered = structuredClone(message, { transfer: (transfer ?? []) as Transferable[] });
+        if (!isRowsRegisterMessage(delivered)) throw new Error("mensagem inesperada");
+        store.handle(delivered);
+      },
+    }, "base", rows, () => true, noYield);
+    return store;
+  }
+
+  it("só entrega o conjunto completo, e com os campos pedidos", async () => {
+    const rows = generateDemoData({ monthsBack: 13, rowsPerMonth: 1_700 }).realRows;
+    const store = await deliver(rows);
+    const fields = ["sku", "rol", "canal"];
+    const projected = store.project("base", fields)!;
+    expect(projected.length).toBe(rows.length);
+    for (let i = 0; i < rows.length; i += 997) {
+      const original = rows[i] as unknown as Record<string, unknown>;
+      for (const field of fields) expect(projected[i][field]).toBe(original[field]);
+      expect(Object.keys(projected[i]).every((key) => fields.includes(key))).toBe(true);
+    }
+    expect(store.project("outra", fields)).toBeNull();
+    store.release("base");
+    expect(store.project("base", fields)).toBeNull();
+  }, 60_000);
+
+  it("campo ausente, undefined e null continuam distintos", async () => {
+    const store = await deliver([{ a: 1, b: "x" }, { a: 2 }, { a: 3, b: undefined }, { a: 4, b: null }]);
+    const rows = store.project("base", ["b"])!;
+    expect("b" in rows[1]).toBe(false);
+    expect("b" in rows[2] && rows[2].b === undefined).toBe(true);
+    expect(rows[3].b).toBeNull();
+  });
+
+  it("parte fora do formato: usa as linhas originais", async () => {
+    const rows = [{ v: 1 }, { v: "texto" }];
+    const store = await deliver(rows);
+    expect(store.project("base", ["v"])).toEqual(rows);
+  });
+
+  it("o cálculo sai idêntico ao feito com as linhas completas", async () => {
+    const rows = generateDemoData({ monthsBack: 13, rowsPerMonth: 1_700 }).realRows as unknown as Record<string, unknown>[];
+    const store = await deliver(rows);
+    const base = { label: "", format: "number" as const };
+    const margem = {
+      ...base, id: "margem", field: "__nao_existe__", agg: "sum" as const, dependsOn: ["rol", "cm"],
+      derive: (a: Record<string, number | null>) => (a.rol ? (a.cm ?? 0) / a.rol : null),
+    };
+    const rol = { ...base, id: "rol", field: "rol", agg: "sum" as const };
+    const cm = { ...base, id: "cm", field: "contribMarginal", agg: "sum" as const };
+    const configs: PivotConfig[] = [
+      { rows: ["canal"], cols: [], values: [rol], filters: {} },
+      { rows: ["marca", "categoria"], cols: ["periodo"], values: [rol, cm], filters: {} },
+      { rows: ["sku"], cols: ["canal"], values: [margem], measureCatalog: [rol, cm, margem], filters: {}, colLimit: { top: 2, threshold: 2 } },
+      { rows: ["canal"], cols: [], values: [rol], filters: { marca: [String(rows[0].marca)] } },
+    ];
+    for (const config of configs) {
+      const full = computePivot(rows, config);
+      const fromColumns = computePivot(store.project("base", pivotRowFields(config))!, config);
+      expect(fromColumns.grandTotal).toEqual(full.grandTotal);
+      expect(fromColumns.rowHeaders).toEqual(full.rowHeaders);
+      expect(fromColumns.colHeaders).toEqual(full.colHeaders);
+      expect(Array.from(fromColumns.rowTotals)).toEqual(Array.from(full.rowTotals));
+      expect(Array.from(fromColumns.cells).map(([k, v]) => [k, Array.from(v)])).toEqual(Array.from(full.cells).map(([k, v]) => [k, Array.from(v)]));
+      expect(full.rowHeaders.length).toBeGreaterThan(0);
+    }
+  }, 60_000);
 });

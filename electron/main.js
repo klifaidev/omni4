@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, crashReporter, dialog, ipcMain } = require("electron");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
@@ -18,6 +18,27 @@ log.info("=== OMNI4 INICIADO ===");
 log.info("=== APP INICIADO. Versão:", app.getVersion(), "===");
 log.info("=== isPackaged:", app.isPackaged, "===");
 log.info("=== isDev:", isDev, "===");
+
+// A tela e os workers do mesmo processo dividem cerca de 4 GB para objetos
+// JavaScript, mas cada um enxerga um limite próprio de ~4,2 GB: sem saber do resto,
+// a tela deixava lixo acumular (3 GB antes de coletar, com 700 MB em uso) e o worker
+// caía sem memória usando só 342 MB. Com o teto, ela coleta antes e sobra espaço.
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=3072");
+// Sem isto, na versão instalada a leitura de memória fica congelada na primeira
+// medida (45 MB, com 2 GB em uso) e a guarda de memória nunca age.
+app.commandLine.appendSwitch("enable-precise-memory-info");
+
+// Se a tela cair, fica rastro neste computador: nada disso é enviado para fora.
+crashReporter.start({ uploadToServer: false });
+const chromiumLogPath = path.join(app.getPath("userData"), "logs", "chromium.log");
+try {
+  if (fs.statSync(chromiumLogPath).size > 5 * 1024 * 1024) fs.rmSync(chromiumLogPath, { force: true });
+} catch {
+  // Ainda não existe.
+}
+app.commandLine.appendSwitch("enable-logging", "file");
+app.commandLine.appendSwitch("log-file", chromiumLogPath);
+app.commandLine.appendSwitch("log-level", "2");
 
 let mainWindow;
 

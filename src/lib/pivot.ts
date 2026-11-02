@@ -624,6 +624,13 @@ export function computePivot(
   return aggregateIndex(indexPivotRows(rows, config, null), config);
 }
 
+/** Campos das linhas que o cálculo lê: dimensões, filtros e medidas. */
+export function pivotRowFields(config: Pick<PivotConfig, "rows" | "cols" | "values" | "filters" | "measureCatalog">): string[] {
+  const fields = new Set<string>([...config.rows, ...config.cols, ...Object.keys(config.filters)]);
+  for (const measure of [...config.values, ...(config.measureCatalog ?? [])]) fields.add(measure.field);
+  return Array.from(fields);
+}
+
 export interface PivotLimits {
   maxRowHeaders: number;
   maxColHeaders: number;

@@ -286,3 +286,88 @@ export function createRowsReceiver<Row extends object>(store: Map<string, Row[]>
     },
   };
 }
+
+/**
+ * Como o receptor acima, mas guarda as colunas em vez de montar objetos. Tela e
+ * workers do mesmo processo dividem cerca de 4 GB para objetos JavaScript, e os
+ * números e códigos das colunas ficam fora dessa área: medido com 1,4 milhão de
+ * linhas, os objetos ocupavam 1,3 GB. Os textos repetidos entre partes viram um só.
+ */
+export function createPackedRowsStore() {
+  type Entry = { parts: PackedRows[]; total: number; objects: Record<string, unknown>[] | null };
+  const ready = new Map<string, Entry>();
+  const incoming = new Map<string, Entry>();
+  const interned = new Map<string, string>();
+
+  const intern = (part: PackedRows) => {
+    for (const col of part.columns) {
+      if (col.kind !== "str") continue;
+      for (let i = 0; i < col.dict.length; i++) {
+        const value = col.dict[i];
+        const known = interned.get(value);
+        if (known === undefined) interned.set(value, value);
+        else col.dict[i] = known;
+      }
+    }
+  };
+
+  return {
+    handle(message: RowsRegisterMessage): void {
+      if (message.type === "registerStart") {
+        incoming.set(message.rowsKey, { parts: [], total: 0, objects: null });
+        ready.delete(message.rowsKey);
+        return;
+      }
+      if (message.type === "registerPart") {
+        const entry = incoming.get(message.rowsKey);
+        if (!entry) return;
+        intern(message.part);
+        entry.parts.push(message.part);
+        entry.total += message.part.n;
+        return;
+      }
+      if (message.type === "registerEnd") {
+        const entry = incoming.get(message.rowsKey);
+        incoming.delete(message.rowsKey);
+        if (entry) ready.set(message.rowsKey, entry);
+        return;
+      }
+      incoming.delete(message.rowsKey);
+      ready.set(message.rowsKey, { parts: [], total: message.rows.length, objects: message.rows as Record<string, unknown>[] });
+    },
+    release(rowsKey?: string): void {
+      if (rowsKey) {
+        incoming.delete(rowsKey);
+        ready.delete(rowsKey);
+        return;
+      }
+      incoming.clear();
+      ready.clear();
+      interned.clear();
+    },
+    /** Linhas só com `fields`, com os mesmos valores das originais. Null se o conjunto não chegou. */
+    project(rowsKey: string, fields: readonly string[]): Record<string, unknown>[] | null {
+      const entry = ready.get(rowsKey);
+      if (!entry) return null;
+      if (entry.objects) return entry.objects;
+      const wanted = new Set(fields);
+      const out = new Array<Record<string, unknown>>(entry.total);
+      let at = 0;
+      for (const part of entry.parts) {
+        const columns = part.columns.filter((col) => wanted.has(col.key));
+        for (let i = 0; i < part.n; i++) {
+          const row: Record<string, unknown> = {};
+          for (const col of columns) {
+            const state = col.state ? col.state[i] : STATE_VALUE;
+            if (state === STATE_ABSENT) continue;
+            if (state === STATE_UNDEFINED) row[col.key] = undefined;
+            else if (state === STATE_NULL) row[col.key] = null;
+            else row[col.key] = col.kind === "num" ? col.values[i] : col.dict[col.codes[i]];
+          }
+          out[at++] = row;
+        }
+      }
+      return out;
+    },
+  };
+}

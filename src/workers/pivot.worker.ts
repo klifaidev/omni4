@@ -1,6 +1,6 @@
-import { computePivotGuarded, type PivotConfig, type PivotLimits, type PivotMeasure } from "@/lib/pivot";
+import { computePivotGuarded, pivotRowFields, type PivotConfig, type PivotLimits, type PivotMeasure } from "@/lib/pivot";
 import { compileFormula } from "@/lib/pivotFormula";
-import { createRowsReceiver, isRowsRegisterMessage, type RowsRegisterMessage } from "@/lib/rowsTransport";
+import { createPackedRowsStore, isRowsRegisterMessage, type RowsRegisterMessage } from "@/lib/rowsTransport";
 
 type SerializablePivotMeasure = Omit<PivotMeasure, "derive"> & {
   deriveId?: string;
@@ -14,7 +14,6 @@ type PivotWorkerConfig = Omit<PivotConfig, "values" | "measureCatalog"> & {
 type PivotWorkerRequest = {
   id: number;
   rowsKey: string;
-  rows?: Record<string, unknown>[];
   config: PivotWorkerConfig;
   limits: PivotLimits;
 };
@@ -24,16 +23,8 @@ type PivotWorkerReleaseRequest = {
   rowsKey?: string;
 };
 
-const rowsByKey = new Map<string, Record<string, unknown>[]>();
-// Linhas chegam em partes (ensureRows no cliente) e viram objetos aqui.
-const receiver = createRowsReceiver<Record<string, unknown>>(rowsByKey);
-
-function rowsFor(request: PivotWorkerRequest): Record<string, unknown>[] {
-  if (request.rows) rowsByKey.set(request.rowsKey, request.rows);
-  const rows = rowsByKey.get(request.rowsKey);
-  if (!rows) throw new Error("Rows not registered in pivot worker.");
-  return rows;
-}
+// As linhas ficam em colunas; cada cálculo monta objetos só com os campos que lê.
+const rowsStore = createPackedRowsStore();
 
 function deriveFor(id: string): PivotMeasure["derive"] {
   switch (id) {
@@ -108,20 +99,20 @@ function hydrateConfig(config: PivotWorkerConfig): PivotConfig {
 self.onmessage = (event: MessageEvent<PivotWorkerRequest | PivotWorkerReleaseRequest | RowsRegisterMessage>) => {
   const request = event.data;
   if (isRowsRegisterMessage(request)) {
-    receiver.handle(request);
+    rowsStore.handle(request);
     return;
   }
   if ("type" in request && request.type === "releaseRows") {
-    if (request.rowsKey) rowsByKey.delete(request.rowsKey);
-    else rowsByKey.clear();
-    receiver.release(request.rowsKey);
+    rowsStore.release(request.rowsKey);
     return;
   }
 
   const job = request as PivotWorkerRequest;
   try {
-    const rows = rowsFor(job);
-    const { estimate, result } = computePivotGuarded(rows, hydrateConfig(job.config), job.limits);
+    const config = hydrateConfig(job.config);
+    const rows = rowsStore.project(job.rowsKey, pivotRowFields(config));
+    if (!rows) throw new Error("Rows not registered in pivot worker.");
+    const { estimate, result } = computePivotGuarded(rows, config, job.limits);
     self.postMessage({ id: job.id, ok: true, estimate, result });
   } catch (error) {
     self.postMessage({

@@ -21,8 +21,9 @@ describe("guarda de memória", () => {
     expect(shouldActOnLevel("ok", 5)).toBe(false);
   });
 
-  it("nível crítico age na primeira leitura", () => {
-    expect(shouldActOnLevel("critical", 1)).toBe(true);
+  it("nível crítico também espera a segunda leitura", () => {
+    expect(shouldActOnLevel("critical", 1)).toBe(false);
+    expect(shouldActOnLevel("critical", 2)).toBe(true);
   });
 
   it("abas ocultas só são liberadas no nível crítico", () => {
