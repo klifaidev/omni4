@@ -111,14 +111,12 @@ function periodLabel(row: PricingRow): string {
 }
 
 export function getPeriodOptions(rows: PricingRow[]): PeriodOption[] {
-  return Array.from(
-    new Map(
-      rows.map((row) => [
-        row.periodo,
-        { periodo: row.periodo, label: periodLabel(row), rank: periodRank(row) },
-      ]),
-    ).values(),
-  ).sort((a, b) => a.rank - b.rank);
+  const byPeriod = new Map<string, PeriodOption>();
+  for (const row of rows) {
+    if (byPeriod.has(row.periodo)) continue;
+    byPeriod.set(row.periodo, { periodo: row.periodo, label: periodLabel(row), rank: periodRank(row) });
+  }
+  return Array.from(byPeriod.values()).sort((a, b) => a.rank - b.rank);
 }
 
 function periodRangeSet(options: PeriodOption[], start?: string, end?: string): Set<string> {

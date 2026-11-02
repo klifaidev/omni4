@@ -16,6 +16,7 @@ import { clearDerivedCaches } from "./derivedCache";
 import { clearApplyFiltersCache } from "./analytics";
 import { useSlidesSafety } from "@/store/slidesSafety";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import { useKeptPages } from "@/store/keptPages";
 
 export type MemoryLevel = "ok" | "high" | "critical";
 
@@ -23,6 +24,12 @@ export type MemoryLevel = "ok" | "high" | "critical";
 export const MEMORY_HIGH = 0.7;
 export const MEMORY_CRITICAL = 0.85;
 const CHECK_INTERVAL_MS = 4000;
+/**
+ * Leituras seguidas acima de "alta" antes de agir. A leitura inclui lixo ainda não
+ * coletado: com as abas se atualizando por trás, ela passa de 3 GB e cai para 1 GB
+ * sozinha (medido com 709 MB realmente em uso). Só o que persiste é falta de memória.
+ */
+const HIGH_READINGS_TO_ACT = 2;
 const TOAST_COOLDOWN_MS = 2 * 60 * 1000;
 
 export function memoryLevel(usedMB: number, limitMB: number): MemoryLevel {
@@ -36,6 +43,13 @@ export function memoryLevel(usedMB: number, limitMB: number): MemoryLevel {
 let started = false;
 let lastLevel: MemoryLevel = "ok";
 let lastToastAt = 0;
+let highReadings = 0;
+
+/** Decide se uma leitura "alta" já persistiu o bastante; "crítica" age na hora. */
+export function shouldActOnLevel(level: MemoryLevel, consecutiveHigh: number): boolean {
+  if (level === "critical") return true;
+  return level === "high" && consecutiveHigh >= HIGH_READINGS_TO_ACT;
+}
 
 /** Rastro dos Slides para o log do Electron (vale também para ações pesadas). */
 export function slidesBreadcrumb(action: string, extra?: Partial<SlidesCrashBreadcrumb>): void {
@@ -52,13 +66,16 @@ export function slidesBreadcrumb(action: string, extra?: Partial<SlidesCrashBrea
 }
 
 /** Libera tudo que pode ser recalculado. Devolve uma frase do que foi feito. */
-export function releaseRecomputableMemory(): string {
+export function releaseRecomputableMemory(level: MemoryLevel = "high"): string {
   const workerRows = slideWorkerRowsHeld();
   releaseAllSlideWorkerRows();
   clearSlideCalcCache();
   clearCustomTableCaches();
   clearDerivedCaches();
   clearApplyFiltersCache();
+  // Último recurso, por isso só no nível crítico: as abas ocultas deixam de abrir
+  // na hora e voltam a montar ao serem abertas (como antes de ficarem prontas).
+  if (level === "critical") useKeptPages.getState().releaseHidden();
   // A Tabela Dinâmica aberta perderia o cálculo em andamento: só fora dela.
   if (!window.location.hash.startsWith("#/detalhe")) disposePivotWorker();
   return workerRows > 0
@@ -72,13 +89,16 @@ function check() {
   const level = memoryLevel(heap.usedMB, heap.limitMB);
   if (level === "ok") {
     lastLevel = level;
+    highReadings = 0;
     return;
   }
+  highReadings += 1;
+  if (!shouldActOnLevel(level, highReadings)) return;
   slidesBreadcrumb(`memória ${level}`);
   // Age só ao SUBIR de nível — não fica liberando a cada 4 s.
   if (level === lastLevel) return;
   lastLevel = level;
-  const what = releaseRecomputableMemory();
+  const what = releaseRecomputableMemory(level);
   const now = Date.now();
   if (level === "critical") {
     useSlidesSafety.getState().pause("memory");

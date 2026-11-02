@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 
 interface UploadGuardState {
   pending: number;
@@ -7,7 +7,7 @@ interface UploadGuardState {
   setApply: (fn: (() => Promise<void> | void) | null) => void;
 }
 
-export const useUploadGuard = create<UploadGuardState>((set) => ({
+export const useUploadGuard = createFreezable<UploadGuardState>((set) => ({
   pending: 0,
   apply: null,
   setPending: (n) => set({ pending: n }),

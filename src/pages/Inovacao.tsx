@@ -8,12 +8,12 @@ import {
 } from "@/components/pricing/tabVisuals/InovacaoVisuals";
 import {
   computeChannelMix, computeChannelMixMonthly, computeInnovationHeroes, computeInnovationMargin, computeInnovationMix,
-  computeInnovationPrice, computeMaturity, formatPp, isInnovationRow,
+  computeInnovationBase, computeInnovationPrice, computeMaturity, formatPp,
 } from "@/components/pricing/tabVisuals/inovacaoData";
 import { TAB_VISUAL_IDS } from "@/components/pricing/tabVisuals/registry";
 import { tabVisualPayload } from "@/lib/sendToSlide";
 import { Badge } from "@/components/ui/badge";
-import { applyFilters, computeKPIs } from "@/lib/analytics";
+import { applyFilters } from "@/lib/analytics";
 import { formatBRL, formatNum, formatPct, formatTon } from "@/lib/format";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
@@ -93,12 +93,8 @@ export default function Inovacao() {
   const innovationMap = useInovacaoDepara((s) => s.map);
 
   const filtered = useMemo(() => applyFilters(rows, filters, selected), [rows, filters, selected]);
-  const innovationRows = useMemo(() => filtered.filter(isInnovationRow), [filtered]);
-  const regularRows = useMemo(() => filtered.filter((row) => !isInnovationRow(row)), [filtered]);
-
-  const totalKpis = useMemo(() => computeKPIs(filtered, metric), [filtered, metric]);
-  const innovationKpis = useMemo(() => computeKPIs(innovationRows, metric), [innovationRows, metric]);
-  const regularKpis = useMemo(() => computeKPIs(regularRows, metric), [regularRows, metric]);
+  const innovationBase = useMemo(() => computeInnovationBase(filtered, metric), [filtered, metric]);
+  const { innovationRows, totalKpis, innovationKpis, regularKpis } = innovationBase;
 
   const summaryRows = useMemo<InnovationSummaryRow[]>(() => {
     const toRow = (classificacao: string, source: typeof innovationKpis): InnovationSummaryRow => ({
@@ -117,10 +113,6 @@ export default function Inovacao() {
     ].filter((row) => row.rol !== 0 || row.volumeKg !== 0 || row.skus !== 0);
   }, [innovationKpis, regularKpis, totalKpis]);
 
-  const innovationBase = useMemo(
-    () => ({ innovationRows, regularRows, totalKpis, innovationKpis, regularKpis }),
-    [innovationRows, regularRows, totalKpis, innovationKpis, regularKpis],
-  );
   // As contas abaixo são as mesmas que o slide faz (tabVisuals/inovacaoData).
   const mixData = useMemo(() => computeInnovationMix(filtered), [filtered]);
   const mixTrend = mixData.trend;

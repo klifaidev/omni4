@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import type { Filters, LoadedFile, Metric, PricingRow } from "@/lib/types";
 import type { MissingMappings } from "@/lib/csv";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
@@ -103,7 +103,7 @@ function activeLoadedFiles(files: LoadedFile[], rows: PricingRow[], replacingFil
     .filter((file) => file.months.length > 0);
 }
 
-export const usePricing = create<PricingState>((set, get) => ({
+export const usePricing = createFreezable<PricingState>((set, get) => ({
   rows: [],
   files: [],
   metric: "cm",

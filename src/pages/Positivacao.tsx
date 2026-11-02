@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { formatNum } from "@/lib/format";
 import {
-  buildPositivacaoSeries,
+  buildPositivacaoAll,
   buildPositivacaoTotal,
   POSITIVACAO_DIMS,
   type PositivacaoDim,
@@ -31,11 +31,7 @@ export default function Positivacao() {
   const rows = usePricing((s) => s.rows);
   const [chartDim, setChartDim] = useState<PositivacaoDim>("categoria");
 
-  const allSeries = useMemo(() => {
-    const out = {} as Record<PositivacaoDim, PositivacaoSeries>;
-    for (const dim of POSITIVACAO_DIMS) out[dim.key] = buildPositivacaoSeries(rows, dim.key, 13);
-    return out;
-  }, [rows]);
+  const allSeries = useMemo(() => buildPositivacaoAll(rows, 13), [rows]);
   const totalSeries = useMemo(() => buildPositivacaoTotal(rows, 13), [rows]);
 
   const selectedSeries = allSeries[chartDim];

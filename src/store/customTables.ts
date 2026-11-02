@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 
 export type CustomCellValue = string | number;
 
@@ -66,7 +66,7 @@ export function parseCustomTablesPayload(text: string): CustomTable[] {
   return tables.map(normalizeCustomTable);
 }
 
-export const useCustomTables = create<CustomTablesState>((set) => ({
+export const useCustomTables = createFreezable<CustomTablesState>((set) => ({
   tables: [],
 
   setTables: (tables) => set({ tables: tables.map(normalizeCustomTable) }),

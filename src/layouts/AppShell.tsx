@@ -1,5 +1,4 @@
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
 import { UpdateNotification } from "@/components/UpdateNotification";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -22,6 +21,7 @@ import { hasShareParams, parseShareParams } from "@/lib/shareUrl";
 import { SEND_TO_SLIDE_EVENT, getLatestSendToSlidePayload } from "@/lib/sendToSlide";
 import { preloadSlidesRoute } from "@/lib/preloadSlidesRoute";
 import { useSlidesFlow } from "@/store/slidesFlow";
+import { KeptPages } from "./KeptPages";
 
 const SendToSlideDestinationDialog = lazy(() => import("@/components/pricing/SendToSlideDestinationDialog").then((mod) => ({
   default: mod.SendToSlideDestinationDialog,
@@ -51,18 +51,6 @@ function SlidesRouteFallback() {
   );
 }
 
-// Fallback pro Suspense das páginas com code-splitting por rota (App.tsx).
-// Fica só um instante em rede/máquina normal (o chunk já costuma estar em
-// cache do browser depois da 1ª visita); em máquina travada é o preço de
-// não baixar o JS de todas as páginas de uma vez só.
-function PageRouteFallback() {
-  return (
-    <div className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-background">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-    </div>
-  );
-}
-
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
@@ -81,7 +69,6 @@ export default function AppShell() {
   const months = useMonthsInfo();
   const addEntry = useHistory((s) => s.addEntry);
   const location = useLocation();
-  const reduceMotion = useReducedMotion();
   const setFilter = usePricing((s) => s.setFilter);
   const setSelectedPeriods = usePricing((s) => s.setSelectedPeriods);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -252,7 +239,7 @@ export default function AppShell() {
       if (chordRef.current.active) {
         if (key === "f") {
           e.preventDefault();
-          const grid = document.querySelector<HTMLElement>('[data-shortcut-target="filter-grid"]');
+          const grid = document.querySelector<HTMLElement>('[data-page-layer][aria-hidden="false"] [data-shortcut-target="filter-grid"]');
           const first = grid?.querySelector<HTMLElement>(
             'button, [role="combobox"], input, [tabindex]:not([tabindex="-1"])',
           );
@@ -369,7 +356,9 @@ export default function AppShell() {
   return (
     <div className="flex h-screen w-full overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
+      {/* Espaço da barra de rolagem sempre reservado: a largura não muda entre
+          abas, e os gráficos das abas prontas não precisam se redesenhar. */}
+      <main className={isSlidesRoute ? "flex-1 overflow-y-auto" : "flex-1 overflow-y-auto [scrollbar-gutter:stable]"}>
         {showActiveFiltersBar && <ActiveFiltersBar />}
         <NoResultsBanner />
         {slidesShouldRender && (
@@ -379,28 +368,7 @@ export default function AppShell() {
             </Suspense>
           </div>
         )}
-        {!isSlidesRoute && (
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div
-              key={location.pathname}
-              initial={reduceMotion ? false : { opacity: 0 }}
-              animate={{
-                opacity: 1,
-                transition: reduceMotion
-                  ? { duration: 0.01 }
-                  : { type: "spring", stiffness: 420, damping: 36, mass: 0.75 },
-              }}
-              exit={{
-                opacity: reduceMotion ? 1 : 0,
-                transition: reduceMotion ? { duration: 0.01 } : { duration: 0.08, ease: "easeOut" },
-              }}
-            >
-              <Suspense fallback={<PageRouteFallback />}>
-                <Outlet />
-              </Suspense>
-            </motion.div>
-          </AnimatePresence>
-        )}
+        <KeptPages activePath={isSlidesRoute ? null : location.pathname} />
       </main>
       {slidesMinimized && (
         <div className="fixed right-0 top-1/2 z-50 flex -translate-y-1/2 items-center gap-2 rounded-l-2xl border border-r-0 border-primary/30 bg-background/95 px-2 py-3 shadow-2xl backdrop-blur-xl">

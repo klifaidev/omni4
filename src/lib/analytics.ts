@@ -125,7 +125,7 @@ export interface KPI {
   skus: number;
 }
 
-export function computeKPIs(rows: PricingRow[], metric: Metric): KPI {
+export const computeKPIs = memoizeByRows((rows: PricingRow[], metric: Metric): KPI => {
   let rol = 0, margem = 0, volumeKg = 0;
   const skuSet = new Set<string>();
   for (const r of rows) {
@@ -141,7 +141,7 @@ export function computeKPIs(rows: PricingRow[], metric: Metric): KPI {
     volumeKg,
     skus: skuSet.size,
   };
-}
+});
 
 export interface KPIComparison {
   current: KPI;

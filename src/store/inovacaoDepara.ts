@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import {
   getInovacaoMap,
   resetInovacaoMap,
@@ -14,7 +14,7 @@ interface InovacaoDeparaState {
   clearDepara: () => void;
 }
 
-export const useInovacaoDepara = create<InovacaoDeparaState>((set) => ({
+export const useInovacaoDepara = createFreezable<InovacaoDeparaState>((set) => ({
   map: getInovacaoMap(),
   file: null,
 

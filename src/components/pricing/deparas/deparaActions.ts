@@ -18,8 +18,12 @@ import {
   type ComercialMapId,
 } from "@/lib/deparaComercial";
 import { computeDeParaHealth, type DeParaHealth } from "@/lib/deparaHealth";
+import { memoizeByRows } from "@/lib/derivedCache";
+import type { BudgetRow } from "@/lib/budget";
+import type { PricingRow } from "@/lib/types";
 import { useBudget } from "@/store/budget";
 import { useDeParaCenter } from "@/store/deparaCenter";
+import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 
 function refreshSku(entries: Record<string, DeParaOverrideEntry>) {
@@ -96,10 +100,21 @@ export function undoComercialEntry(map: ComercialMapId, key: string, label: stri
   if (!silent) toast.success(`${label}: “${key.trim()}” voltou ao mapeamento padrão.`);
 }
 
+// Guardada por base + versão dos De/Paras + mapa de Inovação: abrir a aba de novo
+// não refaz a varredura; qualquer correção muda a versão e recalcula.
+const cachedDeParaHealth = memoizeByRows(
+  (real: PricingRow[], budget: BudgetRow[], _version: number, _inovacao: object) => computeDeParaHealth(real, budget),
+  2,
+);
+
 /** Saúde dos De/Paras nas bases carregadas — recalcula a cada correção. */
 export function useDeParaHealth(): DeParaHealth {
   const real = usePricing((s) => s.rows);
   const budget = useBudget((s) => s.rows);
   const version = useDeParaCenter((s) => s.version);
-  return useMemo(() => computeDeParaHealth(real, budget), [real, budget, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inovacaoMap = useInovacaoDepara((s) => s.map);
+  return useMemo(
+    () => cachedDeParaHealth(real, budget, version, inovacaoMap),
+    [real, budget, version, inovacaoMap],
+  );
 }

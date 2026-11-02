@@ -5,6 +5,7 @@
 // primeira venda de cada SKU, os heróis/ofensores comparam com o período
 // anterior e o mix por canal olha os últimos 13 meses.
 import { applyFilters, computeKPIs, getKpiComparisonContext, measureOf, type KPI } from "@/lib/analytics";
+import { memoizeByRows } from "@/lib/derivedCache";
 import type { Filters, Metric, PricingRow } from "@/lib/types";
 
 export const INOV_PALETTE = [
@@ -65,7 +66,7 @@ export interface InnovationBase {
   regularKpis: KPI;
 }
 
-export function computeInnovationBase(filtered: PricingRow[], metric: Metric): InnovationBase {
+export const computeInnovationBase = memoizeByRows((filtered: PricingRow[], metric: Metric): InnovationBase => {
   const innovationRows = filtered.filter(isInnovationRow);
   const regularRows = filtered.filter((row) => !isInnovationRow(row));
   return {
@@ -75,7 +76,7 @@ export function computeInnovationBase(filtered: PricingRow[], metric: Metric): I
     innovationKpis: computeKPIs(innovationRows, metric),
     regularKpis: computeKPIs(regularRows, metric),
   };
-}
+}, 4);
 
 // ---- Participação mensal de volume ----
 export interface InnovationMixPoint {
@@ -92,7 +93,7 @@ export interface InnovationMixData {
   trend: { label: "Crescendo" | "Estável" | "Deteriorando"; first: number; last: number; deltaPp: number; months: number };
 }
 
-export function computeInnovationMix(filtered: PricingRow[]): InnovationMixData {
+function computeInnovationMixUncached(filtered: PricingRow[]): InnovationMixData {
   const byPeriod = new Map<string, { label: string; ano: number; mes: number; innovationVolumeKg: number; regularVolumeKg: number }>();
   for (const row of filtered) {
     const current = byPeriod.get(row.periodo) ?? {
@@ -146,7 +147,7 @@ export interface InnovationMarginData {
   steps: MarginBridgeStep[];
 }
 
-export function computeInnovationMargin(base: InnovationBase, metric: Metric): InnovationMarginData {
+function computeInnovationMarginUncached(base: InnovationBase, metric: Metric): InnovationMarginData {
   const { innovationKpis, regularKpis, totalKpis } = base;
   const marginDiffPp = (innovationKpis.margemPct - regularKpis.margemPct) * 100;
   const innovationRolShare = totalKpis.rol > 0 ? innovationKpis.rol / totalKpis.rol : 0;
@@ -188,7 +189,7 @@ export interface MaturityData {
 
 export type InnovationMap = Record<string, { classificacao?: string; anoLancamento?: unknown } | undefined>;
 
-export function computeMaturity(allRows: PricingRow[], filtered: PricingRow[], innovationMap: InnovationMap): MaturityData {
+function computeMaturityUncached(allRows: PricingRow[], filtered: PricingRow[], innovationMap: InnovationMap): MaturityData {
   const firstSeenBySku = new Map<string, { ano: number; mes: number }>();
   const launchMonthBySku = new Map<string, { ano: number; mes: number; safra: string }>();
 
@@ -278,7 +279,7 @@ export interface InnovationHeroesData {
   comparisonLabel: string;
 }
 
-export function computeInnovationHeroes(
+function computeInnovationHeroesUncached(
   allRows: PricingRow[],
   filters: Filters,
   selected: string[] | null,
@@ -345,7 +346,7 @@ export interface InnovationPriceData {
   monthly: { periodo: string; label: string; innovationPrice: number | null; regularPrice: number | null }[];
 }
 
-export function computeInnovationPrice(filtered: PricingRow[], base: InnovationBase): InnovationPriceData {
+function computeInnovationPriceUncached(filtered: PricingRow[], base: InnovationBase): InnovationPriceData {
   const { innovationKpis, regularKpis } = base;
   const innovationPrice = innovationKpis.volumeKg > 0 ? innovationKpis.rol / innovationKpis.volumeKg : 0;
   const regularPrice = regularKpis.volumeKg > 0 ? regularKpis.rol / regularKpis.volumeKg : 0;
@@ -385,7 +386,7 @@ export interface ChannelMixRow {
   innovationMix: number;
 }
 
-export function computeChannelMix(filtered: PricingRow[], innovationVolumeKg: number): ChannelMixRow[] {
+function computeChannelMixUncached(filtered: PricingRow[], innovationVolumeKg: number): ChannelMixRow[] {
   const map = new Map<string, { innovationVolumeKg: number; regularVolumeKg: number }>();
   for (const row of filtered) {
     const canal = row.canalAjustado || row.canal || "Sem canal";
@@ -418,7 +419,7 @@ export interface ChannelMixMonthlyData {
 
 /** Penetração da inovação por canal nos últimos 13 meses (histórico, não o
  *  mês escolhido — "últimos 13 meses" não faria sentido com 1 mês filtrado). */
-export function computeChannelMixMonthly(allRows: PricingRow[], filters: Filters, channelMix: ChannelMixRow[]): ChannelMixMonthlyData {
+function computeChannelMixMonthlyUncached(allRows: PricingRow[], filters: Filters, channelMix: ChannelMixRow[]): ChannelMixMonthlyData {
   const history = applyFilters(allRows, filters, null);
   const topCanais = channelMix.map((c) => c.canal);
   if (topCanais.length === 0) return { canais: [], data: [] };
@@ -451,3 +452,12 @@ export function computeChannelMixMonthly(allRows: PricingRow[], filters: Filters
     });
   return { canais: topCanais, data };
 }
+
+// Guardadas pela identidade da base: a aba e os slides pedem as mesmas contas.
+export const computeInnovationMix = memoizeByRows(computeInnovationMixUncached, 4);
+export const computeMaturity = memoizeByRows(computeMaturityUncached, 4);
+export const computeInnovationHeroes = memoizeByRows(computeInnovationHeroesUncached, 4);
+export const computeInnovationPrice = memoizeByRows(computeInnovationPriceUncached, 4);
+export const computeChannelMix = memoizeByRows(computeChannelMixUncached, 4);
+export const computeChannelMixMonthly = memoizeByRows(computeChannelMixMonthlyUncached, 4);
+export const computeInnovationMargin = memoizeByRows(computeInnovationMarginUncached, 4);

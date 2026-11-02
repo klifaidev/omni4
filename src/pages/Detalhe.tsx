@@ -90,6 +90,20 @@ export default function Detalhe() {
   useEffect(() => {
     return () => clearApplyFiltersCache();
   }, []);
+
+  // Montar a tabela prepara cópias da base inteira (0,7 s + envio ao worker, com
+  // 1,4 milhão de linhas) — sem esperar por isso, a aba responde ao clique na hora.
+  const [pivotReady, setPivotReady] = useState(false);
+  useEffect(() => {
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      timer = window.setTimeout(() => setPivotReady(true), 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, []);
   const excelAction = exportFn ? (
     <Button
       size="sm"
@@ -158,13 +172,19 @@ export default function Detalhe() {
         <GlassCard>
           <HorizontalScrollWrap>
             <PivotErrorBoundary>
-              <PivotBuilder
-                realRows={filteredReal}
-                budgetRows={filteredBudget}
-                onExportReady={handleExportReady}
-                globalFilters={filters}
-                globalPeriods={selected}
-              />
+              {pivotReady ? (
+                <PivotBuilder
+                  realRows={filteredReal}
+                  budgetRows={filteredBudget}
+                  onExportReady={handleExportReady}
+                  globalFilters={filters}
+                  globalPeriods={selected}
+                />
+              ) : (
+                <div className="flex min-h-[320px] items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                </div>
+              )}
             </PivotErrorBoundary>
           </HorizontalScrollWrap>
         </GlassCard>

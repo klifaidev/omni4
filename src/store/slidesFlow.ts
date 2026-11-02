@@ -1,5 +1,5 @@
 // Slides Flow store — itens em construção + presets persistidos em localStorage.
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist, type StateStorage } from "zustand/middleware";
 import { createDeferredPackedStorage } from "@/lib/slidesFlowPersist";
 import {
@@ -516,7 +516,7 @@ function pickSlidesFlowStorage(): StateStorage {
   return createSlidesFlowStorage();
 }
 
-export const useSlidesFlow = create<SlidesFlowState>()(
+export const useSlidesFlow = createFreezable<SlidesFlowState>()(
   persist(
     (set, get) => ({
       items: [],

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import type { BudgetFile, BudgetRow } from "@/lib/budget";
 import { getInovacao, getLegado } from "@/lib/deparaInovacao";
 import { getDeParaBySku, type DeParaOverrideEntry, type DeParaEntry } from "@/lib/depara";
@@ -45,7 +45,7 @@ function activeFileMonths(files: BudgetFile[], rows: BudgetRow[], replacingFile:
     .filter((file) => file.months.length > 0);
 }
 
-export const useBudget = create<BudgetState>((set) => ({
+export const useBudget = createFreezable<BudgetState>((set) => ({
   rows: [],
   files: [],
 

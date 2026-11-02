@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist } from "zustand/middleware";
 import type { Filters } from "@/lib/types";
 
@@ -27,7 +27,7 @@ function sameSignature(a: HistoryEntry, b: { page: string; filters: Filters; sel
   return true;
 }
 
-export const useHistory = create<HistoryState>()(
+export const useHistory = createFreezable<HistoryState>()(
   persist(
     (set) => ({
       entries: [],

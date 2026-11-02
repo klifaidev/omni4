@@ -4,7 +4,7 @@
 // o worker lê e consolida, e só o modelo colunar (poucos MB) chega aqui. No
 // Electron, o arquivo original e o modelo consolidado ficam salvos em
 // bases/ruptura — a próxima abertura lê o modelo direto do cache.
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { isRupturaModel } from "@/lib/ruptura/parse";
 import { mergeRupturaModels } from "@/lib/ruptura/merge";
 import { RUPTURA_MODEL_VERSION, type RupturaDim, type RupturaModel } from "@/lib/ruptura/types";
@@ -116,7 +116,7 @@ function fullPeriod(model: RupturaModel): RupturaPeriod {
   return { from: 0, to: Math.max(0, model.months.length - 1) };
 }
 
-export const useRuptura = create<RupturaState>((set, get) => ({
+export const useRuptura = createFreezable<RupturaState>((set, get) => ({
   model: null,
   status: "idle",
   progress: null,

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist } from "zustand/middleware";
 import type { Alert } from "@/lib/analytics";
 
@@ -24,7 +24,7 @@ interface AlertHistoryState {
 
 const MAX_RECORDS = 100;
 
-export const useAlertHistory = create<AlertHistoryState>()(
+export const useAlertHistory = createFreezable<AlertHistoryState>()(
   persist(
     (set, get) => ({
       records: [],

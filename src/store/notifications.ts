@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist } from "zustand/middleware";
 
 export type NotificationType = "alert" | "activity_due" | "activity_overdue" | "system";
@@ -27,7 +27,7 @@ function nid() {
   return `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export const useNotifications = create<NotificationsState>()(
+export const useNotifications = createFreezable<NotificationsState>()(
   persist(
     (set) => ({
       notifications: [],

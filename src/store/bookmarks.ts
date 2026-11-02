@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist } from "zustand/middleware";
 import type { Filters } from "@/lib/types";
 
@@ -23,7 +23,7 @@ interface BookmarksState {
   renameBookmark: (id: string, name: string) => void;
 }
 
-export const useBookmarks = create<BookmarksState>()(
+export const useBookmarks = createFreezable<BookmarksState>()(
   persist(
     (set, get) => ({
       bookmarks: [],

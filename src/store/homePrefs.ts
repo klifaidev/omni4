@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import { persist } from "zustand/middleware";
 
 export type HomeWidget = "kpis" | "alerts" | "shortcuts" | "activity_summary" | "trend_chart";
@@ -17,7 +17,7 @@ interface HomePrefsState {
 const DEFAULT_WIDGETS: HomeWidget[] = ["kpis", "alerts", "activity_summary", "shortcuts", "trend_chart"];
 const DEFAULT_KPIS: PinnedKpi[] = ["rol", "margem", "volume", "skus"];
 
-export const useHomePrefs = create<HomePrefsState>()(
+export const useHomePrefs = createFreezable<HomePrefsState>()(
   persist(
     (set) => ({
       widgets: DEFAULT_WIDGETS,

@@ -87,6 +87,15 @@ function bump(map: Map<string, Acc>, key: string, rol: number, label: string | u
 }
 
 export function computeDeParaHealth(real: PricingRow[], budget: BudgetRow[]): DeParaHealth {
+  // Os SKUs se repetem linha a linha: cada texto só é avaliado uma vez.
+  const unassignedCache = new Map<string, boolean>();
+  const skuUnassigned = (value: string | undefined) => {
+    if (!value) return true;
+    let known = unassignedCache.get(value);
+    if (known === undefined) unassignedCache.set(value, (known = isUnassigned(value)));
+    return known;
+  };
+
   let totalRol = 0;
   for (const r of real) totalRol += Math.abs(r.rol || 0);
 
@@ -116,7 +125,7 @@ export function computeDeParaHealth(real: PricingRow[], budget: BudgetRow[]): De
   for (const r of real) {
     const rol = r.rol || 0;
     const weight = Math.abs(rol);
-    if (!isUnassigned(r.sku)) {
+    if (!skuUnassigned(r.sku)) {
       inUse.hierarquia.add(r.sku);
       inUse.inovacao.add(r.sku);
       if (missingOf(r.sku).length > 0) {
@@ -156,12 +165,12 @@ export function computeDeParaHealth(real: PricingRow[], budget: BudgetRow[]): De
   // Budget: SKU e canal também passam pelos De/Paras. Sem ROL do Real para
   // medir, entram como "só no Budget" (depois das pendências com peso).
   for (const b of budget) {
-    if (b.sku && !isUnassigned(b.sku) && missingOf(b.sku).length > 0 && !pendingAcc.hierarquia.has(b.sku)) {
+    if (b.sku && !skuUnassigned(b.sku) && missingOf(b.sku).length > 0 && !pendingAcc.hierarquia.has(b.sku)) {
       bump(pendingAcc.hierarquia, b.sku, 0, b.skuDesc, true);
     } else if (b.sku && pendingAcc.hierarquia.get(b.sku)?.budgetOnly) {
       pendingAcc.hierarquia.get(b.sku)!.rows++;
     }
-    if (b.canal && !b.canalAjustado && !isUnassigned(b.canal)) {
+    if (b.canal && !b.canalAjustado && !skuUnassigned(b.canal)) {
       const acc = pendingAcc.canalToCanalAjustado.get(b.canal);
       if (acc) acc.rows++;
       else bump(pendingAcc.canalToCanalAjustado, b.canal, 0, undefined, true);

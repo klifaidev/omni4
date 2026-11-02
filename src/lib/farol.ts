@@ -31,11 +31,20 @@ export interface FarolFiltros {
   periodoMeses: number; // default 3
 }
 
+// O texto do cliente se repete em milhares de linhas: cada um só é analisado uma vez.
+const clienteIdCache = new Map<string, string | null>();
+const CLIENTE_ID_CACHE_MAX = 200_000;
+
 // Extract client id: first token before the first space
 export function clienteId(cliente: string | undefined): string | null {
   if (!cliente) return null;
+  const known = clienteIdCache.get(cliente);
+  if (known !== undefined) return known;
   const tok = cliente.split(" ")[0];
-  return tok && /^\d+$/.test(tok) ? tok : null;
+  const id = tok && /^\d+$/.test(tok) ? tok : null;
+  if (clienteIdCache.size >= CLIENTE_ID_CACHE_MAX) clienteIdCache.clear();
+  clienteIdCache.set(cliente, id);
+  return id;
 }
 
 function buildFarolSku(

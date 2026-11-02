@@ -1,7 +1,7 @@
 // Estado da Central de De/Paras: aberta ou não, em qual tela, e um contador
 // que muda a cada correção (os mapeamentos vivem fora do React — o contador
 // faz as telas recalcularem).
-import { create } from "zustand";
+import { createFreezable } from "@/lib/pageFreeze";
 import type { DeParaMapId } from "@/lib/deparaHealth";
 
 export type DeParaView = "pendencias" | DeParaMapId;
@@ -16,7 +16,7 @@ interface DeParaCenterState {
   bump: () => void;
 }
 
-export const useDeParaCenter = create<DeParaCenterState>((set) => ({
+export const useDeParaCenter = createFreezable<DeParaCenterState>((set) => ({
   open: false,
   view: "pendencias",
   version: 0,
