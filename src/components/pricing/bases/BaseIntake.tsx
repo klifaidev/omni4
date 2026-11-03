@@ -2,7 +2,7 @@
 // Ruptura num arquivo), o CSV do KE30 ou qualquer planilha avulsa. Cada
 // arquivo vira um cartão de revisão — o que foi reconhecido em cada aba, por
 // quê, quais meses e o que já existe no app — e nada muda até "Aplicar".
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -14,7 +14,6 @@ import {
   PackageX,
   Play,
   Target,
-  Upload as UploadIcon,
   X,
   Zap,
 } from "lucide-react";
@@ -35,6 +34,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatNum } from "@/lib/format";
+import { FileDropCard } from "./FileDropCard";
 import { useUploadGuard } from "@/store/uploadGuard";
 import { usePricing } from "@/store/pricing";
 import { useBudget } from "@/store/budget";
@@ -93,11 +93,9 @@ function useLoadedMonths(): Record<BaseKind, Set<string>> {
 
 export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
   const [files, setFiles] = useState<IntakeFile[]>([]);
-  const [drag, setDrag] = useState(false);
   const [applying, setApplying] = useState(false);
   const [policy, setPolicyState] = useState<DuplicatePolicy>(() => getDuplicatePolicy());
   const [dupDialog, setDupDialog] = useState<DuplicateInfo[] | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const loaded = useLoadedMonths();
 
   // A revisão mostra o que já existe; a ruptura salva precisa estar lida.
@@ -133,7 +131,6 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
         patchFile(entry.id, (f) => ({ ...f, status: "error", progress: undefined, error }));
       }
     }
-    if (inputRef.current) inputRef.current.value = "";
   }, [patchFile]);
 
   const setPartKind = useCallback((fileId: string, partId: string, kind: BaseKind | null) => {
@@ -202,59 +199,24 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
 
   return (
     <div className="space-y-4">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="Escolher arquivos de base"
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDrag(false);
-          if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
-        }}
-        onClick={() => inputRef.current?.click()}
-        className={cn(
-          "group relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed border-border/60 bg-secondary/20 px-6 py-7 transition-all",
-          "hover:border-primary/50 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          drag && "scale-[1.005] border-primary bg-primary/10",
-        )}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          className="hidden"
-          onChange={(e) => e.target.files && void addFiles(e.target.files)}
-        />
-        <div className="flex flex-col items-center gap-4 text-center md:flex-row md:text-left">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/20">
-            <Layers className="h-6 w-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold tracking-tight">Solte a Base One aqui</div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Real, Budget e Ruptura num arquivo só. O Omni4 reconhece cada aba pelo conteúdo — nome e ordem das abas não importam.
-              Também aceita o CSV do KE30 ou uma planilha avulsa.
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-center gap-1.5">
-            {(["real", "budget", "ruptura"] as const).map((kind) => {
-              const { icon: Icon, text, bg } = KIND_STYLE[kind];
-              return (
-                <span key={kind} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold", bg, text)}>
-                  <Icon className="h-3 w-3" /> {KIND_LABEL[kind]}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-        <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground md:justify-start md:pl-[72px]">
-          <UploadIcon className="h-3.5 w-3.5" /> Arraste ou clique · .xlsx, .xls, .xlsm ou .csv
-        </div>
-      </div>
+      <FileDropCard
+        icon={Layers}
+        title="Solte a Base One aqui"
+        description="Real, Budget e Ruptura num arquivo só. O Omni4 reconhece cada aba pelo conteúdo — nome e ordem das abas não importam. Também aceita o CSV do KE30 ou uma planilha avulsa."
+        chips={(["real", "budget", "ruptura"] as const).map((kind) => {
+          const { icon: Icon, text, bg } = KIND_STYLE[kind];
+          return (
+            <span key={kind} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold", bg, text)}>
+              <Icon className="h-3 w-3" /> {KIND_LABEL[kind]}
+            </span>
+          );
+        })}
+        hint="Arraste ou clique · .xlsx, .xls, .xlsm ou .csv"
+        accept={ACCEPT}
+        multiple
+        ariaLabel="Escolher arquivos de base"
+        onFiles={(list) => void addFiles(list)}
+      />
 
       {files.map((entry) => (
         <IntakeFileCard

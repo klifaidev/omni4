@@ -4,7 +4,7 @@
 import { createFreezable } from "@/lib/pageFreeze";
 import type { DeParaMapId } from "@/lib/deparaHealth";
 
-export type DeParaView = "pendencias" | DeParaMapId;
+export type DeParaView = "pendencias" | "360" | DeParaMapId;
 
 interface DeParaCenterState {
   open: boolean;
