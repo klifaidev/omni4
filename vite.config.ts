@@ -1,6 +1,18 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+
+// O "ws:" da política de segurança só existe para o recarregamento do Vite em
+// desenvolvimento. Na versão gerada ele sai: a tela não abre conexão com nenhum servidor.
+const cspWithoutDevSocket: Plugin = {
+  name: "csp-sem-websocket-de-dev",
+  apply: "build",
+  transformIndexHtml(html) {
+    const result = html.replace("connect-src 'self' ws:;", "connect-src 'self';");
+    if (result === html) throw new Error("Política de segurança do index.html não encontrada");
+    return result;
+  },
+};
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -17,7 +29,7 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
-  plugins: [react()],
+  plugins: [react(), cspWithoutDevSocket],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

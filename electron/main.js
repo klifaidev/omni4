@@ -1,4 +1,4 @@
-const { app, BrowserWindow, crashReporter, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, crashReporter, dialog, ipcMain, session } = require("electron");
 const log = require("electron-log");
 const path = require("path");
 const fs = require("fs");
@@ -7,7 +7,9 @@ const updatePackage = require("./updatePackage");
 const { splitProcessedEnvelope } = require("./processedCacheText");
 const { createFileStore } = require("./fileStore");
 const { pathToFileURL } = require("url");
-const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+// Só o empacotamento decide: uma variável NODE_ENV na máquina não pode fazer o
+// app instalado carregar a tela de um servidor local nem abrir o DevTools.
+const isDev = !app.isPackaged;
 
 // Configurar electron-log
 log.transports.file.resolvePath = () => {
@@ -45,6 +47,46 @@ let mainWindow;
 function getAppEntryUrl() {
   if (isDev) return "http://localhost:8080";
   return pathToFileURL(path.join(__dirname, "../dist/index.html")).toString();
+}
+
+// A página do app, com qualquer rota (#/...). Instalado, só o index.html do
+// próprio pacote; em desenvolvimento, só o servidor do Vite.
+function isAppUrl(url) {
+  if (typeof url !== "string") return false;
+  const page = url.split("#")[0].split("?")[0].toLowerCase();
+  const entry = getAppEntryUrl().toLowerCase();
+  if (isDev) return page === entry || page.startsWith(`${entry}/`);
+  return page === entry;
+}
+
+// Todo pedido da tela ao processo principal passa por aqui: só a página do app
+// (e, para "Reabrir", a página de recuperação gerada pelo próprio main) é atendida.
+function isTrustedSender(event, { allowRecoveryPage = false } = {}) {
+  let url;
+  try {
+    url = event.senderFrame?.url;
+  } catch {
+    return false;
+  }
+  if (!url) return false;
+  if (allowRecoveryPage && url.startsWith("data:text/html")) return true;
+  return isAppUrl(url);
+}
+
+function handleTrusted(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedSender(event)) {
+      log.warn("Pedido recusado de origem desconhecida:", channel);
+      return { ok: false, erro: "origem_invalida" };
+    }
+    return handler(event, ...args);
+  });
+}
+
+function onTrusted(channel, listener, options) {
+  ipcMain.on(channel, (event, ...args) => {
+    if (isTrustedSender(event, options)) listener(event, ...args);
+  });
 }
 
 // Rotas do app (HashRouter) aceitas pra reabrir depois de um crash. Vem do
@@ -143,6 +185,9 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
+      // Instalado, sem ferramentas de desenvolvedor (Ctrl+Shift+I não abre nada).
+      devTools: isDev,
       preload: path.join(__dirname, "preload.js"),
     },
     titleBarStyle: "hiddenInset",
@@ -256,9 +301,9 @@ async function prepareUpdate(event, filePath) {
   }
 }
 
-ipcMain.handle("update-file:info", () => ({ version: app.getVersion() }));
-ipcMain.handle("update-file:prepare", (event, { filePath } = {}) => prepareUpdate(event, filePath));
-ipcMain.handle("update-file:choose", async (event) => {
+handleTrusted("update-file:info", () => ({ version: app.getVersion() }));
+handleTrusted("update-file:prepare", (event, { filePath } = {}) => prepareUpdate(event, filePath));
+handleTrusted("update-file:choose", async (event) => {
   const options = {
     title: "Escolher arquivo de atualização",
     properties: ["openFile"],
@@ -269,11 +314,11 @@ ipcMain.handle("update-file:choose", async (event) => {
   if (canceled || !filePaths[0]) return { ok: false, erro: "cancelado" };
   return prepareUpdate(event, filePaths[0]);
 });
-ipcMain.handle("update-file:discard", () => {
+handleTrusted("update-file:discard", () => {
   discardPreparedUpdate();
   return { ok: true };
 });
-ipcMain.handle("update-file:install", async () => {
+handleTrusted("update-file:install", async () => {
   if (!preparedUpdate) return { ok: false, erro: "nao_preparado" };
   const { installerPath, version, sha512 } = preparedUpdate;
   try {
@@ -301,7 +346,7 @@ ipcMain.handle("update-file:install", async () => {
   return { ok: true };
 });
 
-ipcMain.on("renderer:error", (event, payload = {}) => {
+onTrusted("renderer:error", (event, payload = {}) => {
   const senderUrl = event.senderFrame?.url || event.sender?.getURL?.() || "unknown";
   const context = payload.context || {};
   log.error("=== ERRO DE RENDERIZACAO ===");
@@ -315,7 +360,7 @@ ipcMain.on("renderer:error", (event, payload = {}) => {
   log.error("=== FIM ERRO DE RENDERIZACAO ===");
 });
 
-ipcMain.on("renderer:breadcrumb", (_event, payload) => {
+onTrusted("renderer:breadcrumb", (_event, payload) => {
   try {
     const json = JSON.stringify(payload ?? null);
     // Rastro é um objeto pequeno de contagens; qualquer coisa grande é descartada.
@@ -327,7 +372,7 @@ ipcMain.on("renderer:breadcrumb", (_event, payload) => {
 
 // Estado do último crash (gravado no render-process-gone). Consumido uma vez:
 // quem lê apaga, pra o modo seguro não reaparecer em toda abertura.
-ipcMain.handle("app:consume-crash-state", async () => {
+handleTrusted("app:consume-crash-state", async () => {
   const filePath = getCrashStatePath();
   try {
     if (!fs.existsSync(filePath)) return null;
@@ -344,12 +389,12 @@ ipcMain.handle("app:consume-crash-state", async () => {
 // Botão "Reabrir Omni4" da página de recuperação. Carregar a URL do app a
 // partir do processo principal não sofre o bloqueio data: → file:// que a
 // navegação feita pela própria página sofria.
-ipcMain.on("app:reopen", (_event, payload) => {
+onTrusted("app:reopen", (_event, payload) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const route = sanitizeRoute(payload?.route);
   log.info("Reabrindo o app após recuperação, rota:", route);
   mainWindow.loadURL(`${getAppEntryUrl()}#${route}`);
-});
+}, { allowRecoveryPage: true });
 
 // Bases locais: armazenamento de arquivos de dados
 //
@@ -487,7 +532,7 @@ function writeChunkManifest(dir, manifest) {
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
 }
 
-ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
+handleTrusted("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo)) return { ok: false, erro: "parametro_invalido" };
   try {
     const dir = ensureBasesDir();
@@ -504,7 +549,7 @@ ipcMain.handle("bases:save", async (event, { tipo, nomeArquivo, conteudoBase64 }
   }
 });
 
-ipcMain.handle("bases:load", async (event, { tipo }) => {
+handleTrusted("bases:load", async (event, { tipo }) => {
   if (!isSafeTipo(tipo)) return { ok: false, motivo: "erro", erro: "parametro_invalido" };
   try {
     const subDir = path.join(getBasesDir(), tipo);
@@ -533,7 +578,7 @@ ipcMain.handle("bases:load", async (event, { tipo }) => {
   }
 });
 
-ipcMain.handle("bases:load-file", async (event, { tipo, nomeArquivo }) => {
+handleTrusted("bases:load-file", async (event, { tipo, nomeArquivo }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo)) return { ok: false, motivo: "erro", erro: "parametro_invalido" };
   try {
     const caminho = getBaseFilePath(tipo, nomeArquivo);
@@ -554,7 +599,7 @@ ipcMain.handle("bases:load-file", async (event, { tipo, nomeArquivo }) => {
   }
 });
 
-ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+handleTrusted("bases:processed-load", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
     return { ok: true, hit: false, motivo: "cache_invalido" };
   }
@@ -580,7 +625,7 @@ ipcMain.handle("bases:processed-load", async (event, { tipo, nomeArquivo, cacheK
   }
 });
 
-ipcMain.handle("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
+handleTrusted("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo, cacheKind, version }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
     return { ok: true, hit: false, motivo: "cache_invalido" };
   }
@@ -605,7 +650,7 @@ ipcMain.handle("bases:processed-chunked-meta", async (event, { tipo, nomeArquivo
   }
 });
 
-ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo, cacheKind, index }) => {
+handleTrusted("bases:processed-chunked-load", async (event, { tipo, nomeArquivo, cacheKind, index }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind) || !isSafeChunkIndex(index)) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -621,7 +666,7 @@ ipcMain.handle("bases:processed-chunked-load", async (event, { tipo, nomeArquivo
   }
 });
 
-ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheKind, version, payload }) => {
+handleTrusted("bases:processed-save", async (event, { tipo, nomeArquivo, cacheKind, version, payload }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -647,7 +692,7 @@ ipcMain.handle("bases:processed-save", async (event, { tipo, nomeArquivo, cacheK
   }
 });
 
-ipcMain.handle("bases:processed-chunked-start", async (event, { tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize }) => {
+handleTrusted("bases:processed-chunked-start", async (event, { tipo, nomeArquivo, cacheKind, version, header, totalRows, chunkSize }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -676,7 +721,7 @@ ipcMain.handle("bases:processed-chunked-start", async (event, { tipo, nomeArquiv
   }
 });
 
-ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo, cacheKind, index, rows }) => {
+handleTrusted("bases:processed-chunked-save", async (event, { tipo, nomeArquivo, cacheKind, index, rows }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind) || !isSafeChunkIndex(index)) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -693,7 +738,7 @@ ipcMain.handle("bases:processed-chunked-save", async (event, { tipo, nomeArquivo
   }
 });
 
-ipcMain.handle("bases:processed-chunked-finish", async (event, { tipo, nomeArquivo, cacheKind, chunks }) => {
+handleTrusted("bases:processed-chunked-finish", async (event, { tipo, nomeArquivo, cacheKind, chunks }) => {
   if (!isSafeTipo(tipo) || !isSafeFileName(nomeArquivo) || !isSafeCacheKind(cacheKind)) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -715,7 +760,7 @@ ipcMain.handle("bases:processed-chunked-finish", async (event, { tipo, nomeArqui
   }
 });
 
-ipcMain.handle("bases:info", async () => {
+handleTrusted("bases:info", async () => {
   try {
     const dir = getBasesDir();
     if (!fs.existsSync(dir)) return { ok: true, bases: {} };
@@ -751,7 +796,7 @@ ipcMain.handle("bases:info", async () => {
   }
 });
 
-ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
+handleTrusted("bases:delete", async (event, { tipo, nomeArquivo }) => {
   if (!isSafeTipo(tipo) || (nomeArquivo != null && !isSafeFileName(nomeArquivo))) {
     return { ok: false, erro: "parametro_invalido" };
   }
@@ -775,7 +820,7 @@ ipcMain.handle("bases:delete", async (event, { tipo, nomeArquivo }) => {
   }
 });
 
-ipcMain.handle("bases:processed-invalidate", async (event, { tipo } = {}) => {
+handleTrusted("bases:processed-invalidate", async (event, { tipo } = {}) => {
   if (tipo != null && !isSafeTipo(tipo)) return { ok: false, erro: "parametro_invalido" };
   try {
     if (tipo) {
@@ -844,7 +889,7 @@ function rotateSlidesFlowBackups(destino) {
   }
 }
 
-ipcMain.handle("slidesFlow:read", async (event, { key }) => {
+handleTrusted("slidesFlow:read", async (event, { key }) => {
   if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     const filePath = getSlidesFlowFilePath(key);
@@ -857,7 +902,7 @@ ipcMain.handle("slidesFlow:read", async (event, { key }) => {
   }
 });
 
-ipcMain.handle("slidesFlow:write", async (event, { key, value }) => {
+handleTrusted("slidesFlow:write", async (event, { key, value }) => {
   if (!isSafeSlidesFlowKey(key) || typeof value !== "string") return { ok: false, erro: "parametro_invalido" };
   try {
     ensureSlidesFlowDir();
@@ -873,7 +918,7 @@ ipcMain.handle("slidesFlow:write", async (event, { key, value }) => {
   }
 });
 
-ipcMain.handle("slidesFlow:remove", async (event, { key }) => {
+handleTrusted("slidesFlow:remove", async (event, { key }) => {
   if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     const filePath = getSlidesFlowFilePath(key);
@@ -885,7 +930,7 @@ ipcMain.handle("slidesFlow:remove", async (event, { key }) => {
   }
 });
 
-ipcMain.handle("slidesFlow:latest-backup", async (event, { key }) => {
+handleTrusted("slidesFlow:latest-backup", async (event, { key }) => {
   if (!isSafeSlidesFlowKey(key)) return { ok: false, erro: "parametro_invalido" };
   try {
     for (let i = 1; i <= SLIDES_FLOW_BACKUP_COUNT; i += 1) {
@@ -916,16 +961,59 @@ const kanbanStore = createFileStore({
   log,
 });
 
-ipcMain.handle("kanban:read", async (event, { key } = {}) =>
+handleTrusted("kanban:read", async (event, { key } = {}) =>
   KANBAN_KEYS.has(key) ? kanbanStore.read(key) : { ok: false, erro: "parametro_invalido" });
-ipcMain.handle("kanban:write", async (event, { key, value } = {}) =>
+handleTrusted("kanban:write", async (event, { key, value } = {}) =>
   KANBAN_KEYS.has(key) ? kanbanStore.write(key, value) : { ok: false, erro: "parametro_invalido" });
-ipcMain.handle("kanban:remove", async (event, { key } = {}) =>
+handleTrusted("kanban:remove", async (event, { key } = {}) =>
   KANBAN_KEYS.has(key) ? kanbanStore.remove(key) : { ok: false, erro: "parametro_invalido" });
-ipcMain.handle("kanban:latest-backup", async (event, { key } = {}) =>
+handleTrusted("kanban:latest-backup", async (event, { key } = {}) =>
   KANBAN_KEYS.has(key) ? kanbanStore.latestBackup(key) : { ok: false, erro: "parametro_invalido" });
 
+// Menu da versão instalada: o mesmo do Electron menos recarregar, ferramentas de
+// desenvolvedor e os links de ajuda para sites externos.
+function installedAppMenu() {
+  return Menu.buildFromTemplate([
+    { label: "Arquivo", submenu: [{ role: "quit", label: "Sair" }] },
+    {
+      label: "Editar",
+      submenu: [
+        { role: "undo", label: "Desfazer" },
+        { role: "redo", label: "Refazer" },
+        { type: "separator" },
+        { role: "cut", label: "Recortar" },
+        { role: "copy", label: "Copiar" },
+        { role: "paste", label: "Colar" },
+        { role: "delete", label: "Excluir" },
+        { type: "separator" },
+        { role: "selectAll", label: "Selecionar tudo" },
+      ],
+    },
+    {
+      label: "Exibir",
+      submenu: [
+        { role: "resetZoom", label: "Tamanho real" },
+        { role: "zoomIn", label: "Aumentar" },
+        { role: "zoomOut", label: "Diminuir" },
+        { type: "separator" },
+        { role: "togglefullscreen", label: "Tela cheia" },
+      ],
+    },
+    { label: "Janela", submenu: [{ role: "minimize", label: "Minimizar" }, { role: "close", label: "Fechar" }] },
+  ]);
+}
+
+// Câmera, microfone, localização, notificações etc.: o app não usa, então nada é
+// concedido. Só tela cheia (modo apresentação) e copiar para a área de transferência.
+const ALLOWED_PERMISSIONS = new Set(["fullscreen", "clipboard-sanitized-write"]);
+
 app.whenReady().then(() => {
+  if (!isDev) Menu.setApplicationMenu(installedAppMenu());
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const allowed = ALLOWED_PERMISSIONS.has(permission) && isAppUrl(details?.requestingUrl || contents.getURL());
+    if (!allowed) log.warn("Permissão negada:", permission);
+    callback(allowed);
+  });
   // O instalador da atualização anterior já cumpriu o papel, mas ainda pode estar
   // terminando de sair quando reabre o app: daí as novas tentativas.
   fs.rm(getPendingUpdateDir(), { recursive: true, force: true, maxRetries: 10, retryDelay: 1000 }, () => undefined);
@@ -940,13 +1028,21 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// Segurança: bloquear navegação para URLs externas
+// Segurança: a janela nunca sai da página do app, não abre janelas novas nem
+// embute páginas de fora.
 app.on("web-contents-created", (event, contents) => {
-  contents.on("will-navigate", (event, url) => {
-    // Arquivo solto fora de uma área de arrastar também navega: sairia do app.
-    const isAppPage = url.split("#")[0].toLowerCase() === getAppEntryUrl().toLowerCase();
-    if (!isAppPage && !url.startsWith("http://localhost")) {
-      event.preventDefault();
+  // Arquivo solto fora de uma área de arrastar também navega: sairia do app.
+  const blockOutside = (navEvent, url) => {
+    if (!isAppUrl(url)) {
+      navEvent.preventDefault();
+      log.warn("Navegação bloqueada:", String(url).slice(0, 200));
     }
+  };
+  contents.on("will-navigate", blockOutside);
+  contents.on("will-redirect", blockOutside);
+  contents.setWindowOpenHandler(({ url }) => {
+    log.warn("Janela nova bloqueada:", String(url).slice(0, 200));
+    return { action: "deny" };
   });
+  contents.on("will-attach-webview", (attachEvent) => attachEvent.preventDefault());
 });
