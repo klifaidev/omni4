@@ -74,7 +74,7 @@ export function Topbar({
   })();
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border/40 bg-background/60 px-4 py-4 backdrop-blur-2xl md:px-8">
+    <header className="sticky top-[var(--filters-bar-h,0px)] z-20 border-b border-border/40 bg-background/60 px-4 py-4 backdrop-blur-2xl md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button

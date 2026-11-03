@@ -189,6 +189,17 @@ export function removeComercialOverride(id: ComercialMapId, key: string) {
   persist();
 }
 
+/** Cópia de todas as correções comerciais (para desfazer uma importação). */
+export function getComercialOverridesSnapshot(): Record<ComercialMapId, Record<string, string>> {
+  return Object.fromEntries(COMERCIAL_MAP_IDS.map((id) => [id, { ...overrides[id] }])) as Record<ComercialMapId, Record<string, string>>;
+}
+
+/** Volta as correções comerciais exatamente a uma cópia guardada. */
+export function restoreComercialOverrides(snapshot: Record<ComercialMapId, Record<string, string>>) {
+  overrides = Object.fromEntries(COMERCIAL_MAP_IDS.map((id) => [id, { ...(snapshot[id] ?? {}) }])) as Overrides;
+  persist();
+}
+
 export function countComercialOverrides(): number {
   return COMERCIAL_MAP_IDS.reduce((sum, id) => sum + Object.keys(overrides[id]).length, 0);
 }

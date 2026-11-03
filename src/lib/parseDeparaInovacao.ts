@@ -18,13 +18,13 @@ function findColumn(headers: unknown[], aliases: string[]): number {
   return headers.findIndex((h) => aliasSet.has(normHeader(String(h ?? ""))));
 }
 
-function normalizeClassificacao(raw: unknown): string {
+export function normalizeClassificacao(raw: unknown): string {
   const value = String(raw ?? "").trim();
   if (!value) return "Inovação";
   return /regular/i.test(value) ? "Regular" : "Inovação";
 }
 
-function normalizeSku(raw: unknown): string {
+export function normalizeSku(raw: unknown): string {
   if (raw == null) return "";
   if (typeof raw === "number") return String(Math.trunc(raw));
   const text = String(raw).trim();

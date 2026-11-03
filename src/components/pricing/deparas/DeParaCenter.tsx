@@ -49,8 +49,9 @@ import {
 } from "@/lib/deparaComercial";
 import { DEPARA_MAPS, DEPARA_MAP_BY_ID, coverageLabel, shareLabel, type DeParaHealth, type PendingItem } from "@/lib/deparaHealth";
 import { hierarchyFromSuggestion, suggestComercial, suggestSkuHierarchy } from "@/lib/deparaSuggest";
+import { parseDePara360, planDePara360, type DePara360, type DePara360Plan } from "@/lib/depara360";
 import {
-  exportDeparasXlsx,
+  exportDePara360Xlsx,
   exportInovacaoDeparaAtualXlsx,
   exportInovacaoDeparaModeloXlsx,
   exportPendenciasXlsx,
@@ -64,6 +65,7 @@ import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
 import { ValuePicker } from "./ValuePicker";
 import {
+  applyDePara360,
   saveComercialEntry,
   saveSkuEntries,
   undoComercialEntry,
@@ -96,17 +98,6 @@ export function DeParaCenter() {
   const setView = useDeParaCenter((s) => s.setView);
   const close = useDeParaCenter((s) => s.close);
   const health = useDeParaHealth();
-  const realRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
-
-  const exportAll = () => {
-    try {
-      exportDeparasXlsx([realRows, budgetRows]);
-      toast.success("De/Paras exportados, com as correções feitas no app.");
-    } catch {
-      toast.error("Falha ao exportar os De/Paras.");
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) close(); }}>
@@ -131,9 +122,7 @@ export function DeParaCenter() {
               <FileSpreadsheet className="h-3.5 w-3.5" /> Baixar pendências
             </Button>
           )}
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={exportAll}>
-            <Download className="h-3.5 w-3.5" /> Baixar todos (.xlsx)
-          </Button>
+          <DePara360Actions pendingCount={health.pending.length} />
         </header>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)]">
@@ -150,6 +139,145 @@ export function DeParaCenter() {
       </DialogContent>
     </Dialog>
   );
+}
+
+// ── De/Para 360 ──────────────────────────────────────────────────────────
+
+/**
+ * Um arquivo com todos os De/Paras: baixar depois de corrigir as pendências e
+ * mandar para o time; anexar o que o time mandou para o app usar o mesmo.
+ */
+function DePara360Actions({ pendingCount }: { pendingCount: number }) {
+  const realRows = usePricing((s) => s.rows);
+  const budgetRows = useBudget((s) => s.rows);
+  const basesLocais = useBasesLocais();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [reading, setReading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [review, setReview] = useState<{ file: DePara360; plan: DePara360Plan } | null>(null);
+
+  const download = () => {
+    try {
+      exportDePara360Xlsx([realRows, budgetRows]);
+      if (pendingCount > 0) {
+        toast.warning("De/Para 360 baixado com pendências em aberto", {
+          description: `${pendingCount} valor${pendingCount === 1 ? "" : "es"} das bases ainda sem De/Para não entra${pendingCount === 1 ? "" : "m"} no arquivo. Corrija em Pendências e baixe de novo.`,
+          duration: 8000,
+        });
+      } else {
+        toast.success("De/Para 360 baixado, com todas as correções feitas no app.");
+      }
+    } catch {
+      toast.error("Falha ao gerar o De/Para 360.");
+    }
+  };
+
+  const read = async (selected: File | undefined) => {
+    if (inputRef.current) inputRef.current.value = "";
+    if (!selected) return;
+    setReading(true);
+    try {
+      const file = await parseDePara360(selected);
+      setReview({ file, plan: planDePara360(file) });
+    } catch (err) {
+      toast.error("Não foi possível ler o De/Para 360", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!review) return;
+    setApplying(true);
+    try {
+      const undo = await applyDePara360(review.plan, review.file.fileName, basesLocais);
+      const { counts } = review.plan;
+      setReview(null);
+      toast.success("De/Para 360 aplicado", {
+        description: `${summary360(counts)}. Já vale para as bases carregadas e para as próximas.`,
+        duration: 10000,
+        action: {
+          label: "Desfazer",
+          onClick: () => {
+            void undo().then(
+              () => toast.success("Importação do De/Para 360 desfeita."),
+              () => toast.error("Falha ao desfazer a importação."),
+            );
+          },
+        },
+      });
+    } catch {
+      toast.error("Falha ao aplicar o De/Para 360.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const total = review ? review.plan.counts.sku + review.plan.counts.comercial + review.plan.counts.inovacao : 0;
+
+  return (
+    <>
+      <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => void read(e.target.files?.[0])} />
+      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={reading} onClick={() => inputRef.current?.click()}>
+        {reading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Anexar De/Para 360
+      </Button>
+      <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={download}>
+        <Download className="h-3.5 w-3.5" /> Baixar De/Para 360
+      </Button>
+
+      <Dialog open={review !== null} onOpenChange={(o) => { if (!o && !applying) setReview(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogTitle className="text-base">{total > 0 ? "Atualizar os De/Paras?" : "Nada a atualizar"}</DialogTitle>
+          <DialogDescription className="text-xs">
+            {review?.file.fileName}: {review?.file.found.length} De/Para{review?.file.found.length === 1 ? "" : "s"} reconhecido{review?.file.found.length === 1 ? "" : "s"}.
+            {total > 0
+              ? " Só o que é diferente do app muda. Células vazias no arquivo não apagam nada."
+              : " O arquivo é igual ao que o app já usa."}
+          </DialogDescription>
+          {review && (
+            <ul className="mt-1 space-y-1.5">
+              {DEPARA_MAPS.map((m) => {
+                if (!review.file.found.includes(m.id)) return null;
+                const changes = m.id === "hierarquia"
+                  ? review.plan.counts.sku
+                  : m.id === "inovacao"
+                    ? review.plan.counts.inovacao
+                    : Object.keys(review.plan.comercial[m.id as ComercialMapId]).length;
+                return (
+                  <li key={m.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-xs">
+                    <span className="font-medium">{m.title}</span>
+                    {changes > 0
+                      ? <span className="tabular-nums text-primary">{formatNum(changes)} {m.id === "hierarquia" || m.id === "inovacao" ? "SKU" : "valor"}{changes === 1 ? "" : "s"} muda{changes === 1 ? "" : "m"}</span>
+                      : <span className="inline-flex items-center gap-1 text-muted-foreground"><Check className="h-3 w-3 text-emerald-500" /> igual</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="mt-2 flex justify-end gap-2">
+            <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={applying} onClick={() => setReview(null)}>
+              {total > 0 ? "Cancelar" : "Fechar"}
+            </Button>
+            {total > 0 && (
+              <Button size="sm" className="h-8 gap-1.5 text-xs" disabled={applying} onClick={() => void apply()}>
+                {applying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Aplicar
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function summary360(counts: DePara360Plan["counts"]): string {
+  const parts: string[] = [];
+  if (counts.sku) parts.push(`${formatNum(counts.sku)} SKU${counts.sku === 1 ? "" : "s"} na hierarquia`);
+  if (counts.comercial) parts.push(`${formatNum(counts.comercial)} valor${counts.comercial === 1 ? "" : "es"} comercia${counts.comercial === 1 ? "l" : "is"}`);
+  if (counts.inovacao) parts.push(`${formatNum(counts.inovacao)} SKU${counts.inovacao === 1 ? "" : "s"} em Inovação`);
+  return parts.join(" · ");
 }
 
 // ── Navegação ────────────────────────────────────────────────────────────

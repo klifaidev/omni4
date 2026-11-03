@@ -13,10 +13,16 @@ import {
   type DeParaOverrideEntry,
 } from "@/lib/depara";
 import {
+  COMERCIAL_MAP_IDS,
+  getComercialOverridesSnapshot,
   removeComercialOverride,
+  restoreComercialOverrides,
   upsertComercialOverrides,
   type ComercialMapId,
 } from "@/lib/deparaComercial";
+import type { DePara360Plan } from "@/lib/depara360";
+import type { InovacaoEntry } from "@/lib/deparaInovacao";
+import type { TipoBase } from "@/hooks/use-bases-locais";
 import { computeDeParaHealth, type DeParaHealth } from "@/lib/deparaHealth";
 import { memoizeByRows } from "@/lib/derivedCache";
 import type { BudgetRow } from "@/lib/budget";
@@ -98,6 +104,102 @@ export function undoComercialEntry(map: ComercialMapId, key: string, label: stri
   removeComercialOverride(map, key);
   refreshComercial();
   if (!silent) toast.success(`${label}: “${key.trim()}” voltou ao mapeamento padrão.`);
+}
+
+/** Onde o De/Para de Inovação fica salvo no app instalado (useBasesLocais). */
+export interface InovacaoDiskStorage {
+  isElectron: boolean;
+  salvarBase: (tipo: TipoBase, file: File) => Promise<unknown>;
+  carregarBase: (tipo: TipoBase) => Promise<File[]>;
+  deletarBase: (tipo: TipoBase) => Promise<unknown>;
+}
+
+/** Só a aba de Inovação, no formato que a abertura do app sabe ler. */
+async function inovacaoWorkbookFile(map: Record<string, InovacaoEntry>): Promise<File> {
+  const XLSX = await import("xlsx");
+  const rows = Object.entries(map).map(([sku, v]) => ({
+    SKU: sku,
+    Classificacao: v.classificacao,
+    "Ano de Lancamento": v.anoLancamento ?? "",
+    Legado: v.legado ?? "",
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows, { header: ["SKU", "Classificacao", "Ano de Lancamento", "Legado"] }), "DePara Inovacao");
+  const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  return new File([bytes], "De-Para 360 - Inovacao.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+/**
+ * Aplica o De/Para 360 (só o que muda) nas bases carregadas e nas próximas.
+ * Devolve uma função que volta tudo como estava antes da importação.
+ */
+export async function applyDePara360(plan: DePara360Plan, fileName: string, disk: InovacaoDiskStorage): Promise<() => Promise<void>> {
+  const skus = Object.keys(plan.sku);
+  const skuSet = new Set(skus);
+  const previousOverrides = Object.fromEntries(skus.map((sku) => [sku, getDeParaOverride(sku)]));
+  const previousReal = snapshotRowFields(skuSet, usePricing.getState().rows);
+  const previousBudget = snapshotRowFields(skuSet, useBudget.getState().rows);
+  const previousComercial = getComercialOverridesSnapshot();
+  const inovacaoBefore = useInovacaoDepara.getState();
+  const previousInovacao = { map: inovacaoBefore.map, file: inovacaoBefore.file };
+  let previousInovacaoDisk: File | undefined;
+
+  if (skus.length) {
+    upsertDeParaEntries(plan.sku);
+    usePricing.getState().applySkuDeParaEntries(plan.sku);
+    useBudget.getState().applySkuDeParaEntries(plan.sku);
+  }
+
+  if (plan.counts.comercial > 0) {
+    for (const id of COMERCIAL_MAP_IDS) {
+      if (Object.keys(plan.comercial[id]).length) upsertComercialOverrides(id, plan.comercial[id]);
+    }
+    usePricing.getState().applyComercialDePara();
+    useBudget.getState().applyComercialDePara();
+  }
+
+  if (plan.inovacao) {
+    if (disk.isElectron) previousInovacaoDisk = (await disk.carregarBase("deparaInovacao")).at(-1);
+    useInovacaoDepara.getState().setDepara(plan.inovacao, {
+      name: fileName,
+      rowCount: Object.keys(plan.inovacao).length,
+      uploadedAt: Date.now(),
+    });
+    usePricing.getState().reclassifyInovacao();
+    useBudget.getState().reclassifyInovacao();
+    if (disk.isElectron) {
+      await disk.deletarBase("deparaInovacao");
+      await disk.salvarBase("deparaInovacao", await inovacaoWorkbookFile(plan.inovacao));
+    }
+  }
+
+  useDeParaCenter.getState().bump();
+
+  return async () => {
+    if (skus.length) {
+      restoreDeParaOverrides(previousOverrides);
+      usePricing.getState().setSkuFields(previousReal);
+      useBudget.getState().setSkuFields(previousBudget);
+    }
+    if (plan.counts.comercial > 0) {
+      restoreComercialOverrides(previousComercial);
+      usePricing.getState().applyComercialDePara();
+      useBudget.getState().applyComercialDePara();
+    }
+    if (plan.inovacao) {
+      if (previousInovacao.file) useInovacaoDepara.getState().setDepara(previousInovacao.map, previousInovacao.file);
+      else useInovacaoDepara.getState().clearDepara();
+      usePricing.getState().reclassifyInovacao();
+      useBudget.getState().reclassifyInovacao();
+      if (disk.isElectron) {
+        await disk.deletarBase("deparaInovacao");
+        if (previousInovacaoDisk) await disk.salvarBase("deparaInovacao", previousInovacaoDisk);
+      }
+    }
+    useDeParaCenter.getState().bump();
+  };
 }
 
 // Guardada por base + versão dos De/Paras + mapa de Inovação: abrir a aba de novo

@@ -557,7 +557,7 @@ export default function Atividades() {
   return (
     <div className="min-h-screen w-full">
       {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/70 backdrop-blur-2xl">
+      <div className="sticky top-[var(--filters-bar-h,0px)] z-10 border-b border-border/40 bg-background/70 backdrop-blur-2xl">
         <div className="flex items-center justify-between px-8 py-5">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">

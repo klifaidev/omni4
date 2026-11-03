@@ -30,6 +30,7 @@ import { useMonthsInfo } from "@/store/selectors";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { computeAvailableOptionsPerDimension } from "@/lib/filterOptions";
 import { fiscalYearStartYear } from "@/lib/fiscalYear";
+import { DIMENSION_GROUPS, type DimensionField } from "@/lib/filterDimensions";
 import type { FilterKey, Filters } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,6 @@ const FILTER_DISPLAY_LABEL: Partial<Record<FilterKey, string>> = {
   regional: "Regional",
 };
 
-type DimensionField = { key: FilterKey; label: string };
 type DimensionFilterGroup = { title: string; filters: (DimensionField & { options: MultiSelectOption[] })[] };
 type PeriodShortcut = { key: string; label: string; periods: string[] };
 type FilterPreset = {
@@ -63,34 +63,6 @@ type FilterPreset = {
 };
 
 const FILTER_PRESETS_STORAGE_KEY = "omni4:filtros:presets:v1";
-
-const DIMENSION_GROUPS: { title: string; fields: DimensionField[] }[] = [
-  {
-    title: "Comercial",
-    fields: [
-      { key: "canal", label: "Canal" },
-      { key: "canalAjustado", label: "Canal Ajustado" },
-      { key: "mercadoAjustado", label: "Mercado Ajustado" },
-      { key: "regional", label: "Regional" },
-    ],
-  },
-  {
-    title: "Produto",
-    fields: [
-      { key: "marca", label: "Marca" },
-      { key: "sku", label: "SKU" },
-      { key: "categoria", label: "Categoria" },
-      { key: "subcategoria", label: "Subcategoria" },
-      { key: "formato", label: "Formato" },
-      { key: "mercado", label: "Mercado" },
-      { key: "sabor", label: "Sabor" },
-      { key: "tecnologia", label: "Tecnologia" },
-      { key: "faixaPeso", label: "Faixa de Peso" },
-      { key: "inovacao", label: "Inovação / Regular" },
-      { key: "legado", label: "Legado" },
-    ],
-  },
-];
 
 function samePeriods(a: string[] | null, b: string[]): boolean {
   if (a === null) return false;

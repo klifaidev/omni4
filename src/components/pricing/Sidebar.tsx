@@ -58,6 +58,7 @@ const dashItems = [
   { to: "/bridge-pvm", label: "Bridge PVM", icon: TrendingUp },
   { to: "/mix", label: "Mix", icon: Layers3 },
   { to: "/preco", label: "Análise de Preço", icon: DollarSign },
+  { to: "/positivacao", label: "Positivação", icon: UserCheck },
   { to: "/farol", label: "Farol de Cadastro", icon: Radar },
   { to: "/ruptura", label: "Ruptura", icon: PackageX },
   { to: "/dre", label: "DRE", icon: FileSpreadsheet },
@@ -67,13 +68,12 @@ const dashItems = [
   { to: "/margem-target", label: "Margem Target", icon: Target },
   { to: "/abc", label: "Portfólio de SKUs", icon: LineChart },
   { to: "/budget", label: "Budget", icon: Target },
-  { to: "/detalhe", label: "Tabela Dinâmica", icon: TableProperties },
 ];
 
 const workItems = [
   { to: "/alertas", label: "Alertas", icon: BellRing, alertBadge: true },
   { to: "/atividades", label: "Atividades", icon: KanbanSquare },
-  { to: "/positivacao", label: "Positivação", icon: UserCheck },
+  { to: "/detalhe", label: "Tabela Dinâmica", icon: TableProperties },
   { to: "/slides", label: "Slides", icon: Presentation },
   { to: "/ajustes", label: "Ajustes", icon: Settings2 },
 ] as { to: string; label: string; icon: typeof KanbanSquare; alertBadge?: boolean }[];

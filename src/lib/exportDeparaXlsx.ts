@@ -105,7 +105,15 @@ function buildSkuDescFallback(rowsBySource: SkuDescSourceRow[][]): Map<string, s
   return fallback;
 }
 
-export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
+/**
+ * De/Para 360: o mesmo arquivo, para circular no time e anexar de volta na
+ * Central (lib/depara360 reconhece as abas pelas colunas).
+ */
+export function exportDePara360Xlsx(rowsBySource: SkuDescSourceRow[][] = []) {
+  exportDeparasXlsx(rowsBySource, "De-Para 360");
+}
+
+export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = [], filePrefix = "de-paras_auditoria") {
   const wb = XLSX.utils.book_new();
 
   // 1) De Para Principal (SKU → atributos) — com as correções feitas no app.
@@ -189,7 +197,7 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = []) {
   // Move índice para primeira posição
   wb.SheetNames = ["Índice", ...wb.SheetNames.filter((n) => n !== "Índice")];
 
-  downloadWorkbook(wb, "de-paras_auditoria");
+  downloadWorkbook(wb, filePrefix);
 }
 
 const PENDING_FIELD_LABEL: Record<keyof DeParaEntry, string> = {

@@ -87,7 +87,7 @@ export function AppPreloader({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-semibold">OMNI4 Pricing Analytics</h1>
+            <h1 className="text-base font-semibold">Hub de Gestão & Estratégia — Harald</h1>
             <p className="truncate text-sm text-muted-foreground">{label}</p>
           </div>
           <span className="ml-auto text-sm font-semibold tabular-nums">{percent}%</span>

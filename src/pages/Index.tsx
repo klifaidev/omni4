@@ -146,7 +146,7 @@ export default function Index() {
   return (
     <>
       <Topbar
-        title="Pricing Analytics — Harald"
+        title="Hub de Gestão & Estratégia — Harald"
         subtitle="Painel executivo de pricing e lucratividade B2B"
       />
 
