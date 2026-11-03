@@ -14,14 +14,8 @@ import {
   Check,
   CheckCircle2,
   Download,
-  EyeOff,
   FileSpreadsheet,
-  Layers,
-  Loader2,
-  Network,
-  Package,
   Pencil,
-  Play,
   RefreshCw,
   RotateCcw,
   Search,
@@ -55,9 +49,7 @@ import {
 } from "@/lib/deparaComercial";
 import { DEPARA_MAPS, DEPARA_MAP_BY_ID, coverageLabel, shareLabel, type DeParaHealth, type DeParaMapId, type PendingItem } from "@/lib/deparaHealth";
 import { hierarchyFromSuggestion, suggestComercial, suggestSkuHierarchy } from "@/lib/deparaSuggest";
-import { parseDePara360, planDePara360, type DePara360, type DePara360Plan } from "@/lib/depara360";
 import {
-  exportDePara360Xlsx,
   exportInovacaoDeparaAtualXlsx,
   exportInovacaoDeparaModeloXlsx,
   exportPendenciasXlsx,
@@ -69,10 +61,9 @@ import { useBudget } from "@/store/budget";
 import { useDeParaCenter, type DeParaView } from "@/store/deparaCenter";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { usePricing } from "@/store/pricing";
-import { FileDropCard } from "@/components/pricing/bases/FileDropCard";
+import { useDownload360 } from "./useDownload360";
 import { ValuePicker } from "./ValuePicker";
 import {
-  applyDePara360,
   saveComercialEntry,
   saveSkuEntries,
   undoComercialEntry,
@@ -130,9 +121,6 @@ export function DeParaCenter() {
               <FileSpreadsheet className="h-3.5 w-3.5" /> Baixar pendências
             </Button>
           )}
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => setView("360")}>
-            <Upload className="h-3.5 w-3.5" /> Anexar De/Para 360
-          </Button>
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={download360}>
             <Download className="h-3.5 w-3.5" /> Baixar De/Para 360
           </Button>
@@ -141,11 +129,10 @@ export function DeParaCenter() {
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)]">
           <Rail health={health} view={view} onSelect={setView} />
           <main className="min-h-0 overflow-y-auto">
-            {view === "360" && <DePara360View health={health} />}
             {view === "pendencias" && <PendingView health={health} />}
             {view === "hierarquia" && <HierarchyView health={health} />}
             {view === "inovacao" && <InovacaoView />}
-            {view !== "pendencias" && view !== "360" && view !== "hierarquia" && view !== "inovacao" && (
+            {view !== "pendencias" && view !== "hierarquia" && view !== "inovacao" && (
               <ComercialView key={view} map={view} health={health} />
             )}
           </main>
@@ -155,295 +142,12 @@ export function DeParaCenter() {
   );
 }
 
-// ── De/Para 360 ──────────────────────────────────────────────────────────
-
-/** Baixa o De/Para 360: todas as abas, com as correções feitas no app. */
-function useDownload360(pendingCount: number) {
-  const realRows = usePricing((s) => s.rows);
-  const budgetRows = useBudget((s) => s.rows);
-  return () => {
-    try {
-      exportDePara360Xlsx([realRows, budgetRows]);
-      if (pendingCount > 0) {
-        toast.warning("De/Para 360 baixado com pendências em aberto", {
-          description: `${pendingCount} valor${pendingCount === 1 ? "" : "es"} das bases ainda sem De/Para não entra${pendingCount === 1 ? "" : "m"} no arquivo. Corrija em Pendências e baixe de novo.`,
-          duration: 8000,
-        });
-      } else {
-        toast.success("De/Para 360 baixado, com todas as correções feitas no app.");
-      }
-    } catch {
-      toast.error("Falha ao gerar o De/Para 360.");
-    }
-  };
-}
-
-function formatBytes(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${formatNum(bytes / (1024 * 1024), 1)} MB`;
-  return `${formatNum(bytes / 1024, 0)} KB`;
-}
-
-function summary360(counts: DePara360Plan["counts"]): string {
-  const parts: string[] = [];
-  if (counts.sku) parts.push(`${formatNum(counts.sku)} SKU${counts.sku === 1 ? "" : "s"} na hierarquia`);
-  if (counts.comercial) parts.push(`${formatNum(counts.comercial)} valor${counts.comercial === 1 ? "" : "es"} comercia${counts.comercial === 1 ? "l" : "is"}`);
-  if (counts.inovacao) parts.push(`${formatNum(counts.inovacao)} SKU${counts.inovacao === 1 ? "" : "s"} em Inovação`);
-  return parts.join(" · ");
-}
-
-function changesFor(plan: DePara360Plan, id: DeParaMapId): number {
-  if (id === "hierarquia") return plan.counts.sku;
-  if (id === "inovacao") return plan.counts.inovacao;
-  return Object.keys(plan.comercial[id]).length;
-}
-
-interface Entry360 {
-  name: string;
-  size: number;
-  status: "reading" | "ready" | "applying" | "applied" | "error";
-  file?: DePara360;
-  plan?: DePara360Plan;
-  undo?: () => Promise<void>;
-  error?: string;
-}
-
-const CHIPS_360 = [
-  { label: "Produto", icon: Package, className: "bg-primary/10 text-primary" },
-  { label: "Inovação", icon: Sparkles, className: "bg-accent/10 text-accent" },
-  { label: "Comercial", icon: Network, className: "bg-destructive/10 text-destructive" },
-] as const;
-
-/**
- * Um arquivo com todos os De/Paras: baixar depois de corrigir as pendências e
- * mandar para o time; quem recebe anexa aqui, na mesma área de soltar da Base
- * One, confere o que muda e aplica.
- */
-function DePara360View({ health }: { health: DeParaHealth }) {
-  const basesLocais = useBasesLocais();
-  const download = useDownload360(health.pending.length);
-  const [entry, setEntry] = useState<Entry360 | null>(null);
-  const busy = entry?.status === "reading" || entry?.status === "applying";
-
-  const read = async (files: File[]) => {
-    const selected = files.find((f) => /\.(xlsx|xls)$/i.test(f.name));
-    if (!selected) {
-      toast.error("Formato não suportado. Use .xlsx ou .xls.");
-      return;
-    }
-    setEntry({ name: selected.name, size: selected.size, status: "reading" });
-    try {
-      const file = await parseDePara360(selected);
-      setEntry({ name: selected.name, size: selected.size, status: "ready", file, plan: planDePara360(file) });
-    } catch (err) {
-      setEntry({
-        name: selected.name,
-        size: selected.size,
-        status: "error",
-        error: err instanceof Error ? err.message : "Falha ao ler o arquivo.",
-      });
-    }
-  };
-
-  const undoApplied = async (undo: () => Promise<void>) => {
-    try {
-      await undo();
-      // Volta a ficar pronto para aplicar, já comparado com o app como está agora.
-      setEntry((cur) => (cur && cur.status === "applied" && cur.file
-        ? { ...cur, status: "ready", plan: planDePara360(cur.file), undo: undefined }
-        : cur));
-      toast.success("Importação do De/Para 360 desfeita.");
-    } catch {
-      toast.error("Falha ao desfazer a importação.");
-    }
-  };
-
-  const apply = async () => {
-    if (!entry?.file || !entry.plan) return;
-    const { file, plan } = entry;
-    setEntry({ ...entry, status: "applying" });
-    try {
-      const undo = await applyDePara360(plan, file.fileName, basesLocais);
-      setEntry({ ...entry, status: "applied", undo });
-      toast.success("De/Para 360 aplicado", {
-        description: `${summary360(plan.counts)}. Já vale para as bases carregadas e para as próximas.`,
-        duration: 10000,
-        action: { label: "Desfazer", onClick: () => void undoApplied(undo) },
-      });
-    } catch {
-      setEntry({ ...entry, status: "ready" });
-      toast.error("Falha ao aplicar o De/Para 360.");
-    }
-  };
-
-  const plan = entry?.plan;
-  const total = plan ? plan.counts.sku + plan.counts.comercial + plan.counts.inovacao : 0;
-  const pending = health.pending.length;
-
-  return (
-    <div className="space-y-4 p-5">
-      <ViewHeader
-        title="De/Para 360"
-        description="Todos os De/Paras num arquivo só. Corrija as pendências, baixe o De/Para 360 e mande para o time: quem recebe anexa aqui e o app se atualiza."
-      />
-
-      <FileDropCard
-        icon={Layers}
-        title="Solte o De/Para 360 aqui"
-        description="Hierarquia de SKU, Inovação e os De/Paras comerciais num arquivo só. O Omni4 reconhece cada aba pelas colunas — nome e ordem das abas não importam. Só o que for diferente do app muda."
-        chips={CHIPS_360.map(({ label, icon: Icon, className }) => (
-          <span key={label} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold", className)}>
-            <Icon className="h-3 w-3" /> {label}
-          </span>
-        ))}
-        hint="Arraste ou clique · .xlsx ou .xls"
-        accept=".xlsx,.xls"
-        ariaLabel="Escolher o arquivo De/Para 360"
-        disabled={busy}
-        onFiles={(files) => void read(files)}
-      />
-
-      {entry && (
-        <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/50">
-          <div className="flex items-center gap-3 border-b border-border/40 px-4 py-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground">
-              {entry.status === "reading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate text-sm font-semibold">{entry.name}</span>
-                <span className="text-[11px] text-muted-foreground">{formatBytes(entry.size)}</span>
-                {entry.status === "error" && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-destructive"><AlertTriangle className="h-3 w-3" /> Erro</span>
-                )}
-                {entry.status === "applied" && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-500"><CheckCircle2 className="h-3 w-3" /> Aplicado</span>
-                )}
-                {(entry.status === "ready" || entry.status === "applying") && entry.file && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                    {entry.file.found.length} De/Para{entry.file.found.length === 1 ? "" : "s"} reconhecido{entry.file.found.length === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              {entry.status === "reading" && <div className="mt-0.5 text-[11px] text-muted-foreground">Lendo o arquivo…</div>}
-              {entry.status === "error" && <div className="mt-0.5 text-[11px] text-destructive">{entry.error}</div>}
-            </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => setEntry(null)}
-              disabled={busy}
-              aria-label={`Tirar ${entry.name} da revisão`}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-
-          {entry.file && plan && (
-            <ul className="divide-y divide-border/30">
-              {DEPARA_MAPS.map((m) => {
-                const found = entry.file!.found.includes(m.id);
-                const changes = found ? changesFor(plan, m.id) : 0;
-                const unit = m.id === "hierarquia" || m.id === "inovacao" ? "SKU" : "valor";
-                return (
-                  <li key={m.id} className={cn("flex flex-wrap items-center gap-3 px-4 py-3", !found && "opacity-70")}>
-                    <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", found ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground")}>
-                      {found ? <Layers className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold">{m.title}</div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-                        {!found ? (
-                          "Não veio no arquivo — fica como está."
-                        ) : changes === 0 ? (
-                          <span className="inline-flex items-center gap-1"><Check className="h-3 w-3 text-emerald-500" /> igual ao app</span>
-                        ) : (
-                          <>
-                            <span className="font-medium text-foreground">{formatNum(changes)} {unit}{changes === 1 ? "" : "s"} muda{changes === 1 ? "" : "m"}</span>
-                            {entry.status === "applied" && <span className="inline-flex items-center gap-1 text-emerald-500"><CheckCircle2 className="h-3 w-3" /> aplicado</span>}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {plan && entry && (entry.status === "ready" || entry.status === "applying" || entry.status === "applied") && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 px-4 py-3">
-          <div className="text-[11px] text-muted-foreground">
-            {entry.status === "applied" ? (
-              "Aplicado. Já vale para as bases carregadas e para as próximas."
-            ) : total > 0 ? (
-              <>
-                Pronto para aplicar: <span className="font-medium text-foreground">{summary360(plan.counts)}</span>. Nada muda no app até você clicar em Aplicar. Células vazias no arquivo não apagam nada.
-              </>
-            ) : (
-              "O arquivo é igual ao que o app já usa. Nada a aplicar."
-            )}
-          </div>
-          {entry.status === "applied" && entry.undo ? (
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void undoApplied(entry.undo!)}>
-              <RotateCcw className="h-3.5 w-3.5" /> Desfazer
-            </Button>
-          ) : (
-            total > 0 && (
-              <Button size="sm" className="h-8 gap-1.5" onClick={() => void apply()} disabled={busy}>
-                {entry.status === "applying" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                Aplicar
-              </Button>
-            )
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-secondary/20 px-5 py-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Download className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold">Baixar o De/Para 360</div>
-            <p className="mt-0.5 max-w-xl text-[11px] text-muted-foreground">
-              {pending > 0
-                ? `Ainda há ${pending} valor${pending === 1 ? "" : "es"} sem De/Para nas bases. Corrija em Pendências antes de baixar, para o arquivo ir completo para o time.`
-                : "Todas as correções feitas no app vão no arquivo. Mande para o time anexar aqui."}
-            </p>
-          </div>
-        </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={download}>
-          <Download className="h-3.5 w-3.5" /> Baixar De/Para 360
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ── Navegação ────────────────────────────────────────────────────────────
 
 function Rail({ health, view, onSelect }: { health: DeParaHealth; view: DeParaView; onSelect: (v: DeParaView) => void }) {
   const groups = ["Produto", "Comercial"] as const;
   return (
     <nav aria-label="De/Paras" className="hidden min-h-0 overflow-y-auto border-r border-border/50 bg-secondary/20 p-3 md:block">
-      <button
-        type="button"
-        onClick={() => onSelect("360")}
-        className={cn(
-          "mb-2 w-full rounded-xl border px-3 py-3 text-left transition-colors",
-          view === "360" ? "border-primary/40 bg-primary/10" : "border-border/50 bg-card/60 hover:bg-secondary/60",
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <Layers className="h-3.5 w-3.5 text-primary" />
-          <span className="text-xs font-semibold">De/Para 360</span>
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">Anexar e baixar o arquivo com todos os De/Paras.</div>
-      </button>
-
       <button
         type="button"
         onClick={() => onSelect("pendencias")}
@@ -523,7 +227,6 @@ function MobileViewSelect({ view, onSelect }: { view: DeParaView; onSelect: (v: 
       <Select value={view} onValueChange={(v) => onSelect(v as DeParaView)}>
         <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="360">De/Para 360</SelectItem>
           <SelectItem value="pendencias">Pendências</SelectItem>
           {DEPARA_MAPS.map((m) => <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>)}
         </SelectContent>

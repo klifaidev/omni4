@@ -2,7 +2,7 @@
 // ROL já está classificado e quantos valores faltam), com atalho para
 // resolver. Substitui o cartão de download e o alerta grande de pendências.
 import { useState } from "react";
-import { AlertTriangle, ArrowRight, Check, GitBranch, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Download, GitBranch, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/pricing/GlassCard";
 import { cn } from "@/lib/utils";
@@ -13,11 +13,14 @@ import { listDeParaEntries } from "@/lib/depara";
 import { useDeParaCenter } from "@/store/deparaCenter";
 import { useInovacaoDepara } from "@/store/inovacaoDepara";
 import { useDeParaHealth } from "./deparaActions";
+import { DePara360Intake } from "./DePara360Intake";
+import { useDownload360 } from "./useDownload360";
 
 export function DeParaHealthCard() {
   const health = useDeParaHealth();
   const openCenter = useDeParaCenter((s) => s.openCenter);
   const version = useDeParaCenter((s) => s.version);
+  const download360 = useDownload360(health.pending.length);
   const inovacaoFile = useInovacaoDepara((s) => s.file);
   void version;
   const corrections = listDeParaEntries().filter((e) => e.source === "app").length + countComercialOverrides();
@@ -37,6 +40,9 @@ export function DeParaHealthCard() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={download360}>
+            <Download className="h-3.5 w-3.5" /> Baixar De/Para 360
+          </Button>
           <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => openCenter(health.pending.length ? "hierarquia" : "pendencias")}>
             <GitBranch className="h-3.5 w-3.5" /> Abrir central
           </Button>
@@ -47,6 +53,8 @@ export function DeParaHealthCard() {
           )}
         </div>
       </header>
+
+      <DePara360Intake />
 
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {DEPARA_MAPS.map((m) => {
