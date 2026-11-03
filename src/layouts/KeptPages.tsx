@@ -22,10 +22,11 @@ const HIDDEN_LAYER: CSSProperties = {
   left: 0,
   height: "100vh",
   overflow: "hidden",
-  // Pula o conteúdo por inteiro (sem pintura e sem foco), mas guarda o layout dele:
-  // aparecer não exige refazer nada. `visibility` e `inert` são herdados e obrigam
-  // a recalcular o estilo de cada nó da aba, tanto ao mostrar quanto ao esconder.
-  contentVisibility: "hidden",
+  // O conteúdo é pulado por inteiro (sem pintura e sem foco) com content-visibility,
+  // aplicado em PageLayer, mas o layout fica guardado: aparecer não exige refazer
+  // nada. `visibility` e `inert` são herdados e obrigam a recalcular o estilo de
+  // cada nó da aba, tanto ao mostrar quanto ao esconder. Até lá, opacidade zero.
+  opacity: 0,
   pointerEvents: "none",
   zIndex: -1,
 };
@@ -108,11 +109,19 @@ const PageLayer = memo(function PageLayer({ page, active, register }: PageLayerP
     const layer = layerRef.current;
     if (!layer) return;
     if (active) {
+      layer.style.contentVisibility = "";
       scope.thaw();
-    } else {
-      layer.style.width = `${layer.parentElement?.clientWidth ?? window.innerWidth}px`;
-      scope.freeze();
+      return;
     }
+    layer.style.width = `${layer.parentElement?.clientWidth ?? window.innerWidth}px`;
+    scope.freeze();
+    // content-visibility só dois quadros depois de a camada sair do fluxo. No mesmo
+    // quadro, o Chromium guarda para a rolagem com a roda a altura que a tela tinha
+    // com esta aba à vista: a aba seguinte (Bases, por exemplo) não rolava além disso.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => { layer.style.contentVisibility = "hidden"; });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [active, scope]);
 
   // Depois das limpezas dos outros efeitos: os Slides, ao sair de cena, zeram o título.

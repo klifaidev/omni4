@@ -66,8 +66,22 @@ describe("abas prontas (KeptPages)", () => {
     await warmedUp();
     expect(layer("/a")?.getAttribute("aria-hidden")).toBe("false");
     expect(layer("/b")?.getAttribute("aria-hidden")).toBe("true");
-    expect(layer("/b")?.style.contentVisibility).toBe("hidden");
+    await waitFor(() => expect(layer("/b")?.style.contentVisibility).toBe("hidden"));
     expect(h.mounts.b).toBe(1);
+  });
+
+  it("a aba que sai de cena só some do desenho depois de sair do fluxo, e volta inteira", async () => {
+    const { rerender } = render(<KeptPages activePath="/a" />);
+    await warmedUp();
+    rerender(<KeptPages activePath="/b" />);
+    // No mesmo quadro: fora do fluxo, mas ainda sem content-visibility (senão a
+    // rolagem com a roda fica presa à altura da aba anterior).
+    expect(layer("/a")?.style.position).toBe("fixed");
+    expect(layer("/a")?.style.contentVisibility).toBe("");
+    await waitFor(() => expect(layer("/a")?.style.contentVisibility).toBe("hidden"));
+    rerender(<KeptPages activePath="/a" />);
+    expect(layer("/a")?.style.contentVisibility).toBe("");
+    expect(layer("/a")?.style.position).toBe("");
   });
 
   it("não pré-monta aba marcada para montar só ao abrir", async () => {
