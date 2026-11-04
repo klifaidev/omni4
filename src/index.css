@@ -10,20 +10,6 @@
   font-display: swap;
 }
 
-/* Roteiro Visual, item 1.2: fonte de destaque, só pra momentos de hero
- * (título de página no Topbar, hero da Home) — o corpo/tabelas continuam
- * 100% Inter, que é a escolha certa pra densidade de dado. Auto-hospedada
- * (arquivo próprio em /fonts), igual ao Inter — respeita a CSP do app
- * (font-src 'self' data:, sem fontes externas), decisão de segurança já
- * documentada no projeto. */
-@font-face {
-  font-family: "Fraunces Display";
-  src: url("/fonts/FrauncesDisplay.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
 /* Hub de Gestão & Estratégia — Harald: Dark Glassmorphism Design System
    All colors MUST be HSL.
 */
@@ -345,9 +331,10 @@
    * Home. Nunca no corpo, tabela ou rótulo — ali Inter continua sendo a
    * escolha certa. */
   .font-display {
-    font-family: "Fraunces Display", Georgia, serif;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-family: "Inter", "Arial", sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-feature-settings: "cv11", "ss03";
   }
 
   /* Roteiro Visual, item 2.1: direção "Vidro Refinado" escolhida — mantém
