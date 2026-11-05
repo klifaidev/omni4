@@ -152,7 +152,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OMNI4 Pricing Analytics",
+      "shortcutName": "OMNI4",
       "installerLanguages": [
         "pt_BR"
       ],
