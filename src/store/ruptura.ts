@@ -42,6 +42,8 @@ interface RupturaState {
     options: { replaceExisting: boolean; stored?: { name: string; bytes: Uint8Array } },
   ) => Promise<void>;
   removeBase: () => Promise<void>;
+  /** Remonta a base a partir dos arquivos que restaram guardados. */
+  reloadSaved: () => Promise<void>;
   setFilter: (dim: RupturaDim, values: string[]) => void;
   toggleFilterValue: (dim: RupturaDim, value: string) => void;
   clearFilters: () => void;
@@ -214,6 +216,14 @@ export const useRuptura = createFreezable<RupturaState>((set, get) => ({
     const api = bases();
     if (api) await api.deletar(TIPO);
     set({ model: null, status: "idle", progress: null, error: null, savedFileName: null, filters: {}, period: null });
+  },
+
+  reloadSaved: async () => {
+    if (loading) await loading;
+    // O cache do arquivo mais novo foi montado com a lista antiga de
+    // arquivos; cacheMatches o recusa e a base é remontada do que ficou.
+    set({ model: null, savedFileName: null });
+    await get().loadSaved();
   },
 
   setFilter: (dim, values) => set((s) => ({ filters: { ...s.filters, [dim]: values } })),

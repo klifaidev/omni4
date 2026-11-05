@@ -43,6 +43,7 @@ import {
   KIND_LABEL,
   applyIntake,
   findDuplicates,
+  findSuperseded,
   getDuplicatePolicy,
   intakeId,
   monthKeyLabel,
@@ -56,7 +57,16 @@ import {
   type DuplicatePolicy,
   type IntakeFile,
   type IntakePart,
+  type SupersededGroup,
 } from "@/lib/intake/intake";
+
+/** O que perguntar antes de aplicar. */
+interface ApplyQuestion {
+  /** Meses repetidos (null = a escolha já está guardada como "sempre substituir"). */
+  duplicates: DuplicateInfo[] | null;
+  /** Bases anteriores guardadas que a nova sobrescreve. */
+  superseded: SupersededGroup[];
+}
 
 const ACCEPT = ".xlsx,.xls,.xlsm,.csv";
 
@@ -95,7 +105,7 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
   const [files, setFiles] = useState<IntakeFile[]>([]);
   const [applying, setApplying] = useState(false);
   const [policy, setPolicyState] = useState<DuplicatePolicy>(() => getDuplicatePolicy());
-  const [dupDialog, setDupDialog] = useState<DuplicateInfo[] | null>(null);
+  const [dupDialog, setDupDialog] = useState<ApplyQuestion | null>(null);
   const loaded = useLoadedMonths();
 
   // A revisão mostra o que já existe; a ruptura salva precisa estar lida.
@@ -144,12 +154,12 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
   const readyParts = readyFiles.flatMap((f) => f.parts.filter((p) => p.kind && !p.error));
   const reading = files.some((f) => f.status === "reading");
 
-  const runApply = useCallback(async (choice: DuplicateChoice) => {
+  const runApply = useCallback(async (choice: DuplicateChoice, deleteOld: SupersededGroup[] = []) => {
     const targets = files.filter((f) => f.status === "ready");
     if (targets.length === 0) return;
     setApplying(true);
     try {
-      const result = await applyIntake(targets, choice);
+      const result = await applyIntake(targets, choice, deleteOld);
       setFiles((prev) => prev.map((f) => (f.status === "ready" && targets.includes(f) ? { ...f, status: "applied" } : f)));
       if (result.applied.length === 0) {
         toast.info("Nada novo para aplicar", { description: result.skipped.map((s) => s.reason).join(" · ") });
@@ -162,6 +172,12 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
           : summary,
       });
       result.saveErrors.forEach((e) => toast.error(`Não foi possível guardar: ${e}`));
+      if (result.deleted > 0) {
+        toast.success(`${result.deleted} base${result.deleted === 1 ? "" : "s"} anterior${result.deleted === 1 ? "" : "es"} apagada${result.deleted === 1 ? "" : "s"} do computador`);
+      }
+      if (result.deleteErrors.length > 0) {
+        toast.error("Não foi possível apagar algumas bases anteriores", { description: result.deleteErrors.join(" · ") });
+      }
       result.skipped.forEach((s) => toast.info(s.reason));
       onApplied?.();
     } catch (err) {
@@ -171,12 +187,16 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
     }
   }, [files, onApplied]);
 
-  const requestApply = useCallback(() => {
-    const duplicates = findDuplicates(files.filter((f) => f.status === "ready"));
-    if (duplicates.length === 0) return runApply("replace");
-    const current = getDuplicatePolicy();
-    if (current !== "ask") return runApply(current);
-    setDupDialog(duplicates);
+  const requestApply = useCallback(async () => {
+    const ready = files.filter((f) => f.status === "ready");
+    const duplicates = findDuplicates(ready);
+    const current = duplicates.length === 0 ? "replace" : getDuplicatePolicy();
+    // "Manter os atuais" não sobrescreve nada: não há base anterior a apagar.
+    if (current === "keep") return runApply("keep");
+    // Apagar a base anterior só com o aceite da pessoa — sempre pergunta.
+    const superseded = await findSuperseded(ready);
+    if (current === "replace" && superseded.length === 0) return runApply("replace");
+    setDupDialog({ duplicates: current === "ask" ? duplicates : null, superseded });
   }, [files, runApply]);
 
   // Aviso ao sair da aba com arquivos lidos e não aplicados.
@@ -251,7 +271,7 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
             )}
           </div>
           {readyFiles.length > 0 && (
-            <Button size="sm" onClick={requestApply} disabled={applying || reading || readyParts.length === 0} className="h-8 gap-1.5">
+            <Button size="sm" onClick={() => void requestApply()}disabled={applying || reading || readyParts.length === 0} className="h-8 gap-1.5">
               {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               Aplicar
             </Button>
@@ -259,16 +279,16 @@ export function BaseIntake({ onApplied }: { onApplied?: () => void } = {}) {
         </div>
       )}
 
-      <DuplicateDialog
-        duplicates={dupDialog}
+      <ApplyDialog
+        question={dupDialog}
         onCancel={() => setDupDialog(null)}
-        onChoose={(choice, remember) => {
+        onChoose={(choice, remember, deleteOld) => {
           setDupDialog(null);
           if (remember) {
             setDuplicatePolicy(choice);
             setPolicyState(choice);
           }
-          void runApply(choice);
+          void runApply(choice, choice === "replace" ? deleteOld : []);
         }}
       />
     </div>
@@ -467,35 +487,44 @@ function PartRow({
   );
 }
 
-function DuplicateDialog({
-  duplicates,
+function ApplyDialog({
+  question,
   onCancel,
   onChoose,
 }: {
-  duplicates: DuplicateInfo[] | null;
+  question: ApplyQuestion | null;
   onCancel: () => void;
-  onChoose: (choice: DuplicateChoice, remember: boolean) => void;
+  onChoose: (choice: DuplicateChoice, remember: boolean, deleteOld: SupersededGroup[]) => void;
 }) {
   const [remember, setRemember] = useState(false);
-  // Mantém a lista durante a animação de fechar (senão a janela encolhe).
-  const [shown, setShown] = useState<DuplicateInfo[]>([]);
+  // Apagar é sempre opt-in: cada grupo começa desmarcado.
+  const [toDelete, setToDelete] = useState<Set<BaseKind>>(new Set());
+  // Mantém o conteúdo durante a animação de fechar (senão a janela encolhe).
+  const [shown, setShown] = useState<ApplyQuestion>({ duplicates: null, superseded: [] });
   useEffect(() => {
-    if (!duplicates) return;
+    if (!question) return;
     setRemember(false);
-    setShown(duplicates);
-  }, [duplicates]);
+    setToDelete(new Set());
+    setShown(question);
+  }, [question]);
+
+  const { duplicates, superseded } = question ?? shown;
+  const askMonths = duplicates !== null;
+  const chosen = () => superseded.filter((g) => toDelete.has(g.kind));
 
   return (
-    <AlertDialog open={duplicates !== null} onOpenChange={(open) => { if (!open) onCancel(); }}>
+    <AlertDialog open={question !== null} onOpenChange={(open) => { if (!open) onCancel(); }}>
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>Alguns meses já estão no Omni4</AlertDialogTitle>
+          <AlertDialogTitle>{askMonths ? "Alguns meses já estão no Omni4" : "Apagar as bases anteriores?"}</AlertDialogTitle>
           <AlertDialogDescription>
-            Os meses novos entram de qualquer jeito. Escolha o que fazer com os que já foram carregados:
+            {askMonths
+              ? "Os meses novos entram de qualquer jeito. Escolha o que fazer com os que já foram carregados:"
+              : "A base nova substitui meses que vieram de arquivos guardados antes. Eles continuam no computador, a menos que você marque para apagar."}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <ul className="space-y-1.5">
-          {(duplicates ?? shown).map((d) => {
+        {askMonths && <ul className="space-y-1.5">
+          {duplicates.map((d) => {
             const { icon: Icon, text, bg } = KIND_STYLE[d.kind];
             return (
               <li key={d.part.id} className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-secondary/30 px-3 py-2">
@@ -510,20 +539,78 @@ function DuplicateDialog({
               </li>
             );
           })}
-        </ul>
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-1 py-1 text-sm">
-          <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} className="mt-0.5" />
-          <span>
-            Não perguntar de novo
-            <span className="block text-[11px] text-muted-foreground">
-              Usa esta escolha todo mês. Dá para voltar a perguntar aqui na aba Bases.
+        </ul>}
+        {superseded.length > 0 && (
+          <div className="space-y-1.5">
+            {askMonths && (
+              <div className="pt-1 text-xs font-medium text-muted-foreground">
+                Ao substituir, apagar do computador as bases anteriores?
+              </div>
+            )}
+            {superseded.map((g) => {
+              const { icon: Icon, text, bg } = KIND_STYLE[g.kind];
+              const checked = toDelete.has(g.kind);
+              return (
+                <label
+                  key={g.kind}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2",
+                    checked ? "border-destructive/40 bg-destructive/5" : "border-border/50 bg-secondary/30",
+                  )}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(v) => setToDelete((prev) => {
+                      const next = new Set(prev);
+                      if (v === true) next.add(g.kind);
+                      else next.delete(g.kind);
+                      return next;
+                    })}
+                    className="mt-0.5"
+                    aria-label={`Apagar a base ${KIND_LABEL[g.kind]} anterior`}
+                  />
+                  <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", bg, text)}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">
+                      Apagar {KIND_LABEL[g.kind]} anterior ({g.files.length} arquivo{g.files.length === 1 ? "" : "s"})
+                    </span>
+                    <span className="block truncate text-[11px] text-muted-foreground" title={g.files.join("\n")}>
+                      {g.files.join(" · ")}
+                    </span>
+                    <span className={cn("block text-[11px]", g.lostMonths.length ? "font-medium text-destructive" : "text-muted-foreground")}>
+                      {g.lostMonths.length
+                        ? `${monthRangeLabel(g.lostMonths)}${g.lostMonths.length > 1 ? ` (${g.lostMonths.length} meses)` : ""} não vem na base nova e sai do app junto.`
+                        : "Nenhum mês sai do app: a base nova cobre tudo o que ela tinha."}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {askMonths && (
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-1 py-1 text-sm">
+            <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} className="mt-0.5" />
+            <span>
+              Não perguntar de novo sobre meses repetidos
+              <span className="block text-[11px] text-muted-foreground">
+                Usa esta escolha todo mês. Apagar bases anteriores continua sendo perguntado. Dá para voltar a perguntar aqui na aba Bases.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        )}
         <AlertDialogFooter className="gap-2 sm:gap-2">
           <AlertDialogCancel onClick={onCancel}>Cancelar</AlertDialogCancel>
-          <Button variant="outline" onClick={() => onChoose("keep", remember)}>Manter os atuais</Button>
-          <Button onClick={() => onChoose("replace", remember)}>Substituir</Button>
+          {askMonths && <Button variant="outline" onClick={() => onChoose("keep", remember, [])}>Manter os atuais</Button>}
+          <Button
+            variant={toDelete.size > 0 ? "destructive" : "default"}
+            onClick={() => onChoose("replace", remember, chosen())}
+          >
+            {askMonths ? "Substituir" : "Aplicar"}
+            {toDelete.size > 0 && " e apagar"}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

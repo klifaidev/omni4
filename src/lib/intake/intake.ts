@@ -316,6 +316,9 @@ export interface ApplyResult {
   saved: number;
   savedBytes: number;
   saveErrors: string[];
+  /** Arquivos anteriores apagados do armazenamento (com o aceite da pessoa). */
+  deleted: number;
+  deleteErrors: string[];
 }
 
 function bases() {
@@ -347,11 +350,18 @@ async function storedBytesFor(part: IntakePart, kind: BaseKind, keepMonths: Set<
 
 /**
  * Aplica as partes no app e, no app instalado, grava cada uma convertida.
- * `choice` decide o que fazer com meses que já estão carregados.
+ * `choice` decide o que fazer com meses que já estão carregados;
+ * `deleteOld` são os arquivos anteriores que a pessoa ACEITOU apagar.
  */
-export async function applyIntake(files: IntakeFile[], choice: DuplicateChoice): Promise<ApplyResult> {
-  const result: ApplyResult = { applied: [], skipped: [], saved: 0, savedBytes: 0, saveErrors: [] };
+export async function applyIntake(
+  files: IntakeFile[],
+  choice: DuplicateChoice,
+  deleteOld: SupersededGroup[] = [],
+): Promise<ApplyResult> {
+  const result: ApplyResult = { applied: [], skipped: [], saved: 0, savedBytes: 0, saveErrors: [], deleted: 0, deleteErrors: [] };
   const api = bases();
+  /** Tipos cuja base nova foi de fato gravada no disco. */
+  const savedKinds = new Set<BaseKind>();
 
   for (const file of files) {
     for (const part of file.parts) {
@@ -370,25 +380,21 @@ export async function applyIntake(files: IntakeFile[], choice: DuplicateChoice):
         const periods = new Set(months.map((m) => `0${m.slice(5)}.${m.slice(0, 4)}`));
         const rows = keep ? part.real.rows.filter((r) => periods.has(r.periodo)) : part.real.rows;
         const parsed: ParsedCsv = { ...part.real, rows, file: { ...part.real.file, name: storedName, rowCount: rows.length, months: [...periods].sort() } };
-        const before = usePricing.getState().files;
         usePricing.getState().addParsed(parsed.rows, parsed.file, true, parsed.missing);
         result.applied.push({ kind, months, rows: rows.length });
         if (api) {
-          await persist(api, kind, part, keep, file.file, storedName, result);
+          await persist(api, kind, part, keep, file.file, storedName, result, savedKinds);
           saveProcessedBaseInBackground("ke30", storedName, "ke30-parsed-csv", parsed);
-          await removeSuperseded(api, "ke30", before.map((f) => ({ name: f.name, months: f.months })), parsed.file.months, storedName);
         }
       } else if (kind === "budget" && part.budget) {
         const periods = new Set(months.map((m) => `0${m.slice(5)}.${m.slice(0, 4)}`));
         const rows = keep ? part.budget.rows.filter((r) => periods.has(r.periodo)) : part.budget.rows;
         const parsed: ParsedBudget = { ...part.budget, rows, file: { ...part.budget.file, name: storedName, rowCount: rows.length, months: [...periods].sort() } };
-        const before = useBudget.getState().files;
         useBudget.getState().addBudget(parsed.rows, parsed.file, true);
         result.applied.push({ kind, months, rows: rows.length });
         if (api) {
-          await persist(api, kind, part, keep, file.file, storedName, result);
+          await persist(api, kind, part, keep, file.file, storedName, result, savedKinds);
           saveProcessedBaseInBackground("budget", storedName, "budget-parsed-xlsx", parsed);
-          await removeSuperseded(api, "budget", before.map((f) => ({ name: f.name, months: f.months })), parsed.file.months, storedName);
         }
       } else if (kind === "ruptura" && part.ruptura) {
         const bytes = api ? await storedBytesFor(part, kind, keep, file.file.name) : null;
@@ -397,12 +403,22 @@ export async function applyIntake(files: IntakeFile[], choice: DuplicateChoice):
           stored: bytes ? { name: storedName, bytes } : undefined,
         });
         if (bytes) {
+          savedKinds.add(kind);
           result.saved++;
           result.savedBytes += bytes.byteLength;
         }
         result.applied.push({ kind, months, rows: part.dataRows });
       }
     }
+  }
+
+  // Só apaga a anterior depois que a nova foi guardada — se a gravação da
+  // nova falhou, a anterior fica (senão os dados sumiriam ao reabrir).
+  if (api && choice === "replace" && deleteOld.length > 0) {
+    const appliedKinds = new Set(result.applied.map((a) => a.kind));
+    const safe = deleteOld.filter((g) =>
+      appliedKinds.has(g.kind) && savedKinds.has(g.kind) && !result.saveErrors.some((e) => e.startsWith(`${KIND_LABEL[g.kind]}:`)));
+    await deleteSuperseded(api, safe, result);
   }
   return result;
 }
@@ -415,6 +431,7 @@ async function persist(
   source: File,
   storedName: string,
   result: ApplyResult,
+  savedKinds: Set<BaseKind>,
 ) {
   try {
     // CSV do KE30 já é leve: guarda o próprio arquivo, como sempre.
@@ -424,6 +441,7 @@ async function persist(
     if (!bytes) return;
     const saved = await api.salvar(KIND_TIPO[kind], storedName, await bytesToBase64(bytes));
     if (!saved.ok) throw new Error(saved.erro ?? "falha ao gravar");
+    savedKinds.add(kind);
     result.saved++;
     result.savedBytes += bytes.byteLength;
   } catch (err) {
@@ -431,25 +449,111 @@ async function persist(
   }
 }
 
+// ── Bases anteriores no armazenamento ────────────────────────────────────
+
 /**
- * Arquivos gravados cujos meses foram TODOS substituídos agora saem do disco —
- * sem isso, o arquivo antigo e o novo seriam lidos na próxima abertura. Só
- * conta arquivo que estava carregado (com meses conhecidos): o que não estava
- * em memória nunca é apagado.
+ * Arquivos guardados de um tipo que a nova base sobrescreve (em parte ou no
+ * todo). Só saem do disco se a pessoa aceitar — ver `deleteSuperseded`.
  */
-async function removeSuperseded(
-  api: NonNullable<ReturnType<typeof bases>>,
-  tipo: "ke30" | "budget",
-  before: Array<{ name: string; months: string[] }>,
-  newPeriods: string[],
-  keepName: string,
-) {
-  const replaced = new Set(newPeriods);
-  for (const file of before) {
-    if (file.name === keepName || file.months.length === 0) continue;
-    if (file.months.every((m) => replaced.has(m))) {
-      await api.deletar(tipo, file.name).catch(() => undefined);
+export interface SupersededGroup {
+  kind: BaseKind;
+  /** Nomes dos arquivos guardados que seriam apagados. */
+  files: string[];
+  /** Meses ("AAAA-MM") que hoje vêm só desses arquivos e sairiam do app. */
+  lostMonths: string[];
+}
+
+async function savedNames(api: NonNullable<ReturnType<typeof bases>>, tipo: "ke30" | "budget" | "ruptura"): Promise<string[]> {
+  const info = await api.info().catch(() => null);
+  const saved = info?.ok ? info.bases?.[tipo] : undefined;
+  if (!saved) return [];
+  return saved.arquivos?.map((a) => a.nomeArquivo) ?? saved.nomeArquivos ?? [];
+}
+
+/**
+ * Com "Substituir": arquivos guardados que trazem meses que a nova base também
+ * traz (ou que já não contribuem com nada). Fora do app instalado não há
+ * armazenamento, então não há o que perguntar.
+ */
+export async function findSuperseded(files: IntakeFile[]): Promise<SupersededGroup[]> {
+  const api = bases();
+  if (!api) return [];
+  const incoming = new Map<BaseKind, { months: Set<string>; names: Set<string> }>();
+  for (const file of files) {
+    for (const part of file.parts) {
+      if (!part.kind || part.error || part.months.length === 0) continue;
+      const entry = incoming.get(part.kind) ?? { months: new Set<string>(), names: new Set<string>() };
+      part.months.forEach((m) => entry.months.add(m));
+      entry.names.add(part.sheetName === null ? file.file.name : storedNameFor(part.kind, part.months));
+      incoming.set(part.kind, entry);
     }
+  }
+
+  const groups: SupersededGroup[] = [];
+  for (const [kind, inc] of incoming) {
+    const onDisk = (await savedNames(api, KIND_TIPO[kind])).filter((n) => !inc.names.has(n));
+    if (onDisk.length === 0) continue;
+
+    if (kind === "ruptura") {
+      // A ruptura é uma base só, montada de todos os arquivos guardados: a
+      // "anterior" é o conjunto deles. Só pergunta se a nova cobre algum mês.
+      const current = useRuptura.getState().model?.months ?? [];
+      if (!current.some((m) => inc.months.has(m))) continue;
+      groups.push({ kind, files: onDisk, lostMonths: current.filter((m) => !inc.months.has(m)).sort() });
+      continue;
+    }
+
+    const loaded = (kind === "real" ? usePricing.getState().files : useBudget.getState().files)
+      .map((f) => ({ name: f.name, months: f.months.map(periodToMonth) }));
+    // Sem nada carregado deste tipo (ainda abrindo ou falhou): não dá para
+    // saber o que cada arquivo contém — melhor não oferecer apagar.
+    if (loaded.length === 0) continue;
+    const byName = new Map(loaded.map((f) => [f.name, f.months]));
+    const candidates = onDisk.filter((name) => {
+      const months = byName.get(name);
+      // Guardado mas fora da memória: todos os meses já foram substituídos.
+      if (!months) return true;
+      return months.some((m) => inc.months.has(m));
+    });
+    if (candidates.length === 0) continue;
+    const chosen = new Set(candidates);
+    const keptElsewhere = new Set(loaded.filter((f) => !chosen.has(f.name)).flatMap((f) => f.months));
+    const lost = new Set<string>();
+    for (const name of candidates) {
+      for (const m of byName.get(name) ?? []) {
+        if (!inc.months.has(m) && !keptElsewhere.has(m)) lost.add(m);
+      }
+    }
+    groups.push({ kind, files: candidates, lostMonths: [...lost].sort() });
+  }
+  return groups;
+}
+
+/**
+ * Apaga do disco (e da memória) os arquivos anteriores que a pessoa aceitou
+ * apagar. Roda depois de a nova base ter sido aplicada e guardada.
+ */
+async function deleteSuperseded(
+  api: NonNullable<ReturnType<typeof bases>>,
+  groups: SupersededGroup[],
+  result: ApplyResult,
+) {
+  for (const group of groups) {
+    const tipo = KIND_TIPO[group.kind];
+    let removed = 0;
+    for (const name of group.files) {
+      const res = await api.deletar(tipo, name).catch((err: unknown) => ({ ok: false, erro: err instanceof Error ? err.message : undefined }));
+      if (!res.ok) {
+        result.deleteErrors.push(`${KIND_LABEL[group.kind]} "${name}"`);
+        continue;
+      }
+      removed++;
+      if (group.kind === "real") usePricing.getState().removeFile(name);
+      else if (group.kind === "budget") useBudget.getState().removeBudgetFile(name);
+    }
+    // A ruptura junta todos os arquivos num modelo só: remonta com o que ficou.
+    if (group.kind === "ruptura" && removed > 0) await useRuptura.getState().reloadSaved();
+    result.deleted += removed;
   }
 }
 
