@@ -88,8 +88,8 @@ export default function Dre() {
   const months = useMonthsInfo();
   const [mode, setMode] = useState<DrePeriodMode>("month");
   const [showFilters, setShowFilters] = useState(false);
-  const [exportDelta, setExportDelta] = useState(false);
-  const [exportBudget, setExportBudget] = useState(false);
+  const [exportDelta, setExportDelta] = useState(true);
+  const [exportBudget, setExportBudget] = useState(true);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchDim, setBatchDim] = useState<FilterKey>("categoria");
   const [batchValues, setBatchValues] = useState<string[]>([]);
@@ -238,6 +238,8 @@ export default function Dre() {
             mode={mode}
             budgetRows={filteredBudget}
             allRows={filtered}
+            showDelta={exportDelta}
+            showBudget={exportBudget}
           />
         </GlassCard>
         </SendToSlideHover>
@@ -574,7 +576,7 @@ function ExportOptionToggle({
           ? "border-primary/40 bg-primary/10 text-primary"
           : "border-border/50 bg-background/40 text-muted-foreground hover:text-foreground",
       )}
-      title={active ? `${label} entrará no XLSX` : `${label} não entrará no XLSX`}
+      title={active ? `${label} aparece na tabela e entra no XLSX` : `${label} fica fora da tabela e do XLSX`}
     >
       <span
         className={cn(

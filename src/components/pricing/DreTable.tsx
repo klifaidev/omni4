@@ -23,6 +23,10 @@ interface DreTableProps {
   budgetRows?: BudgetRow[];
   /** Full unfiltered pricing rows — used to compute historical anomaly thresholds. */
   allRows?: PricingRow[];
+  /** Mostra a coluna de variação (Δ) em cada período. */
+  showDelta?: boolean;
+  /** Mostra a coluna de Budget em cada período. */
+  showBudget?: boolean;
 }
 
 interface PeriodCol {
@@ -204,7 +208,15 @@ function getBudgetValue(lineId: string, a: BudgetAgg): number | null {
   }
 }
 
-export function DreTable({ rows, months, mode = "month", budgetRows = [], allRows }: DreTableProps) {
+export function DreTable({
+  rows,
+  months,
+  mode = "month",
+  budgetRows = [],
+  allRows,
+  showDelta = true,
+  showBudget = true,
+}: DreTableProps) {
   const selectedPeriods = usePricing((s) => s.selectedPeriods);
 
   // Filter months based on selectedPeriods (null = all)
@@ -344,16 +356,16 @@ export function DreTable({ rows, months, mode = "month", budgetRows = [], allRow
     );
   }
 
-  const hasBudgetAnywhere = budgetColMap.size > 0;
+  const hasBudgetAnywhere = showBudget && budgetColMap.size > 0;
 
   // For the <thead>, we need a 2-row grouped layout so each period spans
   // (Real, Δ, Budget?) sub-columns.
   const subColsFor = (key: string): Array<"value" | "delta" | "budget"> => {
     const subs: Array<"value" | "delta" | "budget"> = ["value"];
     // Δ shown when there is a "previous" reference column
-    if (prevColMap.get(key)) subs.push("delta");
+    if (showDelta && prevColMap.get(key)) subs.push("delta");
     // Budget column shown only when budget data exists for this column
-    if (budgetColMap.has(key)) subs.push("budget");
+    if (showBudget && budgetColMap.has(key)) subs.push("budget");
     return subs;
   };
 
