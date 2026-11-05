@@ -123,7 +123,7 @@ export async function parseCsvFile(file: File): Promise<ParsedCsv> {
     skipEmptyLines: true,
   });
   const [headerRow = [], ...dataRows] = result.data;
-  if (result.errors.length) {
+  if (import.meta.env.DEV && result.errors.length) {
     // eslint-disable-next-line no-console
     console.log(`[CSV] ${file.name} — erros do parser:`, result.errors.slice(0, 5));
   }
@@ -320,18 +320,21 @@ export function parseRealTable(
     rows.push(obj as PricingRow);
   }
 
-  // Diagnostics output
-  // eslint-disable-next-line no-console
-  console.groupCollapsed(`[Real] ${fileName} — diagnóstico`);
-  if (diagnostics.delimiter) console.log("Delimitador detectado:", JSON.stringify(diagnostics.delimiter));
-  console.log("Total de linhas brutas:", dataRows.length);
-  console.log("Headers brutos:", headers);
-  console.log("Mapeamento aplicado:", Object.fromEntries(columns.map(([i, f]) => [headers[i], f])));
-  console.log("Headers ignorados (sem mapeamento):", unmapped);
-  console.log("Rejeitadas (período inválido):", rejectedNoPeriod);
-  console.log("Linhas importadas:", rows.length);
-  if (firstFailureSample) console.log("Exemplo de linha rejeitada:", Array.from(firstFailureSample));
-  console.groupEnd();
+  // Diagnóstico só no ambiente de desenvolvimento: no app instalado, nada da
+  // base (cabeçalhos ou linhas) vai para o console.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.groupCollapsed(`[Real] ${fileName} — diagnóstico`);
+    if (diagnostics.delimiter) console.log("Delimitador detectado:", JSON.stringify(diagnostics.delimiter));
+    console.log("Total de linhas brutas:", dataRows.length);
+    console.log("Headers brutos:", headers);
+    console.log("Mapeamento aplicado:", Object.fromEntries(columns.map(([i, f]) => [headers[i], f])));
+    console.log("Headers ignorados (sem mapeamento):", unmapped);
+    console.log("Rejeitadas (período inválido):", rejectedNoPeriod);
+    console.log("Linhas importadas:", rows.length);
+    if (firstFailureSample) console.log("Exemplo de linha rejeitada:", Array.from(firstFailureSample));
+    console.groupEnd();
+  }
 
   if (rows.length === 0) {
     const reasons: string[] = [];

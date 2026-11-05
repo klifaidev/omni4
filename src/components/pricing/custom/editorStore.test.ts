@@ -42,7 +42,7 @@ describe("editorStore undo/redo", () => {
     const initial = config();
     const moved = config("Titulo", 120);
 
-    bindEditorStore(initial, onChange, "slide-yjs-undo");
+    bindEditorStore(initial, onChange, "slide-undo");
     commitExternalEditorChange("Mover bloco", moved);
 
     expect(undo()).toEqual(initial);

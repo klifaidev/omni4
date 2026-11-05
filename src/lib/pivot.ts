@@ -121,7 +121,7 @@ export interface PivotRowHeader {
 export interface PivotColHeader {
   key: string;
   values: string[];
-  // TODO: computar quando colDims.length > 1. Reservado para hierarquia multi-nível. Atualmente sempre 0 — não usar em lógica de negócio.
+  // Reservado para hierarquia multi-nível. Atualmente sempre 0 — não usar em lógica de negócio.
   depth: number;
   // Reservado para hierarquia multi-nível. Atualmente sempre true — não usar em lógica de negócio.
   isLeaf: boolean;

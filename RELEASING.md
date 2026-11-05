@@ -27,8 +27,9 @@ OMNI4-Atualizacao-X.Y.Z.omni4update        ← o que todos recebem e arrastam em
 OMNI4-Pricing-Analytics-Setup-X.Y.Z.exe    ← instalador comum (primeira instalação)
 ```
 
-O primeiro build em um computador baixa ferramentas do electron-builder do GitHub;
-depois ficam em cache. Em uma rede que bloqueia o GitHub, gere a versão em outra rede.
+O primeiro build em um computador baixa da internet as ferramentas de empacotamento
+do electron-builder; depois ficam em cache. Em uma rede que bloqueie esse download,
+gere a versão em outra rede.
 
 ## O que o app confere antes de instalar
 1. É um pacote do OMNI4 com a assinatura Ed25519 da chave acima.
