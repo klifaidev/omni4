@@ -323,7 +323,7 @@ export default function Canais() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-medium">Evolução temporal por canal</h2>
-              <p className="text-xs text-muted-foreground">Top 8 canais por ROL{topCanais.includes("Outros") ? " · demais agrupados em Outros" : ""}</p>
+              <p className="text-xs text-muted-foreground">Top 8 canais por ROL</p>
             </div>
             <div className="flex gap-1">
               {(["margemPct", "rol", "volumeKg"] as ChartMetric[]).map((m) => (

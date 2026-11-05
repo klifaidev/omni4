@@ -68,7 +68,8 @@ export function CanalTrendVisual({ data, variant }: { data: CanalTrendVisualData
         <YAxis tick={axisStyle(variant)} tickFormatter={(v) => fmtAxis(Number(v))} width={variant === "slide" ? 80 : 60} />
         <Tooltip content={(props) => <SortedTooltip {...props} format={fmtTip} />} />
         <Legend wrapperStyle={{ fontSize: variant === "slide" ? 13 : 11 }} />
-        {data.topCanais.map((c, i) => (
+        {/* "Outros" soma canais sem relação entre si; só faz sentido no mix. */}
+        {data.topCanais.filter((c) => c !== "Outros").map((c, i) => (
           <Line
             key={c}
             type="monotone"

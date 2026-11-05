@@ -1851,12 +1851,18 @@ function buildEvolutionDataUncached(
   const totalVolumeByMonth = new Map<string, number>();
   const grouped = new Map<string, Map<string, { volume: number; margin: number }>>();
   const totalByDimension = new Map<string, number>();
+  // No modo SKU a legenda mostra a descrição do item, não o código.
+  const skuDescByKey = new Map<string, string>();
 
   for (const row of rows) {
     const month = row.periodo;
     totalVolumeByMonth.set(month, (totalVolumeByMonth.get(month) ?? 0) + row.volumeKg);
     if (dimension === "sku" && selectedSkuSet && !selectedSkuSet.has(row.sku ?? "")) continue;
     const key = dimensionOf(row);
+    if (dimension === "sku" && !skuDescByKey.has(key)) {
+      const desc = row.skuDesc?.trim();
+      if (desc) skuDescByKey.set(key, desc);
+    }
     totalByDimension.set(key, (totalByDimension.get(key) ?? 0) + row.volumeKg);
     let byDimension = grouped.get(month);
     if (!byDimension) {
@@ -1894,7 +1900,7 @@ function buildEvolutionDataUncached(
 
   const series = keys.map((key, index) => ({
     key,
-    label: key,
+    label: (dimension === "sku" && skuDescByKey.get(key)) || key,
     color: EVOLUTION_COLORS[index % EVOLUTION_COLORS.length],
     falling: hasConsistentShareDrop(points.map((point) => Number(point[key] ?? 0))),
   }));
