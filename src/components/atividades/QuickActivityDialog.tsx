@@ -99,6 +99,7 @@ export function QuickActivityDialog({ open, onOpenChange, prefill }: Props) {
       return;
     }
     const next = {
+      ...st,
       cards: { ...st.cards, [card.id]: card },
       columns: st.columns.map((c) =>
         c.id === targetColId ? { ...c, cardIds: [...c.cardIds, card.id] } : c,

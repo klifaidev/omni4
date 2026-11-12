@@ -89,6 +89,21 @@ export interface KanbanColumn {
 export interface KanbanState {
   columns: KanbanColumn[];
   cards: Record<string, KanbanCard>;
+  /** Tags criadas na biblioteca da aba, mesmo que nenhuma atividade use ainda. */
+  tagLibrary?: string[];
+}
+
+/** Todas as tags conhecidas: as da biblioteca e as que já estão em atividades,
+ *  sem repetir (comparação sem diferenciar maiúsculas) e em ordem alfabética. */
+export function allTags(state: KanbanState): string[] {
+  const seen = new Map<string, string>();
+  const add = (t: string | undefined) => {
+    const v = t?.trim();
+    if (v && !seen.has(v.toLocaleLowerCase("pt-BR"))) seen.set(v.toLocaleLowerCase("pt-BR"), v);
+  };
+  (state.tagLibrary ?? []).forEach(add);
+  Object.values(state.cards).forEach((c) => c.tags?.forEach(add));
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
@@ -226,7 +241,7 @@ function generateRecurring(state: KanbanState): KanbanState {
   const columns = state.columns.map((col) =>
     col.id === firstCol.id ? { ...col, cardIds: [...newIds, ...col.cardIds] } : col,
   );
-  const next = { cards: newCards, columns };
+  const next = { ...state, cards: newCards, columns };
   persistKanbanState(next);
   return next;
 }
@@ -301,7 +316,7 @@ function seedTop3(state: KanbanState): KanbanState {
     /* noop */
   }
 
-  return { cards: newCards, columns };
+  return { ...state, cards: newCards, columns };
 }
 
 

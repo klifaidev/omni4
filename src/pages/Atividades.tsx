@@ -23,6 +23,7 @@ import {
   saveState,
   serializeKanbanForExport,
   subscribeKanbanSaveStatus,
+  allTags,
 } from "@/lib/kanban";
 import {
   DndContext,
@@ -203,7 +204,11 @@ export default function Atividades() {
   const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
   const boardSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      // Enter fica para abrir a atividade (o card inteiro agora é a alça).
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
+    }),
   );
   const [saveInfo, setSaveInfo] = useState(() => getKanbanSaveInfo());
   useEffect(() => {
@@ -257,11 +262,19 @@ export default function Atividades() {
     return Array.from(set).sort().map((a) => ({ value: a, label: a }));
   }, [state.cards]);
 
-  const tagOptions = useMemo(() => {
-    const set = new Set<string>();
-    Object.values(state.cards).forEach((c) => c.tags?.forEach((t) => t && set.add(t)));
-    return Array.from(set).sort();
-  }, [state.cards]);
+  // Biblioteca de tags + tags já usadas em atividades.
+  const tagOptions = useMemo(() => allTags(state), [state]);
+  function createLibraryTag(tag: string) {
+    const v = tag.trim();
+    if (!v) return;
+    setState((s) => {
+      if (allTags(s).some((t) => t.toLocaleLowerCase("pt-BR") === v.toLocaleLowerCase("pt-BR"))) return s;
+      return { ...s, tagLibrary: [...(s.tagLibrary ?? []), v] };
+    });
+  }
+  function removeLibraryTag(tag: string) {
+    setState((s) => ({ ...s, tagLibrary: (s.tagLibrary ?? []).filter((t) => t !== tag) }));
+  }
 
   const matchCard = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -397,6 +410,7 @@ export default function Atividades() {
       const newCards = { ...s.cards };
       col.cardIds.forEach((id) => delete newCards[id]);
       return {
+        ...s,
         cards: newCards,
         columns: s.columns.filter((c) => c.id !== colId),
       };
@@ -425,7 +439,7 @@ export default function Atividades() {
           c.id === columnId ? { ...c, cardIds: [...c.cardIds, card.id] } : c,
         );
       }
-      return { cards, columns };
+      return { ...s, cards, columns };
     });
   }
   function deleteCard(cardId: string) {
@@ -433,6 +447,7 @@ export default function Atividades() {
       const cards = { ...s.cards };
       delete cards[cardId];
       return {
+        ...s,
         cards,
         columns: s.columns.map((c) => ({
           ...c,
@@ -485,7 +500,7 @@ export default function Atividades() {
       if (idx >= 0) from.cardIds.splice(idx, 1);
       const insertAt = Math.min(toIndex, to.cardIds.length);
       to.cardIds.splice(insertAt, 0, cardId);
-      return { columns, cards: withCompletionStamp(s, cardId, fromCol, toCol) };
+      return { ...s, columns, cards: withCompletionStamp(s, cardId, fromCol, toCol) };
     });
   }
 
@@ -544,6 +559,7 @@ export default function Atividades() {
       && fromCol.cardIds.every((id, i) => id === toCol.cardIds[i]);
     if (unchanged) return; // solto no mesmo lugar — não grava à toa
     setState((s) => ({
+      ...s,
       columns: finalColumns.map((c) => ({ ...c, cardIds: [...c.cardIds] })),
       cards: withCompletionStamp(s, activeId, fromCol.id, toCol.id),
     }));
@@ -875,6 +891,10 @@ export default function Atividades() {
         initial={editingCard?.card}
         columnId={editingCard?.columnId ?? ""}
         columns={state.columns}
+        knownTags={tagOptions}
+        libraryTags={state.tagLibrary ?? []}
+        onCreateTag={createLibraryTag}
+        onRemoveLibraryTag={removeLibraryTag}
         onSave={(card, colId) => {
           saveCard(card, colId);
           setEditingCard(null);
@@ -1108,33 +1128,41 @@ function CardItem({ card, onEdit, onDelete }: CardItemProps) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...style, touchAction: "none" }}
+      {...attributes}
+      {...listeners}
+      aria-label={`Atividade: ${card.title || "Sem título"}. Enter abre; Espaço pega para arrastar.`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onEdit}
-      className="group cursor-pointer rounded-xl border border-border/40 bg-card/80 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-all hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
+      onKeyDown={(e) => {
+        listeners?.onKeyDown?.(e);
+        if (e.key === "Enter" && !isDragging) {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
+      className="group cursor-grab rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing border border-border/40 bg-card/80 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-all hover:-translate-y-px hover:border-border/70 hover:bg-card hover:shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
     >
-      {/* Top row: alça de arrastar + título + excluir */}
+      {/* Top row: indicador de arrastar + título + excluir (o card inteiro arrasta) */}
       <div className="flex items-start gap-2">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Arrastar atividade"
-          style={{ touchAction: "none" }}
+        <span
+          aria-hidden
           className={cn(
-            "mt-0.5 cursor-grab rounded text-muted-foreground/40 transition-opacity active:cursor-grabbing",
-            "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            "mt-0.5 rounded text-muted-foreground/40 transition-opacity",
             hover ? "opacity-100" : "opacity-40",
           )}
         >
           <GripVertical className="h-3.5 w-3.5 shrink-0" />
-        </button>
+        </span>
         <div className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-foreground">
           {card.title || <span className="italic text-muted-foreground">Sem título</span>}
         </div>
         <button
+          type="button"
+          aria-label="Excluir atividade"
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
@@ -1284,10 +1312,18 @@ interface CardDialogProps {
   initial?: KanbanCard;
   columnId: string;
   columns: KanbanColumn[];
+  /** Todas as tags conhecidas (biblioteca + usadas em atividades). */
+  knownTags: string[];
+  /** Só as tags criadas na biblioteca (podem ser removidas dela). */
+  libraryTags: string[];
+  onCreateTag: (tag: string) => void;
+  onRemoveLibraryTag: (tag: string) => void;
   onSave: (card: KanbanCard, columnId: string) => void;
   onMove: (card: KanbanCard, toColId: string) => void;
   onRequestDelete: (card: KanbanCard) => void;
 }
+
+const TAG_DRAG_TYPE = "application/x-omni4-tag";
 
 function CardDialog({
   open,
@@ -1295,6 +1331,10 @@ function CardDialog({
   initial,
   columnId,
   columns,
+  knownTags,
+  libraryTags,
+  onCreateTag,
+  onRemoveLibraryTag,
   onSave,
   onMove,
   onRequestDelete,
@@ -1324,12 +1364,29 @@ function CardDialog({
     setColId(columnId);
   }, [open, initial, columnId]);
 
+  const [newLibraryTag, setNewLibraryTag] = useState("");
+  const [tagDropActive, setTagDropActive] = useState(false);
+  const sameTag = (a: string, b: string) => a.toLocaleLowerCase("pt-BR") === b.toLocaleLowerCase("pt-BR");
+
+  /** Inclui uma tag na atividade, reaproveitando a grafia de uma tag existente. */
+  function insertTag(raw: string) {
+    const v = raw.trim();
+    if (!v) return;
+    const canonical = knownTags.find((t) => sameTag(t, v)) ?? v;
+    setTags((s) => (s.some((t) => sameTag(t, canonical)) ? s : [...s, canonical]));
+  }
   function addTag() {
-    const v = tagDraft.trim();
-    if (!v || tags.includes(v)) return;
-    setTags((s) => [...s, v]);
+    insertTag(tagDraft);
     setTagDraft("");
   }
+  function createTag() {
+    const v = newLibraryTag.trim();
+    if (!v) return;
+    onCreateTag(v);
+    setNewLibraryTag("");
+  }
+  const availableTags = knownTags.filter((t) => !tags.some((x) => sameTag(x, t)));
+  const usedElsewhere = (t: string) => knownTags.includes(t) && !libraryTags.includes(t);
 
   function handleSave() {
     if (!title.trim() && !description.trim()) {
@@ -1489,7 +1546,26 @@ function CardDialog({
 
           {/* Tags */}
           <Field label="Tags">
-            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2">
+            <div
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(TAG_DRAG_TYPE)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setTagDropActive(true);
+              }}
+              onDragLeave={() => setTagDropActive(false)}
+              onDrop={(e) => {
+                const tag = e.dataTransfer.getData(TAG_DRAG_TYPE);
+                setTagDropActive(false);
+                if (!tag) return;
+                e.preventDefault();
+                insertTag(tag);
+              }}
+              className={cn(
+                "flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background p-2 transition-colors",
+                tagDropActive && "border-primary bg-primary/10 ring-2 ring-primary/30",
+              )}
+            >
               {tags.map((t) => (
                 <span
                   key={t}
@@ -1517,9 +1593,78 @@ function CardDialog({
                   }
                 }}
                 onBlur={addTag}
-                placeholder={tags.length ? "" : "Adicionar tag e Enter"}
+                placeholder={tags.length ? "" : "Digite e Enter, ou arraste uma tag abaixo"}
                 className="flex-1 min-w-[120px] bg-transparent text-xs outline-none"
               />
+            </div>
+
+            {/* Biblioteca de tags: criar e arrastar para a atividade */}
+            <div className="mt-2 rounded-md border border-dashed border-border/60 bg-muted/20 p-2.5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Tags existentes — arraste para cima ou clique para incluir
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {availableTags.length === 0 && (
+                  <span className="text-[11px] italic text-muted-foreground/70">
+                    {knownTags.length ? "Todas as tags já estão nesta atividade." : "Nenhuma tag criada ainda."}
+                  </span>
+                )}
+                {availableTags.map((t) => (
+                  <span
+                    key={t}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(TAG_DRAG_TYPE, t);
+                      e.dataTransfer.setData("text/plain", t);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onDragEnd={() => setTagDropActive(false)}
+                    className="group/tag inline-flex cursor-grab items-center gap-1 rounded-full border border-border/50 bg-background px-2 py-0.5 text-xs shadow-sm hover:border-primary/50 active:cursor-grabbing"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => insertTag(t)}
+                      title={`Incluir a tag "${t}"`}
+                      className="inline-flex items-center gap-1"
+                    >
+                      <TagIcon className="h-2.5 w-2.5 text-muted-foreground" />
+                      {t}
+                    </button>
+                    {!usedElsewhere(t) && libraryTags.includes(t) && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveLibraryTag(t)}
+                        title={`Remover "${t}" da biblioteca`}
+                        aria-label={`Remover ${t} da biblioteca`}
+                        className="text-muted-foreground/60 opacity-0 transition-opacity hover:text-destructive group-hover/tag:opacity-100"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-1.5">
+                <input
+                  value={newLibraryTag}
+                  onChange={(e) => setNewLibraryTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createTag();
+                    }
+                  }}
+                  placeholder="Criar nova tag"
+                  aria-label="Nome da nova tag"
+                  className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                />
+                <Button type="button" size="sm" variant="secondary" className="h-7 px-2.5 text-xs" onClick={createTag} disabled={!newLibraryTag.trim()}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Criar
+                </Button>
+              </div>
             </div>
           </Field>
 
