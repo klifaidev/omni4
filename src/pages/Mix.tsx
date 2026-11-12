@@ -725,11 +725,11 @@ function buildLensNarrative({
   const marginMixTotal = marginResult.skuDetails.reduce((sum, detail) => sum + getSkuMixEffect(detail), 0);
   const secondarySentence = (
     <>
-      A outra lente tambem fica visivel: mix de margem{" "}
+      A outra lente também fica visível: mix de margem{" "}
       <strong className={mixTotalClass(marginMixTotal)}>{marginMixTotal > 0 ? "+" : ""}{formatBRL(marginMixTotal, { compact: true })}</strong>
       {priceResult ? (
         <>
-          {" "}e mix de preco{" "}
+          {" "}e mix de preço{" "}
           <strong className={mixTotalClass(priceResult.efeitoMixRs)}>{priceResult.efeitoMixRs > 0 ? "+" : ""}{formatBRL(priceResult.efeitoMixRs, { compact: true })}</strong>.
         </>
       ) : "."}
@@ -739,8 +739,8 @@ function buildLensNarrative({
   const diverges = priceResult && marginMixTotal * priceResult.efeitoMixRs < 0;
   const divergenceSentence = diverges ? (
     <>
-      As duas lentes apontam em direcoes opostas: isso normalmente indica migracao para SKUs que mudam o preco medio em
-      uma direcao, mas possuem margem por kg suficientemente diferente para gerar efeito financeiro contrario.
+      As duas lentes apontam em direções opostas: isso normalmente indica migração para SKUs que mudam o preço médio em
+      uma direção, mas possuem margem por kg suficientemente diferente para gerar efeito financeiro contrário.
     </>
   ) : null;
 
@@ -755,7 +755,7 @@ function buildLensNarrative({
   if (!priceResult) {
     return [
       <>
-        Nao ha dados suficientes para calcular o mix de preco nos periodos selecionados.
+        Não há dados suficientes para calcular o mix de preço nos períodos selecionados.
       </>,
       secondarySentence,
     ];
@@ -770,7 +770,7 @@ function buildLensNarrative({
 
   return [
     <>
-      O mix de preco {priceResult.efeitoMixRs >= 0 ? "ajudou" : "pressionou"} o preco medio em{" "}
+      O mix de preço {priceResult.efeitoMixRs >= 0 ? "ajudou" : "pressionou"} o preço médio em{" "}
       <strong className={mixTotalClass(priceResult.efeitoMixRs)}>
         {priceResult.efeitoMixRs > 0 ? "+" : ""}{formatBRL(priceResult.efeitoMixRs, { compact: true })}
       </strong>
@@ -782,13 +782,13 @@ function buildLensNarrative({
     </>,
     ...(topPositive ? [
       <>
-        A maior fortaleza de preco foi <strong className="text-primary">{topPositive.skuDesc}</strong> com{" "}
+        A maior fortaleza de preço foi <strong className="text-primary">{topPositive.skuDesc}</strong> com{" "}
         <strong className="text-success">+{formatBRL(topPositive.efeitoMixRs, { compact: true })}</strong>.
       </>,
     ] : []),
     ...(topNegative ? [
       <>
-        A maior pressao de preco veio de <strong className="text-primary">{topNegative.skuDesc}</strong> com{" "}
+        A maior pressão de preço veio de <strong className="text-primary">{topNegative.skuDesc}</strong> com{" "}
         <strong className="text-destructive">{formatBRL(topNegative.efeitoMixRs, { compact: true })}</strong>.
       </>,
     ] : []),

@@ -604,7 +604,7 @@ const T26: SlideTemplate = {
     title: "O que mudou e por que",
     blocks: [
       TITLE("O que mudou e por que"),
-      TEXT("Comece pela variacao total, depois mostre a causa e finalize com os itens responsaveis.", 40, 88, 760, 38, 2, 16, "64748B"),
+      TEXT("Comece pela variação total, depois mostre a causa e finalize com os itens responsáveis.", 40, 88, 760, 38, 2, 16, "64748B"),
       KPI("Variacao de ROL", "rol", 40, 145, 300, 115, 3, "C8102E"),
       KPI("Variacao de Volume", "volume", 360, 145, 300, 115, 4, "1C2430"),
       KPI("Variacao de CM", "cm", 680, 145, 300, 115, 5, "1C2430"),

@@ -4,11 +4,11 @@ import { formatBRL } from "@/lib/format";
 
 const EFFECT_LABELS: Record<keyof Pick<PVMResult, "volume" | "price" | "cost" | "freight" | "commission" | "others">, string> = {
   volume: "Volume",
-  price: "Preco",
-  cost: "Custo Variavel",
+  price: "Preço",
+  cost: "Custo Variável",
   freight: "Frete",
-  commission: "Comissao",
-  others: "Mix e Residuo Comercial",
+  commission: "Comissão",
+  others: "Mix e Resíduo Comercial",
 };
 
 type EffectKey = keyof typeof EFFECT_LABELS;
@@ -75,7 +75,7 @@ export function buildPvmReading(result: PVMResult): ReactNode[] {
     sentences.push(
       <>
         O principal fator de ganho foi {strong(EFFECT_LABELS[top.key], "pos")} ({strong(`+${fmt(top.value)}`, "pos")}),
-        representando {strong(`${(share * 100).toFixed(0)}%`)} da variacao total positiva.
+        representando {strong(`${(share * 100).toFixed(0)}%`)} da variação total positiva.
       </>,
     );
   }
@@ -87,8 +87,8 @@ export function buildPvmReading(result: PVMResult): ReactNode[] {
     const share = sumNeg < 0 ? top.value / sumNeg : 0;
     sentences.push(
       <>
-        A maior pressao veio de {strong(EFFECT_LABELS[top.key], "neg")} ({strong(fmt(top.value), "neg")}), representando{" "}
-        {strong(`${(share * 100).toFixed(0)}%`)} da variacao negativa.
+        A maior pressão veio de {strong(EFFECT_LABELS[top.key], "neg")} ({strong(fmt(top.value), "neg")}), representando{" "}
+        {strong(`${(share * 100).toFixed(0)}%`)} da variação negativa.
       </>,
     );
   }
@@ -110,7 +110,7 @@ export function buildPvmReading(result: PVMResult): ReactNode[] {
     sentences.push(
       <>
         O SKU mais impactante positivamente foi {strong(topSkuPos.name)} com {strong(`+${fmt(topSkuPos.pos)}`, "pos")} de
-        contribuicao liquida.
+        contribuição líquida.
       </>,
     );
   }
@@ -119,7 +119,7 @@ export function buildPvmReading(result: PVMResult): ReactNode[] {
   if (topSkuNeg) {
     sentences.push(
       <>
-        O SKU com maior pressao negativa foi {strong(topSkuNeg.name)} com {strong(fmt(topSkuNeg.neg), "neg")} - avaliar
+        O SKU com maior pressão negativa foi {strong(topSkuNeg.name)} com {strong(fmt(topSkuNeg.neg), "neg")} — avaliar
         pricing ou mix.
       </>,
     );
@@ -129,22 +129,22 @@ export function buildPvmReading(result: PVMResult): ReactNode[] {
   if (result.price < 0 && result.volume > 0) {
     sentences.push(
       <>
-        <strong className="text-warning">Atencao:</strong> o crescimento de volume esta mascarando deterioracao de preco -
-        revisar politica comercial.
+        <strong className="text-warning">Atenção:</strong> o crescimento de volume está mascarando a deterioração de preço —
+        revisar a política comercial.
       </>,
     );
   } else if (topNegKey === "cost") {
     sentences.push(
       <>
-        A pressao de {strong("custo variavel", "neg")} e o principal detrator - priorizar revisao de fornecedores ou
-        reformulacao.
+        A pressão de {strong("custo variável", "neg")} é o principal detrator — priorizar revisão de fornecedores ou
+        reformulação.
       </>,
     );
   } else if (allPositive) {
     sentences.push(
       <>
-        Resultado equilibrado - ganhos distribuidos entre {strong("preco", "pos")}, {strong("volume", "pos")} e{" "}
-        {strong("eficiencia de custo", "pos")}.
+        Resultado equilibrado — ganhos distribuídos entre {strong("preço", "pos")}, {strong("volume", "pos")} e{" "}
+        {strong("eficiência de custo", "pos")}.
       </>,
     );
   }
@@ -169,28 +169,28 @@ export function buildMixReading(
   const mixTotal = result.skuDetails.reduce((sum, detail) => sum + getSkuMixEffect(detail), 0);
   const fmt = (value: number) => formatBRL(value, { compact: true });
   const marginText = typeof drivers.marginPp === "number" && isFinite(drivers.marginPp)
-    ? `, equivalente a ${Math.abs(drivers.marginPp).toFixed(1)} p.p. de margem no periodo comparado`
+    ? `, equivalente a ${Math.abs(drivers.marginPp).toFixed(1)} p.p. de margem no período comparado`
     : "";
 
   if (Math.abs(mixTotal) < 1) {
     sentences.push(
       <>
-        O mix ficou praticamente neutro entre {strong(result.baseLabel)} e {strong(result.currentLabel)}, sem pressao
+        O mix ficou praticamente neutro entre {strong(result.baseLabel)} e {strong(result.currentLabel)}, sem pressão
         material sobre a margem consolidada.
       </>,
     );
   } else if (mixTotal > 0) {
     sentences.push(
       <>
-        O mix ajudou a margem em {strong(`+${fmt(mixTotal)}`, "pos")}{marginText}, indicando migracao para uma
-        composicao mais rentavel.
+        O mix ajudou a margem em {strong(`+${fmt(mixTotal)}`, "pos")}{marginText}, indicando migração para uma
+        composição mais rentável.
       </>,
     );
   } else {
     sentences.push(
       <>
-        O mix pressionou a margem em {strong(fmt(mixTotal), "neg")}{marginText}, indicando migracao para uma composicao
-        menos rentavel.
+        O mix pressionou a margem em {strong(fmt(mixTotal), "neg")}{marginText}, indicando migração para uma composição
+        menos rentável.
       </>,
     );
   }
@@ -200,8 +200,8 @@ export function buildMixReading(
   if (topCategoryPos || topCategoryNeg) {
     sentences.push(
       <>
-        Em categorias, {topCategoryPos ? <>{strong(topCategoryPos.label)} foi o principal apoio ({strong(`+${fmt(topCategoryPos.value)}`, "pos")})</> : "nao houve apoio material"}
-        {topCategoryNeg ? <> enquanto {strong(topCategoryNeg.label)} foi a maior pressao ({strong(fmt(topCategoryNeg.value), "neg")})</> : ""}.
+        Em categorias, {topCategoryPos ? <>{strong(topCategoryPos.label)} foi o principal apoio ({strong(`+${fmt(topCategoryPos.value)}`, "pos")})</> : "não houve apoio material"}
+        {topCategoryNeg ? <> enquanto {strong(topCategoryNeg.label)} foi a maior pressão ({strong(fmt(topCategoryNeg.value), "neg")})</> : ""}.
       </>,
     );
   }
@@ -211,8 +211,8 @@ export function buildMixReading(
   if (topChannelPos || topChannelNeg) {
     sentences.push(
       <>
-        Por canal, {topChannelPos ? <>{strong(topChannelPos.label)} mais contribuiu positivamente ({strong(`+${fmt(topChannelPos.value)}`, "pos")})</> : "nao houve ganho relevante"}
-        {topChannelNeg ? <> e {strong(topChannelNeg.label)} concentrou a maior deterioracao ({strong(fmt(topChannelNeg.value), "neg")})</> : ""}.
+        Por canal, {topChannelPos ? <>{strong(topChannelPos.label)} mais contribuiu positivamente ({strong(`+${fmt(topChannelPos.value)}`, "pos")})</> : "não houve ganho relevante"}
+        {topChannelNeg ? <> e {strong(topChannelNeg.label)} concentrou a maior deterioração ({strong(fmt(topChannelNeg.value), "neg")})</> : ""}.
       </>,
     );
   }
@@ -224,7 +224,7 @@ export function buildMixReading(
   if (topSku) {
     sentences.push(
       <>
-        O SKU que mais explica o mix e {strong(topSku.label)} ({strong(topSku.value > 0 ? `+${fmt(topSku.value)}` : fmt(topSku.value), topSku.value > 0 ? "pos" : "neg")}).
+        O SKU que mais explica o mix é {strong(topSku.label)} ({strong(topSku.value > 0 ? `+${fmt(topSku.value)}` : fmt(topSku.value), topSku.value > 0 ? "pos" : "neg")}).
       </>,
     );
   }

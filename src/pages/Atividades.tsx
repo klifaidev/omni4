@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ChecklistItem,
   KanbanCard,
@@ -226,6 +226,33 @@ export default function Atividades() {
     }
     return "kanban";
   });
+
+  // O quadro ocupa o resto da área visível: cada coluna rola as próprias
+  // atividades e o título dela fica sempre à vista (estilo Trello/Jira).
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardHeight, setBoardHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (viewMode !== "kanban") return;
+    const el = boardRef.current;
+    if (!el) return;
+    const scroller = el.closest("main") as HTMLElement | null;
+    const measure = () => {
+      const top = scroller
+        ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        : el.getBoundingClientRect().top + window.scrollY;
+      const viewport = scroller ? scroller.clientHeight : window.innerHeight;
+      setBoardHeight(Math.max(420, Math.floor(viewport - top) - 2));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (scroller) ro.observe(scroller);
+    if (el.parentElement) ro.observe(el.parentElement);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [viewMode]);
 
   useEffect(() => {
     try {
@@ -815,7 +842,11 @@ export default function Atividades() {
           onDragEnd={handleBoardDragEnd}
           onDragCancel={handleBoardDragCancel}
         >
-          <div className="flex w-full gap-4 overflow-x-auto px-8 pb-10 pt-6">
+          <div
+            ref={boardRef}
+            style={boardHeight ? { height: boardHeight } : undefined}
+            className="flex w-full items-start gap-4 overflow-x-auto px-8 pb-5 pt-6"
+          >
             {(dragPreview ?? state.columns).map((column, colIndex) => (
               <Column
                 key={column.id}
@@ -980,17 +1011,43 @@ function Column(props: ColumnProps) {
   const [titleDraft, setTitleDraft] = useState(column.title);
   useEffect(() => setTitleDraft(column.title), [column.title]);
 
+  // Lista rolável da coluna: sombra sob o título quando já rolou e
+  // esmaecimento no rodapé enquanto houver atividades abaixo.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [moreBelow, setMoreBelow] = useState(false);
+  const syncScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    setScrolled(el.scrollTop > 2);
+    setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+  };
+  useEffect(() => {
+    syncScroll();
+    const el = listRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(syncScroll);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [cards.length]);
+
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        "flex w-[300px] shrink-0 flex-col rounded-2xl border border-border/40 bg-card/40 backdrop-blur-xl transition-colors",
+        "flex max-h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/40 bg-card/40 backdrop-blur-xl transition-colors",
         isOver && "border-primary/40 bg-primary/[0.04]",
         overloaded && "border-warning/40 bg-warning/5",
       )}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3.5 pt-3.5 pb-2">
+      {/* Header — fica fixo no topo da coluna enquanto a lista rola */}
+      <div
+        className={cn(
+          "relative z-10 flex shrink-0 items-center gap-2 px-3.5 pt-3.5 pb-2.5 transition-shadow duration-200",
+          scrolled && "border-b border-border/40 shadow-[0_8px_16px_-12px_rgba(0,0,0,0.55)]",
+        )}
+      >
         <span
           className="inline-block h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: `hsl(${column.accent})` }}
@@ -1070,8 +1127,14 @@ function Column(props: ColumnProps) {
         </DropdownMenu>
       </div>
 
-      {/* Cards */}
-      <div className="flex flex-1 flex-col gap-2 px-2.5 pb-2.5">
+      {/* Cards — rolam dentro da coluna */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={listRef}
+        onScroll={syncScroll}
+        className="kanban-col-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 pt-1"
+      >
+      <div className="flex min-h-full flex-col gap-2 pb-1">
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => {
             const dim = dimmedIds?.has(card.id);
@@ -1092,8 +1155,20 @@ function Column(props: ColumnProps) {
         {/* Espaço vazio abaixo do último card — ainda faz parte da coluna
             droppable (setNodeRef acima), então soltar aqui também conta. */}
         <div className="min-h-[24px] flex-1" />
+      </div>
+      </div>
+        {/* Esmaecimento: indica que há mais atividades abaixo */}
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background/70 to-transparent transition-opacity duration-200",
+            moreBelow ? "opacity-100" : "opacity-0",
+          )}
+        />
+      </div>
 
-        {/* Add card */}
+      {/* Add card — fixo no rodapé da coluna */}
+      <div className={cn("shrink-0 px-2.5 pb-2.5 pt-1.5", moreBelow && "border-t border-border/30")}>
         <button
           type="button"
           onClick={onAddCard}

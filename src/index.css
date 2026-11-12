@@ -479,3 +479,10 @@
   animation: none !important;
   transition: none !important;
 }
+
+/* Atividades: barra de rolagem fina dentro das colunas do Kanban,
+   discreta até o mouse passar sobre a coluna. */
+.kanban-col-scroll { scrollbar-gutter: stable; }
+.kanban-col-scroll::-webkit-scrollbar { width: 6px; }
+.kanban-col-scroll::-webkit-scrollbar-thumb { background: transparent; border: none; border-radius: 999px; }
+.kanban-col-scroll:hover::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.35); }
