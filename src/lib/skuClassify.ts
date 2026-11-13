@@ -9,7 +9,8 @@
 //   SKUs que têm essa palavra). Palavras raras pesam mais que as comuns.
 //
 // A subcategoria só é sugerida entre as que existem na categoria escolhida.
-import { completeDeParaEntries, getDeParaFieldOptions, type DeParaEntry } from "@/lib/depara";
+import { completeDeParaEntries, getDeParaBySku, getDeParaFieldOptions, type DeParaEntry } from "@/lib/depara";
+import { allBaseHierarchy, baseHierarchyStamp, getBaseHierarchy } from "@/lib/baseHierarchy";
 import { descTokens } from "@/lib/deparaSuggest";
 
 export type HierField = Exclude<keyof DeParaEntry, "skuDesc">;
@@ -51,7 +52,7 @@ export interface SkuNeighbor {
   shared: string[];
 }
 
-export type SuggestionSource = "base" | "peso" | "parecidos";
+export type SuggestionSource = "base" | "traducao" | "peso" | "parecidos";
 
 export interface FieldSuggestion {
   value: string;
@@ -188,6 +189,101 @@ function weightLabel(grams: number): string {
   return grams >= 1000 ? `${fmt(grams / 1000)} kg` : `${fmt(grams)} g`;
 }
 
+// ── Tradução base → De/Para ──────────────────────────────────────────────
+//
+// Para cada campo: o valor que a base trazia ("B1 Top") e para onde ele foi
+// no De/Para dos SKUs já classificados ("Top" em 72 de 72).
+
+type TranslationTable = Map<HierField, Map<string, Map<string, number>>>;
+
+let translationCache: { key: string; table: TranslationTable } | null = null;
+
+function getTranslations(stamp?: number): TranslationTable {
+  const key = `${stamp ?? "x"}:${baseHierarchyStamp()}`;
+  if (stamp !== undefined && translationCache?.key === key) return translationCache.table;
+  const table: TranslationTable = new Map(HIER_FIELDS.map((f) => [f, new Map()]));
+  for (const [sku, raw] of allBaseHierarchy()) {
+    const entry = getDeParaBySku(sku);
+    if (!entry) continue;
+    for (const f of HIER_FIELDS) {
+      const from = raw[f];
+      const to = entry[f];
+      if (!from || isBlank(to)) continue;
+      const byRaw = table.get(f)!;
+      const counts = byRaw.get(fold(from)) ?? new Map<string, number>();
+      counts.set(to, (counts.get(to) ?? 0) + 1);
+      byRaw.set(fold(from), counts);
+    }
+  }
+  if (stamp !== undefined) translationCache = { key, table };
+  return table;
+}
+
+interface TranslationVote {
+  raw: string;
+  scores: Map<string, number>;
+  /** SKUs já classificados com esse mesmo valor na base. */
+  total: number;
+  best: { value: string; count: number } | null;
+}
+
+function translationVotes(
+  table: TranslationTable,
+  selfSku: string,
+  field: HierField,
+  raw: string | undefined,
+  allowed: Set<string> | null,
+): TranslationVote | null {
+  if (!raw) return null;
+  const counts = new Map(table.get(field)?.get(fold(raw)) ?? []);
+  // O próprio SKU não conta como exemplo dele mesmo.
+  const self = getDeParaBySku(selfSku)?.[field];
+  const selfRaw = getBaseHierarchy(selfSku)?.[field];
+  if (self && !isBlank(self) && selfRaw && fold(selfRaw) === fold(raw) && counts.has(self)) {
+    const n = counts.get(self)! - 1;
+    if (n > 0) counts.set(self, n);
+    else counts.delete(self);
+  }
+  if (allowed) for (const v of [...counts.keys()]) if (!allowed.has(v)) counts.delete(v);
+  let total = 0;
+  let best: TranslationVote["best"] = null;
+  for (const [value, n] of counts) {
+    total += n;
+    if (!best || n > best.count) best = { value, count: n };
+  }
+  if (total === 0) return null;
+  return { raw, scores: normalize(counts), total, best };
+}
+
+/**
+ * Peso da tradução base → De/Para na decisão, por campo. Medido nas bases
+ * reais: marca e sabor da base quase sempre viram o mesmo valor no De/Para;
+ * categoria e subcategoria da base são agrupamentos diferentes, e aí a
+ * descrição decide melhor.
+ */
+/** Quanto a tradução sozinha merece de confiança, por campo (medido). */
+const TRANSLATION_CONFIDENCE: Record<HierField, number> = {
+  categoria: 0.8,
+  subcategoria: 0.8,
+  marca: 1,
+  tecnologia: 0.9,
+  formato: 0.9,
+  mercado: 0.9,
+  faixaPeso: 1,
+  sabor: 1,
+};
+
+const TRANSLATION_WEIGHT: Record<HierField, number> = {
+  categoria: 0.35,
+  subcategoria: 0.1,
+  marca: 0.85,
+  tecnologia: 0.5,
+  formato: 0.5,
+  mercado: 0.4,
+  faixaPeso: 0.6,
+  sabor: 0.75,
+};
+
 // ── Classificação ────────────────────────────────────────────────────────
 
 const MAX_NEIGHBORS = 6;
@@ -312,6 +408,8 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export function classifySku(input: ClassifyInput): SkuClassification {
   const index = getIndex(input.stamp);
+  const translations = getTranslations(input.stamp);
+  const rawOf = (f: HierField) => input.baseValues?.[f] ?? getBaseHierarchy(input.sku)?.[f];
   const known: Partial<DeParaEntry> = { ...(input.known ?? {}) };
   const tokens = descTokens(input.description);
   let neighbors = findNeighbors(index, input.sku, tokens, known);
@@ -357,10 +455,20 @@ export function classifySku(input: ClassifyInput): SkuClassification {
     const wn = NEIGHBOR_WEIGHT[field];
     for (const [v, s] of fromNeighbors) combined.set(v, (combined.get(v) ?? 0) + s * wn);
     for (const [v, s] of fromTokens.scores) combined.set(v, (combined.get(v) ?? 0) + s * (1 - wn));
-    const votes = ranked(normalize(combined));
+    // Tradução base → De/Para: pesa mais quanto mais exemplos houver.
+    const translation = translationVotes(translations, input.sku, field, rawOf(field), allowed);
+    let mixed = normalize(combined);
+    if (translation) {
+      const wx = mixed.size === 0 ? 1 : TRANSLATION_WEIGHT[field] * (translation.total / (translation.total + 1));
+      const next = new Map<string, number>();
+      for (const [v, s] of mixed) next.set(v, (next.get(v) ?? 0) + s * (1 - wx));
+      for (const [v, s] of translation.scores) next.set(v, (next.get(v) ?? 0) + s * wx);
+      mixed = normalize(next);
+    }
+    const votes = ranked(mixed);
     const alternativesOf = (value: string) => votes.filter((v) => v.value !== value).slice(0, 3);
 
-    const fromBase = matchOption(input.baseValues?.[field], options);
+    const fromBase = translation ? null : matchOption(rawOf(field), options);
     if (fromBase && (!allowed || allowed.has(fromBase))) {
       fields[field] = {
         value: fromBase,
@@ -392,7 +500,11 @@ export function classifySku(input: ClassifyInput): SkuClassification {
     const pool = allowed ? voters.filter((n) => allowed.has(n.entry[field])) : voters;
     const agree = pool.filter((n) => n.entry[field] === best.value).length;
     const strong = fromTokens.strongest?.value === best.value ? fromTokens.strongest : null;
-    const reason = strong && (pool.length === 0 || agree / pool.length < strong.purity)
+    const byTranslation = translation?.best?.value === best.value ? translation : null;
+    const translationShare = byTranslation ? byTranslation.best!.count / byTranslation.total : 0;
+    const reason = byTranslation && (translationShare >= 0.6 || pool.length === 0)
+      ? `“${byTranslation.raw}” na base virou ${best.value} em ${byTranslation.best!.count} de ${byTranslation.total} SKU${byTranslation.total === 1 ? "" : "s"} já classificado${byTranslation.total === 1 ? "" : "s"}`
+      : strong && (pool.length === 0 || agree / pool.length < strong.purity)
       ? `“${strong.token}” indica ${best.value} em ${pct(strong.purity)} dos ${strong.df} SKUs com essa palavra`
       : pool.length
         ? basis === "campos"
@@ -416,6 +528,11 @@ export function classifySku(input: ClassifyInput): SkuClassification {
       );
       confidence = best.share * (0.5 + 0.5 * evidence);
     }
+    // A tradução, quando concorda, também conta como evidência própria.
+    if (byTranslation) {
+      const n = byTranslation.total;
+      confidence = Math.max(confidence, best.share * translationShare * (n / (n + 1)) * TRANSLATION_CONFIDENCE[field]);
+    }
     // A subcategoria nunca é mais certa que a categoria sugerida.
     if (field === "subcategoria" && isBlank(known.categoria) && fields.categoria) {
       confidence = Math.min(confidence, fields.categoria.confidence);
@@ -423,7 +540,7 @@ export function classifySku(input: ClassifyInput): SkuClassification {
     fields[field] = {
       value: best.value,
       confidence,
-      source: "parecidos",
+      source: byTranslation && reason.includes("na base virou") ? "traducao" : "parecidos",
       reason,
       alternatives: alternativesOf(best.value),
     };

@@ -34,6 +34,7 @@ import {
 } from "@/lib/depara";
 import { shareLabel, type DeParaHealth, type PendingItem } from "@/lib/deparaHealth";
 import { descTokens } from "@/lib/deparaSuggest";
+import { getBaseHierarchy } from "@/lib/baseHierarchy";
 import {
   DEPARA_FIELD_LABEL,
   HIER_FIELDS,
@@ -168,6 +169,8 @@ type CurrentOrigin = "app" | "padrao" | "base" | "vazio";
 interface CurrentValue {
   value: string;
   origin: CurrentOrigin;
+  /** Como o campo veio na base original, quando difere do valor de hoje. */
+  raw?: string;
   /** Outros valores que a base traz para o mesmo SKU. */
   baseOthers: number;
 }
@@ -224,14 +227,23 @@ function SkuWorkbench({
   const [desc, setDesc] = useState(originalDesc);
   const [manual, setManual] = useState<Partial<Record<HierField, string>>>({});
 
+  const rawBase = useMemo(() => getBaseHierarchy(sku) ?? {}, [sku, version]); // eslint-disable-line react-hooks/exhaustive-deps
   const currentOf = useCallback((f: HierField): CurrentValue => {
     const value = current?.[f] ?? "";
-    if (!isBlank(value)) return { value, origin: !isBlank(override?.[f]) ? "app" : "padrao", baseOthers: 0 };
-    const fromBase = base.top[f];
+    const raw = rawBase[f];
+    if (!isBlank(value)) {
+      return {
+        value,
+        origin: !isBlank(override?.[f]) ? "app" : "padrao",
+        baseOthers: 0,
+        raw: raw && raw !== value ? raw : undefined,
+      };
+    }
+    const fromBase = raw ? { value: raw, others: 0 } : base.top[f];
     if (fromBase) return { value: fromBase.value, origin: "base", baseOthers: fromBase.others };
     // "TBD" no De/Para: marcado como a definir.
     return { value: value.trim(), origin: "vazio", baseOthers: 0 };
-  }, [current, override, base]);
+  }, [current, override, base, rawBase]);
 
   const isPendingField = (f: HierField) => isBlank(current?.[f]);
 
@@ -596,6 +608,11 @@ function CurrentCell({ now }: { now: CurrentValue }) {
         {ORIGIN_LABEL[now.origin]}
         {now.baseOthers > 0 && ` (+${now.baseOthers} outro${now.baseOthers === 1 ? "" : "s"})`}
       </div>
+      {now.raw && (
+        <div className="truncate text-[10px] text-muted-foreground/70" title={`Como veio na base: ${now.raw}`}>
+          na base: <span className="italic">{now.raw}</span>
+        </div>
+      )}
     </div>
   );
 }

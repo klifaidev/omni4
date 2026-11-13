@@ -10,6 +10,7 @@ import {
   getRegionalFromUf,
 } from "./deparaComercial";
 import { createStringInterner, internTrimmed } from "./stringIntern";
+import { BASE_HIER_FIELDS, registerBaseHierarchy, usableBaseValue, type BaseHierarchy } from "./baseHierarchy";
 import { REAL_HEADER_MAP as HEADER_MAP } from "./intake/headerMaps";
 
 
@@ -99,6 +100,8 @@ export interface ParsedCsv {
   file: LoadedFile;
   warnings: string[];
   missing: MissingMappings;
+  /** Hierarquia como veio na base (antes do De/Para), por SKU. */
+  baseHierarchy?: BaseHierarchy;
 }
 
 export async function parseCsvFile(file: File): Promise<ParsedCsv> {
@@ -190,6 +193,7 @@ export function parseRealTable(
   const missingCanais = new Set<string>();
   const missingRegioes = new Set<string>();
   const missingUfs = new Set<string>();
+  const baseHierarchy: BaseHierarchy = {};
 
   const { colMap, unmapped } = mapRealColumns(headers);
   const columns = Array.from(colMap.entries());
@@ -230,6 +234,17 @@ export function parseRealTable(
       if (m) {
         obj.sku = intern(m[1]);
         if (!obj.skuDesc) obj.skuDesc = intern(m[2]);
+      }
+    }
+
+    // Guarda a hierarquia como veio na base, antes do De/Para: é com ela que o
+    // app aprende a tradução base → De/Para (ex.: "B1 Top" → "Top").
+    if (obj.sku) {
+      let known = baseHierarchy[obj.sku];
+      for (const f of BASE_HIER_FIELDS) {
+        if (known?.[f] !== undefined) continue;
+        const v = usableBaseValue(obj[f]);
+        if (v) (known ??= baseHierarchy[obj.sku] = {})[f] = v;
       }
     }
 
@@ -346,7 +361,10 @@ export function parseRealTable(
     );
   }
 
+  registerBaseHierarchy(baseHierarchy);
+
   return {
+    baseHierarchy,
     rows,
     file: {
       name: fileName,

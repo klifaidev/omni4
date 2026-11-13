@@ -1,3 +1,4 @@
+import { registerBaseHierarchy } from "@/lib/baseHierarchy";
 import { parseSavedBudgetFile, parseSavedRealFile } from "@/lib/intake/intake";
 import { parseInovacaoDeparaFile } from "@/lib/parseDeparaInovacao";
 import { useBudget } from "@/store/budget";
@@ -177,6 +178,7 @@ export async function preloadSavedBases(
             }
           }
           if (parsed.rows.length > 0) {
+            registerBaseHierarchy(parsed.baseHierarchy);
             usePricing.getState().addParsed(parsed.rows, parsed.file, false, parsed.missing);
           }
         }

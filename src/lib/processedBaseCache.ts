@@ -3,7 +3,8 @@ import type { ParsedCsv } from "@/lib/csv";
 import type { TipoBase } from "@/hooks/use-bases-locais";
 import { createStringInterner, type StringInterner } from "@/lib/stringIntern";
 
-export const PROCESSED_BASE_CACHE_VERSION = 1;
+// 2: o cabeçalho passou a guardar a hierarquia original da base (baseHierarchy).
+export const PROCESSED_BASE_CACHE_VERSION = 2;
 const MAX_MONOLITHIC_CACHE_ROWS = 200_000;
 const DEFAULT_CHUNKED_CACHE_ROWS = 50_000;
 const MIN_CHUNKED_CACHE_ROWS = 1_000;

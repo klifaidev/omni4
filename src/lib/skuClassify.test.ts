@@ -56,3 +56,26 @@ describe("classifySku", () => {
     expect(byField.faixaPeso / all.length).toBeGreaterThan(0.93);
   }, 60_000);
 });
+
+describe("tradução base → De/Para", () => {
+  it("usa o destino que o mesmo valor da base teve nos SKUs já classificados", async () => {
+    const { registerBaseHierarchy, clearBaseHierarchy } = await import("./baseHierarchy");
+    const { completeDeParaEntries: complete } = await import("./depara");
+    // Todos os SKUs "Top" do De/Para vieram da base como "B1 Top".
+    const tops = complete().filter((e) => e.entry.marca === "Top").slice(0, 20);
+    clearBaseHierarchy();
+    registerBaseHierarchy(Object.fromEntries(tops.map((e) => [e.sku, { marca: "B1 Top" }])));
+    // Descrição que, sozinha, puxaria outra marca.
+    const r = classifySku({ sku: "999993", description: "CONFEITE VERDE CONF 12X400G", baseValues: { marca: "B1 Top" }, stamp: -9 });
+    expect(r.fields.marca).toMatchObject({ value: "Top", source: "traducao" });
+    expect(r.fields.marca!.reason).toContain("“B1 Top” na base virou Top em 20 de 20");
+    clearBaseHierarchy();
+  });
+
+  it("sem informação da base, segue a sugestão pela descrição", async () => {
+    const { clearBaseHierarchy } = await import("./baseHierarchy");
+    clearBaseHierarchy();
+    const r = classifySku({ sku: "999994", description: "COB BARRA BRANCO TOP 5X1KG", stamp: -10 });
+    expect(r.fields.marca?.source).toBe("parecidos");
+  });
+});
