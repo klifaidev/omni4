@@ -14,17 +14,18 @@ type SheetKind = "hierarquia" | "inovacao" | ComercialMapId;
 
 const SKU_FIELD_HEADERS: Record<keyof DeParaEntry, string[]> = {
   skuDesc: ["Descrição", "Descricao", "Descrição SKU", "Desc SKU"],
-  categoria: ["Categoria"],
-  subcategoria: ["Subcategoria"],
-  marca: ["Marca"],
-  tecnologia: ["Tecnologia"],
-  formato: ["Formato"],
-  mercado: ["Mercado"],
-  faixaPeso: ["Faixa de Peso", "Faixa Peso"],
-  sabor: ["Sabor"],
+  // "PARA - 01 Categoria": layout DE/PARA da planilha do time (e do arquivo baixado).
+  categoria: ["Categoria", "PARA - 01 Categoria"],
+  subcategoria: ["Subcategoria", "PARA - Subcategoria"],
+  marca: ["Marca", "PARA - 02 Marca"],
+  tecnologia: ["Tecnologia", "PARA - 03 Tecnologia", "PARA - 03 Família"],
+  formato: ["Formato", "PARA - 04 Formato"],
+  mercado: ["Mercado", "PARA - 05 Mercado"],
+  faixaPeso: ["Faixa de Peso", "Faixa Peso", "PARA - 06 Faixa de Peso"],
+  sabor: ["Sabor", "PARA - 07 Sabor"],
 };
 
-const SKU_HEADERS = ["SKU", "Cod Material", "Código Material", "Codigo Material", "Material"];
+const SKU_HEADERS = ["SKU", "Artigo", "Cod Material", "Código Material", "Codigo Material", "Material"];
 
 const COMERCIAL_HEADERS: Record<ComercialMapId, { from: string[]; to: string[] }> = {
   canalToCanalAjustado: { from: ["Canal Origem", "Canal"], to: ["Canal Ajustado"] },
@@ -56,6 +57,14 @@ function classify(headers: string[]): SheetKind | null {
 
 const text = (v: unknown) => String(v ?? "").trim();
 const isBlank = (v: string) => !v || v.toUpperCase() === "TBD";
+
+/**
+ * Na planilha DE/PARA do time os valores vêm com o código da hierarquia
+ * ("A3 Decoração", "B1 Top"); o app guarda só o nome ("Decoração", "Top").
+ */
+export function stripHierarchyCode(value: string): string {
+  return value.replace(/^[A-Z]{1,2}\d{1,3}\s+(?=\S)/, "");
+}
 
 export interface DePara360 {
   fileName: string;
@@ -94,12 +103,14 @@ export async function parseDePara360(file: File): Promise<DePara360> {
     if (kind === "hierarquia") {
       const skuCol = col(headers, SKU_HEADERS);
       const fieldCols = DEPARA_FIELDS.map((f) => [f, col(headers, SKU_FIELD_HEADERS[f])] as const).filter(([, c]) => c >= 0);
+      const deParaLayout = headers.some((h) => /^para\d/.test(h));
       for (const row of body) {
         const sku = normalizeSku(row[skuCol]);
         if (!sku) continue;
         const entry: DeParaOverrideEntry = {};
         for (const [field, c] of fieldCols) {
-          const value = text(row[c]);
+          const raw = text(row[c]);
+          const value = deParaLayout && field !== "skuDesc" ? stripHierarchyCode(raw) : raw;
           if (!isBlank(value)) entry[field] = value;
         }
         if (Object.keys(entry).length) out.sku[sku] = { ...(out.sku[sku] ?? {}), ...entry };

@@ -5,6 +5,7 @@ import { listDeParaEntries, type DeParaEntry } from "./depara";
 import { getComercialEntries, type ComercialMapId } from "./deparaComercial";
 import { getInovacaoMap } from "./deparaInovacao";
 import type { PendingItem } from "./deparaHealth";
+import { allBaseHierarchy, getBaseHierarchy, type BaseHierField } from "./baseHierarchy";
 
 interface DeParaInovacaoEntry {
   classificacao: string;
@@ -109,41 +110,160 @@ function buildSkuDescFallback(rowsBySource: SkuDescSourceRow[][]): Map<string, s
  * De/Para 360: o mesmo arquivo, para circular no time e anexar de volta na
  * Central (lib/depara360 reconhece as abas pelas colunas).
  */
-export function exportDePara360Xlsx(rowsBySource: SkuDescSourceRow[][] = []) {
-  exportDeparasXlsx(rowsBySource, "De-Para 360");
+export async function exportDePara360Xlsx(rowsBySource: SkuDescSourceRow[][] = []) {
+  await exportDeparasXlsx(rowsBySource, "De-Para 360");
 }
 
-export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = [], filePrefix = "de-paras_auditoria") {
+type HierKind = "de" | "para";
+
+/**
+ * Aba de hierarquia no layout da planilha de De/Para do time: para cada nível,
+ * o DE (como veio na base, ex.: "B1 Top") ao lado do PARA (o que o app usa).
+ * A subcategoria não existe na base, então só tem o PARA.
+ */
+const HIER_COLUMNS: { header: string; kind: HierKind; field: BaseHierField }[] = [
+  { header: "DE - 01 Categoria", kind: "de", field: "categoria" },
+  { header: "PARA - 01 Categoria", kind: "para", field: "categoria" },
+  { header: "Subcategoria", kind: "para", field: "subcategoria" },
+  { header: "DE - 02 Marca", kind: "de", field: "marca" },
+  { header: "PARA - 02 Marca", kind: "para", field: "marca" },
+  { header: "DE - 03 Família", kind: "de", field: "tecnologia" },
+  { header: "PARA - 03 Tecnologia", kind: "para", field: "tecnologia" },
+  { header: "DE - 04 Formato", kind: "de", field: "formato" },
+  { header: "PARA - 04 Formato", kind: "para", field: "formato" },
+  { header: "DE - 05 Mercado", kind: "de", field: "mercado" },
+  { header: "PARA - 05 Mercado", kind: "para", field: "mercado" },
+  { header: "DE - 06 Faixa de Peso", kind: "de", field: "faixaPeso" },
+  { header: "PARA - 06 Faixa de Peso", kind: "para", field: "faixaPeso" },
+  { header: "DE - 07 Sabor", kind: "de", field: "sabor" },
+  { header: "PARA - 07 Sabor", kind: "para", field: "sabor" },
+];
+
+export const HIERARCHY_SHEET = "1. SKU - Hierarquia";
+
+/** Linhas da aba de hierarquia (cabeçalho + uma linha por SKU), na ordem das colunas. */
+export function buildHierarchySheetRows(rowsBySource: SkuDescSourceRow[][] = []): (string | number)[][] {
+  // Alguns SKUs vêm sem nome no De/Para mestre: usa a descrição como veio na
+  // base carregada (Real/Budget), senão o SKU fica sem referência nenhuma.
+  const skuDescFallback = buildSkuDescFallback(rowsBySource);
+  const entries = new Map(listDeParaEntries().map((e) => [e.sku, e.entry]));
+  // SKUs das bases ainda sem De/Para também saem, com o PARA em branco: é
+  // nessa linha que o time preenche a classificação.
+  const skus = new Set<string>([...entries.keys(), ...skuDescFallback.keys(), ...allBaseHierarchy().keys()]);
+  const header: (string | number)[] = ["Artigo", "", ...HIER_COLUMNS.map((c) => c.header)];
+  const body = Array.from(skus)
+    .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }))
+    .map((sku) => {
+      const entry = entries.get(sku);
+      const base = getBaseHierarchy(sku);
+      const desc = (entry?.skuDesc && entry.skuDesc.trim()) || skuDescFallback.get(sku) || "";
+      const code: string | number = /^\d{1,15}$/.test(sku) ? Number(sku) : sku;
+      return [code, desc, ...HIER_COLUMNS.map((c) => (c.kind === "de" ? base?.[c.field] : entry?.[c.field]) ?? "")];
+    });
+  return [header, ...body];
+}
+
+function columnIndex(letters: string): number {
+  let n = 0;
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/**
+ * O SheetJS gratuito não grava cores: aplica o visual da planilha do time
+ * direto no XML — cabeçalho vermelho (DE) e verde (PARA), corpo do DE em
+ * amarelo e do PARA em verde-claro, código e cabeçalho congelados, filtro.
+ */
+async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCount: number): Promise<Uint8Array> {
+  const { default: JSZip } = await import("jszip");
+  const zip = await JSZip.loadAsync(bytes);
+  const stylesPath = "xl/styles.xml";
+  let styles = await zip.file(stylesPath)!.async("string");
+
+  const append = (tag: string, xml: string, added: number): number => {
+    const base = Number(styles.match(new RegExp(`<${tag} count="(\\d+)"`))?.[1] ?? 0);
+    styles = styles
+      .replace(new RegExp(`<${tag} count="\\d+"`), `<${tag} count="${base + added}"`)
+      .replace(`</${tag}>`, `${xml}</${tag}>`);
+    return base;
+  };
+  const font = (bold: boolean, rgb: string) =>
+    `<font>${bold ? "<b/>" : ""}<sz val="11"/><color rgb="${rgb}"/><name val="Calibri"/><family val="2"/></font>`;
+  const fontBase = append("fonts", font(true, "FFFFFFFF") + font(false, "FF000000"), 2);
+  const fill = (rgb: string) => `<fill><patternFill patternType="solid"><fgColor rgb="${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
+  const fillBase = append("fills", fill("FFE00000") + fill("FF00B050") + fill("FFFFFF99") + fill("FFE2EFDA"), 4);
+  const side = (name: string) => `<${name} style="thin"><color rgb="FFBFBFBF"/></${name}>`;
+  const borderId = append("borders", `<border>${side("left")}${side("right")}${side("top")}${side("bottom")}<diagonal/></border>`, 1);
+  const xf = (fontId: number, fillId: number, center: boolean) =>
+    `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1" applyFill="1" applyBorder="1"` +
+    (center ? ' applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' : "/>");
+  const xfBase = append(
+    "cellXfs",
+    xf(fontBase, fillBase, true) + xf(fontBase, fillBase + 1, true) + xf(fontBase + 1, fillBase + 2, false) + xf(fontBase + 1, fillBase + 3, false),
+    4,
+  );
+  zip.file(stylesPath, styles);
+
+  // Código e descrição seguem o vermelho/amarelo do "Artigo".
+  const kinds: HierKind[] = ["de", "de", ...HIER_COLUMNS.map((c) => c.kind)];
+  const sheetPath = `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+  let sheet = await zip.file(sheetPath)!.async("string");
+  sheet = sheet.replace(/<c r="([A-Z]+)(\d+)"(?: s="\d+")?/g, (_m, col: string, row: string) => {
+    const para = kinds[columnIndex(col)] === "para";
+    const s = row === "1" ? xfBase + (para ? 1 : 0) : xfBase + (para ? 3 : 2);
+    return `<c r="${col}${row}" s="${s}"`;
+  });
+  const lastCol = String.fromCharCode(64 + kinds.length);
+  sheet = sheet
+    .replace(
+      /<sheetView workbookViewId="0"\s*\/>/,
+      '<sheetView workbookViewId="0"><pane xSplit="2" ySplit="1" topLeftCell="C2" activePane="bottomRight" state="frozen"/><selection pane="bottomRight"/></sheetView>',
+    )
+    .replace("</sheetData>", `</sheetData><autoFilter ref="A1:${lastCol}${Math.max(rowCount, 1)}"/>`);
+  zip.file(sheetPath, sheet);
+
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+function fileStamp(): string {
+  const today = new Date();
+  return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export async function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = [], filePrefix = "de-paras_auditoria") {
+  const bytes = await buildDeparasWorkbook(rowsBySource);
+  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  downloadBlob(blob, `${filePrefix}_${fileStamp()}.xlsx`);
+}
+
+/** Monta o arquivo com todas as abas, já com o visual da aba de hierarquia. */
+export async function buildDeparasWorkbook(rowsBySource: SkuDescSourceRow[][] = []): Promise<Uint8Array> {
   const wb = XLSX.utils.book_new();
 
-  // 1) De Para Principal (SKU → atributos) — com as correções feitas no app.
-  // Alguns SKUs vêm sem nome no De/Para mestre. Para esses casos, usa a
-  // descrição original tal como veio na base carregada (Real/Budget) — sem
-  // ela o SKU fica sem nenhuma referência para ser
-  // classificado depois. Os demais níveis (categoria, marca etc.) continuam
-  // em branco normalmente; só o nome é recuperado.
-  const skuDescFallback = buildSkuDescFallback(rowsBySource);
-  const principalRows = listDeParaEntries()
-    .map(({ sku, entry: v, source }) => ({
-      SKU: sku,
-      Descrição: (v.skuDesc && v.skuDesc.trim()) || skuDescFallback.get(sku) || "",
-      Categoria: v.categoria ?? "",
-      Subcategoria: v.subcategoria ?? "",
-      Marca: v.marca ?? "",
-      Tecnologia: v.tecnologia ?? "",
-      Formato: v.formato ?? "",
-      Mercado: v.mercado ?? "",
-      "Faixa de Peso": v.faixaPeso ?? "",
-      Sabor: v.sabor ?? "",
-      Origem: source === "app" ? "Corrigido no app" : "Padrão",
-    }))
-    .sort((a, b) => a.SKU.localeCompare(b.SKU));
-  appendSheet(
-    wb,
-    "1. SKU - Hierarquia",
-    ["SKU", "Descrição", "Categoria", "Subcategoria", "Marca", "Tecnologia", "Formato", "Mercado", "Faixa de Peso", "Sabor", "Origem"],
-    principalRows,
-  );
+  // 1) Hierarquia por SKU no layout DE/PARA do time — com as correções do app.
+  const hierarchyRows = buildHierarchySheetRows(rowsBySource);
+  const wsHier = XLSX.utils.aoa_to_sheet(hierarchyRows);
+  wsHier["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+  wsHier["!cols"] = [
+    { wch: 10 },
+    { wch: 34 },
+    ...HIER_COLUMNS.map((c, i) => ({
+      wch: Math.min(32, Math.max(c.header.length, ...hierarchyRows.slice(1, 800).map((r) => String(r[i + 2] ?? "").length)) + 2),
+    })),
+  ];
+  XLSX.utils.book_append_sheet(wb, wsHier, HIERARCHY_SHEET);
+  const principalCount = hierarchyRows.length - 1;
 
   // 2) De Para Inovação (SKU → classificação + legado)
   const inov = getInovacaoMap() as Record<string, DeParaInovacaoEntry>;
@@ -184,7 +304,7 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = [], fileP
 
   // Aba de índice
   const indexRows = [
-    { Aba: "1. SKU - Hierarquia", Descrição: "Categoria, marca, tecnologia, formato etc. por SKU", "Total de Registros": principalRows.length },
+    { Aba: HIERARCHY_SHEET, Descrição: "DE (como veio na base) e PARA (o que o app usa) de cada nível, por SKU", "Total de Registros": principalCount },
     { Aba: "2. SKU - Inovação", Descrição: "Classificação Inovação/Regular e Legado por SKU", "Total de Registros": inovRows.length },
     { Aba: "3. Canal → Canal Ajustado", Descrição: "Mapeamento do canal bruto para canal padronizado", "Total de Registros": canalRows.length },
     { Aba: "4. Região → UF", Descrição: "Extração da UF a partir da região do CSV", "Total de Registros": regiaoUfRows.length },
@@ -197,7 +317,8 @@ export function exportDeparasXlsx(rowsBySource: SkuDescSourceRow[][] = [], fileP
   // Move índice para primeira posição
   wb.SheetNames = ["Índice", ...wb.SheetNames.filter((n) => n !== "Índice")];
 
-  downloadWorkbook(wb, filePrefix);
+  const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  return styleHierarchySheet(bytes, wb.SheetNames.indexOf(HIERARCHY_SHEET), hierarchyRows.length);
 }
 
 const PENDING_FIELD_LABEL: Record<keyof DeParaEntry, string> = {
