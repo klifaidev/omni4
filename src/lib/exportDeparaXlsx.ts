@@ -141,26 +141,96 @@ const HIER_COLUMNS: { header: string; kind: HierKind; field: BaseHierField }[] =
 
 export const HIERARCHY_SHEET = "1. SKU - Hierarquia";
 
-/** Linhas da aba de hierarquia (cabeçalho + uma linha por SKU), na ordem das colunas. */
-export function buildHierarchySheetRows(rowsBySource: SkuDescSourceRow[][] = []): (string | number)[][] {
+/** Pureza mínima e SKUs mínimos para deduzir o DE a partir do PARA. */
+const INFER_MIN_SHARE = 0.9;
+const INFER_MIN_SKUS = 3;
+
+/**
+ * Como a KE30 escreve cada valor do PARA, aprendido nos SKUs que têm os dois
+ * (ex.: PARA "Melken" veio como "A5 Melken" em 40 de 40). Só entra quando é
+ * praticamente sempre o mesmo valor.
+ */
+function learnDeFromPara(entries: Map<string, DeParaEntry>): Map<BaseHierField, Map<string, string>> {
+  const counts = new Map<BaseHierField, Map<string, Map<string, number>>>();
+  for (const [sku, entry] of entries) {
+    const base = getBaseHierarchy(sku);
+    if (!base) continue;
+    for (const c of HIER_COLUMNS) {
+      if (c.kind !== "de") continue;
+      const para = entry[c.field]?.trim();
+      const de = base[c.field];
+      if (!para || !de) continue;
+      const byPara = counts.get(c.field) ?? new Map<string, Map<string, number>>();
+      counts.set(c.field, byPara);
+      const byDe = byPara.get(para) ?? new Map<string, number>();
+      byPara.set(para, byDe);
+      byDe.set(de, (byDe.get(de) ?? 0) + 1);
+    }
+  }
+  const out = new Map<BaseHierField, Map<string, string>>();
+  for (const [field, byPara] of counts) {
+    const table = new Map<string, string>();
+    for (const [para, byDe] of byPara) {
+      let total = 0;
+      let best = "";
+      let bestN = 0;
+      for (const [de, n] of byDe) {
+        total += n;
+        if (n > bestN) [best, bestN] = [de, n];
+      }
+      if (bestN >= INFER_MIN_SKUS && bestN / total >= INFER_MIN_SHARE) table.set(para, best);
+    }
+    out.set(field, table);
+  }
+  return out;
+}
+
+export interface HierarchySheet {
+  rows: (string | number)[][];
+  /** Células DE deduzidas (o SKU não trouxe esse nível em nenhuma KE30), como "linha:coluna" (base 0). */
+  inferred: Set<string>;
+}
+
+/** Aba de hierarquia (cabeçalho + uma linha por SKU), na ordem das colunas. */
+export function buildHierarchySheet(rowsBySource: SkuDescSourceRow[][] = []): HierarchySheet {
   // Alguns SKUs vêm sem nome no De/Para mestre: usa a descrição como veio na
   // base carregada (Real/Budget), senão o SKU fica sem referência nenhuma.
   const skuDescFallback = buildSkuDescFallback(rowsBySource);
   const entries = new Map(listDeParaEntries().map((e) => [e.sku, e.entry]));
+  const deFromPara = learnDeFromPara(entries);
   // SKUs das bases ainda sem De/Para também saem, com o PARA em branco: é
   // nessa linha que o time preenche a classificação.
   const skus = new Set<string>([...entries.keys(), ...skuDescFallback.keys(), ...allBaseHierarchy().keys()]);
   const header: (string | number)[] = ["Artigo", "", ...HIER_COLUMNS.map((c) => c.header)];
+  const inferred = new Set<string>();
   const body = Array.from(skus)
     .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }))
-    .map((sku) => {
+    .map((sku, i) => {
       const entry = entries.get(sku);
       const base = getBaseHierarchy(sku);
       const desc = (entry?.skuDesc && entry.skuDesc.trim()) || skuDescFallback.get(sku) || "";
       const code: string | number = /^\d{1,15}$/.test(sku) ? Number(sku) : sku;
-      return [code, desc, ...HIER_COLUMNS.map((c) => (c.kind === "de" ? base?.[c.field] : entry?.[c.field]) ?? "")];
+      return [
+        code,
+        desc,
+        ...HIER_COLUMNS.map((c, j) => {
+          if (c.kind === "para") return entry?.[c.field] ?? "";
+          const fromBase = base?.[c.field];
+          if (fromBase) return fromBase;
+          const para = entry?.[c.field]?.trim();
+          const guess = para ? deFromPara.get(c.field)?.get(para) : undefined;
+          if (!guess) return "";
+          inferred.add(`${i + 1}:${j + 2}`);
+          return guess;
+        }),
+      ];
     });
-  return [header, ...body];
+  return { rows: [header, ...body], inferred };
+}
+
+/** Só as linhas (cabeçalho + SKUs). */
+export function buildHierarchySheetRows(rowsBySource: SkuDescSourceRow[][] = []): (string | number)[][] {
+  return buildHierarchySheet(rowsBySource).rows;
 }
 
 function columnIndex(letters: string): number {
@@ -174,7 +244,7 @@ function columnIndex(letters: string): number {
  * direto no XML — cabeçalho vermelho (DE) e verde (PARA), corpo do DE em
  * amarelo e do PARA em verde-claro, código e cabeçalho congelados, filtro.
  */
-async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCount: number): Promise<Uint8Array> {
+async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCount: number, inferred: Set<string>): Promise<Uint8Array> {
   const { default: JSZip } = await import("jszip");
   const zip = await JSZip.loadAsync(bytes);
   const stylesPath = "xl/styles.xml";
@@ -187,9 +257,9 @@ async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCo
       .replace(`</${tag}>`, `${xml}</${tag}>`);
     return base;
   };
-  const font = (bold: boolean, rgb: string) =>
-    `<font>${bold ? "<b/>" : ""}<sz val="11"/><color rgb="${rgb}"/><name val="Calibri"/><family val="2"/></font>`;
-  const fontBase = append("fonts", font(true, "FFFFFFFF") + font(false, "FF000000"), 2);
+  const font = (bold: boolean, rgb: string, italic = false) =>
+    `<font>${bold ? "<b/>" : ""}${italic ? "<i/>" : ""}<sz val="11"/><color rgb="${rgb}"/><name val="Calibri"/><family val="2"/></font>`;
+  const fontBase = append("fonts", font(true, "FFFFFFFF") + font(false, "FF000000") + font(false, "FF7F7F7F", true), 3);
   const fill = (rgb: string) => `<fill><patternFill patternType="solid"><fgColor rgb="${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
   const fillBase = append("fills", fill("FFE00000") + fill("FF00B050") + fill("FFFFFF99") + fill("FFE2EFDA"), 4);
   const side = (name: string) => `<${name} style="thin"><color rgb="FFBFBFBF"/></${name}>`;
@@ -199,8 +269,8 @@ async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCo
     (center ? ' applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' : "/>");
   const xfBase = append(
     "cellXfs",
-    xf(fontBase, fillBase, true) + xf(fontBase, fillBase + 1, true) + xf(fontBase + 1, fillBase + 2, false) + xf(fontBase + 1, fillBase + 3, false),
-    4,
+    xf(fontBase, fillBase, true) + xf(fontBase, fillBase + 1, true) + xf(fontBase + 1, fillBase + 2, false) + xf(fontBase + 1, fillBase + 3, false) + xf(fontBase + 2, fillBase + 2, false),
+    5,
   );
   zip.file(stylesPath, styles);
 
@@ -210,7 +280,8 @@ async function styleHierarchySheet(bytes: ArrayBuffer, sheetIndex: number, rowCo
   let sheet = await zip.file(sheetPath)!.async("string");
   sheet = sheet.replace(/<c r="([A-Z]+)(\d+)"(?: s="\d+")?/g, (_m, col: string, row: string) => {
     const para = kinds[columnIndex(col)] === "para";
-    const s = row === "1" ? xfBase + (para ? 1 : 0) : xfBase + (para ? 3 : 2);
+    const deduced = inferred.has(`${Number(row) - 1}:${columnIndex(col)}`);
+    const s = row === "1" ? xfBase + (para ? 1 : 0) : deduced ? xfBase + 4 : xfBase + (para ? 3 : 2);
     return `<c r="${col}${row}" s="${s}"`;
   });
   const lastCol = String.fromCharCode(64 + kinds.length);
@@ -252,7 +323,7 @@ export async function buildDeparasWorkbook(rowsBySource: SkuDescSourceRow[][] = 
   const wb = XLSX.utils.book_new();
 
   // 1) Hierarquia por SKU no layout DE/PARA do time — com as correções do app.
-  const hierarchyRows = buildHierarchySheetRows(rowsBySource);
+  const { rows: hierarchyRows, inferred } = buildHierarchySheet(rowsBySource);
   const wsHier = XLSX.utils.aoa_to_sheet(hierarchyRows);
   wsHier["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
   wsHier["!cols"] = [
@@ -304,7 +375,7 @@ export async function buildDeparasWorkbook(rowsBySource: SkuDescSourceRow[][] = 
 
   // Aba de índice
   const indexRows = [
-    { Aba: HIERARCHY_SHEET, Descrição: "DE (como veio na base) e PARA (o que o app usa) de cada nível, por SKU", "Total de Registros": principalCount },
+    { Aba: HIERARCHY_SHEET, Descrição: "DE (como veio na KE30) e PARA (o que o app usa) de cada nível, por SKU. DE em itálico cinza: o SKU não aparece em nenhuma KE30 carregada; valor deduzido de como a KE30 traz esse mesmo PARA nos outros SKUs (ex.: Melken → A5 Melken)", "Total de Registros": principalCount },
     { Aba: "2. SKU - Inovação", Descrição: "Classificação Inovação/Regular e Legado por SKU", "Total de Registros": inovRows.length },
     { Aba: "3. Canal → Canal Ajustado", Descrição: "Mapeamento do canal bruto para canal padronizado", "Total de Registros": canalRows.length },
     { Aba: "4. Região → UF", Descrição: "Extração da UF a partir da região do CSV", "Total de Registros": regiaoUfRows.length },
@@ -312,13 +383,13 @@ export async function buildDeparasWorkbook(rowsBySource: SkuDescSourceRow[][] = 
     { Aba: "6. UF → Regional", Descrição: "Regional comercial a partir da UF", "Total de Registros": ufRegionalRows.length },
   ];
   const wsIndex = XLSX.utils.json_to_sheet(indexRows, { header: ["Aba", "Descrição", "Total de Registros"] });
-  wsIndex["!cols"] = [{ wch: 30 }, { wch: 60 }, { wch: 22 }];
+  wsIndex["!cols"] = [{ wch: 30 }, { wch: 110 }, { wch: 22 }];
   XLSX.utils.book_append_sheet(wb, wsIndex, "Índice");
   // Move índice para primeira posição
   wb.SheetNames = ["Índice", ...wb.SheetNames.filter((n) => n !== "Índice")];
 
   const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
-  return styleHierarchySheet(bytes, wb.SheetNames.indexOf(HIERARCHY_SHEET), hierarchyRows.length);
+  return styleHierarchySheet(bytes, wb.SheetNames.indexOf(HIERARCHY_SHEET), hierarchyRows.length, inferred);
 }
 
 const PENDING_FIELD_LABEL: Record<keyof DeParaEntry, string> = {

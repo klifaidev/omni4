@@ -3,7 +3,7 @@ import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import { listDeParaEntries } from "./depara";
 import { clearBaseHierarchy, registerBaseHierarchy } from "./baseHierarchy";
-import { buildDeparasWorkbook, buildHierarchySheetRows, HIERARCHY_SHEET } from "./exportDeparaXlsx";
+import { buildDeparasWorkbook, buildHierarchySheet, buildHierarchySheetRows, HIERARCHY_SHEET } from "./exportDeparaXlsx";
 import { parseDePara360, planDePara360, stripHierarchyCode } from "./depara360";
 
 const asFile = (bytes: ArrayBuffer, name = "De-Para 360.xlsx") =>
@@ -35,6 +35,19 @@ describe("De/Para 360 — aba de hierarquia no layout DE/PARA", () => {
     const novo = rows.find((r) => r[0] === 999999123)!;
     expect(novo[1]).toBe("SKU SÓ NA BASE");
     expect(novo.slice(2).every((v) => v === "")).toBe(true);
+  });
+
+  it("deduz o DE pelo padrão da KE30 quando o SKU não aparece em nenhuma base", () => {
+    const sameMarca = listDeParaEntries().filter((e) => e.entry.marca === known.entry.marca && /^\d+$/.test(e.sku));
+    const [target, ...others] = sameMarca;
+    registerBaseHierarchy(Object.fromEntries(others.slice(0, 5).map((e) => [e.sku, { marca: "Z9 Marca Base" }])));
+    const { rows, inferred } = buildHierarchySheet();
+    const i = rows.findIndex((r) => r[0] === Number(target.sku));
+    expect(rows[i][5]).toBe("Z9 Marca Base");
+    expect(inferred.has(`${i}:5`)).toBe(true);
+    // Quem veio da base não é marcado como deduzido.
+    const j = rows.findIndex((r) => r[0] === Number(others[0].sku));
+    expect(inferred.has(`${j}:5`)).toBe(false);
   });
 
   it("grava as cores e volta a ser lido pela Central sem gerar mudanças", async () => {
