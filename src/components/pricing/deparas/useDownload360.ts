@@ -7,12 +7,12 @@ import { usePricing } from "@/store/pricing";
 export function useDownload360(pendingCount: number) {
   const realRows = usePricing((s) => s.rows);
   const budgetRows = useBudget((s) => s.rows);
-  return async () => {
+  return () => {
     try {
-      await exportDePara360Xlsx([realRows, budgetRows]);
+      exportDePara360Xlsx([realRows, budgetRows]);
       if (pendingCount > 0) {
         toast.warning("De/Para 360 baixado com pendências em aberto", {
-          description: `${pendingCount} pendência${pendingCount === 1 ? "" : "s"} ainda em aberto. SKUs sem De/Para saem com o PARA em branco; os demais De/Paras só levam o que já está mapeado.`,
+          description: `${pendingCount} valor${pendingCount === 1 ? "" : "es"} das bases ainda sem De/Para não entra${pendingCount === 1 ? "" : "m"} no arquivo. Corrija em Pendências e baixe de novo.`,
           duration: 8000,
         });
       } else {
