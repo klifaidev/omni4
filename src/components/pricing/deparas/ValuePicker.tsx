@@ -15,6 +15,8 @@ export function ValuePicker({
   className,
   ariaLabel,
   highlightEmpty = false,
+  priority,
+  priorityLabel,
 }: {
   value: string;
   options: string[];
@@ -24,11 +26,17 @@ export function ValuePicker({
   ariaLabel?: string;
   /** Destaca o campo vazio (campo pendente). */
   highlightEmpty?: boolean;
+  /** Valores listados primeiro, num grupo próprio (ex.: subcategorias da categoria). */
+  priority?: string[];
+  priorityLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const typed = query.trim();
   const exists = options.some((o) => o.toLowerCase() === typed.toLowerCase());
+  const first = (priority ?? []).filter((p) => options.includes(p));
+  const firstSet = new Set(first);
+  const rest = options.filter((o) => !firstSet.has(o));
 
   const pick = (next: string) => {
     onChange(next);
@@ -68,8 +76,18 @@ export function ValuePicker({
                 </CommandItem>
               </CommandGroup>
             )}
-            <CommandGroup>
-              {options.map((option) => (
+            {first.length > 0 && (
+              <CommandGroup heading={priorityLabel}>
+                {first.map((option) => (
+                  <CommandItem key={option} value={option} onSelect={() => pick(option)} className="text-xs">
+                    <Check className={cn("mr-2 h-3.5 w-3.5", option === value ? "opacity-100" : "opacity-0")} />
+                    {option}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading={first.length > 0 ? "Outros valores" : undefined}>
+              {rest.map((option) => (
                 <CommandItem key={option} value={option} onSelect={() => pick(option)} className="text-xs">
                   <Check className={cn("mr-2 h-3.5 w-3.5", option === value ? "opacity-100" : "opacity-0")} />
                   {option}
