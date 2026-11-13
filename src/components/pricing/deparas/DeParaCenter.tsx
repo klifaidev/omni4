@@ -377,6 +377,8 @@ function ComercialFix({ map, keyText }: { map: ComercialMapId; keyText: string }
         <ValuePicker
           value=""
           options={options}
+          optionsKey={`comercial.${map}`}
+          fieldLabel={title}
           placeholder={suggestion ? "Outro valor…" : `Escolher ${title}…`}
           ariaLabel={`${title} para ${keyText}`}
           onChange={(value) => saveComercialEntry(map, keyText, value, DEPARA_MAP_BY_ID[map].title)}
@@ -707,7 +709,7 @@ function BulkBar({ skus, onDone }: { skus: string[]; onDone: () => void }) {
         </SelectContent>
       </Select>
       <div className="w-56">
-        <ValuePicker value="" options={options} placeholder={`Definir ${FIELD_LABEL[field].toLowerCase()}…`} onChange={apply} ariaLabel="Valor para os SKUs selecionados" />
+        <ValuePicker value="" options={options} optionsKey={`sku.${field}`} fieldLabel={FIELD_LABEL[field].toLowerCase()} placeholder={`Definir ${FIELD_LABEL[field].toLowerCase()}…`} onChange={apply} ariaLabel="Valor para os SKUs selecionados" />
       </div>
       <Button size="sm" variant="ghost" className="ml-auto h-8 text-xs" onClick={onDone}>Limpar seleção</Button>
     </div>
@@ -785,6 +787,8 @@ function ComercialView({ map, health }: { map: ComercialMapId; health: DeParaHea
                   <ValuePicker
                     value={r.value}
                     options={options}
+                    optionsKey={`comercial.${map}`}
+                    fieldLabel={info.to}
                     highlightEmpty
                     placeholder={r.suggestion ? `Sugestão: ${r.suggestion}` : "Escolher…"}
                     ariaLabel={`${info.to} para ${r.key}`}

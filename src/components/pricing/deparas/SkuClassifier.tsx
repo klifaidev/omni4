@@ -484,6 +484,8 @@ function SkuWorkbench({
                         <ValuePicker
                           value={value}
                           options={options[f]}
+                          optionsKey={`sku.${f}`}
+                          fieldLabel={DEPARA_FIELD_LABEL[f].toLowerCase()}
                           highlightEmpty
                           placeholder="Escolher…"
                           ariaLabel={`Nova ${DEPARA_FIELD_LABEL[f].toLowerCase()} do SKU ${sku}`}
