@@ -24,7 +24,13 @@ import {
   serializeKanbanForExport,
   subscribeKanbanSaveStatus,
   allTags,
+  allAssignees,
+  renameTag,
+  deleteTag,
+  renameAssignee,
+  deleteAssignee,
 } from "@/lib/kanban";
+import { ManagedFilter } from "@/components/atividades/ManagedFilter";
 import {
   DndContext,
   DragCancelEvent,
@@ -121,7 +127,6 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { MultiSelectFilter } from "@/components/pricing/MultiSelectFilter";
 import { KpiCard } from "@/components/pricing/KpiCard";
 import {
   BarChart,
@@ -281,13 +286,54 @@ export default function Atividades() {
   const [filterTag, setFilterTag] = useState<string>("all");
   const [showMetrics, setShowMetrics] = useState(false);
 
-  const assigneeOptions = useMemo(() => {
-    const set = new Set<string>();
+  // Responsáveis cadastrados + os que já estão em atividades.
+  const assigneeOptions = useMemo(() => allAssignees(state), [state]);
+  const usage = useMemo(() => {
+    const tags: Record<string, number> = {};
+    const people: Record<string, number> = {};
+    const fold = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
+    const tagKey = new Map(allTags(state).map((t) => [fold(t), t]));
+    const personKey = new Map(allAssignees(state).map((a) => [fold(a), a]));
     Object.values(state.cards).forEach((c) => {
-      if (c.assignee && c.assignee.trim()) set.add(c.assignee.trim());
+      new Set((c.tags ?? []).map((t) => tagKey.get(fold(t)) ?? t)).forEach((t) => (tags[t] = (tags[t] ?? 0) + 1));
+      if (c.assignee?.trim()) {
+        const k = personKey.get(fold(c.assignee)) ?? c.assignee;
+        people[k] = (people[k] ?? 0) + 1;
+      }
     });
-    return Array.from(set).sort().map((a) => ({ value: a, label: a }));
-  }, [state.cards]);
+    return { tags, people };
+  }, [state]);
+  function createLibraryAssignee(name: string) {
+    const v = name.trim();
+    if (!v) return;
+    setState((s) => {
+      if (allAssignees(s).some((a) => a.toLocaleLowerCase("pt-BR") === v.toLocaleLowerCase("pt-BR"))) return s;
+      return { ...s, assigneeLibrary: [...(s.assigneeLibrary ?? []), v] };
+    });
+  }
+  function removeLibraryAssignee(name: string) {
+    setState((s) => ({ ...s, assigneeLibrary: (s.assigneeLibrary ?? []).filter((a) => a !== name) }));
+  }
+  function handleRenameTag(from: string, to: string) {
+    setState((s) => renameTag(s, from, to));
+    if (filterTag === from) setFilterTag(to.trim());
+    toast.success(`Tag renomeada para "${to.trim()}" em todas as atividades`);
+  }
+  function handleDeleteTag(tag: string) {
+    setState((s) => deleteTag(s, tag));
+    if (filterTag === tag) setFilterTag("all");
+    toast.success(`Tag "${tag}" excluída`);
+  }
+  function handleRenameAssignee(from: string, to: string) {
+    setState((s) => renameAssignee(s, from, to));
+    setFilterAssignees((sel) => sel.map((a) => (a === from ? to.trim() : a)));
+    toast.success(`Responsável renomeado para "${to.trim()}" em todas as atividades`);
+  }
+  function handleDeleteAssignee(name: string) {
+    setState((s) => deleteAssignee(s, name));
+    setFilterAssignees((sel) => sel.filter((a) => a !== name));
+    toast.success(`Responsável "${name}" excluído`);
+  }
 
   // Biblioteca de tags + tags já usadas em atividades.
   const tagOptions = useMemo(() => allTags(state), [state]);
@@ -661,11 +707,18 @@ export default function Atividades() {
           </div>
 
           <div className="min-w-[180px]">
-            <MultiSelectFilter
+            <ManagedFilter
+              allLabel="Todos os responsáveis"
+              noun="responsável"
+              multiple
               options={assigneeOptions}
+              counts={usage.people}
               selected={filterAssignees}
               onChange={setFilterAssignees}
-              placeholder="Responsável"
+              onRename={handleRenameAssignee}
+              onDelete={handleDeleteAssignee}
+              deleteEffect="Fica sem responsável em"
+              className="w-full"
             />
           </div>
 
@@ -689,17 +742,18 @@ export default function Atividades() {
             </ToggleGroupItem>
           </ToggleGroup>
 
-          <Select value={filterTag} onValueChange={setFilterTag}>
-            <SelectTrigger className="h-9 w-[160px] border-border/50 bg-secondary/40 text-xs">
-              <SelectValue placeholder="Tag" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as tags</SelectItem>
-              {tagOptions.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ManagedFilter
+            allLabel="Todas as tags"
+            noun="tag"
+            options={tagOptions}
+            counts={usage.tags}
+            selected={filterTag === "all" ? [] : [filterTag]}
+            onChange={(sel) => setFilterTag(sel[0] ?? "all")}
+            onRename={handleRenameTag}
+            onDelete={handleDeleteTag}
+            deleteEffect="A tag sai de"
+            className="w-[170px]"
+          />
 
           {hasActiveFilters && (
             <>
@@ -896,6 +950,12 @@ export default function Atividades() {
               description: `Movida para "${last.title}"`,
             });
           }}
+          onReopenCard={(cardId, fromColId) => {
+            const first = state.columns[0];
+            if (!first || first.id === fromColId) return;
+            moveCard(cardId, fromColId, first.id, first.cardIds.length);
+            toast.success("Atividade reaberta", { description: `Voltou para "${first.title}"` });
+          }}
         />
       )}
 
@@ -926,6 +986,10 @@ export default function Atividades() {
         libraryTags={state.tagLibrary ?? []}
         onCreateTag={createLibraryTag}
         onRemoveLibraryTag={removeLibraryTag}
+        knownAssignees={assigneeOptions}
+        libraryAssignees={state.assigneeLibrary ?? []}
+        onCreateAssignee={createLibraryAssignee}
+        onRemoveLibraryAssignee={removeLibraryAssignee}
         onSave={(card, colId) => {
           saveCard(card, colId);
           setEditingCard(null);
@@ -1393,12 +1457,18 @@ interface CardDialogProps {
   libraryTags: string[];
   onCreateTag: (tag: string) => void;
   onRemoveLibraryTag: (tag: string) => void;
+  /** Responsáveis conhecidos (cadastro + usados em atividades). */
+  knownAssignees: string[];
+  libraryAssignees: string[];
+  onCreateAssignee: (name: string) => void;
+  onRemoveLibraryAssignee: (name: string) => void;
   onSave: (card: KanbanCard, columnId: string) => void;
   onMove: (card: KanbanCard, toColId: string) => void;
   onRequestDelete: (card: KanbanCard) => void;
 }
 
 const TAG_DRAG_TYPE = "application/x-omni4-tag";
+const ASSIGNEE_DRAG_TYPE = "application/x-omni4-assignee";
 
 function CardDialog({
   open,
@@ -1410,6 +1480,10 @@ function CardDialog({
   libraryTags,
   onCreateTag,
   onRemoveLibraryTag,
+  knownAssignees,
+  libraryAssignees,
+  onCreateAssignee,
+  onRemoveLibraryAssignee,
   onSave,
   onMove,
   onRequestDelete,
@@ -1460,6 +1534,21 @@ function CardDialog({
     onCreateTag(v);
     setNewLibraryTag("");
   }
+  const [newAssignee, setNewAssignee] = useState("");
+  const [assigneeDropActive, setAssigneeDropActive] = useState(false);
+  /** Define o responsável reaproveitando a grafia de alguém já cadastrado. */
+  function pickAssignee(raw: string) {
+    const v = raw.trim();
+    setAssignee(knownAssignees.find((a) => sameTag(a, v)) ?? v);
+  }
+  function createAssignee() {
+    const v = newAssignee.trim();
+    if (!v) return;
+    onCreateAssignee(v);
+    setNewAssignee("");
+  }
+  const otherAssignees = knownAssignees.filter((a) => !assignee.trim() || !sameTag(a, assignee));
+  const assigneeUsedElsewhere = (a: string) => knownAssignees.includes(a) && !libraryAssignees.includes(a);
   const availableTags = knownTags.filter((t) => !tags.some((x) => sameTag(x, t)));
   const usedElsewhere = (t: string) => knownTags.includes(t) && !libraryTags.includes(t);
 
@@ -1590,15 +1679,119 @@ function CardDialog({
               </Popover>
             </Field>
 
-            {/* Responsável */}
+            {/* Responsável — aceita digitar ou soltar alguém do cadastro abaixo */}
             <Field label="Responsável">
-              <Input
-                placeholder="Nome"
-                value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
-                className="h-9"
-              />
+              <div
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes(ASSIGNEE_DRAG_TYPE)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setAssigneeDropActive(true);
+                }}
+                onDragLeave={() => setAssigneeDropActive(false)}
+                onDrop={(e) => {
+                  const name = e.dataTransfer.getData(ASSIGNEE_DRAG_TYPE);
+                  setAssigneeDropActive(false);
+                  if (!name) return;
+                  e.preventDefault();
+                  pickAssignee(name);
+                }}
+                className={cn(
+                  "relative rounded-md transition-shadow",
+                  assigneeDropActive && "ring-2 ring-primary/40",
+                )}
+              >
+                <Input
+                  placeholder="Digite ou arraste da lista abaixo"
+                  value={assignee}
+                  onChange={(e) => setAssignee(e.target.value)}
+                  onBlur={() => assignee.trim() && pickAssignee(assignee)}
+                  className={cn("h-9", assignee && "pl-9 pr-8", assigneeDropActive && "border-primary bg-primary/10")}
+                />
+                {assignee.trim() && (
+                  <>
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
+                      <Avatar name={assignee.trim()} size={20} />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAssignee("")}
+                      aria-label="Tirar responsável"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
             </Field>
+
+            {/* Cadastro de responsáveis: criar e arrastar/clicar para usar */}
+            <div className="col-span-2 rounded-md border border-dashed border-border/60 bg-muted/20 p-2.5">
+              <div className="mb-2 text-[11px] font-medium text-muted-foreground">
+                Responsáveis cadastrados — arraste para o campo ou clique para escolher
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {otherAssignees.length === 0 && (
+                  <span className="text-[11px] italic text-muted-foreground/70">
+                    {knownAssignees.length ? "Nenhum outro responsável cadastrado." : "Nenhum responsável cadastrado ainda."}
+                  </span>
+                )}
+                {otherAssignees.map((a) => (
+                  <span
+                    key={a}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(ASSIGNEE_DRAG_TYPE, a);
+                      e.dataTransfer.setData("text/plain", a);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onDragEnd={() => setAssigneeDropActive(false)}
+                    className="group/person inline-flex cursor-grab items-center gap-1 rounded-full border border-border/50 bg-background py-0.5 pl-0.5 pr-2 text-xs shadow-sm hover:border-primary/50 active:cursor-grabbing"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => pickAssignee(a)}
+                      title={`Definir ${a} como responsável`}
+                      className="inline-flex items-center gap-1.5"
+                    >
+                      <Avatar name={a} size={18} />
+                      {a}
+                    </button>
+                    {!assigneeUsedElsewhere(a) && libraryAssignees.includes(a) && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveLibraryAssignee(a)}
+                        title={`Remover ${a} do cadastro`}
+                        aria-label={`Remover ${a} do cadastro`}
+                        className="text-muted-foreground/60 opacity-0 transition-opacity hover:text-destructive group-hover/person:opacity-100"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-1.5">
+                <input
+                  value={newAssignee}
+                  onChange={(e) => setNewAssignee(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createAssignee();
+                    }
+                  }}
+                  placeholder="Cadastrar novo responsável"
+                  aria-label="Nome do novo responsável"
+                  className="h-7 flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                />
+                <Button type="button" size="sm" variant="secondary" className="h-7 px-2.5 text-xs" onClick={createAssignee} disabled={!newAssignee.trim()}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Cadastrar
+                </Button>
+              </div>
+            </div>
 
             {/* Recorrência */}
             <Field label="Recorrência">
@@ -1992,10 +2185,13 @@ function ListView({
   state,
   onEditCard,
   onCompleteCard,
+  onReopenCard,
 }: {
   state: KanbanState;
   onEditCard: (c: KanbanCard, colId: string) => void;
   onCompleteCard: (cardId: string, fromColId: string) => void;
+  /** Desmarcar uma concluída: volta para a primeira coluna (A fazer). */
+  onReopenCard: (cardId: string, fromColId: string) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -2138,9 +2334,11 @@ function ListView({
                           <Checkbox
                             checked={isDone}
                             onCheckedChange={() => {
-                              if (!isDone) onCompleteCard(card.id, column.id);
+                              if (isDone) onReopenCard(card.id, column.id);
+                              else onCompleteCard(card.id, column.id);
                             }}
-                            aria-label="Marcar como concluída"
+                            aria-label={isDone ? "Desmarcar e voltar para a primeira etapa" : "Marcar como concluída"}
+                            title={isDone ? "Desmarcar: volta para a primeira etapa" : "Marcar como concluída"}
                           />
                         </div>
                         <div className="flex items-center justify-center">

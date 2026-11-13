@@ -91,6 +91,78 @@ export interface KanbanState {
   cards: Record<string, KanbanCard>;
   /** Tags criadas na biblioteca da aba, mesmo que nenhuma atividade use ainda. */
   tagLibrary?: string[];
+  /** Responsáveis cadastrados na aba, mesmo que ainda sem atividade. */
+  assigneeLibrary?: string[];
+}
+
+const fold = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
+const uniqueSorted = (values: Iterable<string | undefined>): string[] => {
+  const seen = new Map<string, string>();
+  for (const raw of values) {
+    const v = raw?.trim();
+    if (v && !seen.has(fold(v))) seen.set(fold(v), v);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+};
+
+/** Todos os responsáveis conhecidos: os cadastrados e os que já estão em
+ *  atividades, sem repetir (sem diferenciar maiúsculas) e em ordem alfabética. */
+export function allAssignees(state: KanbanState): string[] {
+  return uniqueSorted([...(state.assigneeLibrary ?? []), ...Object.values(state.cards).map((c) => c.assignee)]);
+}
+
+/** Renomeia a tag em todas as atividades e na biblioteca. Se o novo nome já
+ *  existir, as duas viram uma só (sem duplicar dentro da atividade). */
+export function renameTag(state: KanbanState, from: string, to: string): KanbanState {
+  const target = to.trim();
+  if (!target || fold(from) === fold(target) && from === target) return state;
+  const existing = allTags(state).find((t) => fold(t) === fold(target) && fold(t) !== fold(from)) ?? target;
+  const swap = (list: string[]) => uniqueKeepOrder(list.map((t) => (fold(t) === fold(from) ? existing : t)));
+  const cards: Record<string, KanbanCard> = {};
+  for (const [id, card] of Object.entries(state.cards)) {
+    cards[id] = card.tags?.some((t) => fold(t) === fold(from)) ? { ...card, tags: swap(card.tags) } : card;
+  }
+  const lib = state.tagLibrary ?? [];
+  return { ...state, cards, tagLibrary: lib.length ? swap(lib) : lib };
+}
+
+/** Exclui a tag de todas as atividades e da biblioteca. */
+export function deleteTag(state: KanbanState, tag: string): KanbanState {
+  const keep = (t: string) => fold(t) !== fold(tag);
+  const cards: Record<string, KanbanCard> = {};
+  for (const [id, card] of Object.entries(state.cards)) {
+    if (!card.tags?.some((t) => !keep(t))) { cards[id] = card; continue; }
+    const tags = card.tags.filter(keep);
+    cards[id] = { ...card, tags: tags.length ? tags : undefined };
+  }
+  return { ...state, cards, tagLibrary: (state.tagLibrary ?? []).filter(keep) };
+}
+
+/** Renomeia o responsável em todas as atividades e no cadastro. */
+export function renameAssignee(state: KanbanState, from: string, to: string): KanbanState {
+  const target = to.trim();
+  if (!target) return state;
+  const existing = allAssignees(state).find((a) => fold(a) === fold(target) && fold(a) !== fold(from)) ?? target;
+  const cards: Record<string, KanbanCard> = {};
+  for (const [id, card] of Object.entries(state.cards)) {
+    cards[id] = card.assignee && fold(card.assignee) === fold(from) ? { ...card, assignee: existing } : card;
+  }
+  const lib = state.assigneeLibrary ?? [];
+  return { ...state, cards, assigneeLibrary: uniqueKeepOrder(lib.map((a) => (fold(a) === fold(from) ? existing : a))) };
+}
+
+/** Tira o responsável de todas as atividades (elas ficam sem responsável) e do cadastro. */
+export function deleteAssignee(state: KanbanState, name: string): KanbanState {
+  const cards: Record<string, KanbanCard> = {};
+  for (const [id, card] of Object.entries(state.cards)) {
+    cards[id] = card.assignee && fold(card.assignee) === fold(name) ? { ...card, assignee: undefined } : card;
+  }
+  return { ...state, cards, assigneeLibrary: (state.assigneeLibrary ?? []).filter((a) => fold(a) !== fold(name)) };
+}
+
+function uniqueKeepOrder(list: string[]): string[] {
+  const seen = new Set<string>();
+  return list.filter((v) => (seen.has(fold(v)) ? false : (seen.add(fold(v)), true)));
 }
 
 /** Todas as tags conhecidas: as da biblioteca e as que já estão em atividades,
