@@ -4,7 +4,9 @@ import type { TipoBase } from "@/hooks/use-bases-locais";
 import { createStringInterner, type StringInterner } from "@/lib/stringIntern";
 
 // 2: o cabeçalho passou a guardar a hierarquia original da base (baseHierarchy).
-export const PROCESSED_BASE_CACHE_VERSION = 2;
+// 3: a hierarquia original passou a ler cada nível da KE30 na sua coluna
+//    ("03 Família" → tecnologia, "04 Formato" → formato).
+export const PROCESSED_BASE_CACHE_VERSION = 3;
 const MAX_MONOLITHIC_CACHE_ROWS = 200_000;
 const DEFAULT_CHUNKED_CACHE_ROWS = 50_000;
 const MIN_CHUNKED_CACHE_ROWS = 1_000;

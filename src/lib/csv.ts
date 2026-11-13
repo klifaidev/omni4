@@ -10,7 +10,7 @@ import {
   getRegionalFromUf,
 } from "./deparaComercial";
 import { createStringInterner, internTrimmed } from "./stringIntern";
-import { BASE_HIER_FIELDS, registerBaseHierarchy, usableBaseValue, type BaseHierarchy } from "./baseHierarchy";
+import { baseHierarchyColumns, registerBaseHierarchy, usableBaseValue, type BaseHierarchy } from "./baseHierarchy";
 import { REAL_HEADER_MAP as HEADER_MAP } from "./intake/headerMaps";
 
 
@@ -197,6 +197,8 @@ export function parseRealTable(
 
   const { colMap, unmapped } = mapRealColumns(headers);
   const columns = Array.from(colMap.entries());
+  // Colunas da hierarquia como vieram (cada nível da KE30 no seu lugar).
+  const hierColumns = baseHierarchyColumns(headers);
 
   // Diagnostics counters
   let rejectedNoPeriod = 0;
@@ -241,9 +243,10 @@ export function parseRealTable(
     // app aprende a tradução base → De/Para (ex.: "B1 Top" → "Top").
     if (obj.sku) {
       let known = baseHierarchy[obj.sku];
-      for (const f of BASE_HIER_FIELDS) {
+      for (const [index, f] of hierColumns) {
         if (known?.[f] !== undefined) continue;
-        const v = usableBaseValue(obj[f]);
+        const cell = raw[index];
+        const v = usableBaseValue(cell == null ? null : String(cell));
         if (v) (known ??= baseHierarchy[obj.sku] = {})[f] = v;
       }
     }

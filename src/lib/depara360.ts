@@ -9,6 +9,18 @@ import { DEPARA_FIELDS, getDeParaBySku, type DeParaEntry, type DeParaOverrideEnt
 import { COMERCIAL_MAP_IDS, getComercialEntries, normComercialKey, type ComercialMapId } from "./deparaComercial";
 import { getInovacaoMap, type InovacaoEntry } from "./deparaInovacao";
 import { normalizeClassificacao, normalizeSku } from "./parseDeparaInovacao";
+import { usableBaseValue, type BaseHierField, type BaseHierarchy } from "./baseHierarchy";
+
+/** Colunas DE da planilha DE/PARA: o valor como veio na base (KE30). */
+const DE_HEADERS: Record<string, BaseHierField> = {
+  de01categoria: "categoria",
+  de02marca: "marca",
+  de03familia: "tecnologia",
+  de04formato: "formato",
+  de05mercado: "mercado",
+  de06faixadepeso: "faixaPeso",
+  de07sabor: "sabor",
+};
 
 type SheetKind = "hierarquia" | "inovacao" | ComercialMapId;
 
@@ -71,6 +83,8 @@ export interface DePara360 {
   /** Abas reconhecidas no arquivo. */
   found: SheetKind[];
   sku: Record<string, DeParaOverrideEntry>;
+  /** Colunas DE (como veio na base), quando o arquivo está no layout DE/PARA. */
+  baseHierarchy: BaseHierarchy;
   inovacao: Record<string, InovacaoEntry> | null;
   comercial: Record<ComercialMapId, Record<string, string>>;
 }
@@ -83,6 +97,7 @@ export async function parseDePara360(file: File): Promise<DePara360> {
     fileName: file.name,
     found: [],
     sku: {},
+    baseHierarchy: {},
     inovacao: null,
     comercial: Object.fromEntries(COMERCIAL_MAP_IDS.map((id) => [id, {}])) as DePara360["comercial"],
   };
@@ -104,6 +119,7 @@ export async function parseDePara360(file: File): Promise<DePara360> {
       const skuCol = col(headers, SKU_HEADERS);
       const fieldCols = DEPARA_FIELDS.map((f) => [f, col(headers, SKU_FIELD_HEADERS[f])] as const).filter(([, c]) => c >= 0);
       const deParaLayout = headers.some((h) => /^para\d/.test(h));
+      const deCols = headers.flatMap((h, i) => (DE_HEADERS[h] ? [[i, DE_HEADERS[h]] as const] : []));
       for (const row of body) {
         const sku = normalizeSku(row[skuCol]);
         if (!sku) continue;
@@ -114,6 +130,10 @@ export async function parseDePara360(file: File): Promise<DePara360> {
           if (!isBlank(value)) entry[field] = value;
         }
         if (Object.keys(entry).length) out.sku[sku] = { ...(out.sku[sku] ?? {}), ...entry };
+        for (const [c, field] of deCols) {
+          const value = text(row[c]);
+          if (usableBaseValue(value)) (out.baseHierarchy[sku] ??= {})[field] = value;
+        }
       }
     } else if (kind === "inovacao") {
       const skuCol = col(headers, SKU_HEADERS);

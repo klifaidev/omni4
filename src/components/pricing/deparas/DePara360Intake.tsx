@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatNum } from "@/lib/format";
 import { DEPARA_MAPS, type DeParaMapId } from "@/lib/deparaHealth";
+import { registerBaseHierarchy } from "@/lib/baseHierarchy";
 import { parseDePara360, planDePara360, type DePara360, type DePara360Plan } from "@/lib/depara360";
 import { useBasesLocais } from "@/hooks/use-bases-locais";
 import { FileDropCard } from "@/components/pricing/bases/FileDropCard";
@@ -77,6 +78,9 @@ export function DePara360Intake() {
     setEntry({ name: selected.name, size: selected.size, status: "reading" });
     try {
       const file = await parseDePara360(selected);
+      // As colunas DE da planilha completam o "como veio na base" dos SKUs
+      // que não aparecem nos meses carregados (não sobrescreve o da KE30).
+      registerBaseHierarchy(file.baseHierarchy, { onlyMissing: true });
       setEntry({ name: selected.name, size: selected.size, status: "ready", file, plan: planDePara360(file) });
     } catch (err) {
       setEntry({
